@@ -1,0 +1,5794 @@
+{
+ "schema": "x13-naming-v1",
+ "run": "x13-naming-001",
+ "date": "2026-09-29",
+ "branch": "x13/naming",
+ "commit": "274ea86",
+ "worktree": "/Users/adam/.codex/worktrees/panoptes-phase2-video-x13-naming",
+ "code": {
+  "offline": "scripts/x13_naming.py (build, questions, score, audit-sheets, --self-check)",
+  "modal": "modal_apps/x13_naming.py (setup, features, owl, jev: JevService + caller)"
+ },
+ "question": "Name SAM 3 object cards without a per-object VLM call at run time and without fine-tuning; measure the share that still needs a VLM and the accuracy of what is named without one, held out by video.",
+ "data": {
+  "source_runs": {
+   "me340": "mvp2-integrate-me340-007 / mvp-me340-e84efffd-1790690775 (warm call)",
+   "samsclub-a2": "mvp2-integrate-samsclub-a2-007 / mvp-samsclub-a2-d5e0c855-1790691934 (warm)",
+   "walmart": "mvp2-integrate-walmart-007 / mvp-walmart-c0761a2a-1790692552 (warm)"
+  },
+  "unit": "the object card (3D-merged track); up to 5 views per card (the card's best views, then the largest outlines >= 5 keyframes apart); per view a 384 px tight crop (box + 10 %, squared) and its mask; the best view's 1.6x crop with a white-over-black outline (judge.som) for the decider; crops cut from the run's own MP4 blob and its densified outlines layer",
+  "cards": 1596,
+  "views": 6989,
+  "labels": "Gemini's open name on the card (identity.decided_by == 'gemini open name': 1,531 cards) -> cards.canonical class (else '~' + head noun, a class outside the taxonomy) -> cards.FAMILY; an offline label source, 0.81 / 0.88 right / right-or-close on the audited items, not truth",
+  "truth": "the 119 agent-labelled held-out identity items (runs/mvp2-results/identity-heldout, mvp2/identity, blind), matched to the warm cards by id + box centre within 0.3 m (identity_study.score_final's rule; 119 of 119 matched); graded with identity_study.grade",
+  "lightning-3585": "not used: its names come from the older SAM 2 pipeline with no SAM 3 word votes, so the SAM 3 rules could not be calibrated on it"
+ },
+ "protocol": {
+  "held_out": "every score is on a video whose labels were never used: the bank is the other two videos' Gemini-labelled cards, every threshold and the nested choice of the kNN key / zero-shot key come from the other video(s) only; rotated over the three videos and reported per video",
+  "thresholds": "fitted, not trained: per rule the lowest score whose accepted set on the training video(s) reaches the target agreement with Gemini's class (>= 20 items); the cluster cut is the largest one whose copied names reach the target; no gradient step anywhere",
+  "fit_scopes": {
+   "pooled": "both other videos",
+   "same domain": "the other video of the same domain family (Sam's Club <-> Walmart); ME340 has no shop-floor partner, so its 'same domain' fit is the pooled one"
+  },
+  "gemini": "not called at run time; where the cascade says 'needs VLM', the card's recorded Gemini name stands in for the answer and is what the bank keeps",
+  "hardware": "features, OWLv2 and Jev-Omni: one A100-80GB each (isolated model benchmarks, not the 2-GPU production container); the Jev service in its own container, called from a separate CPU container (the core's stand-in)"
+ },
+ "models": {
+  "siglip2-base": {
+   "id": "google/siglip2-base-patch16-224",
+   "licence": "apache-2.0",
+   "commercial": true,
+   "role": "the current cascade key (baseline)"
+  },
+  "siglip2-so400m": {
+   "id": "google/siglip2-so400m-patch16-384",
+   "licence": "apache-2.0",
+   "commercial": true
+  },
+  "pe-core-l": {
+   "id": "timm/PE-Core-L-14-336 via open_clip 3.3.0",
+   "licence": "apache-2.0",
+   "commercial": true
+  },
+  "dinov2-l": {
+   "id": "facebook/dinov2-large",
+   "licence": "apache-2.0",
+   "commercial": true
+  },
+  "owlv2-base": {
+   "id": "google/owlv2-base-patch16-ensemble",
+   "licence": "apache-2.0",
+   "commercial": true,
+   "note": "the card calls it a research output"
+  },
+  "jev-omni": {
+   "id": "akhilaaa3/Jev-Omni",
+   "licence": "apache-2.0",
+   "commercial": true
+  },
+  "licence_source": "each model card's own README front matter, read in the container (setup and the Jev service); the SAM 3 words are the pipeline's existing SAM 3 votes (SAM License, commercial use allowed)"
+ },
+ "dataset": {
+  "me340": {
+   "cards": 254,
+   "gemini_labelled": 238,
+   "audited": 62,
+   "views_per_card": 4.54,
+   "top_labels": [
+    [
+     "hand tool",
+     34
+    ],
+    [
+     "metal part",
+     24
+    ],
+    [
+     "tool holder",
+     19
+    ],
+    [
+     "pipe",
+     19
+    ],
+    [
+     "milling machine",
+     13
+    ],
+    [
+     "bin",
+     12
+    ]
+   ],
+   "label_outside_taxonomy": 0.109,
+   "class_present_in_other_videos": 0.298
+  },
+  "samsclub-a2": {
+   "cards": 622,
+   "gemini_labelled": 618,
+   "audited": 28,
+   "views_per_card": 4.38,
+   "top_labels": [
+    [
+     "box",
+     406
+    ],
+    [
+     "pallet",
+     71
+    ],
+    [
+     "stacked boxes",
+     64
+    ],
+    [
+     "merchandise",
+     35
+    ],
+    [
+     "shelf",
+     6
+    ],
+    [
+     "bottle",
+     5
+    ]
+   ],
+   "label_outside_taxonomy": 0.008,
+   "class_present_in_other_videos": 0.883
+  },
+  "walmart": {
+   "cards": 720,
+   "gemini_labelled": 675,
+   "audited": 29,
+   "views_per_card": 4.32,
+   "top_labels": [
+    [
+     "merchandise",
+     252
+    ],
+    [
+     "bag",
+     176
+    ],
+    [
+     "box",
+     127
+    ],
+    [
+     "shelf",
+     53
+    ],
+    [
+     "display rack",
+     14
+    ],
+    [
+     "label",
+     13
+    ]
+   ],
+   "label_outside_taxonomy": 0.027,
+   "class_present_in_other_videos": 0.714
+  }
+ },
+ "a_retrieval_and_votes": {
+  "majority class of the other videos": {
+   "me340": {
+    "n": 238,
+    "class": 0.013,
+    "family": 0.097,
+    "audited_n": 62,
+    "right": 0.032,
+    "right_or_close": 0.048
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.057,
+    "family": 0.95,
+    "audited_n": 28,
+    "right": 0.714,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.188,
+    "family": 0.827,
+    "audited_n": 29,
+    "right": 0.138,
+    "right_or_close": 0.724
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.108,
+    "family": 0.763,
+    "audited_n": 119,
+    "right": 0.218,
+    "right_or_close": 0.412
+   }
+  },
+  "sam3 word vote (per-video Gemini vocabulary)": {
+   "me340": {
+    "n": 238,
+    "class": 0.172,
+    "family": 0.357,
+    "audited_n": 62,
+    "right": 0.435,
+    "right_or_close": 0.677
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.688,
+    "family": 0.961,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.929
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.865,
+    "family": 0.917,
+    "audited_n": 29,
+    "right": 0.793,
+    "right_or_close": 0.828
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.686,
+    "family": 0.848,
+    "audited_n": 119,
+    "right": 0.622,
+    "right_or_close": 0.773
+   }
+  },
+  "zero-shot over the taxonomy: siglip2-base plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.231,
+    "family": 0.378,
+    "audited_n": 62,
+    "right": 0.452,
+    "right_or_close": 0.661
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.099,
+    "family": 0.354,
+    "audited_n": 28,
+    "right": 0.214,
+    "right_or_close": 0.357
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.268,
+    "family": 0.418,
+    "audited_n": 29,
+    "right": 0.345,
+    "right_or_close": 0.414
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.194,
+    "family": 0.386,
+    "audited_n": 119,
+    "right": 0.37,
+    "right_or_close": 0.529
+   }
+  },
+  "kNN cross-video bank (other 2 videos): siglip2-base plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.017,
+    "family": 0.105,
+    "audited_n": 62,
+    "right": 0.016,
+    "right_or_close": 0.016
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.206,
+    "family": 0.803,
+    "audited_n": 28,
+    "right": 0.179,
+    "right_or_close": 0.714
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.187,
+    "family": 0.615,
+    "audited_n": 29,
+    "right": 0.207,
+    "right_or_close": 0.586
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.168,
+    "family": 0.611,
+    "audited_n": 119,
+    "right": 0.101,
+    "right_or_close": 0.319
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): siglip2-base plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.319,
+    "family": 0.353,
+    "audited_n": 62,
+    "right": 0.435,
+    "right_or_close": 0.613
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.723,
+    "family": 0.948,
+    "audited_n": 28,
+    "right": 0.75,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.803,
+    "family": 0.856,
+    "audited_n": 29,
+    "right": 0.793,
+    "right_or_close": 0.793
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.696,
+    "family": 0.815,
+    "audited_n": 119,
+    "right": 0.597,
+    "right_or_close": 0.723
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): siglip2-base plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.399,
+    "family": 0.454,
+    "audited_n": 62,
+    "right": 0.484,
+    "right_or_close": 0.613
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.759,
+    "family": 0.95,
+    "audited_n": 28,
+    "right": 0.75,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.862,
+    "family": 0.893,
+    "audited_n": 29,
+    "right": 0.828,
+    "right_or_close": 0.862
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.749,
+    "family": 0.848,
+    "audited_n": 119,
+    "right": 0.63,
+    "right_or_close": 0.739
+   }
+  },
+  "zero-shot over the taxonomy: siglip2-base masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.105,
+    "family": 0.185,
+    "audited_n": 62,
+    "right": 0.161,
+    "right_or_close": 0.339
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.042,
+    "family": 0.214,
+    "audited_n": 28,
+    "right": 0.179,
+    "right_or_close": 0.25
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.104,
+    "family": 0.161,
+    "audited_n": 29,
+    "right": 0.069,
+    "right_or_close": 0.103
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.079,
+    "family": 0.186,
+    "audited_n": 119,
+    "right": 0.143,
+    "right_or_close": 0.261
+   }
+  },
+  "kNN cross-video bank (other 2 videos): siglip2-base masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.013,
+    "family": 0.122,
+    "audited_n": 62,
+    "right": 0.016,
+    "right_or_close": 0.048
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.286,
+    "family": 0.853,
+    "audited_n": 28,
+    "right": 0.429,
+    "right_or_close": 0.821
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.175,
+    "family": 0.603,
+    "audited_n": 29,
+    "right": 0.138,
+    "right_or_close": 0.414
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.195,
+    "family": 0.629,
+    "audited_n": 119,
+    "right": 0.143,
+    "right_or_close": 0.319
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): siglip2-base masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.298,
+    "family": 0.391,
+    "audited_n": 62,
+    "right": 0.323,
+    "right_or_close": 0.516
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.804,
+    "family": 0.953,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.763,
+    "family": 0.89,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.862
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.707,
+    "family": 0.838,
+    "audited_n": 119,
+    "right": 0.58,
+    "right_or_close": 0.689
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): siglip2-base masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.378,
+    "family": 0.454,
+    "audited_n": 62,
+    "right": 0.387,
+    "right_or_close": 0.661
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.82,
+    "family": 0.956,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.864,
+    "family": 0.913,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.897
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.771,
+    "family": 0.859,
+    "audited_n": 119,
+    "right": 0.613,
+    "right_or_close": 0.773
+   }
+  },
+  "zero-shot over the taxonomy: siglip2-base plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.223,
+    "family": 0.34,
+    "audited_n": 62,
+    "right": 0.387,
+    "right_or_close": 0.581
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.1,
+    "family": 0.307,
+    "audited_n": 28,
+    "right": 0.286,
+    "right_or_close": 0.321
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.247,
+    "family": 0.35,
+    "audited_n": 29,
+    "right": 0.241,
+    "right_or_close": 0.31
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.184,
+    "family": 0.331,
+    "audited_n": 119,
+    "right": 0.328,
+    "right_or_close": 0.454
+   }
+  },
+  "kNN cross-video bank (other 2 videos): siglip2-base plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.013,
+    "family": 0.097,
+    "audited_n": 62,
+    "right": 0.016,
+    "right_or_close": 0.048
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.28,
+    "family": 0.791,
+    "audited_n": 28,
+    "right": 0.286,
+    "right_or_close": 0.821
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.175,
+    "family": 0.57,
+    "audited_n": 29,
+    "right": 0.138,
+    "right_or_close": 0.379
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.192,
+    "family": 0.586,
+    "audited_n": 119,
+    "right": 0.109,
+    "right_or_close": 0.311
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): siglip2-base plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.353,
+    "family": 0.416,
+    "audited_n": 62,
+    "right": 0.403,
+    "right_or_close": 0.597
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.794,
+    "family": 0.951,
+    "audited_n": 28,
+    "right": 0.821,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.821,
+    "family": 0.881,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.862
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.737,
+    "family": 0.837,
+    "audited_n": 119,
+    "right": 0.613,
+    "right_or_close": 0.731
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): siglip2-base plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.424,
+    "family": 0.479,
+    "audited_n": 62,
+    "right": 0.468,
+    "right_or_close": 0.629
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.832,
+    "family": 0.956,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.887,
+    "family": 0.913,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.897
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.793,
+    "family": 0.863,
+    "audited_n": 119,
+    "right": 0.655,
+    "right_or_close": 0.756
+   }
+  },
+  "zero-shot over the taxonomy: siglip2-base som": {
+   "me340": {
+    "n": 238,
+    "class": 0.172,
+    "family": 0.294,
+    "audited_n": 62,
+    "right": 0.29,
+    "right_or_close": 0.452
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.028,
+    "family": 0.136,
+    "audited_n": 28,
+    "right": 0.214,
+    "right_or_close": 0.321
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.105,
+    "family": 0.196,
+    "audited_n": 29,
+    "right": 0.172,
+    "right_or_close": 0.31
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.084,
+    "family": 0.187,
+    "audited_n": 119,
+    "right": 0.244,
+    "right_or_close": 0.387
+   }
+  },
+  "kNN cross-video bank (other 2 videos): siglip2-base som": {
+   "me340": {
+    "n": 238,
+    "class": 0.017,
+    "family": 0.097,
+    "audited_n": 62,
+    "right": 0.016,
+    "right_or_close": 0.048
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.303,
+    "family": 0.874,
+    "audited_n": 28,
+    "right": 0.214,
+    "right_or_close": 0.75
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.176,
+    "family": 0.803,
+    "audited_n": 29,
+    "right": 0.138,
+    "right_or_close": 0.621
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.202,
+    "family": 0.722,
+    "audited_n": 119,
+    "right": 0.092,
+    "right_or_close": 0.353
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): siglip2-base som": {
+   "me340": {
+    "n": 238,
+    "class": 0.265,
+    "family": 0.319,
+    "audited_n": 62,
+    "right": 0.274,
+    "right_or_close": 0.419
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.733,
+    "family": 0.948,
+    "audited_n": 28,
+    "right": 0.75,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.799,
+    "family": 0.876,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.862
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.689,
+    "family": 0.818,
+    "audited_n": 119,
+    "right": 0.529,
+    "right_or_close": 0.639
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): siglip2-base som": {
+   "me340": {
+    "n": 238,
+    "class": 0.319,
+    "family": 0.353,
+    "audited_n": 62,
+    "right": 0.323,
+    "right_or_close": 0.468
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.769,
+    "family": 0.955,
+    "audited_n": 28,
+    "right": 0.821,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.856,
+    "family": 0.896,
+    "audited_n": 29,
+    "right": 0.897,
+    "right_or_close": 0.931
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.737,
+    "family": 0.835,
+    "audited_n": 119,
+    "right": 0.58,
+    "right_or_close": 0.681
+   }
+  },
+  "zero-shot over the taxonomy: siglip2-so400m plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.244,
+    "family": 0.366,
+    "audited_n": 62,
+    "right": 0.452,
+    "right_or_close": 0.71
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.144,
+    "family": 0.539,
+    "audited_n": 28,
+    "right": 0.5,
+    "right_or_close": 0.643
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.35,
+    "family": 0.523,
+    "audited_n": 29,
+    "right": 0.31,
+    "right_or_close": 0.414
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.25,
+    "family": 0.505,
+    "audited_n": 119,
+    "right": 0.429,
+    "right_or_close": 0.622
+   }
+  },
+  "kNN cross-video bank (other 2 videos): siglip2-so400m plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.025,
+    "family": 0.113,
+    "audited_n": 62,
+    "right": 0.048,
+    "right_or_close": 0.048
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.175,
+    "family": 0.796,
+    "audited_n": 28,
+    "right": 0.179,
+    "right_or_close": 0.643
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.164,
+    "family": 0.767,
+    "audited_n": 29,
+    "right": 0.138,
+    "right_or_close": 0.621
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.147,
+    "family": 0.677,
+    "audited_n": 119,
+    "right": 0.101,
+    "right_or_close": 0.328
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): siglip2-so400m plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.332,
+    "family": 0.361,
+    "audited_n": 62,
+    "right": 0.371,
+    "right_or_close": 0.532
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.739,
+    "family": 0.95,
+    "audited_n": 28,
+    "right": 0.75,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.831,
+    "family": 0.871,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.862
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.717,
+    "family": 0.824,
+    "audited_n": 119,
+    "right": 0.58,
+    "right_or_close": 0.697
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): siglip2-so400m plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.42,
+    "family": 0.458,
+    "audited_n": 62,
+    "right": 0.516,
+    "right_or_close": 0.645
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.778,
+    "family": 0.948,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.862,
+    "family": 0.892,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.897
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.76,
+    "family": 0.847,
+    "audited_n": 119,
+    "right": 0.681,
+    "right_or_close": 0.765
+   }
+  },
+  "zero-shot over the taxonomy: siglip2-so400m masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.168,
+    "family": 0.29,
+    "audited_n": 62,
+    "right": 0.21,
+    "right_or_close": 0.452
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.1,
+    "family": 0.443,
+    "audited_n": 28,
+    "right": 0.464,
+    "right_or_close": 0.536
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.161,
+    "family": 0.224,
+    "audited_n": 29,
+    "right": 0.138,
+    "right_or_close": 0.138
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.138,
+    "family": 0.323,
+    "audited_n": 119,
+    "right": 0.252,
+    "right_or_close": 0.395
+   }
+  },
+  "kNN cross-video bank (other 2 videos): siglip2-so400m masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.008,
+    "family": 0.122,
+    "audited_n": 62,
+    "right": 0.016,
+    "right_or_close": 0.065
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.209,
+    "family": 0.848,
+    "audited_n": 28,
+    "right": 0.286,
+    "right_or_close": 0.821
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.16,
+    "family": 0.607,
+    "audited_n": 29,
+    "right": 0.138,
+    "right_or_close": 0.517
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.156,
+    "family": 0.629,
+    "audited_n": 119,
+    "right": 0.109,
+    "right_or_close": 0.353
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): siglip2-so400m masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.294,
+    "family": 0.382,
+    "audited_n": 62,
+    "right": 0.339,
+    "right_or_close": 0.581
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.799,
+    "family": 0.953,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.79,
+    "family": 0.893,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.862
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.717,
+    "family": 0.838,
+    "audited_n": 119,
+    "right": 0.588,
+    "right_or_close": 0.723
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): siglip2-so400m masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.366,
+    "family": 0.454,
+    "audited_n": 62,
+    "right": 0.435,
+    "right_or_close": 0.71
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.814,
+    "family": 0.958,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.858,
+    "family": 0.914,
+    "audited_n": 29,
+    "right": 0.897,
+    "right_or_close": 0.931
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.764,
+    "family": 0.86,
+    "audited_n": 119,
+    "right": 0.647,
+    "right_or_close": 0.807
+   }
+  },
+  "zero-shot over the taxonomy: siglip2-so400m plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.315,
+    "family": 0.395,
+    "audited_n": 62,
+    "right": 0.468,
+    "right_or_close": 0.677
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.157,
+    "family": 0.544,
+    "audited_n": 28,
+    "right": 0.571,
+    "right_or_close": 0.607
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.324,
+    "family": 0.439,
+    "audited_n": 29,
+    "right": 0.31,
+    "right_or_close": 0.379
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.255,
+    "family": 0.474,
+    "audited_n": 119,
+    "right": 0.454,
+    "right_or_close": 0.588
+   }
+  },
+  "kNN cross-video bank (other 2 videos): siglip2-so400m plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.017,
+    "family": 0.109,
+    "audited_n": 62,
+    "right": 0.016,
+    "right_or_close": 0.081
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.18,
+    "family": 0.775,
+    "audited_n": 28,
+    "right": 0.214,
+    "right_or_close": 0.607
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.16,
+    "family": 0.681,
+    "audited_n": 29,
+    "right": 0.172,
+    "right_or_close": 0.517
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.146,
+    "family": 0.63,
+    "audited_n": 119,
+    "right": 0.101,
+    "right_or_close": 0.311
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): siglip2-so400m plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.349,
+    "family": 0.416,
+    "audited_n": 62,
+    "right": 0.355,
+    "right_or_close": 0.613
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.796,
+    "family": 0.951,
+    "audited_n": 28,
+    "right": 0.821,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.836,
+    "family": 0.887,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.862
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.744,
+    "family": 0.84,
+    "audited_n": 119,
+    "right": 0.588,
+    "right_or_close": 0.739
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): siglip2-so400m plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.42,
+    "family": 0.483,
+    "audited_n": 62,
+    "right": 0.484,
+    "right_or_close": 0.677
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.828,
+    "family": 0.956,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.889,
+    "family": 0.911,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.897
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.792,
+    "family": 0.863,
+    "audited_n": 119,
+    "right": 0.664,
+    "right_or_close": 0.782
+   }
+  },
+  "zero-shot over the taxonomy: siglip2-so400m som": {
+   "me340": {
+    "n": 238,
+    "class": 0.21,
+    "family": 0.307,
+    "audited_n": 62,
+    "right": 0.29,
+    "right_or_close": 0.548
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.126,
+    "family": 0.309,
+    "audited_n": 28,
+    "right": 0.357,
+    "right_or_close": 0.393
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.213,
+    "family": 0.29,
+    "audited_n": 29,
+    "right": 0.138,
+    "right_or_close": 0.276
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.178,
+    "family": 0.3,
+    "audited_n": 119,
+    "right": 0.269,
+    "right_or_close": 0.445
+   }
+  },
+  "kNN cross-video bank (other 2 videos): siglip2-so400m som": {
+   "me340": {
+    "n": 238,
+    "class": 0.021,
+    "family": 0.109,
+    "audited_n": 62,
+    "right": 0.016,
+    "right_or_close": 0.048
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.335,
+    "family": 0.775,
+    "audited_n": 28,
+    "right": 0.321,
+    "right_or_close": 0.607
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.169,
+    "family": 0.813,
+    "audited_n": 29,
+    "right": 0.207,
+    "right_or_close": 0.759
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.213,
+    "family": 0.688,
+    "audited_n": 119,
+    "right": 0.134,
+    "right_or_close": 0.353
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): siglip2-so400m som": {
+   "me340": {
+    "n": 238,
+    "class": 0.328,
+    "family": 0.408,
+    "audited_n": 62,
+    "right": 0.323,
+    "right_or_close": 0.532
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.749,
+    "family": 0.948,
+    "audited_n": 28,
+    "right": 0.821,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.816,
+    "family": 0.879,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.862
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.713,
+    "family": 0.833,
+    "audited_n": 119,
+    "right": 0.571,
+    "right_or_close": 0.697
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): siglip2-so400m som": {
+   "me340": {
+    "n": 238,
+    "class": 0.366,
+    "family": 0.42,
+    "audited_n": 62,
+    "right": 0.371,
+    "right_or_close": 0.5
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.79,
+    "family": 0.95,
+    "audited_n": 28,
+    "right": 0.821,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.864,
+    "family": 0.898,
+    "audited_n": 29,
+    "right": 0.897,
+    "right_or_close": 0.931
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.756,
+    "family": 0.845,
+    "audited_n": 119,
+    "right": 0.605,
+    "right_or_close": 0.697
+   }
+  },
+  "zero-shot over the taxonomy: pe-core-l plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.185,
+    "family": 0.298,
+    "audited_n": 62,
+    "right": 0.387,
+    "right_or_close": 0.565
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.087,
+    "family": 0.744,
+    "audited_n": 28,
+    "right": 0.393,
+    "right_or_close": 0.714
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.154,
+    "family": 0.382,
+    "audited_n": 29,
+    "right": 0.241,
+    "right_or_close": 0.31
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.132,
+    "family": 0.515,
+    "audited_n": 119,
+    "right": 0.353,
+    "right_or_close": 0.538
+   }
+  },
+  "kNN cross-video bank (other 2 videos): pe-core-l plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.017,
+    "family": 0.118,
+    "audited_n": 62,
+    "right": 0.048,
+    "right_or_close": 0.065
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.149,
+    "family": 0.761,
+    "audited_n": 28,
+    "right": 0.036,
+    "right_or_close": 0.571
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.187,
+    "family": 0.81,
+    "audited_n": 29,
+    "right": 0.207,
+    "right_or_close": 0.69
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.145,
+    "family": 0.683,
+    "audited_n": 119,
+    "right": 0.084,
+    "right_or_close": 0.336
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): pe-core-l plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.311,
+    "family": 0.34,
+    "audited_n": 62,
+    "right": 0.403,
+    "right_or_close": 0.516
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.757,
+    "family": 0.95,
+    "audited_n": 28,
+    "right": 0.821,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.84,
+    "family": 0.88,
+    "audited_n": 29,
+    "right": 0.897,
+    "right_or_close": 0.897
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.724,
+    "family": 0.824,
+    "audited_n": 119,
+    "right": 0.622,
+    "right_or_close": 0.697
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): pe-core-l plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.349,
+    "family": 0.382,
+    "audited_n": 62,
+    "right": 0.468,
+    "right_or_close": 0.597
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.798,
+    "family": 0.948,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.871,
+    "family": 0.893,
+    "audited_n": 29,
+    "right": 0.897,
+    "right_or_close": 0.931
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.76,
+    "family": 0.836,
+    "audited_n": 119,
+    "right": 0.664,
+    "right_or_close": 0.748
+   }
+  },
+  "zero-shot over the taxonomy: pe-core-l masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.269,
+    "family": 0.374,
+    "audited_n": 62,
+    "right": 0.355,
+    "right_or_close": 0.516
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.298,
+    "family": 0.798,
+    "audited_n": 28,
+    "right": 0.643,
+    "right_or_close": 0.75
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.387,
+    "family": 0.587,
+    "audited_n": 29,
+    "right": 0.241,
+    "right_or_close": 0.345
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.332,
+    "family": 0.639,
+    "audited_n": 119,
+    "right": 0.395,
+    "right_or_close": 0.529
+   }
+  },
+  "kNN cross-video bank (other 2 videos): pe-core-l masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.021,
+    "family": 0.122,
+    "audited_n": 62,
+    "right": 0.0,
+    "right_or_close": 0.048
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.183,
+    "family": 0.824,
+    "audited_n": 28,
+    "right": 0.25,
+    "right_or_close": 0.714
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.185,
+    "family": 0.689,
+    "audited_n": 29,
+    "right": 0.172,
+    "right_or_close": 0.552
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.159,
+    "family": 0.655,
+    "audited_n": 119,
+    "right": 0.101,
+    "right_or_close": 0.328
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): pe-core-l masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.328,
+    "family": 0.403,
+    "audited_n": 62,
+    "right": 0.339,
+    "right_or_close": 0.548
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.828,
+    "family": 0.958,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.818,
+    "family": 0.893,
+    "audited_n": 29,
+    "right": 0.897,
+    "right_or_close": 0.897
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.746,
+    "family": 0.843,
+    "audited_n": 119,
+    "right": 0.597,
+    "right_or_close": 0.714
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): pe-core-l masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.374,
+    "family": 0.445,
+    "audited_n": 62,
+    "right": 0.484,
+    "right_or_close": 0.677
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.846,
+    "family": 0.963,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.879,
+    "family": 0.911,
+    "audited_n": 29,
+    "right": 0.931,
+    "right_or_close": 0.931
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.787,
+    "family": 0.86,
+    "audited_n": 119,
+    "right": 0.681,
+    "right_or_close": 0.79
+   }
+  },
+  "zero-shot over the taxonomy: pe-core-l plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.311,
+    "family": 0.412,
+    "audited_n": 62,
+    "right": 0.452,
+    "right_or_close": 0.694
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.183,
+    "family": 0.806,
+    "audited_n": 28,
+    "right": 0.571,
+    "right_or_close": 0.786
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.379,
+    "family": 0.631,
+    "audited_n": 29,
+    "right": 0.379,
+    "right_or_close": 0.517
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.289,
+    "family": 0.668,
+    "audited_n": 119,
+    "right": 0.462,
+    "right_or_close": 0.672
+   }
+  },
+  "kNN cross-video bank (other 2 videos): pe-core-l plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.029,
+    "family": 0.118,
+    "audited_n": 62,
+    "right": 0.081,
+    "right_or_close": 0.129
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.197,
+    "family": 0.751,
+    "audited_n": 28,
+    "right": 0.179,
+    "right_or_close": 0.643
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.187,
+    "family": 0.784,
+    "audited_n": 29,
+    "right": 0.172,
+    "right_or_close": 0.586
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.167,
+    "family": 0.667,
+    "audited_n": 119,
+    "right": 0.126,
+    "right_or_close": 0.361
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): pe-core-l plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.345,
+    "family": 0.403,
+    "audited_n": 62,
+    "right": 0.419,
+    "right_or_close": 0.661
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.809,
+    "family": 0.953,
+    "audited_n": 28,
+    "right": 0.821,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.852,
+    "family": 0.898,
+    "audited_n": 29,
+    "right": 0.931,
+    "right_or_close": 0.931
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.756,
+    "family": 0.843,
+    "audited_n": 119,
+    "right": 0.639,
+    "right_or_close": 0.782
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): pe-core-l plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.387,
+    "family": 0.441,
+    "audited_n": 62,
+    "right": 0.516,
+    "right_or_close": 0.726
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.843,
+    "family": 0.958,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.899,
+    "family": 0.917,
+    "audited_n": 29,
+    "right": 0.931,
+    "right_or_close": 0.966
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.797,
+    "family": 0.86,
+    "audited_n": 119,
+    "right": 0.697,
+    "right_or_close": 0.824
+   }
+  },
+  "zero-shot over the taxonomy: pe-core-l som": {
+   "me340": {
+    "n": 238,
+    "class": 0.189,
+    "family": 0.303,
+    "audited_n": 62,
+    "right": 0.403,
+    "right_or_close": 0.613
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.118,
+    "family": 0.519,
+    "audited_n": 28,
+    "right": 0.393,
+    "right_or_close": 0.643
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.138,
+    "family": 0.25,
+    "audited_n": 29,
+    "right": 0.172,
+    "right_or_close": 0.31
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.138,
+    "family": 0.367,
+    "audited_n": 119,
+    "right": 0.345,
+    "right_or_close": 0.546
+   }
+  },
+  "kNN cross-video bank (other 2 videos): pe-core-l som": {
+   "me340": {
+    "n": 238,
+    "class": 0.034,
+    "family": 0.126,
+    "audited_n": 62,
+    "right": 0.032,
+    "right_or_close": 0.161
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.392,
+    "family": 0.827,
+    "audited_n": 28,
+    "right": 0.393,
+    "right_or_close": 0.643
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.185,
+    "family": 0.816,
+    "audited_n": 29,
+    "right": 0.241,
+    "right_or_close": 0.828
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.245,
+    "family": 0.713,
+    "audited_n": 119,
+    "right": 0.168,
+    "right_or_close": 0.437
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): pe-core-l som": {
+   "me340": {
+    "n": 238,
+    "class": 0.307,
+    "family": 0.382,
+    "audited_n": 62,
+    "right": 0.387,
+    "right_or_close": 0.532
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.77,
+    "family": 0.95,
+    "audited_n": 28,
+    "right": 0.821,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.852,
+    "family": 0.89,
+    "audited_n": 29,
+    "right": 0.828,
+    "right_or_close": 0.862
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.734,
+    "family": 0.835,
+    "audited_n": 119,
+    "right": 0.597,
+    "right_or_close": 0.697
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): pe-core-l som": {
+   "me340": {
+    "n": 238,
+    "class": 0.378,
+    "family": 0.445,
+    "audited_n": 62,
+    "right": 0.435,
+    "right_or_close": 0.645
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.799,
+    "family": 0.953,
+    "audited_n": 28,
+    "right": 0.821,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.889,
+    "family": 0.904,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.897
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.773,
+    "family": 0.852,
+    "audited_n": 119,
+    "right": 0.63,
+    "right_or_close": 0.765
+   }
+  },
+  "kNN cross-video bank (other 2 videos): dinov2-l plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.017,
+    "family": 0.113,
+    "audited_n": 62,
+    "right": 0.048,
+    "right_or_close": 0.048
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.272,
+    "family": 0.867,
+    "audited_n": 28,
+    "right": 0.357,
+    "right_or_close": 0.821
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.167,
+    "family": 0.636,
+    "audited_n": 29,
+    "right": 0.172,
+    "right_or_close": 0.586
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.186,
+    "family": 0.648,
+    "audited_n": 119,
+    "right": 0.151,
+    "right_or_close": 0.361
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): dinov2-l plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.294,
+    "family": 0.328,
+    "audited_n": 62,
+    "right": 0.355,
+    "right_or_close": 0.565
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.717,
+    "family": 0.937,
+    "audited_n": 28,
+    "right": 0.714,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.837,
+    "family": 0.862,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.862
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.704,
+    "family": 0.809,
+    "audited_n": 119,
+    "right": 0.563,
+    "right_or_close": 0.714
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): dinov2-l plain": {
+   "me340": {
+    "n": 238,
+    "class": 0.349,
+    "family": 0.361,
+    "audited_n": 62,
+    "right": 0.452,
+    "right_or_close": 0.597
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.736,
+    "family": 0.947,
+    "audited_n": 28,
+    "right": 0.75,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.859,
+    "family": 0.881,
+    "audited_n": 29,
+    "right": 0.897,
+    "right_or_close": 0.931
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.73,
+    "family": 0.827,
+    "audited_n": 119,
+    "right": 0.63,
+    "right_or_close": 0.748
+   }
+  },
+  "kNN cross-video bank (other 2 videos): dinov2-l masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.013,
+    "family": 0.092,
+    "audited_n": 62,
+    "right": 0.016,
+    "right_or_close": 0.032
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.314,
+    "family": 0.885,
+    "audited_n": 28,
+    "right": 0.393,
+    "right_or_close": 0.821
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.188,
+    "family": 0.665,
+    "audited_n": 29,
+    "right": 0.172,
+    "right_or_close": 0.621
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.212,
+    "family": 0.665,
+    "audited_n": 119,
+    "right": 0.143,
+    "right_or_close": 0.361
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): dinov2-l masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.294,
+    "family": 0.374,
+    "audited_n": 62,
+    "right": 0.323,
+    "right_or_close": 0.516
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.825,
+    "family": 0.96,
+    "audited_n": 28,
+    "right": 0.893,
+    "right_or_close": 0.929
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.843,
+    "family": 0.899,
+    "audited_n": 29,
+    "right": 0.897,
+    "right_or_close": 0.897
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.75,
+    "family": 0.842,
+    "audited_n": 119,
+    "right": 0.597,
+    "right_or_close": 0.706
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): dinov2-l masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.366,
+    "family": 0.424,
+    "audited_n": 62,
+    "right": 0.435,
+    "right_or_close": 0.629
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.835,
+    "family": 0.963,
+    "audited_n": 28,
+    "right": 0.893,
+    "right_or_close": 0.929
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.883,
+    "family": 0.904,
+    "audited_n": 29,
+    "right": 0.931,
+    "right_or_close": 0.966
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.783,
+    "family": 0.853,
+    "audited_n": 119,
+    "right": 0.664,
+    "right_or_close": 0.782
+   }
+  },
+  "kNN cross-video bank (other 2 videos): dinov2-l plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.029,
+    "family": 0.126,
+    "audited_n": 62,
+    "right": 0.065,
+    "right_or_close": 0.097
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.33,
+    "family": 0.924,
+    "audited_n": 28,
+    "right": 0.357,
+    "right_or_close": 0.821
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.181,
+    "family": 0.698,
+    "audited_n": 29,
+    "right": 0.172,
+    "right_or_close": 0.655
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.218,
+    "family": 0.7,
+    "audited_n": 119,
+    "right": 0.16,
+    "right_or_close": 0.403
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): dinov2-l plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.328,
+    "family": 0.391,
+    "audited_n": 62,
+    "right": 0.452,
+    "right_or_close": 0.677
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.806,
+    "family": 0.953,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.88,
+    "family": 0.902,
+    "audited_n": 29,
+    "right": 0.931,
+    "right_or_close": 0.931
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.764,
+    "family": 0.843,
+    "audited_n": 119,
+    "right": 0.664,
+    "right_or_close": 0.79
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): dinov2-l plain+masked": {
+   "me340": {
+    "n": 238,
+    "class": 0.408,
+    "family": 0.445,
+    "audited_n": 62,
+    "right": 0.581,
+    "right_or_close": 0.726
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.833,
+    "family": 0.958,
+    "audited_n": 28,
+    "right": 0.857,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.889,
+    "family": 0.904,
+    "audited_n": 29,
+    "right": 0.931,
+    "right_or_close": 0.966
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.792,
+    "family": 0.854,
+    "audited_n": 119,
+    "right": 0.731,
+    "right_or_close": 0.824
+   }
+  },
+  "kNN cross-video bank (other 2 videos): dinov2-l som": {
+   "me340": {
+    "n": 238,
+    "class": 0.013,
+    "family": 0.101,
+    "audited_n": 62,
+    "right": 0.032,
+    "right_or_close": 0.113
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.228,
+    "family": 0.848,
+    "audited_n": 28,
+    "right": 0.214,
+    "right_or_close": 0.75
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.163,
+    "family": 0.807,
+    "audited_n": 29,
+    "right": 0.207,
+    "right_or_close": 0.793
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.166,
+    "family": 0.714,
+    "audited_n": 119,
+    "right": 0.118,
+    "right_or_close": 0.429
+   }
+  },
+  "kNN in-video, earlier cards named (stream bound): dinov2-l som": {
+   "me340": {
+    "n": 238,
+    "class": 0.244,
+    "family": 0.277,
+    "audited_n": 62,
+    "right": 0.306,
+    "right_or_close": 0.435
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.672,
+    "family": 0.942,
+    "audited_n": 28,
+    "right": 0.75,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.809,
+    "family": 0.846,
+    "audited_n": 29,
+    "right": 0.793,
+    "right_or_close": 0.793
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.666,
+    "family": 0.796,
+    "audited_n": 119,
+    "right": 0.529,
+    "right_or_close": 0.63
+   }
+  },
+  "kNN in-video, all other cards named (upper bound): dinov2-l som": {
+   "me340": {
+    "n": 238,
+    "class": 0.307,
+    "family": 0.336,
+    "audited_n": 62,
+    "right": 0.323,
+    "right_or_close": 0.419
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.691,
+    "family": 0.951,
+    "audited_n": 28,
+    "right": 0.714,
+    "right_or_close": 0.893
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.841,
+    "family": 0.865,
+    "audited_n": 29,
+    "right": 0.862,
+    "right_or_close": 0.897
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.698,
+    "family": 0.818,
+    "audited_n": 119,
+    "right": 0.546,
+    "right_or_close": 0.647
+   }
+  },
+  "precision by score rank": {
+   "sam3 vote share": {
+    "me340": {
+     "0.2": 0.277,
+     "0.4": 0.274,
+     "0.6": 0.211,
+     "0.8": 0.168,
+     "1.0": 0.172
+    },
+    "samsclub-a2": {
+     "0.2": 0.642,
+     "0.4": 0.709,
+     "0.6": 0.705,
+     "0.8": 0.715,
+     "1.0": 0.688
+    },
+    "walmart": {
+     "0.2": 0.985,
+     "0.4": 0.981,
+     "0.6": 0.951,
+     "0.8": 0.935,
+     "1.0": 0.865
+    }
+   }
+  }
+ },
+ "b_detector": {
+  "model": "google/owlv2-base-patch16-ensemble",
+  "match": "OWLv2 box IoU >= 0.5 with the mask's box on each view; best score per class per view, mean over views",
+  "all cards (no match = wrong)": {
+   "me340": {
+    "n": 238,
+    "class": 0.172,
+    "family": 0.307,
+    "audited_n": 62,
+    "right": 0.323,
+    "right_or_close": 0.484
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.555,
+    "family": 0.794,
+    "audited_n": 28,
+    "right": 0.643,
+    "right_or_close": 0.75
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.311,
+    "family": 0.612,
+    "audited_n": 29,
+    "right": 0.172,
+    "right_or_close": 0.483
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.388,
+    "family": 0.638,
+    "audited_n": 119,
+    "right": 0.361,
+    "right_or_close": 0.546
+   }
+  },
+  "coverage (a matched box)": {
+   "me340": 0.803,
+   "samsclub-a2": 0.873,
+   "walmart": 0.785
+  },
+  "precision by score rank": {
+   "me340": {
+    "0.2": 0.404,
+    "0.4": 0.263,
+    "0.6": 0.232,
+    "0.8": 0.211,
+    "1.0": 0.172
+   },
+   "samsclub-a2": {
+    "0.2": 0.585,
+    "0.4": 0.652,
+    "0.6": 0.654,
+    "0.8": 0.65,
+    "1.0": 0.555
+   },
+   "walmart": {
+    "0.2": 0.77,
+    "0.4": 0.615,
+    "0.6": 0.474,
+    "0.8": 0.389,
+    "1.0": 0.311
+   }
+  },
+  "agrees with the SAM 3 word": {
+   "me340": {
+    "share": 0.118,
+    "agreement_with_gemini_when_they_agree": 0.357
+   },
+   "samsclub-a2": {
+    "share": 0.547,
+    "agreement_with_gemini_when_they_agree": 0.828
+   },
+   "walmart": {
+    "share": 0.32,
+    "agreement_with_gemini_when_they_agree": 0.903
+   }
+  }
+ },
+ "c_jev": {
+  "candidates": {
+   "me340": {
+    "median_options": 11.0,
+    "gemini_label_among_options": 0.786
+   },
+   "samsclub-a2": {
+    "median_options": 8.0,
+    "gemini_label_among_options": 0.972
+   },
+   "walmart": {
+    "median_options": 8.0,
+    "gemini_label_among_options": 0.961
+   }
+  },
+  "forced choice (top option)": {
+   "me340": {
+    "n": 238,
+    "class": 0.202,
+    "family": 0.387,
+    "audited_n": 62,
+    "right": 0.403,
+    "right_or_close": 0.613
+   },
+   "samsclub-a2": {
+    "n": 618,
+    "class": 0.204,
+    "family": 0.841,
+    "audited_n": 28,
+    "right": 0.571,
+    "right_or_close": 0.786
+   },
+   "walmart": {
+    "n": 675,
+    "class": 0.495,
+    "family": 0.756,
+    "audited_n": 29,
+    "right": 0.586,
+    "right_or_close": 0.69
+   },
+   "all": {
+    "n": 1531,
+    "class": 0.332,
+    "family": 0.733,
+    "audited_n": 119,
+    "right": 0.487,
+    "right_or_close": 0.672
+   }
+  },
+  "none_of_these_chosen": 0.0,
+  "precision by p": {
+   "me340": {
+    "p>=0.5": {
+     "coverage": 0.55,
+     "class": 0.298
+    },
+    "p>=0.7": {
+     "coverage": 0.324,
+     "class": 0.351
+    },
+    "p>=0.9": {
+     "coverage": 0.122,
+     "class": 0.483
+    },
+    "p>=0.95": {
+     "coverage": 0.05,
+     "class": 0.583
+    },
+    "ece_top_option_vs_gemini_class": 0.3725
+   },
+   "samsclub-a2": {
+    "p>=0.5": {
+     "coverage": 0.688,
+     "class": 0.202
+    },
+    "p>=0.7": {
+     "coverage": 0.469,
+     "class": 0.217
+    },
+    "p>=0.9": {
+     "coverage": 0.197,
+     "class": 0.279
+    },
+    "p>=0.95": {
+     "coverage": 0.104,
+     "class": 0.266
+    },
+    "ece_top_option_vs_gemini_class": 0.4529
+   },
+   "walmart": {
+    "p>=0.5": {
+     "coverage": 0.729,
+     "class": 0.565
+    },
+    "p>=0.7": {
+     "coverage": 0.492,
+     "class": 0.648
+    },
+    "p>=0.9": {
+     "coverage": 0.256,
+     "class": 0.769
+    },
+    "p>=0.95": {
+     "coverage": 0.16,
+     "class": 0.833
+    },
+    "ece_top_option_vs_gemini_class": 0.1852
+   },
+   "all": {
+    "p>=0.5": {
+     "coverage": 0.685,
+     "class": 0.385
+    },
+    "p>=0.7": {
+     "coverage": 0.457,
+     "class": 0.436
+    },
+    "p>=0.9": {
+     "coverage": 0.212,
+     "class": 0.559
+    },
+    "p>=0.95": {
+     "coverage": 0.12,
+     "class": 0.62
+    },
+    "ece_top_option_vs_gemini_class": 0.3219
+   }
+  }
+ },
+ "d_cascade": {
+  "class>=0.90, pooled": {
+   "folds": {
+    "me340": {
+     "trained_on": [
+      "samsclub-a2",
+      "walmart"
+     ],
+     "knn_key": [
+      "dinov2-l",
+      "plain+masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.5688,
+      "sam3+zero-shot/owl": 0.9763,
+      "sam3 word": null,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.44,
+      "cluster": 0.0
+     }
+    },
+    "samsclub-a2": {
+     "trained_on": [
+      "me340",
+      "walmart"
+     ],
+     "knn_key": [
+      "dinov2-l",
+      "plain+masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "plain+masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": null,
+      "sam3+zero-shot/owl": 0.8047,
+      "sam3 word": null,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.6,
+      "cluster": 0.0
+     }
+    },
+    "walmart": {
+     "trained_on": [
+      "me340",
+      "samsclub-a2"
+     ],
+     "knn_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.1287,
+      "sam3+zero-shot/owl": null,
+      "sam3 word": null,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.0,
+      "cluster": 0.0
+     }
+    }
+   },
+   "per_video": {
+    "me340": {
+     "cards": 254,
+     "vlm_share": 0.846,
+     "vlm_objects": 215,
+     "vlm_requests_14": 16,
+     "tier_share": {
+      "tier1": 0.039,
+      "jev": 0.0,
+      "cluster": 0.114,
+      "vlm": 0.846
+     },
+     "accepted_vs_gemini": {
+      "n": 35,
+      "class": 0.343,
+      "family": 0.457
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 10,
+       "class": 0.4
+      },
+      "cluster+sam3": {
+       "n": 29,
+       "class": 0.32
+      }
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.694,
+      "final_right_or_close": 0.839,
+      "accepted_n": 12,
+      "accepted_right": 0.583,
+      "accepted_right_or_close": 0.667,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    "samsclub-a2": {
+     "cards": 622,
+     "vlm_share": 0.272,
+     "vlm_objects": 169,
+     "vlm_requests_14": 13,
+     "tier_share": {
+      "tier1": 0.395,
+      "jev": 0.0,
+      "cluster": 0.333,
+      "vlm": 0.272
+     },
+     "accepted_vs_gemini": {
+      "n": 452,
+      "class": 0.816,
+      "family": 0.978
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 246,
+       "class": 0.785
+      },
+      "cluster+sam3": {
+       "n": 207,
+       "class": 0.854
+      }
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.893,
+      "accepted_n": 21,
+      "accepted_right": 0.905,
+      "accepted_right_or_close": 0.905,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    "walmart": {
+     "cards": 720,
+     "vlm_share": 0.824,
+     "vlm_objects": 593,
+     "vlm_requests_14": 43,
+     "tier_share": {
+      "tier1": 0.176,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.824
+     },
+     "accepted_vs_gemini": {
+      "n": 125,
+      "class": 0.896,
+      "family": 0.944
+     },
+     "by_rule": {
+      "sam3+cross bank": {
+       "n": 127,
+       "class": 0.896
+      }
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.897,
+      "final_right_or_close": 0.897,
+      "accepted_n": 5,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    "all": {
+     "cards": 1596,
+     "vlm_share": 0.612,
+     "vlm_objects": 977,
+     "vlm_requests_14": 72,
+     "tier_share": {
+      "tier1": 0.24,
+      "jev": 0.0,
+      "cluster": 0.148,
+      "vlm": 0.612
+     },
+     "accepted_vs_gemini": {
+      "n": 612,
+      "class": 0.806,
+      "family": 0.941
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 256,
+       "class": 0.77
+      },
+      "cluster+sam3": {
+       "n": 236,
+       "class": 0.797
+      },
+      "sam3+cross bank": {
+       "n": 127,
+       "class": 0.896
+      }
+     },
+     "audited": {
+      "n": 119,
+      "final_right": 0.79,
+      "final_right_or_close": 0.866,
+      "accepted_n": 38,
+      "accepted_right": 0.816,
+      "accepted_right_or_close": 0.842,
+      "gemini_right": 0.815,
+      "gemini_right_or_close": 0.891
+     }
+    }
+   }
+  },
+  "class>=0.80, pooled": {
+   "folds": {
+    "me340": {
+     "trained_on": [
+      "samsclub-a2",
+      "walmart"
+     ],
+     "knn_key": [
+      "dinov2-l",
+      "plain+masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.303,
+      "sam3+zero-shot/owl": 0.3269,
+      "sam3 word": 0.5286,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.0,
+      "cluster": 0.0
+     }
+    },
+    "samsclub-a2": {
+     "trained_on": [
+      "me340",
+      "walmart"
+     ],
+     "knn_key": [
+      "dinov2-l",
+      "plain+masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "plain+masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": null,
+      "sam3+zero-shot/owl": 0.287,
+      "sam3 word": 0.6036,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.0,
+      "cluster": 0.0
+     }
+    },
+    "walmart": {
+     "trained_on": [
+      "me340",
+      "samsclub-a2"
+     ],
+     "knn_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.1287,
+      "sam3+zero-shot/owl": null,
+      "sam3 word": null,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.14,
+      "cluster": 0.0
+     }
+    }
+   },
+   "per_video": {
+    "me340": {
+     "cards": 254,
+     "vlm_share": 0.374,
+     "vlm_objects": 95,
+     "vlm_requests_14": 7,
+     "tier_share": {
+      "tier1": 0.626,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.374
+     },
+     "accepted_vs_gemini": {
+      "n": 146,
+      "class": 0.233,
+      "family": 0.411
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 60,
+       "class": 0.305
+      },
+      "sam3 word": {
+       "n": 95,
+       "class": 0.181
+      },
+      "sam3+cross bank": {
+       "n": 4,
+       "class": 0.25
+      }
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    "samsclub-a2": {
+     "cards": 622,
+     "vlm_share": 0.084,
+     "vlm_objects": 52,
+     "vlm_requests_14": 4,
+     "tier_share": {
+      "tier1": 0.916,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.084
+     },
+     "accepted_vs_gemini": {
+      "n": 567,
+      "class": 0.727,
+      "family": 0.959
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 460,
+       "class": 0.789
+      },
+      "sam3 word": {
+       "n": 110,
+       "class": 0.463
+      }
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.929,
+      "accepted_n": 26,
+      "accepted_right": 0.885,
+      "accepted_right_or_close": 0.923,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    "walmart": {
+     "cards": 720,
+     "vlm_share": 0.236,
+     "vlm_objects": 170,
+     "vlm_requests_14": 13,
+     "tier_share": {
+      "tier1": 0.176,
+      "jev": 0.0,
+      "cluster": 0.588,
+      "vlm": 0.236
+     },
+     "accepted_vs_gemini": {
+      "n": 510,
+      "class": 0.931,
+      "family": 0.945
+     },
+     "by_rule": {
+      "sam3+cross bank": {
+       "n": 127,
+       "class": 0.896
+      },
+      "cluster+sam3": {
+       "n": 423,
+       "class": 0.943
+      }
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.931,
+      "final_right_or_close": 0.931,
+      "accepted_n": 19,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    "all": {
+     "cards": 1596,
+     "vlm_share": 0.199,
+     "vlm_objects": 317,
+     "vlm_requests_14": 24,
+     "tier_share": {
+      "tier1": 0.536,
+      "jev": 0.0,
+      "cluster": 0.265,
+      "vlm": 0.199
+     },
+     "accepted_vs_gemini": {
+      "n": 1223,
+      "class": 0.753,
+      "family": 0.888
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 520,
+       "class": 0.734
+      },
+      "sam3 word": {
+       "n": 205,
+       "class": 0.34
+      },
+      "sam3+cross bank": {
+       "n": 131,
+       "class": 0.876
+      },
+      "cluster+sam3": {
+       "n": 423,
+       "class": 0.943
+      }
+     },
+     "audited": {
+      "n": 119,
+      "final_right": 0.723,
+      "final_right_or_close": 0.832,
+      "accepted_n": 87,
+      "accepted_right": 0.701,
+      "accepted_right_or_close": 0.828,
+      "gemini_right": 0.815,
+      "gemini_right_or_close": 0.891
+     }
+    }
+   }
+  },
+  "family>=0.95, pooled": {
+   "folds": {
+    "me340": {
+     "trained_on": [
+      "samsclub-a2",
+      "walmart"
+     ],
+     "knn_key": [
+      "dinov2-l",
+      "plain+masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.5107,
+      "sam3+zero-shot/owl": 0.3269,
+      "sam3 word": 0.7582,
+      "cross bank": 0.7559,
+      "jev": null,
+      "cluster_verified": 0.0,
+      "cluster": 0.0
+     }
+    },
+    "samsclub-a2": {
+     "trained_on": [
+      "me340",
+      "walmart"
+     ],
+     "knn_key": [
+      "dinov2-l",
+      "plain+masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "plain+masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": null,
+      "sam3+zero-shot/owl": 0.8119,
+      "sam3 word": null,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.22,
+      "cluster": 0.0
+     }
+    },
+    "walmart": {
+     "trained_on": [
+      "me340",
+      "samsclub-a2"
+     ],
+     "knn_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.1287,
+      "sam3+zero-shot/owl": 0.8067,
+      "sam3 word": null,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.04,
+      "cluster": 0.0
+     }
+    }
+   },
+   "per_video": {
+    "me340": {
+     "cards": 254,
+     "vlm_share": 0.551,
+     "vlm_objects": 140,
+     "vlm_requests_14": 10,
+     "tier_share": {
+      "tier1": 0.449,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.551
+     },
+     "accepted_vs_gemini": {
+      "n": 106,
+      "class": 0.255,
+      "family": 0.406
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 61,
+       "class": 0.3
+      },
+      "cross bank": {
+       "n": 5,
+       "class": 0.0
+      },
+      "sam3 word": {
+       "n": 48,
+       "class": 0.22
+      }
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.613,
+      "final_right_or_close": 0.79,
+      "accepted_n": 33,
+      "accepted_right": 0.455,
+      "accepted_right_or_close": 0.697,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    "samsclub-a2": {
+     "cards": 622,
+     "vlm_share": 0.35,
+     "vlm_objects": 218,
+     "vlm_requests_14": 16,
+     "tier_share": {
+      "tier1": 0.391,
+      "jev": 0.0,
+      "cluster": 0.259,
+      "vlm": 0.35
+     },
+     "accepted_vs_gemini": {
+      "n": 403,
+      "class": 0.836,
+      "family": 0.978
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 243,
+       "class": 0.782
+      },
+      "cluster+sam3": {
+       "n": 161,
+       "class": 0.919
+      }
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.893,
+      "accepted_n": 15,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    "walmart": {
+     "cards": 720,
+     "vlm_share": 0.517,
+     "vlm_objects": 372,
+     "vlm_requests_14": 27,
+     "tier_share": {
+      "tier1": 0.431,
+      "jev": 0.0,
+      "cluster": 0.053,
+      "vlm": 0.517
+     },
+     "accepted_vs_gemini": {
+      "n": 337,
+      "class": 0.929,
+      "family": 0.967
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 183,
+       "class": 0.945
+      },
+      "sam3+cross bank": {
+       "n": 127,
+       "class": 0.896
+      },
+      "cluster+sam3": {
+       "n": 38,
+       "class": 0.968
+      }
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.862,
+      "final_right_or_close": 0.862,
+      "accepted_n": 10,
+      "accepted_right": 0.9,
+      "accepted_right_or_close": 0.9,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    "all": {
+     "cards": 1596,
+     "vlm_share": 0.457,
+     "vlm_objects": 730,
+     "vlm_requests_14": 53,
+     "tier_share": {
+      "tier1": 0.418,
+      "jev": 0.0,
+      "cluster": 0.125,
+      "vlm": 0.457
+     },
+     "accepted_vs_gemini": {
+      "n": 846,
+      "class": 0.8,
+      "family": 0.902
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 487,
+       "class": 0.783
+      },
+      "cross bank": {
+       "n": 5,
+       "class": 0.0
+      },
+      "sam3 word": {
+       "n": 48,
+       "class": 0.22
+      },
+      "cluster+sam3": {
+       "n": 199,
+       "class": 0.927
+      },
+      "sam3+cross bank": {
+       "n": 127,
+       "class": 0.896
+      }
+     },
+     "audited": {
+      "n": 119,
+      "final_right": 0.739,
+      "final_right_or_close": 0.832,
+      "accepted_n": 58,
+      "accepted_right": 0.672,
+      "accepted_right_or_close": 0.81,
+      "gemini_right": 0.815,
+      "gemini_right_or_close": 0.891
+     }
+    }
+   }
+  },
+  "class>=0.80, same domain": {
+   "folds": {
+    "me340": {
+     "trained_on": [
+      "samsclub-a2",
+      "walmart"
+     ],
+     "knn_key": [
+      "dinov2-l",
+      "plain+masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.303,
+      "sam3+zero-shot/owl": 0.3269,
+      "sam3 word": 0.5286,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.0,
+      "cluster": 0.0
+     }
+    },
+    "samsclub-a2": {
+     "trained_on": [
+      "walmart"
+     ],
+     "knn_key": [
+      "dinov2-l",
+      "plain+masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.1596,
+      "sam3+zero-shot/owl": 0.4571,
+      "sam3 word": 0.3312,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.0,
+      "cluster": 0.0
+     }
+    },
+    "walmart": {
+     "trained_on": [
+      "samsclub-a2"
+     ],
+     "knn_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.1287,
+      "sam3+zero-shot/owl": 0.3269,
+      "sam3 word": null,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.28,
+      "cluster": 0.16
+     }
+    }
+   },
+   "per_video": {
+    "me340": {
+     "cards": 254,
+     "vlm_share": 0.374,
+     "vlm_objects": 95,
+     "vlm_requests_14": 7,
+     "tier_share": {
+      "tier1": 0.626,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.374
+     },
+     "accepted_vs_gemini": {
+      "n": 146,
+      "class": 0.233,
+      "family": 0.411
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 60,
+       "class": 0.305
+      },
+      "sam3 word": {
+       "n": 95,
+       "class": 0.181
+      },
+      "sam3+cross bank": {
+       "n": 4,
+       "class": 0.25
+      }
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    "samsclub-a2": {
+     "cards": 622,
+     "vlm_share": 0.003,
+     "vlm_objects": 2,
+     "vlm_requests_14": 1,
+     "tier_share": {
+      "tier1": 0.997,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.003
+     },
+     "accepted_vs_gemini": {
+      "n": 616,
+      "class": 0.69,
+      "family": 0.963
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 266,
+       "class": 0.741
+      },
+      "sam3 word": {
+       "n": 154,
+       "class": 0.338
+      },
+      "sam3+cross bank": {
+       "n": 200,
+       "class": 0.889
+      }
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.857,
+      "final_right_or_close": 0.929,
+      "accepted_n": 27,
+      "accepted_right": 0.852,
+      "accepted_right_or_close": 0.926,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    "walmart": {
+     "cards": 720,
+     "vlm_share": 0.028,
+     "vlm_objects": 20,
+     "vlm_requests_14": 2,
+     "tier_share": {
+      "tier1": 0.471,
+      "jev": 0.0,
+      "cluster": 0.501,
+      "vlm": 0.028
+     },
+     "accepted_vs_gemini": {
+      "n": 655,
+      "class": 0.867,
+      "family": 0.902
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 212,
+       "class": 0.905
+      },
+      "sam3+cross bank": {
+       "n": 127,
+       "class": 0.896
+      },
+      "cluster+sam3": {
+       "n": 290,
+       "class": 0.948
+      },
+      "cluster": {
+       "n": 71,
+       "class": 0.423
+      }
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.828,
+      "final_right_or_close": 0.862,
+      "accepted_n": 26,
+      "accepted_right": 0.846,
+      "accepted_right_or_close": 0.885,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    "all": {
+     "cards": 1596,
+     "vlm_share": 0.073,
+     "vlm_objects": 117,
+     "vlm_requests_14": 10,
+     "tier_share": {
+      "tier1": 0.701,
+      "jev": 0.0,
+      "cluster": 0.226,
+      "vlm": 0.073
+     },
+     "accepted_vs_gemini": {
+      "n": 1417,
+      "class": 0.725,
+      "family": 0.878
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 538,
+       "class": 0.757
+      },
+      "sam3 word": {
+       "n": 249,
+       "class": 0.282
+      },
+      "sam3+cross bank": {
+       "n": 331,
+       "class": 0.884
+      },
+      "cluster+sam3": {
+       "n": 290,
+       "class": 0.948
+      },
+      "cluster": {
+       "n": 71,
+       "class": 0.423
+      }
+     },
+     "audited": {
+      "n": 119,
+      "final_right": 0.689,
+      "final_right_or_close": 0.815,
+      "accepted_n": 95,
+      "accepted_right": 0.674,
+      "accepted_right_or_close": 0.811,
+      "gemini_right": 0.815,
+      "gemini_right_or_close": 0.891
+     }
+    }
+   }
+  },
+  "class>=0.90, same domain": {
+   "folds": {
+    "me340": {
+     "trained_on": [
+      "samsclub-a2",
+      "walmart"
+     ],
+     "knn_key": [
+      "dinov2-l",
+      "plain+masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.5688,
+      "sam3+zero-shot/owl": 0.9763,
+      "sam3 word": null,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.44,
+      "cluster": 0.0
+     }
+    },
+    "samsclub-a2": {
+     "trained_on": [
+      "walmart"
+     ],
+     "knn_key": [
+      "dinov2-l",
+      "plain+masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.1596,
+      "sam3+zero-shot/owl": 0.4571,
+      "sam3 word": 0.6963,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.0,
+      "cluster": 0.0
+     }
+    },
+    "walmart": {
+     "trained_on": [
+      "samsclub-a2"
+     ],
+     "knn_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "zero_shot_key": [
+      "pe-core-l",
+      "masked"
+     ],
+     "thresholds": {
+      "sam3+cross bank": 0.1287,
+      "sam3+zero-shot/owl": null,
+      "sam3 word": null,
+      "cross bank": null,
+      "jev": null,
+      "cluster_verified": 0.08,
+      "cluster": 0.0
+     }
+    }
+   },
+   "per_video": {
+    "me340": {
+     "cards": 254,
+     "vlm_share": 0.846,
+     "vlm_objects": 215,
+     "vlm_requests_14": 16,
+     "tier_share": {
+      "tier1": 0.039,
+      "jev": 0.0,
+      "cluster": 0.114,
+      "vlm": 0.846
+     },
+     "accepted_vs_gemini": {
+      "n": 35,
+      "class": 0.343,
+      "family": 0.457
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 10,
+       "class": 0.4
+      },
+      "cluster+sam3": {
+       "n": 29,
+       "class": 0.32
+      }
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.694,
+      "final_right_or_close": 0.839,
+      "accepted_n": 12,
+      "accepted_right": 0.583,
+      "accepted_right_or_close": 0.667,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    "samsclub-a2": {
+     "cards": 622,
+     "vlm_share": 0.111,
+     "vlm_objects": 69,
+     "vlm_requests_14": 5,
+     "tier_share": {
+      "tier1": 0.889,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.111
+     },
+     "accepted_vs_gemini": {
+      "n": 551,
+      "class": 0.748,
+      "family": 0.966
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 266,
+       "class": 0.741
+      },
+      "sam3 word": {
+       "n": 87,
+       "class": 0.442
+      },
+      "sam3+cross bank": {
+       "n": 200,
+       "class": 0.889
+      }
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.929,
+      "accepted_n": 26,
+      "accepted_right": 0.885,
+      "accepted_right_or_close": 0.923,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    "walmart": {
+     "cards": 720,
+     "vlm_share": 0.435,
+     "vlm_objects": 313,
+     "vlm_requests_14": 23,
+     "tier_share": {
+      "tier1": 0.176,
+      "jev": 0.0,
+      "cluster": 0.389,
+      "vlm": 0.435
+     },
+     "accepted_vs_gemini": {
+      "n": 376,
+      "class": 0.934,
+      "family": 0.952
+     },
+     "by_rule": {
+      "sam3+cross bank": {
+       "n": 127,
+       "class": 0.896
+      },
+      "cluster+sam3": {
+       "n": 280,
+       "class": 0.952
+      }
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.931,
+      "final_right_or_close": 0.931,
+      "accepted_n": 15,
+      "accepted_right": 0.933,
+      "accepted_right_or_close": 0.933,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    "all": {
+     "cards": 1596,
+     "vlm_share": 0.374,
+     "vlm_objects": 597,
+     "vlm_requests_14": 44,
+     "tier_share": {
+      "tier1": 0.432,
+      "jev": 0.0,
+      "cluster": 0.194,
+      "vlm": 0.374
+     },
+     "accepted_vs_gemini": {
+      "n": 962,
+      "class": 0.806,
+      "family": 0.942
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 276,
+       "class": 0.728
+      },
+      "cluster+sam3": {
+       "n": 309,
+       "class": 0.895
+      },
+      "sam3 word": {
+       "n": 87,
+       "class": 0.442
+      },
+      "sam3+cross bank": {
+       "n": 327,
+       "class": 0.892
+      }
+     },
+     "audited": {
+      "n": 119,
+      "final_right": 0.798,
+      "final_right_or_close": 0.882,
+      "accepted_n": 53,
+      "accepted_right": 0.83,
+      "accepted_right_or_close": 0.868,
+      "gemini_right": 0.815,
+      "gemini_right_or_close": 0.891
+     }
+    }
+   }
+  },
+  "class>=0.80, pooled: without the in-video clusters (tier 1 + Jev, the rest to the VLM)": {
+   "per_video": {
+    "me340": {
+     "cards": 254,
+     "vlm_share": 0.374,
+     "vlm_objects": 95,
+     "vlm_requests_14": 7,
+     "tier_share": {
+      "tier1": 0.626,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.374
+     },
+     "accepted_vs_gemini": {
+      "n": 146,
+      "class": 0.233,
+      "family": 0.411
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 60,
+       "class": 0.305
+      },
+      "sam3 word": {
+       "n": 95,
+       "class": 0.181
+      },
+      "sam3+cross bank": {
+       "n": 4,
+       "class": 0.25
+      }
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    "samsclub-a2": {
+     "cards": 622,
+     "vlm_share": 0.084,
+     "vlm_objects": 52,
+     "vlm_requests_14": 4,
+     "tier_share": {
+      "tier1": 0.916,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.084
+     },
+     "accepted_vs_gemini": {
+      "n": 567,
+      "class": 0.727,
+      "family": 0.959
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 460,
+       "class": 0.789
+      },
+      "sam3 word": {
+       "n": 110,
+       "class": 0.463
+      }
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.929,
+      "accepted_n": 26,
+      "accepted_right": 0.885,
+      "accepted_right_or_close": 0.923,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    "walmart": {
+     "cards": 720,
+     "vlm_share": 0.824,
+     "vlm_objects": 593,
+     "vlm_requests_14": 43,
+     "tier_share": {
+      "tier1": 0.176,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.824
+     },
+     "accepted_vs_gemini": {
+      "n": 125,
+      "class": 0.896,
+      "family": 0.944
+     },
+     "by_rule": {
+      "sam3+cross bank": {
+       "n": 127,
+       "class": 0.896
+      }
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.897,
+      "final_right_or_close": 0.897,
+      "accepted_n": 5,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    "all": {
+     "cards": 1596,
+     "vlm_share": 0.464,
+     "vlm_objects": 740,
+     "vlm_requests_14": 54,
+     "tier_share": {
+      "tier1": 0.536,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.464
+     },
+     "accepted_vs_gemini": {
+      "n": 838,
+      "class": 0.666,
+      "family": 0.862
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 520,
+       "class": 0.734
+      },
+      "sam3 word": {
+       "n": 205,
+       "class": 0.34
+      },
+      "sam3+cross bank": {
+       "n": 131,
+       "class": 0.876
+      }
+     },
+     "audited": {
+      "n": 119,
+      "final_right": 0.714,
+      "final_right_or_close": 0.824,
+      "accepted_n": 73,
+      "accepted_right": 0.644,
+      "accepted_right_or_close": 0.795,
+      "gemini_right": 0.815,
+      "gemini_right_or_close": 0.891
+     }
+    }
+   }
+  },
+  "class>=0.80, pooled: without Jev-Omni": {
+   "per_video": {
+    "me340": {
+     "cards": 254,
+     "vlm_share": 0.374,
+     "vlm_objects": 95,
+     "vlm_requests_14": 7,
+     "tier_share": {
+      "tier1": 0.626,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.374
+     },
+     "accepted_vs_gemini": {
+      "n": 146,
+      "class": 0.233,
+      "family": 0.411
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 60,
+       "class": 0.305
+      },
+      "sam3 word": {
+       "n": 95,
+       "class": 0.181
+      },
+      "sam3+cross bank": {
+       "n": 4,
+       "class": 0.25
+      }
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    "samsclub-a2": {
+     "cards": 622,
+     "vlm_share": 0.084,
+     "vlm_objects": 52,
+     "vlm_requests_14": 4,
+     "tier_share": {
+      "tier1": 0.916,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.084
+     },
+     "accepted_vs_gemini": {
+      "n": 567,
+      "class": 0.727,
+      "family": 0.959
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 460,
+       "class": 0.789
+      },
+      "sam3 word": {
+       "n": 110,
+       "class": 0.463
+      }
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.929,
+      "accepted_n": 26,
+      "accepted_right": 0.885,
+      "accepted_right_or_close": 0.923,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    "walmart": {
+     "cards": 720,
+     "vlm_share": 0.236,
+     "vlm_objects": 170,
+     "vlm_requests_14": 13,
+     "tier_share": {
+      "tier1": 0.176,
+      "jev": 0.0,
+      "cluster": 0.588,
+      "vlm": 0.236
+     },
+     "accepted_vs_gemini": {
+      "n": 510,
+      "class": 0.931,
+      "family": 0.945
+     },
+     "by_rule": {
+      "sam3+cross bank": {
+       "n": 127,
+       "class": 0.896
+      },
+      "cluster+sam3": {
+       "n": 423,
+       "class": 0.943
+      }
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.931,
+      "final_right_or_close": 0.931,
+      "accepted_n": 19,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    "all": {
+     "cards": 1596,
+     "vlm_share": 0.199,
+     "vlm_objects": 317,
+     "vlm_requests_14": 24,
+     "tier_share": {
+      "tier1": 0.536,
+      "jev": 0.0,
+      "cluster": 0.265,
+      "vlm": 0.199
+     },
+     "accepted_vs_gemini": {
+      "n": 1223,
+      "class": 0.753,
+      "family": 0.888
+     },
+     "by_rule": {
+      "sam3+zero-shot/owl": {
+       "n": 520,
+       "class": 0.734
+      },
+      "sam3 word": {
+       "n": 205,
+       "class": 0.34
+      },
+      "sam3+cross bank": {
+       "n": 131,
+       "class": 0.876
+      },
+      "cluster+sam3": {
+       "n": 423,
+       "class": 0.943
+      }
+     },
+     "audited": {
+      "n": 119,
+      "final_right": 0.723,
+      "final_right_or_close": 0.832,
+      "accepted_n": 87,
+      "accepted_right": 0.701,
+      "accepted_right_or_close": 0.828,
+      "gemini_right": 0.815,
+      "gemini_right_or_close": 0.891
+     }
+    }
+   }
+  },
+  "failed design: stream, every final name written back, accept on the in-video vote share >= 0.8": {
+   "per_video": {
+    "me340": {
+     "cards": 254,
+     "vlm_share": 0.004,
+     "vlm_objects": 1,
+     "vlm_requests_14": 1,
+     "tier_share": {
+      "tier1": 0.996,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.004
+     },
+     "accepted_vs_gemini": {
+      "n": 237,
+      "class": 0.021,
+      "family": 0.118
+     },
+     "by_rule": {
+      "in-video bank": {
+       "n": 253,
+       "class": 0.021
+      }
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.194,
+      "final_right_or_close": 0.274,
+      "accepted_n": 62,
+      "accepted_right": 0.194,
+      "accepted_right_or_close": 0.274,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    "samsclub-a2": {
+     "cards": 622,
+     "vlm_share": 0.002,
+     "vlm_objects": 1,
+     "vlm_requests_14": 1,
+     "tier_share": {
+      "tier1": 0.998,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.002
+     },
+     "accepted_vs_gemini": {
+      "n": 617,
+      "class": 0.055,
+      "family": 0.95
+     },
+     "by_rule": {
+      "in-video bank": {
+       "n": 621,
+       "class": 0.055
+      }
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.714,
+      "final_right_or_close": 0.893,
+      "accepted_n": 28,
+      "accepted_right": 0.714,
+      "accepted_right_or_close": 0.893,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    "walmart": {
+     "cards": 720,
+     "vlm_share": 0.001,
+     "vlm_objects": 1,
+     "vlm_requests_14": 1,
+     "tier_share": {
+      "tier1": 0.999,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.001
+     },
+     "accepted_vs_gemini": {
+      "n": 674,
+      "class": 0.019,
+      "family": 0.098
+     },
+     "by_rule": {
+      "in-video bank": {
+       "n": 719,
+       "class": 0.019
+      }
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.034,
+      "final_right_or_close": 0.138,
+      "accepted_n": 29,
+      "accepted_right": 0.034,
+      "accepted_right_or_close": 0.138,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    "all": {
+     "cards": 1596,
+     "vlm_share": 0.002,
+     "vlm_objects": 3,
+     "vlm_requests_14": 3,
+     "tier_share": {
+      "tier1": 0.998,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.002
+     },
+     "accepted_vs_gemini": {
+      "n": 1528,
+      "class": 0.034,
+      "family": 0.445
+     },
+     "by_rule": {
+      "in-video bank": {
+       "n": 1593,
+       "class": 0.034
+      }
+     },
+     "audited": {
+      "n": 119,
+      "final_right": 0.277,
+      "final_right_or_close": 0.387,
+      "accepted_n": 119,
+      "accepted_right": 0.277,
+      "accepted_right_or_close": 0.387,
+      "gemini_right": 0.815,
+      "gemini_right_or_close": 0.891
+     }
+    }
+   }
+  }
+ },
+ "e_bank_growth": {
+  "class>=0.80, pooled": {
+   "me340 -> samsclub-a2 -> walmart": [
+    {
+     "video": "me340",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 2,
+     "bank_rows_before": 93,
+     "vlm_share": 0.084,
+     "tier_share": {
+      "tier1": 0.916,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.084
+     },
+     "accepted_vs_gemini": {
+      "n": 567,
+      "class": 0.727,
+      "family": 0.959
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.929,
+      "accepted_n": 26,
+      "accepted_right": 0.885,
+      "accepted_right_or_close": 0.923,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 3,
+     "bank_rows_before": 144,
+     "vlm_share": 0.244,
+     "tier_share": {
+      "tier1": 0.146,
+      "jev": 0.0,
+      "cluster": 0.61,
+      "vlm": 0.244
+     },
+     "accepted_vs_gemini": {
+      "n": 504,
+      "class": 0.935,
+      "family": 0.948
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.931,
+      "final_right_or_close": 0.931,
+      "accepted_n": 18,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    }
+   ],
+   "me340 -> walmart -> samsclub-a2": [
+    {
+     "video": "me340",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 2,
+     "bank_rows_before": 93,
+     "vlm_share": 0.281,
+     "tier_share": {
+      "tier1": 0.035,
+      "jev": 0.0,
+      "cluster": 0.685,
+      "vlm": 0.281
+     },
+     "accepted_vs_gemini": {
+      "n": 477,
+      "class": 0.95,
+      "family": 0.954
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.931,
+      "final_right_or_close": 0.931,
+      "accepted_n": 19,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 3,
+     "bank_rows_before": 291,
+     "vlm_share": 0.084,
+     "tier_share": {
+      "tier1": 0.916,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.084
+     },
+     "accepted_vs_gemini": {
+      "n": 567,
+      "class": 0.727,
+      "family": 0.959
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.929,
+      "accepted_n": 26,
+      "accepted_right": 0.885,
+      "accepted_right_or_close": 0.923,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    }
+   ],
+   "samsclub-a2 -> me340 -> walmart": [
+    {
+     "video": "samsclub-a2",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.084,
+     "tier_share": {
+      "tier1": 0.916,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.084
+     },
+     "accepted_vs_gemini": {
+      "n": 567,
+      "class": 0.727,
+      "family": 0.959
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.929,
+      "accepted_n": 26,
+      "accepted_right": 0.885,
+      "accepted_right_or_close": 0.923,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "me340",
+     "position": 2,
+     "bank_rows_before": 51,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 3,
+     "bank_rows_before": 144,
+     "vlm_share": 0.244,
+     "tier_share": {
+      "tier1": 0.146,
+      "jev": 0.0,
+      "cluster": 0.61,
+      "vlm": 0.244
+     },
+     "accepted_vs_gemini": {
+      "n": 504,
+      "class": 0.935,
+      "family": 0.948
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.931,
+      "final_right_or_close": 0.931,
+      "accepted_n": 18,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    }
+   ],
+   "samsclub-a2 -> walmart -> me340": [
+    {
+     "video": "samsclub-a2",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.084,
+     "tier_share": {
+      "tier1": 0.916,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.084
+     },
+     "accepted_vs_gemini": {
+      "n": 567,
+      "class": 0.727,
+      "family": 0.959
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.929,
+      "accepted_n": 26,
+      "accepted_right": 0.885,
+      "accepted_right_or_close": 0.923,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 2,
+     "bank_rows_before": 51,
+     "vlm_share": 0.247,
+     "tier_share": {
+      "tier1": 0.194,
+      "jev": 0.0,
+      "cluster": 0.558,
+      "vlm": 0.247
+     },
+     "accepted_vs_gemini": {
+      "n": 501,
+      "class": 0.928,
+      "family": 0.946
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.931,
+      "final_right_or_close": 0.966,
+      "accepted_n": 19,
+      "accepted_right": 0.947,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "me340",
+     "position": 3,
+     "bank_rows_before": 225,
+     "vlm_share": 0.346,
+     "tier_share": {
+      "tier1": 0.654,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.346
+     },
+     "accepted_vs_gemini": {
+      "n": 153,
+      "class": 0.222,
+      "family": 0.392
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.516,
+      "final_right_or_close": 0.71,
+      "accepted_n": 44,
+      "accepted_right": 0.432,
+      "accepted_right_or_close": 0.659,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    }
+   ],
+   "walmart -> me340 -> samsclub-a2": [
+    {
+     "video": "walmart",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.281,
+     "tier_share": {
+      "tier1": 0.0,
+      "jev": 0.0,
+      "cluster": 0.719,
+      "vlm": 0.281
+     },
+     "accepted_vs_gemini": {
+      "n": 478,
+      "class": 0.948,
+      "family": 0.952
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.931,
+      "final_right_or_close": 0.931,
+      "accepted_n": 19,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "me340",
+     "position": 2,
+     "bank_rows_before": 197,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 3,
+     "bank_rows_before": 290,
+     "vlm_share": 0.084,
+     "tier_share": {
+      "tier1": 0.916,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.084
+     },
+     "accepted_vs_gemini": {
+      "n": 567,
+      "class": 0.727,
+      "family": 0.959
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.929,
+      "accepted_n": 26,
+      "accepted_right": 0.885,
+      "accepted_right_or_close": 0.923,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    }
+   ],
+   "walmart -> samsclub-a2 -> me340": [
+    {
+     "video": "walmart",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.281,
+     "tier_share": {
+      "tier1": 0.0,
+      "jev": 0.0,
+      "cluster": 0.719,
+      "vlm": 0.281
+     },
+     "accepted_vs_gemini": {
+      "n": 478,
+      "class": 0.948,
+      "family": 0.952
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.931,
+      "final_right_or_close": 0.931,
+      "accepted_n": 19,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 2,
+     "bank_rows_before": 197,
+     "vlm_share": 0.084,
+     "tier_share": {
+      "tier1": 0.916,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.084
+     },
+     "accepted_vs_gemini": {
+      "n": 567,
+      "class": 0.727,
+      "family": 0.959
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.929,
+      "accepted_n": 26,
+      "accepted_right": 0.885,
+      "accepted_right_or_close": 0.923,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "me340",
+     "position": 3,
+     "bank_rows_before": 248,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    }
+   ]
+  },
+  "class>=0.90, pooled": {
+   "me340 -> samsclub-a2 -> walmart": [
+    {
+     "video": "me340",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.846,
+     "tier_share": {
+      "tier1": 0.039,
+      "jev": 0.0,
+      "cluster": 0.114,
+      "vlm": 0.846
+     },
+     "accepted_vs_gemini": {
+      "n": 35,
+      "class": 0.343,
+      "family": 0.457
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.694,
+      "final_right_or_close": 0.839,
+      "accepted_n": 12,
+      "accepted_right": 0.583,
+      "accepted_right_or_close": 0.667,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 2,
+     "bank_rows_before": 203,
+     "vlm_share": 0.272,
+     "tier_share": {
+      "tier1": 0.395,
+      "jev": 0.0,
+      "cluster": 0.333,
+      "vlm": 0.272
+     },
+     "accepted_vs_gemini": {
+      "n": 452,
+      "class": 0.816,
+      "family": 0.978
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.893,
+      "accepted_n": 21,
+      "accepted_right": 0.905,
+      "accepted_right_or_close": 0.905,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 3,
+     "bank_rows_before": 369,
+     "vlm_share": 0.879,
+     "tier_share": {
+      "tier1": 0.121,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.879
+     },
+     "accepted_vs_gemini": {
+      "n": 86,
+      "class": 0.884,
+      "family": 0.942
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.897,
+      "final_right_or_close": 0.897,
+      "accepted_n": 3,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    }
+   ],
+   "me340 -> walmart -> samsclub-a2": [
+    {
+     "video": "me340",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.846,
+     "tier_share": {
+      "tier1": 0.039,
+      "jev": 0.0,
+      "cluster": 0.114,
+      "vlm": 0.846
+     },
+     "accepted_vs_gemini": {
+      "n": 35,
+      "class": 0.343,
+      "family": 0.457
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.694,
+      "final_right_or_close": 0.839,
+      "accepted_n": 12,
+      "accepted_right": 0.583,
+      "accepted_right_or_close": 0.667,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 2,
+     "bank_rows_before": 203,
+     "vlm_share": 0.981,
+     "tier_share": {
+      "tier1": 0.019,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.981
+     },
+     "accepted_vs_gemini": {
+      "n": 13,
+      "class": 0.923,
+      "family": 1.0
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.897,
+      "final_right_or_close": 0.897,
+      "accepted_n": 0,
+      "accepted_right": null,
+      "accepted_right_or_close": null,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 3,
+     "bank_rows_before": 865,
+     "vlm_share": 0.272,
+     "tier_share": {
+      "tier1": 0.395,
+      "jev": 0.0,
+      "cluster": 0.333,
+      "vlm": 0.272
+     },
+     "accepted_vs_gemini": {
+      "n": 452,
+      "class": 0.816,
+      "family": 0.978
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.893,
+      "accepted_n": 21,
+      "accepted_right": 0.905,
+      "accepted_right_or_close": 0.905,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    }
+   ],
+   "samsclub-a2 -> me340 -> walmart": [
+    {
+     "video": "samsclub-a2",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.272,
+     "tier_share": {
+      "tier1": 0.395,
+      "jev": 0.0,
+      "cluster": 0.333,
+      "vlm": 0.272
+     },
+     "accepted_vs_gemini": {
+      "n": 452,
+      "class": 0.816,
+      "family": 0.978
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.893,
+      "accepted_n": 21,
+      "accepted_right": 0.905,
+      "accepted_right_or_close": 0.905,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "me340",
+     "position": 2,
+     "bank_rows_before": 166,
+     "vlm_share": 0.846,
+     "tier_share": {
+      "tier1": 0.039,
+      "jev": 0.0,
+      "cluster": 0.114,
+      "vlm": 0.846
+     },
+     "accepted_vs_gemini": {
+      "n": 35,
+      "class": 0.343,
+      "family": 0.457
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.694,
+      "final_right_or_close": 0.839,
+      "accepted_n": 12,
+      "accepted_right": 0.583,
+      "accepted_right_or_close": 0.667,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 3,
+     "bank_rows_before": 369,
+     "vlm_share": 0.879,
+     "tier_share": {
+      "tier1": 0.121,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.879
+     },
+     "accepted_vs_gemini": {
+      "n": 86,
+      "class": 0.884,
+      "family": 0.942
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.897,
+      "final_right_or_close": 0.897,
+      "accepted_n": 3,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    }
+   ],
+   "samsclub-a2 -> walmart -> me340": [
+    {
+     "video": "samsclub-a2",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.272,
+     "tier_share": {
+      "tier1": 0.395,
+      "jev": 0.0,
+      "cluster": 0.333,
+      "vlm": 0.272
+     },
+     "accepted_vs_gemini": {
+      "n": 452,
+      "class": 0.816,
+      "family": 0.978
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.893,
+      "accepted_n": 21,
+      "accepted_right": 0.905,
+      "accepted_right_or_close": 0.905,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 2,
+     "bank_rows_before": 166,
+     "vlm_share": 0.849,
+     "tier_share": {
+      "tier1": 0.151,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.849
+     },
+     "accepted_vs_gemini": {
+      "n": 109,
+      "class": 0.899,
+      "family": 0.945
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.897,
+      "final_right_or_close": 0.897,
+      "accepted_n": 3,
+      "accepted_right": 1.0,
+      "accepted_right_or_close": 1.0,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "me340",
+     "position": 3,
+     "bank_rows_before": 732,
+     "vlm_share": 0.846,
+     "tier_share": {
+      "tier1": 0.039,
+      "jev": 0.0,
+      "cluster": 0.114,
+      "vlm": 0.846
+     },
+     "accepted_vs_gemini": {
+      "n": 35,
+      "class": 0.343,
+      "family": 0.457
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.694,
+      "final_right_or_close": 0.839,
+      "accepted_n": 12,
+      "accepted_right": 0.583,
+      "accepted_right_or_close": 0.667,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    }
+   ],
+   "walmart -> me340 -> samsclub-a2": [
+    {
+     "video": "walmart",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 1.0,
+     "tier_share": {
+      "tier1": 0.0,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 1.0
+     },
+     "accepted_vs_gemini": {
+      "n": 0,
+      "class": null,
+      "family": null
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.897,
+      "final_right_or_close": 0.897,
+      "accepted_n": 0,
+      "accepted_right": null,
+      "accepted_right_or_close": null,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "me340",
+     "position": 2,
+     "bank_rows_before": 675,
+     "vlm_share": 0.846,
+     "tier_share": {
+      "tier1": 0.039,
+      "jev": 0.0,
+      "cluster": 0.114,
+      "vlm": 0.846
+     },
+     "accepted_vs_gemini": {
+      "n": 35,
+      "class": 0.343,
+      "family": 0.457
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.694,
+      "final_right_or_close": 0.839,
+      "accepted_n": 12,
+      "accepted_right": 0.583,
+      "accepted_right_or_close": 0.667,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 3,
+     "bank_rows_before": 878,
+     "vlm_share": 0.272,
+     "tier_share": {
+      "tier1": 0.395,
+      "jev": 0.0,
+      "cluster": 0.333,
+      "vlm": 0.272
+     },
+     "accepted_vs_gemini": {
+      "n": 452,
+      "class": 0.816,
+      "family": 0.978
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.893,
+      "accepted_n": 21,
+      "accepted_right": 0.905,
+      "accepted_right_or_close": 0.905,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    }
+   ],
+   "walmart -> samsclub-a2 -> me340": [
+    {
+     "video": "walmart",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 1.0,
+     "tier_share": {
+      "tier1": 0.0,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 1.0
+     },
+     "accepted_vs_gemini": {
+      "n": 0,
+      "class": null,
+      "family": null
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.897,
+      "final_right_or_close": 0.897,
+      "accepted_n": 0,
+      "accepted_right": null,
+      "accepted_right_or_close": null,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 2,
+     "bank_rows_before": 675,
+     "vlm_share": 0.272,
+     "tier_share": {
+      "tier1": 0.395,
+      "jev": 0.0,
+      "cluster": 0.333,
+      "vlm": 0.272
+     },
+     "accepted_vs_gemini": {
+      "n": 452,
+      "class": 0.816,
+      "family": 0.978
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.893,
+      "final_right_or_close": 0.893,
+      "accepted_n": 21,
+      "accepted_right": 0.905,
+      "accepted_right_or_close": 0.905,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "me340",
+     "position": 3,
+     "bank_rows_before": 841,
+     "vlm_share": 0.846,
+     "tier_share": {
+      "tier1": 0.039,
+      "jev": 0.0,
+      "cluster": 0.114,
+      "vlm": 0.846
+     },
+     "accepted_vs_gemini": {
+      "n": 35,
+      "class": 0.343,
+      "family": 0.457
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.694,
+      "final_right_or_close": 0.839,
+      "accepted_n": 12,
+      "accepted_right": 0.583,
+      "accepted_right_or_close": 0.667,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    }
+   ]
+  },
+  "class>=0.80, same domain": {
+   "me340 -> samsclub-a2 -> walmart": [
+    {
+     "video": "me340",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 2,
+     "bank_rows_before": 93,
+     "vlm_share": 0.003,
+     "tier_share": {
+      "tier1": 0.997,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.003
+     },
+     "accepted_vs_gemini": {
+      "n": 616,
+      "class": 0.69,
+      "family": 0.963
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.857,
+      "final_right_or_close": 0.929,
+      "accepted_n": 27,
+      "accepted_right": 0.852,
+      "accepted_right_or_close": 0.926,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 3,
+     "bank_rows_before": 95,
+     "vlm_share": 0.032,
+     "tier_share": {
+      "tier1": 0.487,
+      "jev": 0.0,
+      "cluster": 0.481,
+      "vlm": 0.032
+     },
+     "accepted_vs_gemini": {
+      "n": 652,
+      "class": 0.871,
+      "family": 0.906
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.828,
+      "final_right_or_close": 0.862,
+      "accepted_n": 26,
+      "accepted_right": 0.846,
+      "accepted_right_or_close": 0.885,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    }
+   ],
+   "me340 -> walmart -> samsclub-a2": [
+    {
+     "video": "me340",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 2,
+     "bank_rows_before": 93,
+     "vlm_share": 0.031,
+     "tier_share": {
+      "tier1": 0.486,
+      "jev": 0.0,
+      "cluster": 0.483,
+      "vlm": 0.031
+     },
+     "accepted_vs_gemini": {
+      "n": 653,
+      "class": 0.87,
+      "family": 0.905
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.828,
+      "final_right_or_close": 0.862,
+      "accepted_n": 26,
+      "accepted_right": 0.846,
+      "accepted_right_or_close": 0.885,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 3,
+     "bank_rows_before": 115,
+     "vlm_share": 0.003,
+     "tier_share": {
+      "tier1": 0.997,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.003
+     },
+     "accepted_vs_gemini": {
+      "n": 616,
+      "class": 0.69,
+      "family": 0.963
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.857,
+      "final_right_or_close": 0.929,
+      "accepted_n": 27,
+      "accepted_right": 0.852,
+      "accepted_right_or_close": 0.926,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    }
+   ],
+   "samsclub-a2 -> me340 -> walmart": [
+    {
+     "video": "samsclub-a2",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.003,
+     "tier_share": {
+      "tier1": 0.997,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.003
+     },
+     "accepted_vs_gemini": {
+      "n": 616,
+      "class": 0.69,
+      "family": 0.963
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.857,
+      "final_right_or_close": 0.929,
+      "accepted_n": 27,
+      "accepted_right": 0.852,
+      "accepted_right_or_close": 0.926,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "me340",
+     "position": 2,
+     "bank_rows_before": 2,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 3,
+     "bank_rows_before": 95,
+     "vlm_share": 0.032,
+     "tier_share": {
+      "tier1": 0.487,
+      "jev": 0.0,
+      "cluster": 0.481,
+      "vlm": 0.032
+     },
+     "accepted_vs_gemini": {
+      "n": 652,
+      "class": 0.871,
+      "family": 0.906
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.828,
+      "final_right_or_close": 0.862,
+      "accepted_n": 26,
+      "accepted_right": 0.846,
+      "accepted_right_or_close": 0.885,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    }
+   ],
+   "samsclub-a2 -> walmart -> me340": [
+    {
+     "video": "samsclub-a2",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.003,
+     "tier_share": {
+      "tier1": 0.997,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.003
+     },
+     "accepted_vs_gemini": {
+      "n": 616,
+      "class": 0.69,
+      "family": 0.963
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.857,
+      "final_right_or_close": 0.929,
+      "accepted_n": 27,
+      "accepted_right": 0.852,
+      "accepted_right_or_close": 0.926,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "walmart",
+     "position": 2,
+     "bank_rows_before": 2,
+     "vlm_share": 0.029,
+     "tier_share": {
+      "tier1": 0.464,
+      "jev": 0.0,
+      "cluster": 0.507,
+      "vlm": 0.029
+     },
+     "accepted_vs_gemini": {
+      "n": 654,
+      "class": 0.862,
+      "family": 0.898
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.828,
+      "final_right_or_close": 0.862,
+      "accepted_n": 26,
+      "accepted_right": 0.846,
+      "accepted_right_or_close": 0.885,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "me340",
+     "position": 3,
+     "bank_rows_before": 23,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    }
+   ],
+   "walmart -> me340 -> samsclub-a2": [
+    {
+     "video": "walmart",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.032,
+     "tier_share": {
+      "tier1": 0.453,
+      "jev": 0.0,
+      "cluster": 0.515,
+      "vlm": 0.032
+     },
+     "accepted_vs_gemini": {
+      "n": 652,
+      "class": 0.87,
+      "family": 0.905
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.828,
+      "final_right_or_close": 0.862,
+      "accepted_n": 26,
+      "accepted_right": 0.846,
+      "accepted_right_or_close": 0.885,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "me340",
+     "position": 2,
+     "bank_rows_before": 23,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 3,
+     "bank_rows_before": 116,
+     "vlm_share": 0.003,
+     "tier_share": {
+      "tier1": 0.997,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.003
+     },
+     "accepted_vs_gemini": {
+      "n": 616,
+      "class": 0.69,
+      "family": 0.963
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.857,
+      "final_right_or_close": 0.929,
+      "accepted_n": 27,
+      "accepted_right": 0.852,
+      "accepted_right_or_close": 0.926,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    }
+   ],
+   "walmart -> samsclub-a2 -> me340": [
+    {
+     "video": "walmart",
+     "position": 1,
+     "bank_rows_before": 0,
+     "vlm_share": 0.032,
+     "tier_share": {
+      "tier1": 0.453,
+      "jev": 0.0,
+      "cluster": 0.515,
+      "vlm": 0.032
+     },
+     "accepted_vs_gemini": {
+      "n": 652,
+      "class": 0.87,
+      "family": 0.905
+     },
+     "audited": {
+      "n": 29,
+      "final_right": 0.828,
+      "final_right_or_close": 0.862,
+      "accepted_n": 26,
+      "accepted_right": 0.846,
+      "accepted_right_or_close": 0.885,
+      "gemini_right": 0.897,
+      "gemini_right_or_close": 0.897
+     }
+    },
+    {
+     "video": "samsclub-a2",
+     "position": 2,
+     "bank_rows_before": 23,
+     "vlm_share": 0.003,
+     "tier_share": {
+      "tier1": 0.997,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.003
+     },
+     "accepted_vs_gemini": {
+      "n": 616,
+      "class": 0.69,
+      "family": 0.963
+     },
+     "audited": {
+      "n": 28,
+      "final_right": 0.857,
+      "final_right_or_close": 0.929,
+      "accepted_n": 27,
+      "accepted_right": 0.852,
+      "accepted_right_or_close": 0.926,
+      "gemini_right": 0.893,
+      "gemini_right_or_close": 0.893
+     }
+    },
+    {
+     "video": "me340",
+     "position": 3,
+     "bank_rows_before": 25,
+     "vlm_share": 0.378,
+     "tier_share": {
+      "tier1": 0.622,
+      "jev": 0.0,
+      "cluster": 0.0,
+      "vlm": 0.378
+     },
+     "accepted_vs_gemini": {
+      "n": 145,
+      "class": 0.234,
+      "family": 0.414
+     },
+     "audited": {
+      "n": 62,
+      "final_right": 0.548,
+      "final_right_or_close": 0.742,
+      "accepted_n": 42,
+      "accepted_right": 0.452,
+      "accepted_right_or_close": 0.69,
+      "gemini_right": 0.742,
+      "gemini_right_or_close": 0.887
+     }
+    }
+   ]
+  }
+ },
+ "latency": {
+  "views_per_card": 4.38,
+  "encoders_ms_per_crop_A100": {
+   "siglip2-base": 0.318,
+   "siglip2-so400m": 3.273,
+   "pe-core-l": 3.462,
+   "dinov2-l": 1.166
+  },
+  "encoders_ms_per_card (views x crops)": {
+   "dinov2-l plain+masked": 10.2,
+   "pe-core-l masked": 15.2,
+   "pe-core-l plain+masked": 30.3
+  },
+  "encoder_load_s": {
+   "siglip2-base": 18.48,
+   "siglip2-so400m": 6.93,
+   "pe-core-l": 8.59,
+   "dinov2-l": 0.9
+  },
+  "owlv2_per_keyframe_s (102 queries, batch 8, incl. pre/post)": 0.0521,
+  "owlv2_model_only_s_per_keyframe": 0.0136,
+  "owlv2_ms_per_card (keyframes / cards)": 12.9,
+  "knn_ms_per_query_cpu (bank 1531 x 1024)": 0.0204,
+  "cluster_s_walmart_720_cards_cpu": 0.347,
+  "jev": {
+   "compute_s_per_question_batched_8": 0.0757,
+   "round_trip_s_per_question_in_64_question_requests": 0.1006,
+   "hop_s_per_64_question_request_median": 1.607,
+   "request_mb_median": 2.39,
+   "single_question_round_trip_s_median": 0.497,
+   "single_question_compute_s_median": 0.111,
+   "cold_start_s (container + load)": 45.03,
+   "model_load_s": 30.76,
+   "peak_gib_torch_reserved": 22.9,
+   "caller": "a CPU Modal container (the core's stand-in) calling the service container through Modal's function calls, same region"
+  }
+ },
+ "agent_audit_of_disagreements": {
+  "samsclub-a2": {
+   "sampled": 24,
+   "unclear": 1,
+   "labelled": 23,
+   "cheap": {
+    "right": 15,
+    "close": 7,
+    "wrong": 1
+   },
+   "gemini": {
+    "right": 22,
+    "close": 0,
+    "wrong": 1
+   },
+   "pool": 182
+  },
+  "walmart": {
+   "sampled": 24,
+   "unclear": 4,
+   "labelled": 20,
+   "cheap": {
+    "right": 8,
+    "close": 2,
+    "wrong": 10
+   },
+   "gemini": {
+    "right": 9,
+    "close": 7,
+    "wrong": 4
+   },
+   "pool": 84
+  },
+  "me340": {
+   "sampled": 16,
+   "unclear": 1,
+   "labelled": 15,
+   "cheap": {
+    "right": 6,
+    "close": 3,
+    "wrong": 6
+   },
+   "gemini": {
+    "right": 7,
+    "close": 4,
+    "wrong": 4
+   },
+   "pool": 81
+  }
+ },
+ "spend_usd": {
+  "modal_upper_bound_list_prices": 0.66,
+  "by_app": {
+   "setup (CPU)": 0.016,
+   "features smoke": 0.068,
+   "features": 0.236,
+   "owlv2": 0.05,
+   "jev smoke": 0.083,
+   "jev": 0.21
+  },
+  "gemini": 0.0,
+  "note": "app wall time x (A100-80GB + cores + GiB) list prices from fast_report.instrument.PRICE; image builds not included; the cost ledger was not edited"
+ },
+ "comparison_gemini": {
+  "held_out_audited_right_right_or_close": "0.81 / 0.88 (119 items, warm call); per video ME340 0.74/0.89 (62), Sam's Club 0.89/0.89 (28), Walmart 0.90/0.90 (29) as graded here"
+ },
+ "conclusions": [
+  "The SAM 3 word vote is already the best free namer: 0.69 class agreement with Gemini over all cards (Walmart 0.87, Sam's Club 0.69, ME340 0.17), 0.62 / 0.77 on the audited items against Gemini's 0.81 / 0.88. Its words come from the one Gemini vocabulary call per video, which stays.",
+  "A cross-video label bank does not transfer between these three site types: kNN against the other two videos gets 0.15-0.25 class agreement for every encoder (0.59-0.72 at family level), and only 30 % of ME340's classes exist in the other videos at all. The bank's value is inside a video: kNN over the video's other cards reaches 0.79 class (DINOv2-L plain+masked, upper bound) and 0.76 with only the earlier cards named.",
+  "Encoders: DINOv2-L (plain+masked, mean of the views) or PE-Core-L (masked) as the kNN key, picked by the nested fit on every fold. In-video they match the current SigLIP 2 base key on class agreement (0.79 vs 0.74-0.79) and do better on the audited items (0.73 / 0.82 vs 0.58-0.66 / 0.68-0.77). Zero-shot over the 102 taxonomy words is weak with every encoder (best 0.33 class, PE-Core-L masked) and only serves as an agreement vote. OWLv2 with the taxonomy words, matched to the SAM 3 masks: 0.39 class, 82 % of cards matched; when it agrees with the SAM 3 word the pair is 0.83 / 0.90 precise on Sam's Club / Walmart, 0.36 on ME340.",
+  "Jev-Omni over retrieved candidates (median 8-11 options, Gemini's class among them for 79 % ME340 / 97 % Sam's / 96 % Walmart) is not a namer here: forced choice 0.33 class (0.49 / 0.67 audited), it never answers 'none of these' (0 of 1,596), and even p >= 0.95 is 0.62 precise on 12 % of cards. No fit reached a target, so it routed 0 cards in every cascade. Service latency: 0.076 s a question of GPU time batched by 8; 0.10 s a question round trip in 64-question requests (1.6 s of each 2.4 MB request is the hop); one question alone 0.50 s round trip for 0.11 s of compute; 45 s cold start; 22.9 GiB.",
+  "What works is SAM 3 word + a second opinion, then in-video clusters verified by the SAM 3 word: tier 1 accepts the SAM 3 word when zero-shot/OWLv2 or the cross-video bank agrees, or when its own vote share clears a fitted cut; the rest is clustered in the video (DINOv2-L), one VLM call per cluster medoid, and the answer is copied only to members whose SAM 3 word gives the same class (0.94-0.95 class agreement on the copies at the class >= 0.80 points; 0.80-0.90 where the cut came from another domain). Copying without that check was 0.42 on Walmart.",
+  "VLM share and accuracy, held out (fitted on retail for retail): at class >= 0.80 Sam's Club needs the VLM for 0.3 % of cards and Walmart for 2.8 % (audited final names 0.86/0.93 and 0.83/0.86 vs Gemini alone 0.89/0.89 and 0.90/0.90, n 28 / 29); at class >= 0.90 Sam's Club 11 % and Walmart 44 % with 0.89/0.93 and 0.93/0.93 (at or above Gemini). The 5-10 % target is reachable for retail; the price of the cheapest point is 3-7 points of 'right' on 28-29 items.",
+  "The shop floor (ME340) has no reliable cheap signal: with retail-fitted cuts at 0.80 it sends 37 % to the VLM but the names it keeps are 0.45 / 0.69 right (the video drops to 0.55 / 0.74 from Gemini's 0.74 / 0.89); at 0.90 it sends 85 % and stays near Gemini (0.69 / 0.84). There is no second shop-floor video to calibrate on, so a new domain's first video should go to the VLM.",
+  "Pooled thresholds across domains fail both ways: Walmart at class >= 0.90 pooled sends 82 % to the VLM (ME340's poor SAM 3 words set the SAM 3 cut), and ME340 at 0.80 pooled accepts wrong names. Calibrate per domain family.",
+  "Bank growth over all six orders of the three videos (empty start, the bank keeps the VLM answers only): the order barely matters (Walmart 28 % -> 24 %, ME340 38 % -> 35 % with accuracy 0.55 -> 0.52 at class >= 0.80 pooled; same-domain cuts are flat), because the savings come from within-video structure, not from a bank of other site types. Same-type videos (several Walmart walks) were not available to measure the cross-video curve.",
+  "Never write names accepted without a VLM back into the bank: the first design (stream, every final name written back, accept on the in-video vote share) collapsed to 0.2 % VLM and 0.03 class agreement, because one early neighbour is a 100 % vote.",
+  "Blind agent audit of cheap names that disagree with Gemini (class >= 0.80 same domain, 64 sampled, 6 unclear): Sam's Club cheap right/close/wrong 15/7/1 vs Gemini 22/0/1 (most disagreements are box / merchandise / stacked-boxes synonyms); Walmart 8/2/10 vs 9/7/4 (the unverified cluster copy spread 'shelf' to bags); ME340 6/3/6 vs 7/4/4.",
+  "Latency of the cheap path per card on one A100 (batched): DINOv2-L plain+masked 10.2 ms, PE-Core-L masked 15.2 ms (zero-shot vote), OWLv2 12.9 ms (0.052 s a keyframe, 102 queries), kNN 0.02 ms, clustering 0.33 s for Walmart's 720 cards (CPU)."
+ ],
+ "caveats": [
+  "Gemini's names are the class labels for agreement numbers; the audited items (119) and the 58 blind-labelled disagreements are the only truth, and n is 28-62 per video, so a difference of 3-7 points is 1-2 items.",
+  "Jev's options use the in-video bank of earlier cards with Gemini's labels (not the cascade's own names) so one question per card serves every fold; its answers did not affect any cascade because no Jev cut was ever fitted.",
+  "The VLM share counts objects; a medoid's answer is Gemini's recorded name for that card, so cluster copies inherit Gemini's errors.",
+  "The in-video step assumes the VLM answers for the medoids arrive before the copies are made (one extra round of latency per video: ~13 s a 14-object Gemini request in the mvp2 runs).",
+  "All three videos come from the same click-MVP runs; the SAM 3 vocabulary is per video from one Gemini call; a fixed taxonomy vocabulary for SAM 3 was not tested (it changes the masks as well)."
+ ],
+ "files": {
+  "results": "results.json (this file)",
+  "questions_and_options": "questions.json",
+  "jev_raw_probabilities_and_timing": "jev-answers.json",
+  "card_metadata": "dataset-meta.json",
+  "audit": "audit/items.json, audit/labels-agent.json (agent-labelled, blind), audit/sheets/*.jpg",
+  "not_kept_here": "dataset.pkl (322 MB crops) and features.pkl (125 MB embeddings) stay in the session scratchpad; scripts/x13_naming.py build rebuilds the crops from the mirrored runs"
+ }
+}

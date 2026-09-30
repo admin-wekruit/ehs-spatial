@@ -1,0 +1,87 @@
+{
+ "match": {
+  "predicted": 127,
+  "scored": 124,
+  "right": 66,
+  "precision": 0.532,
+  "precision_box": 0.573,
+  "gt_pairs": 28,
+  "found": 24,
+  "found_exact": 19,
+  "recall": 0.857,
+  "gt_pairs_matched_elsewhere": 8,
+  "gt_pairs_status": {
+   "static": 3,
+   "delineated_otherwise": 1
+  }
+ },
+ "changes": {
+  "claims": 4,
+  "right": 4,
+  "wrong": 0,
+  "unverifiable": 0,
+  "precision": 1.0,
+  "gt_gone": 21,
+  "gt_gone_found": 1,
+  "gt_came": 21,
+  "gt_came_found": 3,
+  "recall": 0.095,
+  "gt_gone_status": {
+   "static": 4,
+   "moved": 1,
+   "delineated_otherwise": 11,
+   "not_observed_in_b": 3,
+   "not_compared": 2
+  },
+  "gt_came_status": {
+   "static": 9,
+   "delineated_otherwise": 6,
+   "not_observed_in_a": 3,
+   "new": 3
+  },
+  "gt_large": 30,
+  "gt_large_found": 4,
+  "by_kind": {
+   "moved:right": 1,
+   "new:right": 3
+  }
+ },
+ "claims": [
+  {
+   "kind": "moved",
+   "a": "obj-0-145",
+   "b": "obj-0-134",
+   "name": "chair",
+   "gt": "free/unjudged",
+   "verdict": "right",
+   "tile": "evidence-0"
+  },
+  {
+   "kind": "new",
+   "a": null,
+   "b": "obj-0-105",
+   "name": "furniture (type only)",
+   "gt": "free",
+   "verdict": "right",
+   "tile": "evidence-1"
+  },
+  {
+   "kind": "new",
+   "a": null,
+   "b": "obj-0-212",
+   "name": "computer monitor",
+   "gt": "free",
+   "verdict": "right",
+   "tile": "evidence-2"
+  },
+  {
+   "kind": "new",
+   "a": null,
+   "b": "obj-0-366",
+   "name": "office chair",
+   "gt": "free",
+   "verdict": "right",
+   "tile": "evidence-3"
+  }
+ ]
+}

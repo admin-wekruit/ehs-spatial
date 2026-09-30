@@ -1,0 +1,42 @@
+{
+ "samsclub first": {
+  "of_pass": 78,
+  "of_fail": 0,
+  "checks": {
+   "J5": {
+    "pass_audited": 17,
+    "pass_right": 17
+   },
+   "J1": {
+    "pass_audited": 11,
+    "pass_right": 11
+   },
+   "J2": {
+    "pass_audited": 1,
+    "pass_right": 1
+   }
+  },
+  "all": {
+   "pass_audited": 29,
+   "pass_right": 29
+  }
+ },
+ "samsclub warm": {
+  "of_pass": 76,
+  "of_fail": 0,
+  "checks": {
+   "J5": {
+    "pass_audited": 20,
+    "pass_right": 20
+   },
+   "J1": {
+    "pass_audited": 10,
+    "pass_right": 10
+   }
+  },
+  "all": {
+   "pass_audited": 30,
+   "pass_right": 30
+  }
+ }
+}

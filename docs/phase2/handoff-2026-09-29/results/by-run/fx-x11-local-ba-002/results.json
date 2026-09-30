@@ -1,0 +1,2665 @@
+{
+ "schema": "panoptes-x11-local-ba-results-v1",
+ "run": "fx-x11-local-ba-002",
+ "boot": {
+  "entered_unix": 1790652473.366886,
+  "models_s": 22.1,
+  "matcher_s": 23.68,
+  "vllm_ready_s": 74.79,
+  "ready_s": 85.22,
+  "gpus": [
+   "GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-fbcb26dc-0bc3-b790-48d8-757daa2f10c7)"
+  ],
+  "resident_gib": 29.28
+ },
+ "units": {
+  "*_s": "seconds of wall time inside the container (perf_counter), models resident, cold start excluded",
+  "*_m / *_cm / *_mm": "estimated: floor plane + an assumed 1.6 m camera height; never measured",
+  "reprojection_px_at_504_crop": "pixels of the 504 px crop (x 720/504 = 1.43 for source pixels of the 1280x720 videos; 480/504 for the 640x480 factory clip)",
+  "before / after (BA)": "before = the same objective with the coarse cameras and the anchor depth frozen (only the track points move); after = the joint solve",
+  "tilt_repeatability": "frames A = X4's selection, frames B = the same selector with A's frames +-5 excluded; fine plane tilt |A - B|",
+  "*_gib / peak_gb": "GiB, whole device (nvidia-smi, incl. vLLM), per stage window; over_90 flags > 90 %"
+ },
+ "confirmation_rule": {
+  "pairwise_median_m": 0.015,
+  "coarse_nn_median_m": 0.05,
+  "photometric_ratio": 1.05,
+  "outline_iou": 0.5,
+  "plane_ci_width_deg": 2.0,
+  "thin_min_height_m": 0.004
+ },
+ "matcher": {
+  "lightglue_commit": "eb42fee2d71449efb0aa5c10549752b5d75384d8",
+  "extractor": "ALIKED aliked-n16, 2048 keypoints, threshold 0.05, on the 504 px crop",
+  "verification": "fundamental matrix MAGSAC 1.0 px",
+  "licences": {
+   "ALIKED (code + aliked-n16 weights)": "BSD-3-Clause, github.com/Shiaoming/ALIKED",
+   "LightGlue (code + aliked_lightglue weights)": "Apache-2.0, github.com/cvg/LightGlue",
+   "kornia (LightGlue dependency)": "Apache-2.0"
+  }
+ },
+ "ba_settings": {
+  "sigma_px": 1.0,
+  "pose_prior_sigma": [
+   1.5,
+   0.05
+  ],
+  "bounds_per_component": [
+   3.0,
+   0.1
+  ],
+  "depth_sigma": [
+   0.01,
+   0.01
+  ],
+  "depth_scale_shift_prior_sigma": [
+   0.1,
+   0.05
+  ],
+  "depth_term_region_m": 0.3,
+  "loss": "soft_l1, knee 2.0 sigma",
+  "tri_field": [
+   40.0,
+   0.25
+  ]
+ },
+ "hardware": "1 x A100-80GB (Modal), vLLM Qwen3-VL-8B on the same card at 30 %",
+ "videos": {
+  "me340-165": {
+   "error": null,
+   "source_file": "data/clips/me340-165/source-full.mp4",
+   "coarse": {
+    "shots": [
+     [
+      14,
+      225
+     ],
+     [
+      226,
+      898
+     ]
+    ],
+    "keyframes": 150,
+    "frames": 899,
+    "fps": 29.97,
+    "trigger_detections": 4834,
+    "clusters": 273
+   },
+   "coarse_pass_s": 44.23,
+   "analysis_wall_s": 165.454,
+   "client_wall_s": 166.61,
+   "spot_finding": {
+    "x4_s": 3.503,
+    "fast_s": 1.221,
+    "same_picks": true,
+    "fast_substeps": {
+     "cluster_s": 0.0408,
+     "negatives_s": 0.0223,
+     "per_cluster_s": 1.157,
+     "pick_s": 0.0008,
+     "clusters": 273,
+     "pickable": 38,
+     "coarse_tilts": 17
+    },
+    "x4_candidates": 194,
+    "detections": 4834,
+    "picks": [
+     [
+      "cable",
+      "wire",
+      23,
+      [
+       4.676,
+       0.3135,
+       1.9588
+      ]
+     ],
+     [
+      "box_stack",
+      "pallet",
+      20,
+      [
+       1.7066,
+       0.562,
+       -0.3766
+      ]
+     ]
+    ]
+   },
+   "methods": [
+    "anchor",
+    "anchor+ba",
+    "anchor+ba+tri",
+    "anchor+ba+da3"
+   ],
+   "spots": [
+    {
+     "id": "s0",
+     "group": "cable",
+     "word": "wire",
+     "centre_m_estimated": [
+      4.676,
+      0.314,
+      1.959
+     ],
+     "frames_A": [
+      665,
+      492,
+      282,
+      595
+     ],
+     "frames_B": [
+      659,
+      486,
+      324,
+      578
+     ],
+     "methods": {
+      "A:anchor": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "holdout_outline",
+        "vlm"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": false,
+        "thin_visible": true,
+        "vlm": false
+       },
+       "multi_view_median_m": 0.02313,
+       "multi_view_within_2cm": 0.4453,
+       "multi_view_occl10_median_m": 0.02198,
+       "fine_to_coarse_nn_median_m": 0.0198,
+       "holdout": {
+        "photometric_ratio": 0.9108,
+        "outline_iou_fine": 0.0344,
+        "outline_iou_coarse": 0.1727,
+        "resect": null,
+        "skipped": null
+       },
+       "plane_fine": null,
+       "plane_coarse": null,
+       "thin": {
+        "observed_height_mm": 24.74,
+        "coarse_map": {
+         "height_mm": 15.13,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": 26.51,
+         "mask_coverage": 0.651,
+         "thin_object_visible": true
+        }
+       },
+       "vlm": {
+        "object": "yes",
+        "outline": "wrong",
+        "detail": "the red outline does not follow the wire's edges"
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 7828,
+        "fine_raw_da3_pixels": 18530,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         14979,
+         7541,
+         4961,
+         8946
+        ]
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "gpu0_peak_gib": 40.36,
+       "time_s": {
+        "fine_i_iii": 0.988,
+        "da3": 0.346,
+        "anchor_icp": 0.024,
+        "tsdf_1cm": 0.274,
+        "holdout_check": 0.702,
+        "metrics": 0.213,
+        "vlm": 1.1,
+        "propagate": 0.266,
+        "select": 0.954,
+        "total_without_sweeps": 4.009
+       }
+      },
+      "A:anchor+ba": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "agrees_with_coarse",
+        "holdout_photometric",
+        "holdout_outline",
+        "thin_visible",
+        "vlm"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": false,
+        "holdout_photometric": false,
+        "holdout_outline": false,
+        "thin_visible": false,
+        "vlm": false
+       },
+       "multi_view_median_m": null,
+       "multi_view_within_2cm": null,
+       "multi_view_occl10_median_m": null,
+       "fine_to_coarse_nn_median_m": null,
+       "holdout": {
+        "photometric_ratio": null,
+        "outline_iou_fine": null,
+        "outline_iou_coarse": 0.0,
+        "resect": {
+         "correspondences": 241,
+         "reprojection_px_before": {
+          "median": 35.9188,
+          "p90": 56.4941,
+          "rms": 39.0816,
+          "n": 241
+         },
+         "reprojection_px_after": {
+          "median": 3.3905,
+          "p90": 10.9311,
+          "rms": 6.8945,
+          "n": 241
+         },
+         "rot_deg": 2.947,
+         "move_cm": 16.44
+        },
+        "skipped": null
+       },
+       "plane_fine": null,
+       "plane_coarse": null,
+       "thin": {
+        "observed_height_mm": 22.37,
+        "coarse_map": {
+         "height_mm": 16.66,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": null,
+         "mask_coverage": 0.0,
+         "thin_object_visible": false
+        }
+       },
+       "vlm": {
+        "object": "no",
+        "outline": "wrong",
+        "detail": "the red outline does not match the shape of a wire"
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 0,
+        "fine_raw_da3_pixels": 0,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         607,
+         736,
+         179,
+         1245
+        ]
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "gpu0_peak_gib": 36.44,
+       "time_s": {
+        "fine_i_iii": 5.911,
+        "da3": 0.304,
+        "anchor_icp": 4.882,
+        "tsdf_1cm": 0.329,
+        "holdout_check": 3.973,
+        "metrics": 0.148,
+        "vlm": 1.034,
+        "propagate": 0.123,
+        "select": 0.954,
+        "total_without_sweeps": 11.995
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "keypoints": [
+         1580,
+         1877,
+         1840,
+         1781
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 299,
+          "magsac_inliers": 261
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 151,
+          "magsac_inliers": 117
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 436,
+          "magsac_inliers": 403
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 487,
+          "magsac_inliers": 444
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 395,
+          "magsac_inliers": 374
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 240,
+          "magsac_inliers": 194
+         }
+        ],
+        "tracks": 795,
+        "observations": 1933,
+        "tracks_in_region": 66,
+        "depth_observations": 169,
+        "track_length_hist": {
+         "2": 515,
+         "3": 217,
+         "4": 63
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 1.4036,
+          "p90": 4.4736,
+          "rms": 6.1587,
+          "n": 1933
+         },
+         "after": {
+          "median": 0.4052,
+          "p90": 1.332,
+          "rms": 5.5441,
+          "n": 1933
+         },
+         "within_2px_before": 0.6591,
+         "within_2px_after": 0.9529
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.034,
+          "p90": 0.1707,
+          "rms": 0.1215,
+          "n": 169
+         },
+         "after": {
+          "median": 0.032,
+          "p90": 0.1006,
+          "rms": 0.0743,
+          "n": 169
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          1.283,
+          2.764,
+          2.087,
+          2.339
+         ],
+         "move_cm": [
+          6.31,
+          8.1,
+          10.79,
+          8.73
+         ],
+         "move_vec_cm": [
+          [
+           3.43,
+           -1.17,
+           5.17
+          ],
+          [
+           -0.7,
+           1.64,
+           -7.9
+          ],
+          [
+           -3.15,
+           -1.88,
+           10.15
+          ],
+          [
+           0.91,
+           1.66,
+           -8.53
+          ]
+         ],
+         "at_bound": false,
+         "gauge_removed": {
+          "rot_deg": 1.374,
+          "move_cm": 0.31
+         },
+         "note": "after the rigid gauge fit back onto the coarse cameras"
+        },
+        "depth_scale": [
+         0.9121,
+         0.9342,
+         0.9158,
+         0.929
+        ],
+        "depth_shift_m": [
+         -0.0309,
+         0.0463,
+         0.0618,
+         -0.002
+        ],
+        "baseline_scale": null,
+        "solver": {
+         "iterations": 100,
+         "cost_start": 153260.722,
+         "cost_end": 3438.573,
+         "s": 3.73,
+         "before_iterations": 100,
+         "before_s": 0.89
+        },
+        "tri_field": null,
+        "da3_rerun": null,
+        "mvs": null,
+        "geometry": null,
+        "tracks_before_cap": null,
+        "consistency_before": null,
+        "consistency_after": null
+       },
+       "time_split_s": {
+        "matching": 0.192,
+        "ba": 3.774,
+        "fuse_tsdf_1cm": 0.329,
+        "checks": 5.155,
+        "of_which_holdout_matching_ba_resect": 2.572,
+        "da3_crops_sam3": 0.7
+       }
+      },
+      "A:anchor+ba+tri": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "agrees_with_coarse",
+        "holdout_photometric",
+        "holdout_outline",
+        "thin_visible",
+        "vlm"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": false,
+        "holdout_photometric": false,
+        "holdout_outline": false,
+        "thin_visible": false,
+        "vlm": false
+       },
+       "multi_view_median_m": null,
+       "multi_view_within_2cm": null,
+       "multi_view_occl10_median_m": null,
+       "fine_to_coarse_nn_median_m": null,
+       "holdout": {
+        "photometric_ratio": null,
+        "outline_iou_fine": null,
+        "outline_iou_coarse": 0.0,
+        "resect": {
+         "correspondences": 241,
+         "reprojection_px_before": {
+          "median": 35.9188,
+          "p90": 56.4941,
+          "rms": 39.0816,
+          "n": 241
+         },
+         "reprojection_px_after": {
+          "median": 3.3905,
+          "p90": 10.9311,
+          "rms": 6.8945,
+          "n": 241
+         },
+         "rot_deg": 2.947,
+         "move_cm": 16.44
+        },
+        "skipped": null
+       },
+       "plane_fine": null,
+       "plane_coarse": null,
+       "thin": {
+        "observed_height_mm": 21.16,
+        "coarse_map": {
+         "height_mm": 16.66,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": null,
+         "mask_coverage": 0.0,
+         "thin_object_visible": false
+        }
+       },
+       "vlm": {
+        "object": "no",
+        "outline": "wrong",
+        "detail": "the red outline does not match the shape of a wire"
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 0,
+        "fine_raw_da3_pixels": 0,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         1063,
+         623,
+         69,
+         1123
+        ]
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "gpu0_peak_gib": 36.47,
+       "time_s": {
+        "fine_i_iii": 6.232,
+        "da3": 0.464,
+        "anchor_icp": 5.326,
+        "tsdf_1cm": 0.149,
+        "holdout_check": 4.117,
+        "metrics": 0.14,
+        "vlm": 0.937,
+        "propagate": 0.113,
+        "select": 0.954,
+        "total_without_sweeps": 12.353
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "keypoints": [
+         1580,
+         1877,
+         1840,
+         1781
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 299,
+          "magsac_inliers": 261
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 151,
+          "magsac_inliers": 117
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 436,
+          "magsac_inliers": 403
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 487,
+          "magsac_inliers": 444
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 395,
+          "magsac_inliers": 374
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 240,
+          "magsac_inliers": 194
+         }
+        ],
+        "tracks": 795,
+        "observations": 1933,
+        "tracks_in_region": 66,
+        "depth_observations": 169,
+        "track_length_hist": {
+         "2": 515,
+         "3": 217,
+         "4": 63
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 1.4036,
+          "p90": 4.4736,
+          "rms": 6.1587,
+          "n": 1933
+         },
+         "after": {
+          "median": 0.4052,
+          "p90": 1.332,
+          "rms": 5.5441,
+          "n": 1933
+         },
+         "within_2px_before": 0.6591,
+         "within_2px_after": 0.9529
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.034,
+          "p90": 0.1707,
+          "rms": 0.1215,
+          "n": 169
+         },
+         "after": {
+          "median": 0.032,
+          "p90": 0.1006,
+          "rms": 0.0743,
+          "n": 169
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          1.283,
+          2.764,
+          2.087,
+          2.339
+         ],
+         "move_cm": [
+          6.31,
+          8.1,
+          10.79,
+          8.73
+         ],
+         "move_vec_cm": [
+          [
+           3.43,
+           -1.17,
+           5.17
+          ],
+          [
+           -0.7,
+           1.64,
+           -7.9
+          ],
+          [
+           -3.15,
+           -1.88,
+           10.15
+          ],
+          [
+           0.91,
+           1.66,
+           -8.53
+          ]
+         ],
+         "at_bound": false,
+         "gauge_removed": {
+          "rot_deg": 1.374,
+          "move_cm": 0.31
+         },
+         "note": "after the rigid gauge fit back onto the coarse cameras"
+        },
+        "depth_scale": [
+         0.9121,
+         0.9342,
+         0.9158,
+         0.929
+        ],
+        "depth_shift_m": [
+         -0.0309,
+         0.0463,
+         0.0618,
+         -0.002
+        ],
+        "baseline_scale": null,
+        "solver": {
+         "iterations": 100,
+         "cost_start": 153260.722,
+         "cost_end": 3438.573,
+         "s": 3.777,
+         "before_iterations": 100,
+         "before_s": 0.902
+        },
+        "tri_field": [
+         {
+          "view": 0,
+          "tracks": 31,
+          "residual_median_abs_m": 0.0261,
+          "field_abs_p90_m": 0.0252,
+          "applied": true
+         },
+         {
+          "view": 1,
+          "tracks": 44,
+          "residual_median_abs_m": 0.0357,
+          "field_abs_p90_m": 0.0277,
+          "applied": true
+         },
+         {
+          "view": 2,
+          "tracks": 46,
+          "residual_median_abs_m": 0.0361,
+          "field_abs_p90_m": 0.0342,
+          "applied": true
+         },
+         {
+          "view": 3,
+          "tracks": 49,
+          "residual_median_abs_m": 0.0257,
+          "field_abs_p90_m": 0.0129,
+          "applied": true
+         }
+        ],
+        "da3_rerun": null,
+        "mvs": null,
+        "geometry": null,
+        "tracks_before_cap": null,
+        "consistency_before": null,
+        "consistency_after": null
+       },
+       "time_split_s": {
+        "matching": 0.156,
+        "ba": 4.245,
+        "fuse_tsdf_1cm": 0.149,
+        "checks": 5.194,
+        "of_which_holdout_matching_ba_resect": 2.871,
+        "da3_crops_sam3": 0.757
+       }
+      },
+      "A:anchor+ba+da3": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "agrees_with_coarse",
+        "holdout_photometric",
+        "holdout_outline",
+        "thin_visible",
+        "vlm"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": false,
+        "holdout_photometric": false,
+        "holdout_outline": false,
+        "thin_visible": false,
+        "vlm": false
+       },
+       "multi_view_median_m": null,
+       "multi_view_within_2cm": null,
+       "multi_view_occl10_median_m": null,
+       "fine_to_coarse_nn_median_m": null,
+       "holdout": {
+        "photometric_ratio": null,
+        "outline_iou_fine": null,
+        "outline_iou_coarse": 0.0,
+        "resect": {
+         "correspondences": 241,
+         "reprojection_px_before": {
+          "median": 35.9188,
+          "p90": 56.4941,
+          "rms": 39.0816,
+          "n": 241
+         },
+         "reprojection_px_after": {
+          "median": 3.3905,
+          "p90": 10.9311,
+          "rms": 6.8945,
+          "n": 241
+         },
+         "rot_deg": 2.947,
+         "move_cm": 16.44
+        },
+        "skipped": null
+       },
+       "plane_fine": null,
+       "plane_coarse": null,
+       "thin": {
+        "observed_height_mm": 19.83,
+        "coarse_map": {
+         "height_mm": 16.66,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": null,
+         "mask_coverage": 0.0,
+         "thin_object_visible": false
+        }
+       },
+       "vlm": {
+        "object": "no",
+        "outline": "wrong",
+        "detail": "the red outline does not match the shape of a wire"
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 0,
+        "fine_raw_da3_pixels": 0,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         783,
+         1063,
+         274,
+         1221
+        ]
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "gpu0_peak_gib": 36.47,
+       "time_s": {
+        "fine_i_iii": 5.699,
+        "da3": 0.29,
+        "anchor_icp": 4.91,
+        "tsdf_1cm": 0.157,
+        "holdout_check": 4.049,
+        "metrics": 0.13,
+        "vlm": 0.941,
+        "propagate": 0.117,
+        "select": 0.954,
+        "total_without_sweeps": 11.76
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "keypoints": [
+         1580,
+         1877,
+         1840,
+         1781
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 299,
+          "magsac_inliers": 261
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 151,
+          "magsac_inliers": 117
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 436,
+          "magsac_inliers": 403
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 487,
+          "magsac_inliers": 444
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 395,
+          "magsac_inliers": 374
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 240,
+          "magsac_inliers": 194
+         }
+        ],
+        "tracks": 795,
+        "observations": 1933,
+        "tracks_in_region": 66,
+        "depth_observations": 169,
+        "track_length_hist": {
+         "2": 515,
+         "3": 217,
+         "4": 63
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 1.4036,
+          "p90": 4.4736,
+          "rms": 6.1587,
+          "n": 1933
+         },
+         "after": {
+          "median": 0.4052,
+          "p90": 1.332,
+          "rms": 5.5441,
+          "n": 1933
+         },
+         "within_2px_before": 0.6591,
+         "within_2px_after": 0.9529
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.034,
+          "p90": 0.1707,
+          "rms": 0.1215,
+          "n": 169
+         },
+         "after": {
+          "median": 0.032,
+          "p90": 0.1006,
+          "rms": 0.0743,
+          "n": 169
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          1.283,
+          2.764,
+          2.087,
+          2.339
+         ],
+         "move_cm": [
+          6.31,
+          8.1,
+          10.79,
+          8.73
+         ],
+         "move_vec_cm": [
+          [
+           3.43,
+           -1.17,
+           5.17
+          ],
+          [
+           -0.7,
+           1.64,
+           -7.9
+          ],
+          [
+           -3.15,
+           -1.88,
+           10.15
+          ],
+          [
+           0.91,
+           1.66,
+           -8.53
+          ]
+         ],
+         "at_bound": false,
+         "gauge_removed": {
+          "rot_deg": 1.374,
+          "move_cm": 0.31
+         },
+         "note": "after the rigid gauge fit back onto the coarse cameras"
+        },
+        "depth_scale": [
+         0.9121,
+         0.9342,
+         0.9158,
+         0.929
+        ],
+        "depth_shift_m": [
+         -0.0309,
+         0.0463,
+         0.0618,
+         -0.002
+        ],
+        "baseline_scale": null,
+        "solver": {
+         "iterations": 100,
+         "cost_start": 153260.722,
+         "cost_end": 3438.573,
+         "s": 3.477,
+         "before_iterations": 100,
+         "before_s": 0.859
+        },
+        "tri_field": null,
+        "da3_rerun": {
+         "views": [
+          {
+           "view": 0,
+           "tracks": 31,
+           "near_spot": true,
+           "scale": 1.1718,
+           "shift_m": -0.0058,
+           "residual_median_abs_m": 0.0217,
+           "applied": true
+          },
+          {
+           "view": 1,
+           "tracks": 44,
+           "near_spot": true,
+           "scale": 1.0666,
+           "shift_m": 0.3928,
+           "residual_median_abs_m": 0.0283,
+           "applied": true
+          },
+          {
+           "view": 2,
+           "tracks": 45,
+           "near_spot": true,
+           "scale": 0.9871,
+           "shift_m": 0.5875,
+           "residual_median_abs_m": 0.0327,
+           "applied": true
+          },
+          {
+           "view": 3,
+           "tracks": 49,
+           "near_spot": true,
+           "scale": 1.1435,
+           "shift_m": 0.1933,
+           "residual_median_abs_m": 0.0255,
+           "applied": true
+          }
+         ],
+         "s": 0.347
+        },
+        "mvs": null,
+        "geometry": null,
+        "tracks_before_cap": null,
+        "consistency_before": null,
+        "consistency_after": null
+       },
+       "time_split_s": {
+        "matching": 0.159,
+        "ba": 3.871,
+        "fuse_tsdf_1cm": 0.157,
+        "checks": 5.12,
+        "of_which_holdout_matching_ba_resect": 2.748,
+        "da3_crops_sam3": 0.632
+       }
+      }
+     },
+     "tilt_repeatability": {},
+     "x4_run006": {
+      "id": "s0",
+      "word": "wire",
+      "centre_shift_m": 0.0,
+      "same_spot": true,
+      "verdict_006": "NEEDS_REVIEW",
+      "multi_view_median_m_006": 0.02313
+     },
+     "clip": "me340-165"
+    },
+    {
+     "id": "s1",
+     "group": "box_stack",
+     "word": "pallet",
+     "centre_m_estimated": [
+      1.707,
+      0.562,
+      -0.377
+     ],
+     "frames_A": [
+      562,
+      508,
+      536,
+      473,
+      429
+     ],
+     "frames_B": [
+      555,
+      501,
+      464,
+      527,
+      409
+     ],
+     "methods": {
+      "A:anchor": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": true
+       },
+       "multi_view_median_m": 0.07839,
+       "multi_view_within_2cm": 0.1108,
+       "multi_view_occl10_median_m": 0.05969,
+       "fine_to_coarse_nn_median_m": 0.0303,
+       "holdout": {
+        "photometric_ratio": 1.0123,
+        "outline_iou_fine": 0.6283,
+        "outline_iou_coarse": 0.6402,
+        "resect": null,
+        "skipped": null
+       },
+       "plane_fine": {
+        "tilt_deg": 1.352,
+        "ci95_deg": [
+         1.216,
+         1.521
+        ],
+        "ci_width_deg": 0.305,
+        "inliers": 1543
+       },
+       "plane_coarse": {
+        "tilt_deg": 23.527,
+        "ci95_deg": [
+         22.405,
+         24.447
+        ]
+       },
+       "thin": null,
+       "vlm": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "The red outline loosely encloses the pallet, missing some edges and including some surrounding clutter."
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 6041,
+        "fine_raw_da3_pixels": 61502,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         43382,
+         18032,
+         26924,
+         12975,
+         8905
+        ]
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "gpu0_peak_gib": 37.93,
+       "time_s": {
+        "fine_i_iii": 1.346,
+        "da3": 0.615,
+        "anchor_icp": 0.029,
+        "tsdf_1cm": 0.165,
+        "holdout_check": 0.682,
+        "metrics": 0.172,
+        "vlm": 1.234,
+        "propagate": 0.519,
+        "select": 0.127,
+        "total_without_sweeps": 3.908
+       }
+      },
+      "A:anchor+ba": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "agrees_with_coarse"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": false,
+        "holdout_photometric": true,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": true
+       },
+       "multi_view_median_m": 0.03682,
+       "multi_view_within_2cm": 0.3521,
+       "multi_view_occl10_median_m": 0.01961,
+       "fine_to_coarse_nn_median_m": 0.0763,
+       "holdout": {
+        "photometric_ratio": 0.6549,
+        "outline_iou_fine": 0.6969,
+        "outline_iou_coarse": 0.4931,
+        "resect": {
+         "correspondences": 679,
+         "reprojection_px_before": {
+          "median": 17.5936,
+          "p90": 26.4066,
+          "rms": 19.5439,
+          "n": 679
+         },
+         "reprojection_px_after": {
+          "median": 1.1544,
+          "p90": 4.1108,
+          "rms": 3.2941,
+          "n": 679
+         },
+         "rot_deg": 1.532,
+         "move_cm": 7.92
+        },
+        "skipped": null
+       },
+       "plane_fine": {
+        "tilt_deg": 9.219,
+        "ci95_deg": [
+         8.967,
+         9.506
+        ],
+        "ci_width_deg": 0.539,
+        "inliers": 534
+       },
+       "plane_coarse": {
+        "tilt_deg": 23.527,
+        "ci95_deg": [
+         22.405,
+         24.447
+        ]
+       },
+       "thin": null,
+       "vlm": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "The red outline loosely encloses the pallet, missing some edges and including some background clutter."
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 3360,
+        "fine_raw_da3_pixels": 44564,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         41310,
+         17762,
+         25878,
+         11628,
+         7673
+        ]
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "gpu0_peak_gib": 36.91,
+       "time_s": {
+        "fine_i_iii": 10.058,
+        "da3": 0.484,
+        "anchor_icp": 8.872,
+        "tsdf_1cm": 0.242,
+        "holdout_check": 10.813,
+        "metrics": 0.147,
+        "vlm": 1.243,
+        "propagate": 0.454,
+        "select": 0.127,
+        "total_without_sweeps": 22.695
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "keypoints": [
+         1886,
+         1945,
+         1866,
+         1979,
+         2048
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 616,
+          "magsac_inliers": 573
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 966,
+          "magsac_inliers": 943
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 391,
+          "magsac_inliers": 366
+         },
+         {
+          "pair": [
+           0,
+           4
+          ],
+          "lightglue": 266,
+          "magsac_inliers": 227
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 861,
+          "magsac_inliers": 828
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 903,
+          "magsac_inliers": 870
+         },
+         {
+          "pair": [
+           1,
+           4
+          ],
+          "lightglue": 556,
+          "magsac_inliers": 532
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 590,
+          "magsac_inliers": 551
+         },
+         {
+          "pair": [
+           2,
+           4
+          ],
+          "lightglue": 342,
+          "magsac_inliers": 312
+         },
+         {
+          "pair": [
+           3,
+           4
+          ],
+          "lightglue": 918,
+          "magsac_inliers": 888
+         }
+        ],
+        "tracks": 1595,
+        "observations": 4412,
+        "tracks_in_region": 182,
+        "depth_observations": 431,
+        "track_length_hist": {
+         "2": 870,
+         "3": 382,
+         "4": 189,
+         "5": 154
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 0.8474,
+          "p90": 2.2921,
+          "rms": 4.3491,
+          "n": 4412
+         },
+         "after": {
+          "median": 0.3847,
+          "p90": 1.1494,
+          "rms": 3.9923,
+          "n": 4412
+         },
+         "within_2px_before": 0.8558,
+         "within_2px_after": 0.9744
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.0679,
+          "p90": 0.1761,
+          "rms": 0.1393,
+          "n": 431
+         },
+         "after": {
+          "median": 0.015,
+          "p90": 0.0517,
+          "rms": 0.0952,
+          "n": 431
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          0.742,
+          0.826,
+          0.774,
+          0.81,
+          0.77
+         ],
+         "move_cm": [
+          7.13,
+          2.63,
+          3.28,
+          3.63,
+          10.06
+         ],
+         "move_vec_cm": [
+          [
+           3.48,
+           1.15,
+           -6.12
+          ],
+          [
+           1.09,
+           0.1,
+           -2.39
+          ],
+          [
+           2.23,
+           0.33,
+           -2.39
+          ],
+          [
+           -1.7,
+           -0.3,
+           3.19
+          ],
+          [
+           -5.52,
+           -1.2,
+           8.33
+          ]
+         ],
+         "at_bound": true,
+         "gauge_removed": {
+          "rot_deg": 0.743,
+          "move_cm": 2.0
+         },
+         "note": "after the rigid gauge fit back onto the coarse cameras"
+        },
+        "depth_scale": [
+         0.8998,
+         0.8344,
+         0.8356,
+         0.8187,
+         0.8334
+        ],
+        "depth_shift_m": [
+         -0.0266,
+         0.0026,
+         0.0349,
+         0.0198,
+         0.0032
+        ],
+        "baseline_scale": null,
+        "solver": {
+         "iterations": 59,
+         "cost_start": 67569.616,
+         "cost_end": 5193.555,
+         "s": 7.852,
+         "before_iterations": 33,
+         "before_s": 0.618
+        },
+        "tri_field": null,
+        "da3_rerun": null,
+        "mvs": null,
+        "geometry": null,
+        "tracks_before_cap": null,
+        "consistency_before": null,
+        "consistency_after": null
+       },
+       "time_split_s": {
+        "matching": 0.284,
+        "ba": 7.938,
+        "fuse_tsdf_1cm": 0.242,
+        "checks": 12.203,
+        "of_which_holdout_matching_ba_resect": 9.125,
+        "da3_crops_sam3": 0.944
+       }
+      },
+      "A:anchor+ba+tri": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "agrees_with_coarse"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": false,
+        "holdout_photometric": true,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": true
+       },
+       "multi_view_median_m": 0.04435,
+       "multi_view_within_2cm": 0.2992,
+       "multi_view_occl10_median_m": 0.02204,
+       "fine_to_coarse_nn_median_m": 0.069,
+       "holdout": {
+        "photometric_ratio": 0.5591,
+        "outline_iou_fine": 0.5932,
+        "outline_iou_coarse": 0.4931,
+        "resect": {
+         "correspondences": 679,
+         "reprojection_px_before": {
+          "median": 17.5936,
+          "p90": 26.4066,
+          "rms": 19.5439,
+          "n": 679
+         },
+         "reprojection_px_after": {
+          "median": 1.1544,
+          "p90": 4.1108,
+          "rms": 3.2941,
+          "n": 679
+         },
+         "rot_deg": 1.532,
+         "move_cm": 7.92
+        },
+        "skipped": null
+       },
+       "plane_fine": {
+        "tilt_deg": 0.54,
+        "ci95_deg": [
+         0.266,
+         0.83
+        ],
+        "ci_width_deg": 0.564,
+        "inliers": 452
+       },
+       "plane_coarse": {
+        "tilt_deg": 23.527,
+        "ci95_deg": [
+         22.405,
+         24.447
+        ]
+       },
+       "thin": null,
+       "vlm": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "The red outline loosely encloses the pallet, missing some edges and including some background clutter."
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 2828,
+        "fine_raw_da3_pixels": 40267,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         40889,
+         17449,
+         25767,
+         10137,
+         2911
+        ]
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "gpu0_peak_gib": 36.91,
+       "time_s": {
+        "fine_i_iii": 10.237,
+        "da3": 0.496,
+        "anchor_icp": 9.001,
+        "tsdf_1cm": 0.252,
+        "holdout_check": 12.416,
+        "metrics": 0.117,
+        "vlm": 1.247,
+        "propagate": 0.463,
+        "select": 0.127,
+        "total_without_sweeps": 24.49
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "keypoints": [
+         1886,
+         1945,
+         1866,
+         1979,
+         2048
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 616,
+          "magsac_inliers": 573
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 966,
+          "magsac_inliers": 943
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 391,
+          "magsac_inliers": 366
+         },
+         {
+          "pair": [
+           0,
+           4
+          ],
+          "lightglue": 266,
+          "magsac_inliers": 227
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 861,
+          "magsac_inliers": 828
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 903,
+          "magsac_inliers": 870
+         },
+         {
+          "pair": [
+           1,
+           4
+          ],
+          "lightglue": 556,
+          "magsac_inliers": 532
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 590,
+          "magsac_inliers": 551
+         },
+         {
+          "pair": [
+           2,
+           4
+          ],
+          "lightglue": 342,
+          "magsac_inliers": 312
+         },
+         {
+          "pair": [
+           3,
+           4
+          ],
+          "lightglue": 918,
+          "magsac_inliers": 888
+         }
+        ],
+        "tracks": 1595,
+        "observations": 4412,
+        "tracks_in_region": 182,
+        "depth_observations": 431,
+        "track_length_hist": {
+         "2": 870,
+         "3": 382,
+         "4": 189,
+         "5": 154
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 0.8474,
+          "p90": 2.2921,
+          "rms": 4.3491,
+          "n": 4412
+         },
+         "after": {
+          "median": 0.3847,
+          "p90": 1.1494,
+          "rms": 3.9923,
+          "n": 4412
+         },
+         "within_2px_before": 0.8558,
+         "within_2px_after": 0.9744
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.0679,
+          "p90": 0.1761,
+          "rms": 0.1393,
+          "n": 431
+         },
+         "after": {
+          "median": 0.015,
+          "p90": 0.0517,
+          "rms": 0.0952,
+          "n": 431
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          0.742,
+          0.826,
+          0.774,
+          0.81,
+          0.77
+         ],
+         "move_cm": [
+          7.13,
+          2.63,
+          3.28,
+          3.63,
+          10.06
+         ],
+         "move_vec_cm": [
+          [
+           3.48,
+           1.15,
+           -6.12
+          ],
+          [
+           1.09,
+           0.1,
+           -2.39
+          ],
+          [
+           2.23,
+           0.33,
+           -2.39
+          ],
+          [
+           -1.7,
+           -0.3,
+           3.19
+          ],
+          [
+           -5.52,
+           -1.2,
+           8.33
+          ]
+         ],
+         "at_bound": true,
+         "gauge_removed": {
+          "rot_deg": 0.743,
+          "move_cm": 2.0
+         },
+         "note": "after the rigid gauge fit back onto the coarse cameras"
+        },
+        "depth_scale": [
+         0.8998,
+         0.8344,
+         0.8356,
+         0.8187,
+         0.8334
+        ],
+        "depth_shift_m": [
+         -0.0266,
+         0.0026,
+         0.0349,
+         0.0198,
+         0.0032
+        ],
+        "baseline_scale": null,
+        "solver": {
+         "iterations": 59,
+         "cost_start": 67569.616,
+         "cost_end": 5193.555,
+         "s": 7.395,
+         "before_iterations": 33,
+         "before_s": 0.578
+        },
+        "tri_field": [
+         {
+          "view": 0,
+          "tracks": 89,
+          "residual_median_abs_m": 0.0108,
+          "field_abs_p90_m": 0.0871,
+          "applied": true
+         },
+         {
+          "view": 1,
+          "tracks": 100,
+          "residual_median_abs_m": 0.0176,
+          "field_abs_p90_m": 0.0546,
+          "applied": true
+         },
+         {
+          "view": 2,
+          "tracks": 128,
+          "residual_median_abs_m": 0.015,
+          "field_abs_p90_m": 0.0249,
+          "applied": true
+         },
+         {
+          "view": 3,
+          "tracks": 85,
+          "residual_median_abs_m": 0.0282,
+          "field_abs_p90_m": 0.0851,
+          "applied": true
+         },
+         {
+          "view": 4,
+          "tracks": 61,
+          "residual_median_abs_m": 0.0299,
+          "field_abs_p90_m": 0.2831,
+          "applied": true
+         }
+        ],
+        "da3_rerun": null,
+        "mvs": null,
+        "geometry": null,
+        "tracks_before_cap": null,
+        "consistency_before": null,
+        "consistency_after": null
+       },
+       "time_split_s": {
+        "matching": 0.316,
+        "ba": 8.081,
+        "fuse_tsdf_1cm": 0.252,
+        "checks": 13.78,
+        "of_which_holdout_matching_ba_resect": 10.483,
+        "da3_crops_sam3": 0.984
+       }
+      },
+      "A:anchor+ba+da3": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "agrees_with_coarse"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": false,
+        "holdout_photometric": true,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": true
+       },
+       "multi_view_median_m": 0.03894,
+       "multi_view_within_2cm": 0.3289,
+       "multi_view_occl10_median_m": 0.02126,
+       "fine_to_coarse_nn_median_m": 0.0774,
+       "holdout": {
+        "photometric_ratio": 0.6532,
+        "outline_iou_fine": 0.694,
+        "outline_iou_coarse": 0.4931,
+        "resect": {
+         "correspondences": 679,
+         "reprojection_px_before": {
+          "median": 17.5936,
+          "p90": 26.4066,
+          "rms": 19.5439,
+          "n": 679
+         },
+         "reprojection_px_after": {
+          "median": 1.1544,
+          "p90": 4.1108,
+          "rms": 3.2941,
+          "n": 679
+         },
+         "rot_deg": 1.532,
+         "move_cm": 7.92
+        },
+        "skipped": null
+       },
+       "plane_fine": {
+        "tilt_deg": 0.417,
+        "ci95_deg": [
+         0.125,
+         0.729
+        ],
+        "ci_width_deg": 0.604,
+        "inliers": 562
+       },
+       "plane_coarse": {
+        "tilt_deg": 23.527,
+        "ci95_deg": [
+         22.405,
+         24.447
+        ]
+       },
+       "thin": null,
+       "vlm": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "The red outline loosely encloses the pallet, missing some edges and including some background clutter."
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 3254,
+        "fine_raw_da3_pixels": 44659,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         41613,
+         17952,
+         26204,
+         11642,
+         7738
+        ]
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "gpu0_peak_gib": 36.91,
+       "time_s": {
+        "fine_i_iii": 10.498,
+        "da3": 0.494,
+        "anchor_icp": 9.211,
+        "tsdf_1cm": 0.237,
+        "holdout_check": 11.92,
+        "metrics": 0.142,
+        "vlm": 1.388,
+        "propagate": 0.492,
+        "select": 0.127,
+        "total_without_sweeps": 24.424
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "keypoints": [
+         1886,
+         1945,
+         1866,
+         1979,
+         2048
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 616,
+          "magsac_inliers": 573
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 966,
+          "magsac_inliers": 943
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 391,
+          "magsac_inliers": 366
+         },
+         {
+          "pair": [
+           0,
+           4
+          ],
+          "lightglue": 266,
+          "magsac_inliers": 227
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 861,
+          "magsac_inliers": 828
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 903,
+          "magsac_inliers": 870
+         },
+         {
+          "pair": [
+           1,
+           4
+          ],
+          "lightglue": 556,
+          "magsac_inliers": 532
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 590,
+          "magsac_inliers": 551
+         },
+         {
+          "pair": [
+           2,
+           4
+          ],
+          "lightglue": 342,
+          "magsac_inliers": 312
+         },
+         {
+          "pair": [
+           3,
+           4
+          ],
+          "lightglue": 918,
+          "magsac_inliers": 888
+         }
+        ],
+        "tracks": 1595,
+        "observations": 4412,
+        "tracks_in_region": 182,
+        "depth_observations": 431,
+        "track_length_hist": {
+         "2": 870,
+         "3": 382,
+         "4": 189,
+         "5": 154
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 0.8474,
+          "p90": 2.2921,
+          "rms": 4.3491,
+          "n": 4412
+         },
+         "after": {
+          "median": 0.3847,
+          "p90": 1.1494,
+          "rms": 3.9923,
+          "n": 4412
+         },
+         "within_2px_before": 0.8558,
+         "within_2px_after": 0.9744
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.0679,
+          "p90": 0.1761,
+          "rms": 0.1393,
+          "n": 431
+         },
+         "after": {
+          "median": 0.015,
+          "p90": 0.0517,
+          "rms": 0.0952,
+          "n": 431
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          0.742,
+          0.826,
+          0.774,
+          0.81,
+          0.77
+         ],
+         "move_cm": [
+          7.13,
+          2.63,
+          3.28,
+          3.63,
+          10.06
+         ],
+         "move_vec_cm": [
+          [
+           3.48,
+           1.15,
+           -6.12
+          ],
+          [
+           1.09,
+           0.1,
+           -2.39
+          ],
+          [
+           2.23,
+           0.33,
+           -2.39
+          ],
+          [
+           -1.7,
+           -0.3,
+           3.19
+          ],
+          [
+           -5.52,
+           -1.2,
+           8.33
+          ]
+         ],
+         "at_bound": true,
+         "gauge_removed": {
+          "rot_deg": 0.743,
+          "move_cm": 2.0
+         },
+         "note": "after the rigid gauge fit back onto the coarse cameras"
+        },
+        "depth_scale": [
+         0.8998,
+         0.8344,
+         0.8356,
+         0.8187,
+         0.8334
+        ],
+        "depth_shift_m": [
+         -0.0266,
+         0.0026,
+         0.0349,
+         0.0198,
+         0.0032
+        ],
+        "baseline_scale": null,
+        "solver": {
+         "iterations": 59,
+         "cost_start": 67569.616,
+         "cost_end": 5193.555,
+         "s": 7.801,
+         "before_iterations": 33,
+         "before_s": 0.614
+        },
+        "tri_field": null,
+        "da3_rerun": {
+         "views": [
+          {
+           "view": 0,
+           "tracks": 86,
+           "near_spot": true,
+           "scale": 0.9408,
+           "shift_m": -0.0286,
+           "residual_median_abs_m": 0.0095,
+           "applied": true
+          },
+          {
+           "view": 1,
+           "tracks": 95,
+           "near_spot": true,
+           "scale": 0.8329,
+           "shift_m": 0.0395,
+           "residual_median_abs_m": 0.0135,
+           "applied": true
+          },
+          {
+           "view": 2,
+           "tracks": 121,
+           "near_spot": true,
+           "scale": 0.8559,
+           "shift_m": 0.0354,
+           "residual_median_abs_m": 0.0158,
+           "applied": true
+          },
+          {
+           "view": 3,
+           "tracks": 77,
+           "near_spot": true,
+           "scale": 0.8234,
+           "shift_m": 0.094,
+           "residual_median_abs_m": 0.0201,
+           "applied": true
+          },
+          {
+           "view": 4,
+           "tracks": 53,
+           "near_spot": true,
+           "scale": 0.8354,
+           "shift_m": 0.057,
+           "residual_median_abs_m": 0.0193,
+           "applied": true
+          }
+         ],
+         "s": 0.435
+        },
+        "mvs": null,
+        "geometry": null,
+        "tracks_before_cap": null,
+        "consistency_before": null,
+        "consistency_after": null
+       },
+       "time_split_s": {
+        "matching": 0.247,
+        "ba": 8.321,
+        "fuse_tsdf_1cm": 0.237,
+        "checks": 13.45,
+        "of_which_holdout_matching_ba_resect": 10.242,
+        "da3_crops_sam3": 1.05
+       }
+      }
+     },
+     "tilt_repeatability": {},
+     "x4_run006": {
+      "id": "s1",
+      "word": "pallet",
+      "centre_shift_m": 0.0,
+      "same_spot": true,
+      "verdict_006": "NEEDS_REVIEW",
+      "multi_view_median_m_006": 0.07839
+     },
+     "clip": "me340-165"
+    }
+   ],
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 80.0,
+     "peak_gb": 48.0,
+     "at_s": 31.204,
+     "stages_active": [
+      "sam3.person"
+     ]
+    }
+   ],
+   "flags": [],
+   "torch_reserved_peak_gib": 26.76,
+   "sheet_jpg": "me340-165-sheet.jpg"
+  }
+ },
+ "aggregate": {
+  "A:anchor": {
+   "spots": 2,
+   "confirmed": 0,
+   "failed_checks": {
+    "multi_view": 2,
+    "holdout_outline": 1,
+    "vlm": 1
+   },
+   "median_multi_view_m": 0.0508,
+   "median_multi_view_within_2cm": 0.278,
+   "multi_view_le_1_5cm": 0,
+   "median_fine_to_coarse_m": 0.0251,
+   "median_photometric_ratio": 0.9616,
+   "median_outline_iou_fine": 0.3313,
+   "median_plane_ci_width_deg": 0.305,
+   "median_total_without_sweeps_s": 3.958
+  },
+  "A:anchor+ba": {
+   "spots": 2,
+   "confirmed": 0,
+   "failed_checks": {
+    "multi_view": 2,
+    "agrees_with_coarse": 2,
+    "holdout_photometric": 1,
+    "holdout_outline": 1,
+    "thin_visible": 1,
+    "vlm": 1
+   },
+   "median_multi_view_m": 0.0368,
+   "median_multi_view_within_2cm": 0.3521,
+   "multi_view_le_1_5cm": 0,
+   "median_fine_to_coarse_m": 0.0763,
+   "median_photometric_ratio": 0.6549,
+   "median_outline_iou_fine": 0.6969,
+   "median_plane_ci_width_deg": 0.539,
+   "median_total_without_sweeps_s": 17.345,
+   "ba": {
+    "solved": 2,
+    "not_solved": [],
+    "median_tracks": 1195.0,
+    "median_tracks_in_region": 124.0,
+    "median_reprojection_px_before": 1.1255,
+    "median_reprojection_px_after": 0.395,
+    "median_p90_reprojection_px_before": 3.3829,
+    "median_p90_reprojection_px_after": 1.2407,
+    "median_rot_deg": 0.826,
+    "median_move_cm": 7.13,
+    "max_move_cm": 10.79,
+    "any_at_bound": 1,
+    "median_depth_scale": 0.8998,
+    "median_depth_shift_m": 0.0032,
+    "median_baseline_scale": null,
+    "baseline_scale_range": [
+     null,
+     null
+    ],
+    "median_tri_sigma_m_at_0_5px": null,
+    "median_consistency_before": {
+     "median_abs_pair_offset_m": null,
+     "median_pair_mad_m": null,
+     "median_abs_dz_m": null
+    },
+    "median_consistency_after": {
+     "median_abs_pair_offset_m": null,
+     "median_pair_mad_m": null,
+     "median_abs_dz_m": null
+    },
+    "median_depth_residual_m_before": 0.051,
+    "median_depth_residual_m_after": 0.0235,
+    "median_resect_px_before": 26.7562,
+    "median_resect_px_after": 2.2725,
+    "median_time_split_s": {
+     "matching": 0.238,
+     "ba": 5.856,
+     "fuse_tsdf_1cm": 0.285,
+     "checks": 8.679,
+     "of_which_holdout_matching_ba_resect": 5.848,
+     "da3_crops_sam3": 0.822
+    }
+   }
+  },
+  "A:anchor+ba+tri": {
+   "spots": 2,
+   "confirmed": 0,
+   "failed_checks": {
+    "multi_view": 2,
+    "agrees_with_coarse": 2,
+    "holdout_photometric": 1,
+    "holdout_outline": 1,
+    "thin_visible": 1,
+    "vlm": 1
+   },
+   "median_multi_view_m": 0.0444,
+   "median_multi_view_within_2cm": 0.2992,
+   "multi_view_le_1_5cm": 0,
+   "median_fine_to_coarse_m": 0.069,
+   "median_photometric_ratio": 0.5591,
+   "median_outline_iou_fine": 0.5932,
+   "median_plane_ci_width_deg": 0.564,
+   "median_total_without_sweeps_s": 18.421,
+   "ba": {
+    "solved": 2,
+    "not_solved": [],
+    "median_tracks": 1195.0,
+    "median_tracks_in_region": 124.0,
+    "median_reprojection_px_before": 1.1255,
+    "median_reprojection_px_after": 0.395,
+    "median_p90_reprojection_px_before": 3.3829,
+    "median_p90_reprojection_px_after": 1.2407,
+    "median_rot_deg": 0.826,
+    "median_move_cm": 7.13,
+    "max_move_cm": 10.79,
+    "any_at_bound": 1,
+    "median_depth_scale": 0.8998,
+    "median_depth_shift_m": 0.0032,
+    "median_baseline_scale": null,
+    "baseline_scale_range": [
+     null,
+     null
+    ],
+    "median_tri_sigma_m_at_0_5px": null,
+    "median_consistency_before": {
+     "median_abs_pair_offset_m": null,
+     "median_pair_mad_m": null,
+     "median_abs_dz_m": null
+    },
+    "median_consistency_after": {
+     "median_abs_pair_offset_m": null,
+     "median_pair_mad_m": null,
+     "median_abs_dz_m": null
+    },
+    "median_depth_residual_m_before": 0.051,
+    "median_depth_residual_m_after": 0.0235,
+    "median_resect_px_before": 26.7562,
+    "median_resect_px_after": 2.2725,
+    "median_time_split_s": {
+     "matching": 0.236,
+     "ba": 6.163,
+     "fuse_tsdf_1cm": 0.201,
+     "checks": 9.487,
+     "of_which_holdout_matching_ba_resect": 6.677,
+     "da3_crops_sam3": 0.871
+    }
+   }
+  },
+  "A:anchor+ba+da3": {
+   "spots": 2,
+   "confirmed": 0,
+   "failed_checks": {
+    "multi_view": 2,
+    "agrees_with_coarse": 2,
+    "holdout_photometric": 1,
+    "holdout_outline": 1,
+    "thin_visible": 1,
+    "vlm": 1
+   },
+   "median_multi_view_m": 0.0389,
+   "median_multi_view_within_2cm": 0.3289,
+   "multi_view_le_1_5cm": 0,
+   "median_fine_to_coarse_m": 0.0774,
+   "median_photometric_ratio": 0.6532,
+   "median_outline_iou_fine": 0.694,
+   "median_plane_ci_width_deg": 0.604,
+   "median_total_without_sweeps_s": 18.092,
+   "ba": {
+    "solved": 2,
+    "not_solved": [],
+    "median_tracks": 1195.0,
+    "median_tracks_in_region": 124.0,
+    "median_reprojection_px_before": 1.1255,
+    "median_reprojection_px_after": 0.395,
+    "median_p90_reprojection_px_before": 3.3829,
+    "median_p90_reprojection_px_after": 1.2407,
+    "median_rot_deg": 0.826,
+    "median_move_cm": 7.13,
+    "max_move_cm": 10.79,
+    "any_at_bound": 1,
+    "median_depth_scale": 0.8998,
+    "median_depth_shift_m": 0.0032,
+    "median_baseline_scale": null,
+    "baseline_scale_range": [
+     null,
+     null
+    ],
+    "median_tri_sigma_m_at_0_5px": null,
+    "median_consistency_before": {
+     "median_abs_pair_offset_m": null,
+     "median_pair_mad_m": null,
+     "median_abs_dz_m": null
+    },
+    "median_consistency_after": {
+     "median_abs_pair_offset_m": null,
+     "median_pair_mad_m": null,
+     "median_abs_dz_m": null
+    },
+    "median_depth_residual_m_before": 0.051,
+    "median_depth_residual_m_after": 0.0235,
+    "median_resect_px_before": 26.7562,
+    "median_resect_px_after": 2.2725,
+    "median_time_split_s": {
+     "matching": 0.203,
+     "ba": 6.096,
+     "fuse_tsdf_1cm": 0.197,
+     "checks": 9.285,
+     "of_which_holdout_matching_ba_resect": 6.495,
+     "da3_crops_sam3": 0.841
+    }
+   }
+  }
+ },
+ "tilt_repeatability": {}
+}

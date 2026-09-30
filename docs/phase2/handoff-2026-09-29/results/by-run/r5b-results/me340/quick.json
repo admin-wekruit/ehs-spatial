@@ -1,0 +1,403 @@
+{
+ "site": "me340",
+ "report": "mvp-me340-e84efffd-1790741879",
+ "bench": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/r5b-int-me340-002",
+ "rule": "times: analysis s from the MP4 bytes in the container to the Volume commit (written_s); tiers: the final layers; alignment: scripts/r5b_align.py (every object card's shown model from its best keyframe's camera vs its SAM 3 outline)",
+ "times_warm": {
+  "first 3D": 15.9,
+  "objects v1": 29.1,
+  "cards v1": 37.4,
+  "types (first pass)": 57.3,
+  "objects v3": 76.6,
+  "cards v3": 84.0,
+  "types (densify pass)": 89.6,
+  "splat preview": null,
+  "call end": 266.8,
+  "vocab known (mark)": 9.9,
+  "decode end": 4.1,
+  "sam3 done (mark)": 25.8,
+  "tier 0 surfaces v1": 39.461,
+  "tier 1 generating (mark)": 98.114,
+  "all generated models in (models final)": 266.5,
+  "first generated model": 105.7
+ },
+ "times_first": {
+  "first 3D": 20.3,
+  "objects v1": 30.8,
+  "cards v1": 38.6,
+  "types (first pass)": 61.1,
+  "objects v3": 79.2,
+  "cards v3": 87.6,
+  "types (densify pass)": 94.0,
+  "splat preview": null,
+  "call end": 261.2,
+  "vocab known (mark)": 10.8,
+  "decode end": 7.4,
+  "sam3 done (mark)": 26.6,
+  "tier 0 surfaces v1": 40.384,
+  "tier 1 generating (mark)": 100.842,
+  "all generated models in (models final)": 260.9,
+  "first generated model": 112.5
+ },
+ "models": {
+  "object_cards": 274,
+  "all_cards_by_tier": {
+   "generated": 75,
+   "observed surface": 192,
+   "primitive": 7
+  },
+  "non_simple": 151,
+  "non_simple_shown": {
+   "generated (own)": 74,
+   "observed surface": 76,
+   "generated (look-alike copy)": 1
+  },
+  "non_simple_generated_share": 0.497,
+  "generated_models": 74,
+  "copies": 1,
+  "passed_view_check": 16,
+  "held_out_view": 57,
+  "plan": {
+   "cards": 274,
+   "soft_goods": 0,
+   "candidates": 263,
+   "groups": 236,
+   "jev_asked": 187,
+   "jev_s": 9.039,
+   "generated_groups": 132,
+   "kept": 132,
+   "members": 19,
+   "by_route": {
+    "primitive": 123,
+    "generated": 151,
+    "ask jev": 0
+   },
+   "plan_s": 9.406
+  },
+  "reuse": {
+   "kept": 1,
+   "rejected": 9
+  },
+  "display_rule": {
+   "shown": 74,
+   "not_lined_up": 75,
+   "own_after_copy": 10
+  },
+  "final": true
+ },
+ "vlm_requests": {
+  "scene vocabulary": {
+   "requests": 1,
+   "spans_s": [
+    [
+     1.1,
+     9.9
+    ]
+   ],
+   "before_cards_v1": 1
+  },
+  "event captions": {
+   "requests": 0,
+   "spans_s": [],
+   "before_cards_v1": 0
+  },
+  "naming (cluster medoids)": {
+   "requests": 51,
+   "spans_s": [
+    [
+     50.4,
+     52.9
+    ],
+    [
+     85.7,
+     87.0
+    ]
+   ],
+   "before_cards_v1": 0
+  },
+  "hazard / judge": {
+   "requests": 0,
+   "spans_s": [],
+   "before_cards_v1": 0
+  },
+  "qwen identity decider": {
+   "requests": 0,
+   "spans_s": [],
+   "before_cards_v1": 0
+  },
+  "naming escalated": 0,
+  "question log (by priority)": {
+   "identity": {
+    "n": 51,
+    "failed": 0,
+    "wait_p50_s": 0.005,
+    "wait_p90_s": 0.916,
+    "request_p50_s": 0.84,
+    "request_p90_s": 1.187,
+    "per_s": 1.41,
+    "prompt_tokens_mean": 377.0
+   }
+  },
+  "before cards v1 (all)": 1
+ },
+ "gpu": {
+  "peak_gib": [
+   55.46,
+   70.2
+  ],
+  "stages_over_72": [],
+  "recgen": {
+   "recgen.select": {
+    "n": 389,
+    "gpu_s": 328.38,
+    "span": [
+     99.25,
+     248.22
+    ]
+   },
+   "recgen.generate": {
+    "n": 149,
+    "gpu_s": 624.1,
+    "span": [
+     99.76,
+     262.65
+    ]
+   },
+   "recgen.gate": {
+    "n": 149,
+    "gpu_s": 251.68,
+    "span": [
+     102.38,
+     264.41
+    ]
+   },
+   "tier1.jev": {
+    "n": 2,
+    "gpu_s": 23.7,
+    "span": [
+     54.15,
+     97.32
+    ]
+   }
+  }
+ },
+ "vocab": {
+  "qwen": {
+   "words": [
+    "workbench",
+    "machine tool",
+    "tool",
+    "drill",
+    "power tool",
+    "wrench",
+    "screwdriver",
+    "clamp",
+    "fixture",
+    "part",
+    "metal part",
+    "cable",
+    "fan",
+    "control panel",
+    "tool tray",
+    "tool box",
+    "tool holder",
+    "tool rack",
+    "tool set",
+    "tool kit",
+    "tool chest",
+    "tool cabinet",
+    "tool drawer",
+    "tool bin",
+    "tool organizer",
+    "tool cart",
+    "tool stand",
+    "tool mount",
+    "tool bracket",
+    "tool block",
+    "tool plate",
+    "tool board",
+    "tool mat",
+    "tool pad",
+    "tool surface",
+    "tool table",
+    "tool bench",
+    "tool station",
+    "tool display",
+    "tool collection",
+    "tool assortment",
+    "tool group",
+    "tool array",
+    "tool setup",
+    "tool arrangement",
+    "tool layout",
+    "tool configuration",
+    "tool assembly",
+    "tool system",
+    "tool network"
+   ],
+   "s": 8.681,
+   "first_output_s": 0.396,
+   "stream_chunks": 262,
+   "stopped_at_max_types": true,
+   "kept": 50,
+   "text": "{\n  \"objects\": [\n    \"workbench\",\n    \"machine tool\",\n    \"tool\",\n    \"drill\",\n    \"power tool\",\n    \"wrench\",\n    \"screwdriver\",\n    \"clamp\",\n    \"fixture\",\n    \"part\",\n    \"metal part\",\n    \"cable\",\n    \"fan\",\n    \"control panel\",\n    \"tool tray\",\n    \"tool box\",\n    \"tool holder\",\n    \"tool rack\",\n    \"tool set\",\n    \"tool kit\",\n    \"tool chest\",\n    \"tool cabinet\",\n    \"tool drawer\",\n    \"tool bin\",\n    \"tool tray\",\n    \"tool organizer\",\n    \"tool cart\",\n    \"tool stand\",\n    \"tool mount\",\n    \"tool bracket\",\n    \"tool holder\",\n    \"tool block\",\n    \"tool plate\",\n    \"tool board\",\n    \"tool mat\",\n    \"tool pad\",\n    \"tool surface\",\n    \"tool table\",\n    \"tool bench\",\n    \"tool station\",\n    \"tool display\",\n    \"tool collection\",\n    \"tool assortment\",\n    \"tool group\",\n    \"tool array\",\n    \"tool setup\",\n    \"tool arrangement\",\n    \"tool layout\",\n    \"tool configuration\",\n    \"tool assembly\",\n    \"tool system\",\n    \"tool network\",\n"
+  },
+  "source": "qwen+ram",
+  "words": [
+   "tool",
+   "machine",
+   "equipment",
+   "workbench",
+   "hammer",
+   "stool",
+   "locker",
+   "bin",
+   "toolbox",
+   "machine tool",
+   "drill",
+   "power tool",
+   "wrench",
+   "screwdriver",
+   "clamp",
+   "fixture",
+   "part",
+   "metal part",
+   "fan",
+   "control panel",
+   "tool tray",
+   "tool box",
+   "tool holder",
+   "tool rack",
+   "tool set",
+   "tool kit",
+   "tool chest",
+   "tool cabinet",
+   "tool drawer",
+   "tool bin",
+   "tool organizer",
+   "tool cart",
+   "tool stand",
+   "tool mount",
+   "tool bracket",
+   "tool block",
+   "tool plate",
+   "tool board",
+   "tool mat",
+   "tool pad",
+   "tool surface",
+   "tool table",
+   "tool bench",
+   "tool station",
+   "tool display",
+   "tool collection",
+   "tool assortment",
+   "tool group",
+   "tool array",
+   "tool setup",
+   "tool arrangement",
+   "tool layout",
+   "tool configuration",
+   "tool assembly",
+   "tool system",
+   "tool network"
+  ],
+  "s": 9.834
+ },
+ "tier1_summary": {
+  "eligible": 132,
+  "attempted": 149,
+  "accepted": 74,
+  "reused": {
+   "kept": 1,
+   "rejected": 9
+  },
+  "prepare_rejected": 0,
+  "errors": [],
+  "display": {
+   "shown": 74,
+   "not_lined_up": 75,
+   "own_after_copy": 10
+  }
+ },
+ "usd_estimate_call": 0.5769,
+ "alignment": {
+  "summary": {
+   "all": {
+    "n": 270,
+    "iou_median": 0.493,
+    "iou_p10": 0.148,
+    "iou_ge_0.5": 0.493,
+    "offset_px_median": 11.45,
+    "offset_px_p90": 59.22,
+    "offset_cm_median": 6.65,
+    "offset_cm_p90": 43.82
+   },
+   "generated": {
+    "n": 75,
+    "iou_median": 0.537,
+    "iou_p10": 0.154,
+    "iou_ge_0.5": 0.56,
+    "offset_px_median": 13.1,
+    "offset_px_p90": 56.48,
+    "offset_cm_median": 7.0,
+    "offset_cm_p90": 41.7
+   },
+   "observed surface": {
+    "n": 188,
+    "iou_median": 0.462,
+    "iou_p10": 0.145,
+    "iou_ge_0.5": 0.452,
+    "offset_px_median": 11.85,
+    "offset_px_p90": 60.06,
+    "offset_cm_median": 6.6,
+    "offset_cm_p90": 44.03
+   },
+   "primitive": {
+    "n": 7,
+    "iou_median": 0.762,
+    "iou_p10": 0.602,
+    "iou_ge_0.5": 0.857,
+    "offset_px_median": 3.5,
+    "offset_px_p90": 49.02,
+    "offset_cm_median": 1.5,
+    "offset_cm_p90": 41.94
+   }
+  },
+  "worst_generated": [
+   "obj-1-698",
+   "obj-1-574",
+   "obj-1-540",
+   "obj-0-362",
+   "obj-1-173",
+   "obj-1-168",
+   "obj-1-624",
+   "obj-1-417",
+   "obj-1-572",
+   "obj-1-613",
+   "obj-0-314",
+   "obj-0-345"
+  ],
+  "overlays": [
+   "overlay-shot0-frame126.jpg",
+   "overlay-shot1-frame864.jpg"
+  ]
+ },
+ "screenshots": {
+  "3d_before_r4b": "viewer/me340/3d-before-r4b.jpg (r4b warm report mvp-me340-e84efffd-1790720411 in r4b's viewer, follow mode at 12 s)",
+  "3d_after": "viewer/me340/3d-after.jpg (this report, this viewer, follow mode at 12 s: models in place, no boxes, no always-on names)",
+  "overlay": [
+   "viewer/me340/overlay-4.2.jpg",
+   "viewer/me340/overlay-28.8.jpg"
+  ],
+  "overlay_rendered_on_modal": [
+   "viewer/me340/modal-overlay-shot0-frame126.jpg",
+   "viewer/me340/modal-overlay-shot1-frame864.jpg"
+  ],
+  "worst_generated_models": "viewer/me340/modal-worst-generated.jpg",
+  "clicked_cards": [
+   "viewer/me340/click-equipment-angles.jpg (RecGen model, part A 82.3 +- 9.4 deg to the floor)",
+   "viewer/me340/click-machine.jpg"
+  ]
+ },
+ "superseded": "quick-run001.json (run 001: every RecGen model drawn, 74 s router stall) is kept beside for the before-fix numbers"
+}

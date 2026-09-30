@@ -1,0 +1,2513 @@
+{
+ "schema": "r5b-visits-results-v1",
+ "pairs": [
+  {
+   "a": "gt-tum-w0",
+   "b": "gt-tum-w1",
+   "kind": "tum",
+   "a_report": "acc-gt-tum-w0-shot-7cf1e116-1790731841",
+   "b_report": "acc-gt-tum-w1-shot-63b6043f-1790731941",
+   "counts": {
+    "static": 72,
+    "delineated_otherwise": 26,
+    "not_observed_in_b": 199,
+    "not_observed_in_a": 27,
+    "not_compared": 27
+   },
+   "s": 6.727,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.076,
+     "floor": {
+      "tilt_deg": 1.34,
+      "dz_m": 0.012
+     },
+     "floor_transform": {
+      "s": 0.94045,
+      "yaw_deg": 78.527,
+      "t_m": [
+       -0.4814,
+       -0.8616
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 2.2366,
+      "centre_residual_m": 0.0395,
+      "rotation_residual_deg": 1.1369,
+      "spread_m": 1.0276,
+      "centre_residual_share": 0.0384,
+      "ratio_spread": 0.0117,
+      "s_depth": 2.1518,
+      "s_centres": 2.2366
+     },
+     "fit_b": {
+      "s": 0.9405,
+      "centre_residual_m": 0.0128,
+      "rotation_residual_deg": 0.3028,
+      "spread_m": 0.829,
+      "centre_residual_share": 0.0155,
+      "ratio_spread": 0.0055,
+      "s_depth": 0.9513,
+      "s_centres": 0.9405
+     },
+     "retrieval_cos_median": 0.907,
+     "da3_s": 1.072
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "n": 77,
+     "u_m": 0.076,
+     "cm_median": 5.0,
+     "cm_p90": 7.3,
+     "deg_median": 0.99,
+     "deg_p90": 1.44,
+     "s_A_gt_per_est": 0.9301,
+     "ate_A_cm": 5.7,
+     "a_views": 141,
+     "local_cm_median": 5.0,
+     "local_cm_p90": 7.2,
+     "local_deg_median": 1.0,
+     "local_deg_p90": 1.42,
+     "local_s_A_gt_per_est": 0.9531,
+     "local_ate_A_cm": 5.7,
+     "local_a_views": 70
+    }
+   ],
+   "gt_alignment": null,
+   "match": {
+    "predicted": 72,
+    "scored": 71,
+    "right": 56,
+    "precision": 0.789,
+    "precision_box": 0.789,
+    "gt_pairs": 39,
+    "found": 36,
+    "found_exact": 31,
+    "recall": 0.923,
+    "gt_pairs_matched_elsewhere": 2,
+    "gt_pairs_status": {
+     "not_compared": 2,
+     "delineated_otherwise": 1
+    }
+   },
+   "changes": {
+    "claims": 0,
+    "right": 0,
+    "wrong": 0,
+    "unverifiable": 0,
+    "precision": null,
+    "gt_gone": 0,
+    "gt_gone_found": 0,
+    "gt_came": 0,
+    "gt_came_found": 0,
+    "recall": null,
+    "gt_gone_status": {},
+    "gt_came_status": {},
+    "gt_large": 0,
+    "gt_large_found": 0,
+    "by_kind": {}
+   },
+   "claims": [],
+   "claims_all": [],
+   "false_changes": {
+    "claims": 0,
+    "wrong": 0,
+    "judged_objects": 98,
+    "rate": 0.0
+   },
+   "timing": {
+    "visit_call_written_s": 9.032,
+    "stages_s": {
+     "visits": 7.409,
+     "visits.descriptors": 1.724,
+     "visits.register": 1.889,
+     "visits.compare": 3.113,
+     "visits.evidence": 0.0
+    },
+    "gpu_peak_gib": [
+     43.83,
+     33.27
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-tum-w0",
+   "b": "gt-desk-w0",
+   "kind": "tum",
+   "a_report": "acc-gt-tum-w0-shot-7cf1e116-1790731841",
+   "b_report": "acc-gt-desk-w0-shot-1ce66758-1790732011",
+   "counts": {
+    "static": 56,
+    "not_observed_in_b": 216,
+    "delineated_otherwise": 26,
+    "not_observed_in_a": 12,
+    "new": 1,
+    "not_compared": 27
+   },
+   "s": 5.889,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.081,
+     "floor": {
+      "tilt_deg": 1.11,
+      "dz_m": 0.024
+     },
+     "floor_transform": {
+      "s": 0.94471,
+      "yaw_deg": 97.989,
+      "t_m": [
+       1.7937,
+       -1.244
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 1.9995,
+      "centre_residual_m": 0.0478,
+      "rotation_residual_deg": 1.1252,
+      "spread_m": 1.0204,
+      "centre_residual_share": 0.0469,
+      "ratio_spread": 0.0199,
+      "s_depth": 1.8938,
+      "s_centres": 1.9995
+     },
+     "fit_b": {
+      "s": 0.9447,
+      "centre_residual_m": 0.0068,
+      "rotation_residual_deg": 0.3965,
+      "spread_m": 0.857,
+      "centre_residual_share": 0.0079,
+      "ratio_spread": 0.005,
+      "s_depth": 0.9453,
+      "s_centres": 0.9447
+     },
+     "retrieval_cos_median": 0.931,
+     "da3_s": 1.019
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "n": 103,
+     "u_m": 0.081,
+     "cm_median": 6.3,
+     "cm_p90": 7.6,
+     "deg_median": 1.23,
+     "deg_p90": 1.99,
+     "s_A_gt_per_est": 0.9301,
+     "ate_A_cm": 5.7,
+     "a_views": 141,
+     "local_cm_median": 4.2,
+     "local_cm_p90": 5.1,
+     "local_deg_median": 1.27,
+     "local_deg_p90": 2.08,
+     "local_s_A_gt_per_est": 0.9531,
+     "local_ate_A_cm": 5.7,
+     "local_a_views": 70
+    }
+   ],
+   "gt_alignment": null,
+   "match": {
+    "predicted": 56,
+    "scored": 56,
+    "right": 44,
+    "precision": 0.786,
+    "precision_box": 0.821,
+    "gt_pairs": 28,
+    "found": 26,
+    "found_exact": 22,
+    "recall": 0.929,
+    "gt_pairs_matched_elsewhere": 4,
+    "gt_pairs_status": {
+     "delineated_otherwise": 1,
+     "not_observed_in_b": 1
+    }
+   },
+   "changes": {
+    "claims": 1,
+    "right": 0,
+    "wrong": 0,
+    "unverifiable": 1,
+    "precision": null,
+    "gt_gone": 0,
+    "gt_gone_found": 0,
+    "gt_came": 0,
+    "gt_came_found": 0,
+    "recall": null,
+    "gt_gone_status": {},
+    "gt_came_status": {},
+    "gt_large": 0,
+    "gt_large_found": 0,
+    "by_kind": {
+     "new:unverifiable": 1
+    }
+   },
+   "claims": [
+    {
+     "kind": "new",
+     "a": null,
+     "b": "obj-0-107",
+     "name": "computer monitor",
+     "gt": null,
+     "verdict": "unverifiable",
+     "tile": "evidence-0"
+    }
+   ],
+   "claims_all": [
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-0-107",
+     "name": "computer monitor",
+     "tile": "evidence-0",
+     "verdict": "unclear",
+     "file": "evidence/gt-desk-w0--gt-tum-w0--evidence-0.jpg"
+    }
+   ],
+   "false_changes": {
+    "claims": 1,
+    "wrong": 0,
+    "judged_objects": 83,
+    "rate": 0.0
+   },
+   "timing": {
+    "visit_call_written_s": 9.611,
+    "stages_s": {
+     "visits": 6.392,
+     "visits.descriptors": 1.759,
+     "visits.register": 1.448,
+     "visits.compare": 2.652,
+     "visits.evidence": 0.029
+    },
+    "gpu_peak_gib": [
+     43.87,
+     33.35
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-tum-w0",
+   "b": "gt-desk2-w0",
+   "kind": "tum",
+   "a_report": "acc-gt-tum-w0-shot-7cf1e116-1790731841",
+   "b_report": "acc-gt-desk2-w0-shot-6c55bf85-1790732079",
+   "counts": {
+    "static": 122,
+    "not_observed_in_b": 198,
+    "delineated_otherwise": 33,
+    "not_observed_in_a": 25,
+    "missing": 1,
+    "not_compared": 27
+   },
+   "s": 10.127,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.084,
+     "floor": {
+      "tilt_deg": 2.43,
+      "dz_m": 0.06
+     },
+     "floor_transform": {
+      "s": 0.92106,
+      "yaw_deg": 74.603,
+      "t_m": [
+       2.0941,
+       -1.4485
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 2.0793,
+      "centre_residual_m": 0.0445,
+      "rotation_residual_deg": 1.135,
+      "spread_m": 0.996,
+      "centre_residual_share": 0.0447,
+      "ratio_spread": 0.0258,
+      "s_depth": 2.0126,
+      "s_centres": 2.0793
+     },
+     "fit_b": {
+      "s": 0.9211,
+      "centre_residual_m": 0.0176,
+      "rotation_residual_deg": 0.8968,
+      "spread_m": 0.7869,
+      "centre_residual_share": 0.0224,
+      "ratio_spread": 0.0071,
+      "s_depth": 0.9139,
+      "s_centres": 0.9211
+     },
+     "retrieval_cos_median": 0.873,
+     "da3_s": 0.961
+    },
+    {
+     "b_shot": 1,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.072,
+     "floor": {
+      "tilt_deg": 2.21,
+      "dz_m": -0.016
+     },
+     "floor_transform": {
+      "s": 0.94589,
+      "yaw_deg": 48.204,
+      "t_m": [
+       -0.3179,
+       -0.8545
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 1.9107,
+      "centre_residual_m": 0.0341,
+      "rotation_residual_deg": 0.87,
+      "spread_m": 1.0083,
+      "centre_residual_share": 0.0338,
+      "ratio_spread": 0.0123,
+      "s_depth": 1.8294,
+      "s_centres": 1.9107,
+      "views_used": 18,
+      "views": 20
+     },
+     "fit_b": {
+      "s": 0.9459,
+      "centre_residual_m": 0.0174,
+      "rotation_residual_deg": 0.3628,
+      "spread_m": 1.0393,
+      "centre_residual_share": 0.0168,
+      "ratio_spread": 0.0184,
+      "s_depth": 0.9468,
+      "s_centres": 0.9459
+     },
+     "retrieval_cos_median": 0.894,
+     "da3_s": 0.956
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "n": 29,
+     "u_m": 0.084,
+     "cm_median": 8.2,
+     "cm_p90": 10.0,
+     "deg_median": 2.71,
+     "deg_p90": 3.61,
+     "s_A_gt_per_est": 0.9301,
+     "ate_A_cm": 5.7,
+     "a_views": 141,
+     "local_cm_median": 8.0,
+     "local_cm_p90": 9.5,
+     "local_deg_median": 2.68,
+     "local_deg_p90": 3.5,
+     "local_s_A_gt_per_est": 0.9506,
+     "local_ate_A_cm": 5.6,
+     "local_a_views": 79
+    },
+    {
+     "b_shot": 1,
+     "a_shot": 0,
+     "n": 77,
+     "u_m": 0.072,
+     "cm_median": 7.9,
+     "cm_p90": 9.6,
+     "deg_median": 2.41,
+     "deg_p90": 3.12,
+     "s_A_gt_per_est": 0.9301,
+     "ate_A_cm": 5.7,
+     "a_views": 141,
+     "local_cm_median": 7.5,
+     "local_cm_p90": 9.2,
+     "local_deg_median": 2.46,
+     "local_deg_p90": 3.08,
+     "local_s_A_gt_per_est": 0.9323,
+     "local_ate_A_cm": 6.2,
+     "local_a_views": 106
+    }
+   ],
+   "gt_alignment": null,
+   "match": {
+    "predicted": 122,
+    "scored": 119,
+    "right": 90,
+    "precision": 0.756,
+    "precision_box": 0.782,
+    "gt_pairs": 40,
+    "found": 38,
+    "found_exact": 31,
+    "recall": 0.95,
+    "gt_pairs_matched_elsewhere": 9,
+    "gt_pairs_status": {
+     "static": 2
+    }
+   },
+   "changes": {
+    "claims": 1,
+    "right": 0,
+    "wrong": 0,
+    "unverifiable": 1,
+    "precision": null,
+    "gt_gone": 1,
+    "gt_gone_found": 0,
+    "gt_came": 1,
+    "gt_came_found": 0,
+    "recall": 0.0,
+    "gt_gone_status": {
+     "not_compared": 1
+    },
+    "gt_came_status": {
+     "delineated_otherwise": 1
+    },
+    "gt_large": 1,
+    "gt_large_found": 0,
+    "by_kind": {
+     "missing:unverifiable": 1
+    }
+   },
+   "claims": [
+    {
+     "kind": "missing",
+     "a": "obj-0-114",
+     "b": null,
+     "name": "chair",
+     "gt": "out-of-view",
+     "verdict": "unverifiable",
+     "tile": "evidence-0"
+    }
+   ],
+   "claims_all": [
+    {
+     "status": "missing",
+     "a": "obj-0-114",
+     "b": null,
+     "name": "chair",
+     "tile": "evidence-0",
+     "verdict": "wrong",
+     "file": "evidence/gt-desk2-w0--gt-tum-w0--evidence-0.jpg"
+    }
+   ],
+   "false_changes": {
+    "claims": 1,
+    "wrong": 1,
+    "judged_objects": 156,
+    "rate": 0.0064
+   },
+   "timing": {
+    "visit_call_written_s": 12.75,
+    "stages_s": {
+     "visits": 10.528,
+     "visits.descriptors": 1.676,
+     "visits.register": 3.49,
+     "visits.compare": 4.923,
+     "visits.evidence": 0.037
+    },
+    "gpu_peak_gib": [
+     44.12,
+     33.42
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-tum-w0",
+   "b": "gt-xyz-w0",
+   "kind": "tum",
+   "a_report": "acc-gt-tum-w0-shot-7cf1e116-1790731841",
+   "b_report": "acc-gt-xyz-w0-shot-81d757fc-1790732153",
+   "counts": {
+    "static": 65,
+    "not_observed_in_b": 233,
+    "delineated_otherwise": 21,
+    "not_observed_in_a": 25,
+    "not_compared": 27
+   },
+   "s": 8.724,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.076,
+     "floor": {
+      "tilt_deg": 0.7,
+      "dz_m": -0.02
+     },
+     "floor_transform": {
+      "s": 1.05527,
+      "yaw_deg": 134.932,
+      "t_m": [
+       1.5938,
+       -1.4743
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 1.6628,
+      "centre_residual_m": 0.047,
+      "rotation_residual_deg": 0.8626,
+      "spread_m": 1.0603,
+      "centre_residual_share": 0.0443,
+      "ratio_spread": 0.0168,
+      "s_depth": 1.6628,
+      "s_centres": 1.7179
+     },
+     "fit_b": {
+      "s": 1.0553,
+      "centre_residual_m": 0.0056,
+      "rotation_residual_deg": 0.1773,
+      "spread_m": 0.1303,
+      "centre_residual_share": 0.0226,
+      "ratio_spread": 0.0032,
+      "s_depth": 1.0553,
+      "s_centres": 1.052
+     },
+     "retrieval_cos_median": 0.832,
+     "da3_s": 0.795
+    },
+    {
+     "b_shot": 1,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.07,
+     "floor": {
+      "tilt_deg": 1.0,
+      "dz_m": -0.018
+     },
+     "floor_transform": {
+      "s": 1.02011,
+      "yaw_deg": 135.35,
+      "t_m": [
+       1.5589,
+       -1.5057
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 1.7965,
+      "centre_residual_m": 0.0382,
+      "rotation_residual_deg": 0.8527,
+      "spread_m": 1.0206,
+      "centre_residual_share": 0.0375,
+      "ratio_spread": 0.0172,
+      "s_depth": 1.7467,
+      "s_centres": 1.7965
+     },
+     "fit_b": {
+      "s": 1.0201,
+      "centre_residual_m": 0.0032,
+      "rotation_residual_deg": 0.3397,
+      "spread_m": 0.1462,
+      "centre_residual_share": 0.0128,
+      "ratio_spread": 0.0055,
+      "s_depth": 1.0543,
+      "s_centres": 1.0201
+     },
+     "retrieval_cos_median": 0.809,
+     "da3_s": 0.823
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "n": 53,
+     "u_m": 0.076,
+     "cm_median": 12.0,
+     "cm_p90": 12.9,
+     "deg_median": 2.01,
+     "deg_p90": 2.52,
+     "s_A_gt_per_est": 0.9301,
+     "ate_A_cm": 5.7,
+     "a_views": 141,
+     "local_cm_median": 8.7,
+     "local_cm_p90": 9.8,
+     "local_deg_median": 2.1,
+     "local_deg_p90": 2.64,
+     "local_s_A_gt_per_est": 0.9531,
+     "local_ate_A_cm": 5.7,
+     "local_a_views": 70
+    },
+    {
+     "b_shot": 1,
+     "a_shot": 0,
+     "n": 75,
+     "u_m": 0.07,
+     "cm_median": 9.6,
+     "cm_p90": 11.2,
+     "deg_median": 2.16,
+     "deg_p90": 2.87,
+     "s_A_gt_per_est": 0.9301,
+     "ate_A_cm": 5.7,
+     "a_views": 141,
+     "local_cm_median": 6.3,
+     "local_cm_p90": 7.7,
+     "local_deg_median": 2.24,
+     "local_deg_p90": 2.98,
+     "local_s_A_gt_per_est": 0.9531,
+     "local_ate_A_cm": 5.7,
+     "local_a_views": 70
+    }
+   ],
+   "gt_alignment": null,
+   "match": {
+    "predicted": 65,
+    "scored": 63,
+    "right": 46,
+    "precision": 0.73,
+    "precision_box": 0.778,
+    "gt_pairs": 17,
+    "found": 17,
+    "found_exact": 10,
+    "recall": 1.0,
+    "gt_pairs_matched_elsewhere": 5,
+    "gt_pairs_status": {}
+   },
+   "changes": {
+    "claims": 0,
+    "right": 0,
+    "wrong": 0,
+    "unverifiable": 0,
+    "precision": null,
+    "gt_gone": 1,
+    "gt_gone_found": 0,
+    "gt_came": 7,
+    "gt_came_found": 0,
+    "recall": 0.0,
+    "gt_gone_status": {
+     "static": 1
+    },
+    "gt_came_status": {
+     "not_observed_in_a": 2,
+     "static": 3,
+     "delineated_otherwise": 2
+    },
+    "gt_large": 5,
+    "gt_large_found": 0,
+    "by_kind": {}
+   },
+   "claims": [],
+   "claims_all": [],
+   "false_changes": {
+    "claims": 0,
+    "wrong": 0,
+    "judged_objects": 86,
+    "rate": 0.0
+   },
+   "timing": {
+    "visit_call_written_s": 10.607,
+    "stages_s": {
+     "visits": 9.023,
+     "visits.descriptors": 1.822,
+     "visits.register": 3.097,
+     "visits.compare": 3.803,
+     "visits.evidence": 0.0
+    },
+    "gpu_peak_gib": [
+     44.02,
+     33.42
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-tum-w0",
+   "b": "gt-360-w0",
+   "kind": "tum",
+   "a_report": "acc-gt-tum-w0-shot-7cf1e116-1790731841",
+   "b_report": "acc-gt-360-w0-shot-0991cfb9-1790732237",
+   "counts": {
+    "static": 39,
+    "not_observed_in_b": 220,
+    "delineated_otherwise": 37,
+    "not_observed_in_a": 13,
+    "not_compared": 371
+   },
+   "s": 7.407,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": null,
+     "accepted": false,
+     "refused_because": "shot with 6 keyframes or no floor scale",
+     "u_m": null,
+     "floor": null,
+     "floor_transform": null,
+     "fit_a": null,
+     "fit_b": null,
+     "retrieval_cos_median": null,
+     "da3_s": null
+    },
+    {
+     "b_shot": 1,
+     "a_shot": 0,
+     "accepted": false,
+     "refused_because": "too few frames to register",
+     "u_m": null,
+     "floor": null,
+     "floor_transform": null,
+     "fit_a": null,
+     "fit_b": null,
+     "retrieval_cos_median": 0.685,
+     "da3_s": null
+    },
+    {
+     "b_shot": 2,
+     "a_shot": 0,
+     "accepted": false,
+     "refused_because": "this visit's own cameras do not agree with their registered places",
+     "u_m": null,
+     "floor": null,
+     "floor_transform": null,
+     "fit_a": {
+      "s": 1.7608,
+      "centre_residual_m": 0.016,
+      "rotation_residual_deg": 0.441,
+      "spread_m": 0.2702,
+      "centre_residual_share": 0.0594,
+      "ratio_spread": 0.0116,
+      "s_depth": 1.7608,
+      "s_centres": 1.7584
+     },
+     "fit_b": {
+      "s": 1.0866,
+      "centre_residual_m": 0.0266,
+      "rotation_residual_deg": 0.7183,
+      "spread_m": 0.1789,
+      "centre_residual_share": 0.1065,
+      "ratio_spread": 0.01,
+      "s_depth": 1.0866,
+      "s_centres": 1.1265
+     },
+     "retrieval_cos_median": 0.891,
+     "da3_s": 0.566
+    },
+    {
+     "b_shot": 3,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.07,
+     "floor": {
+      "tilt_deg": 2.05,
+      "dz_m": -0.069
+     },
+     "floor_transform": {
+      "s": 1.12117,
+      "yaw_deg": -154.017,
+      "t_m": [
+       -0.2886,
+       -1.8685
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 2.7738,
+      "centre_residual_m": 0.0242,
+      "rotation_residual_deg": 0.5977,
+      "spread_m": 0.3952,
+      "centre_residual_share": 0.0612,
+      "ratio_spread": 0.0044,
+      "s_depth": 2.7738,
+      "s_centres": 2.8253
+     },
+     "fit_b": {
+      "s": 1.1212,
+      "centre_residual_m": 0.0142,
+      "rotation_residual_deg": 0.309,
+      "spread_m": 0.1345,
+      "centre_residual_share": 0.0567,
+      "ratio_spread": 0.0103,
+      "s_depth": 1.1212,
+      "s_centres": 1.2131
+     },
+     "retrieval_cos_median": 0.793,
+     "da3_s": 0.308
+    },
+    {
+     "b_shot": 4,
+     "a_shot": 0,
+     "accepted": false,
+     "refused_because": "the site map's cameras do not agree after the similarity",
+     "u_m": null,
+     "floor": null,
+     "floor_transform": null,
+     "fit_a": {
+      "s": 2.7491,
+      "centre_residual_m": 0.0981,
+      "rotation_residual_deg": 1.3421,
+      "spread_m": 0.873,
+      "centre_residual_share": 0.1124,
+      "ratio_spread": 0.0163,
+      "s_depth": 2.7491,
+      "s_centres": 2.6252
+     },
+     "fit_b": null,
+     "retrieval_cos_median": 0.685,
+     "da3_s": 0.635
+    },
+    {
+     "b_shot": 5,
+     "a_shot": 0,
+     "accepted": false,
+     "refused_because": "this visit's own cameras do not agree with their registered places",
+     "u_m": null,
+     "floor": null,
+     "floor_transform": null,
+     "fit_a": {
+      "s": 2.4638,
+      "centre_residual_m": 0.052,
+      "rotation_residual_deg": 1.3833,
+      "spread_m": 0.6266,
+      "centre_residual_share": 0.0829,
+      "ratio_spread": 0.0064,
+      "s_depth": 2.4638,
+      "s_centres": 2.5288
+     },
+     "fit_b": {
+      "s": 1.0184,
+      "centre_residual_m": 0.0443,
+      "rotation_residual_deg": 0.9918,
+      "spread_m": 0.1862,
+      "centre_residual_share": 0.1772,
+      "ratio_spread": 0.0193,
+      "s_depth": 1.0184,
+      "s_centres": 1.1667
+     },
+     "retrieval_cos_median": 0.764,
+     "da3_s": 0.953
+    },
+    {
+     "b_shot": 6,
+     "a_shot": null,
+     "accepted": false,
+     "refused_because": "shot with 8 keyframes or no floor scale",
+     "u_m": null,
+     "floor": null,
+     "floor_transform": null,
+     "fit_a": null,
+     "fit_b": null,
+     "retrieval_cos_median": null,
+     "da3_s": null
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 3,
+     "a_shot": 0,
+     "n": 15,
+     "u_m": 0.07,
+     "cm_median": 8.9,
+     "cm_p90": 9.8,
+     "deg_median": 1.99,
+     "deg_p90": 2.57,
+     "s_A_gt_per_est": 0.9301,
+     "ate_A_cm": 5.7,
+     "a_views": 141,
+     "local_cm_median": 9.9,
+     "local_cm_p90": 10.4,
+     "local_deg_median": 1.69,
+     "local_deg_p90": 2.58,
+     "local_s_A_gt_per_est": 0.8981,
+     "local_ate_A_cm": 2.8,
+     "local_a_views": 35
+    }
+   ],
+   "gt_alignment": null,
+   "match": {
+    "predicted": 39,
+    "scored": 36,
+    "right": 25,
+    "precision": 0.694,
+    "precision_box": 0.806,
+    "gt_pairs": 61,
+    "found": 13,
+    "found_exact": 12,
+    "recall": 0.213,
+    "gt_pairs_matched_elsewhere": 2,
+    "gt_pairs_status": {
+     "not_observed_in_b": 39,
+     "static": 2,
+     "not_compared": 4,
+     "delineated_otherwise": 3
+    }
+   },
+   "changes": {
+    "claims": 0,
+    "right": 0,
+    "wrong": 0,
+    "unverifiable": 0,
+    "precision": null,
+    "gt_gone": 8,
+    "gt_gone_found": 0,
+    "gt_came": 4,
+    "gt_came_found": 0,
+    "recall": 0.0,
+    "gt_gone_status": {
+     "not_observed_in_b": 8
+    },
+    "gt_came_status": {
+     "not_compared": 4
+    },
+    "gt_large": 9,
+    "gt_large_found": 0,
+    "by_kind": {}
+   },
+   "claims": [],
+   "claims_all": [],
+   "false_changes": {
+    "claims": 0,
+    "wrong": 0,
+    "judged_objects": 76,
+    "rate": 0.0
+   },
+   "timing": {
+    "visit_call_written_s": 10.478,
+    "stages_s": {
+     "visits": 8.91,
+     "visits.descriptors": 1.804,
+     "visits.register": 4.207,
+     "visits.compare": 1.394,
+     "visits.evidence": 0.0
+    },
+    "gpu_peak_gib": [
+     44.04,
+     33.42
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-tum-w0",
+   "b": "gt-plant-w0",
+   "kind": "tum",
+   "a_report": "acc-gt-tum-w0-shot-7cf1e116-1790731841",
+   "b_report": "acc-gt-plant-w0-shot-9be9cbc0-1790732332",
+   "counts": {
+    "static": 131,
+    "moved": 1,
+    "delineated_otherwise": 98,
+    "not_observed_in_b": 100,
+    "missing": 1,
+    "not_observed_in_a": 98,
+    "new": 5,
+    "not_compared": 27
+   },
+   "s": 10.856,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.104,
+     "floor": {
+      "tilt_deg": 0.99,
+      "dz_m": 0.029
+     },
+     "floor_transform": {
+      "s": 0.83581,
+      "yaw_deg": 177.012,
+      "t_m": [
+       0.6006,
+       -2.1401
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 2.2874,
+      "centre_residual_m": 0.0508,
+      "rotation_residual_deg": 1.1598,
+      "spread_m": 0.5775,
+      "centre_residual_share": 0.088,
+      "ratio_spread": 0.0119,
+      "s_depth": 2.2874,
+      "s_centres": 2.3967
+     },
+     "fit_b": {
+      "s": 0.8358,
+      "centre_residual_m": 0.0167,
+      "rotation_residual_deg": 0.7672,
+      "spread_m": 0.7483,
+      "centre_residual_share": 0.0223,
+      "ratio_spread": 0.0063,
+      "s_depth": 0.8358,
+      "s_centres": 0.8416,
+      "views_used": 9,
+      "views": 10
+     },
+     "retrieval_cos_median": 0.671,
+     "da3_s": 1.061
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "n": 150,
+     "u_m": 0.104,
+     "cm_median": 7.0,
+     "cm_p90": 8.8,
+     "deg_median": 1.52,
+     "deg_p90": 2.04,
+     "s_A_gt_per_est": 0.9301,
+     "ate_A_cm": 5.7,
+     "a_views": 141,
+     "local_cm_median": 6.9,
+     "local_cm_p90": 8.3,
+     "local_deg_median": 1.46,
+     "local_deg_p90": 1.94,
+     "local_s_A_gt_per_est": 0.9245,
+     "local_ate_A_cm": 5.8,
+     "local_a_views": 119
+    }
+   ],
+   "gt_alignment": null,
+   "match": {
+    "predicted": 131,
+    "scored": 125,
+    "right": 64,
+    "precision": 0.512,
+    "precision_box": 0.576,
+    "gt_pairs": 20,
+    "found": 18,
+    "found_exact": 15,
+    "recall": 0.9,
+    "gt_pairs_matched_elsewhere": 4,
+    "gt_pairs_status": {
+     "delineated_otherwise": 1,
+     "static": 1
+    }
+   },
+   "changes": {
+    "claims": 7,
+    "right": 6,
+    "wrong": 1,
+    "unverifiable": 0,
+    "precision": 0.857,
+    "gt_gone": 23,
+    "gt_gone_found": 2,
+    "gt_came": 20,
+    "gt_came_found": 4,
+    "recall": 0.14,
+    "gt_gone_status": {
+     "missing": 1,
+     "not_compared": 2,
+     "delineated_otherwise": 13,
+     "not_observed_in_b": 2,
+     "static": 4,
+     "moved": 1
+    },
+    "gt_came_status": {
+     "not_observed_in_a": 4,
+     "static": 9,
+     "delineated_otherwise": 3,
+     "new": 4
+    },
+    "gt_large": 28,
+    "gt_large_found": 4,
+    "by_kind": {
+     "moved:right": 1,
+     "missing:right": 1,
+     "new:right": 4,
+     "new:wrong": 1
+    }
+   },
+   "claims": [
+    {
+     "kind": "moved",
+     "a": "obj-0-131",
+     "b": "obj-0-125",
+     "name": "chair",
+     "gt": "free/unjudged",
+     "verdict": "right",
+     "tile": "evidence-0"
+    },
+    {
+     "kind": "missing",
+     "a": "obj-0-339",
+     "b": null,
+     "name": "notepad",
+     "gt": "free",
+     "verdict": "right",
+     "tile": "evidence-1"
+    },
+    {
+     "kind": "new",
+     "a": null,
+     "b": "obj-0-63",
+     "name": "monitor",
+     "gt": "free",
+     "verdict": "right",
+     "tile": "evidence-2"
+    },
+    {
+     "kind": "new",
+     "a": null,
+     "b": "obj-0-98",
+     "name": "chair",
+     "gt": "free",
+     "verdict": "right",
+     "tile": "evidence-3"
+    },
+    {
+     "kind": "new",
+     "a": null,
+     "b": "obj-0-463",
+     "name": "other item (type only)",
+     "gt": "free",
+     "verdict": "right",
+     "tile": "evidence-4"
+    },
+    {
+     "kind": "new",
+     "a": null,
+     "b": "obj-0-70",
+     "name": "mouse",
+     "gt": "free",
+     "verdict": "right",
+     "tile": "evidence-5"
+    },
+    {
+     "kind": "new",
+     "a": null,
+     "b": "obj-0-373",
+     "name": "container / box / goods (type only)",
+     "gt": "occupied",
+     "verdict": "wrong",
+     "tile": "evidence-6"
+    }
+   ],
+   "claims_all": [
+    {
+     "status": "moved",
+     "a": "obj-0-131",
+     "b": "obj-0-125",
+     "name": "chair",
+     "tile": "evidence-0",
+     "verdict": "right",
+     "file": "evidence/gt-plant-w0--gt-tum-w0--evidence-0.jpg"
+    },
+    {
+     "status": "missing",
+     "a": "obj-0-339",
+     "b": null,
+     "name": "notepad",
+     "tile": "evidence-1",
+     "verdict": "right",
+     "file": "evidence/gt-plant-w0--gt-tum-w0--evidence-1.jpg"
+    },
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-0-63",
+     "name": "monitor",
+     "tile": "evidence-2",
+     "verdict": "right",
+     "file": "evidence/gt-plant-w0--gt-tum-w0--evidence-2.jpg"
+    },
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-0-98",
+     "name": "chair",
+     "tile": "evidence-3",
+     "verdict": "right",
+     "file": "evidence/gt-plant-w0--gt-tum-w0--evidence-3.jpg"
+    },
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-0-463",
+     "name": "other item (type only)",
+     "tile": "evidence-4",
+     "verdict": "right",
+     "file": "evidence/gt-plant-w0--gt-tum-w0--evidence-4.jpg"
+    },
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-0-70",
+     "name": "mouse",
+     "tile": "evidence-5",
+     "verdict": "right",
+     "file": "evidence/gt-plant-w0--gt-tum-w0--evidence-5.jpg"
+    },
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-0-373",
+     "name": "container / box / goods (type only)",
+     "tile": "evidence-6",
+     "verdict": "wrong",
+     "file": "evidence/gt-plant-w0--gt-tum-w0--evidence-6.jpg"
+    }
+   ],
+   "false_changes": {
+    "claims": 7,
+    "wrong": 1,
+    "judged_objects": 236,
+    "rate": 0.0042
+   },
+   "timing": {
+    "visit_call_written_s": 13.169,
+    "stages_s": {
+     "visits": 11.195,
+     "visits.descriptors": 2.262,
+     "visits.register": 2.259,
+     "visits.compare": 6.13,
+     "visits.evidence": 0.204
+    },
+    "gpu_peak_gib": [
+     43.84,
+     33.42
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-tum-w0",
+   "b": "gt-teddy-w0",
+   "kind": "tum",
+   "a_report": "acc-gt-tum-w0-shot-7cf1e116-1790731841",
+   "b_report": "acc-gt-teddy-w0-shot-8225c996-1790732426",
+   "counts": {
+    "static": 131,
+    "delineated_otherwise": 104,
+    "not_observed_in_b": 92,
+    "missing": 1,
+    "not_observed_in_a": 96,
+    "new": 3,
+    "not_compared": 27
+   },
+   "s": 11.808,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.085,
+     "floor": {
+      "tilt_deg": 0.98,
+      "dz_m": 0.011
+     },
+     "floor_transform": {
+      "s": 0.99004,
+      "yaw_deg": -51.161,
+      "t_m": [
+       -1.2034,
+       -1.0607
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 2.1822,
+      "centre_residual_m": 0.0456,
+      "rotation_residual_deg": 0.6456,
+      "spread_m": 0.5463,
+      "centre_residual_share": 0.0834,
+      "ratio_spread": 0.01,
+      "s_depth": 2.1822,
+      "s_centres": 2.0703,
+      "views_used": 19,
+      "views": 20
+     },
+     "fit_b": {
+      "s": 0.99,
+      "centre_residual_m": 0.0179,
+      "rotation_residual_deg": 0.3468,
+      "spread_m": 0.5564,
+      "centre_residual_share": 0.0321,
+      "ratio_spread": 0.0026,
+      "s_depth": 0.99,
+      "s_centres": 0.9984,
+      "views_used": 9,
+      "views": 10
+     },
+     "retrieval_cos_median": 0.776,
+     "da3_s": 1.093
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "n": 150,
+     "u_m": 0.085,
+     "cm_median": 7.1,
+     "cm_p90": 9.3,
+     "deg_median": 1.45,
+     "deg_p90": 1.87,
+     "s_A_gt_per_est": 0.9301,
+     "ate_A_cm": 5.7,
+     "a_views": 141,
+     "local_cm_median": 7.0,
+     "local_cm_p90": 8.9,
+     "local_deg_median": 1.51,
+     "local_deg_p90": 1.93,
+     "local_s_A_gt_per_est": 0.9315,
+     "local_ate_A_cm": 5.6,
+     "local_a_views": 129
+    }
+   ],
+   "gt_alignment": null,
+   "match": {
+    "predicted": 131,
+    "scored": 127,
+    "right": 77,
+    "precision": 0.606,
+    "precision_box": 0.685,
+    "gt_pairs": 21,
+    "found": 19,
+    "found_exact": 17,
+    "recall": 0.905,
+    "gt_pairs_matched_elsewhere": 1,
+    "gt_pairs_status": {
+     "delineated_otherwise": 2
+    }
+   },
+   "changes": {
+    "claims": 4,
+    "right": 4,
+    "wrong": 0,
+    "unverifiable": 0,
+    "precision": 1.0,
+    "gt_gone": 33,
+    "gt_gone_found": 1,
+    "gt_came": 23,
+    "gt_came_found": 3,
+    "recall": 0.071,
+    "gt_gone_status": {
+     "missing": 1,
+     "not_compared": 2,
+     "not_observed_in_b": 10,
+     "delineated_otherwise": 14,
+     "static": 6
+    },
+    "gt_came_status": {
+     "static": 9,
+     "new": 3,
+     "not_observed_in_a": 5,
+     "delineated_otherwise": 6
+    },
+    "gt_large": 29,
+    "gt_large_found": 1,
+    "by_kind": {
+     "missing:right": 1,
+     "new:right": 3
+    }
+   },
+   "claims": [
+    {
+     "kind": "missing",
+     "a": "obj-0-339",
+     "b": null,
+     "name": "notepad",
+     "gt": "free",
+     "verdict": "right",
+     "tile": "evidence-0"
+    },
+    {
+     "kind": "new",
+     "a": null,
+     "b": "obj-0-336",
+     "name": "electronics (type only)",
+     "gt": "free",
+     "verdict": "right",
+     "tile": "evidence-1"
+    },
+    {
+     "kind": "new",
+     "a": null,
+     "b": "obj-0-117",
+     "name": "box-shaped object (type only)",
+     "gt": "free",
+     "verdict": "right",
+     "tile": "evidence-2"
+    },
+    {
+     "kind": "new",
+     "a": null,
+     "b": "obj-0-123",
+     "name": "box-shaped object (type only)",
+     "gt": "free",
+     "verdict": "right",
+     "tile": "evidence-3"
+    }
+   ],
+   "claims_all": [
+    {
+     "status": "missing",
+     "a": "obj-0-339",
+     "b": null,
+     "name": "notepad",
+     "tile": "evidence-0",
+     "verdict": "right",
+     "file": "evidence/gt-teddy-w0--gt-tum-w0--evidence-0.jpg"
+    },
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-0-336",
+     "name": "electronics (type only)",
+     "tile": "evidence-1",
+     "verdict": "right",
+     "file": "evidence/gt-teddy-w0--gt-tum-w0--evidence-1.jpg"
+    },
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-0-117",
+     "name": "box-shaped object (type only)",
+     "tile": "evidence-2",
+     "verdict": "right",
+     "file": "evidence/gt-teddy-w0--gt-tum-w0--evidence-2.jpg"
+    },
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-0-123",
+     "name": "box-shaped object (type only)",
+     "tile": "evidence-3",
+     "verdict": "right",
+     "file": "evidence/gt-teddy-w0--gt-tum-w0--evidence-3.jpg"
+    }
+   ],
+   "false_changes": {
+    "claims": 4,
+    "wrong": 0,
+    "judged_objects": 239,
+    "rate": 0.0
+   },
+   "timing": {
+    "visit_call_written_s": 14.121,
+    "stages_s": {
+     "visits": 12.093,
+     "visits.descriptors": 2.553,
+     "visits.register": 2.247,
+     "visits.compare": 6.741,
+     "visits.evidence": 0.265
+    },
+    "gpu_peak_gib": [
+     43.93,
+     33.57
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-desk-w0",
+   "b": "gt-desk2-w0",
+   "kind": "tum",
+   "a_report": "acc-gt-desk-w0-shot-1ce66758-1790732011",
+   "b_report": "acc-gt-desk2-w0-shot-6c55bf85-1790732079",
+   "counts": {
+    "static": 105,
+    "not_observed_in_b": 6,
+    "delineated_otherwise": 35,
+    "not_observed_in_a": 39
+   },
+   "s": 7.611,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.071,
+     "floor": {
+      "tilt_deg": 2.95,
+      "dz_m": 0.035
+     },
+     "floor_transform": {
+      "s": 0.99465,
+      "yaw_deg": -24.111,
+      "t_m": [
+       -0.2809,
+       -0.3078
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 1.7033,
+      "centre_residual_m": 0.0106,
+      "rotation_residual_deg": 0.3425,
+      "spread_m": 0.7727,
+      "centre_residual_share": 0.0137,
+      "ratio_spread": 0.0049,
+      "s_depth": 1.7033,
+      "s_centres": 1.7067
+     },
+     "fit_b": {
+      "s": 0.9946,
+      "centre_residual_m": 0.0233,
+      "rotation_residual_deg": 0.4145,
+      "spread_m": 0.8953,
+      "centre_residual_share": 0.0261,
+      "ratio_spread": 0.0056,
+      "s_depth": 0.9946,
+      "s_centres": 0.98
+     },
+     "retrieval_cos_median": 0.913,
+     "da3_s": 0.848
+    },
+    {
+     "b_shot": 1,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.064,
+     "floor": {
+      "tilt_deg": 2.08,
+      "dz_m": -0.07
+     },
+     "floor_transform": {
+      "s": 1.01035,
+      "yaw_deg": -50.085,
+      "t_m": [
+       0.7395,
+       2.1585
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 1.4493,
+      "centre_residual_m": 0.0078,
+      "rotation_residual_deg": 0.3501,
+      "spread_m": 0.9481,
+      "centre_residual_share": 0.0082,
+      "ratio_spread": 0.0036,
+      "s_depth": 1.4487,
+      "s_centres": 1.4493
+     },
+     "fit_b": {
+      "s": 1.0103,
+      "centre_residual_m": 0.0188,
+      "rotation_residual_deg": 0.4779,
+      "spread_m": 1.0006,
+      "centre_residual_share": 0.0188,
+      "ratio_spread": 0.0197,
+      "s_depth": 1.0178,
+      "s_centres": 1.0103
+     },
+     "retrieval_cos_median": 0.928,
+     "da3_s": 0.948
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "n": 29,
+     "u_m": 0.071,
+     "cm_median": 8.8,
+     "cm_p90": 11.9,
+     "deg_median": 2.97,
+     "deg_p90": 3.78,
+     "s_A_gt_per_est": 0.9047,
+     "ate_A_cm": 1.4,
+     "a_views": 103,
+     "local_cm_median": 8.5,
+     "local_cm_p90": 11.6,
+     "local_deg_median": 2.84,
+     "local_deg_p90": 3.76,
+     "local_s_A_gt_per_est": 0.9035,
+     "local_ate_A_cm": 1.3,
+     "local_a_views": 85
+    },
+    {
+     "b_shot": 1,
+     "a_shot": 0,
+     "n": 77,
+     "u_m": 0.064,
+     "cm_median": 6.9,
+     "cm_p90": 10.1,
+     "deg_median": 2.6,
+     "deg_p90": 3.23,
+     "s_A_gt_per_est": 0.9047,
+     "ate_A_cm": 1.4,
+     "a_views": 103,
+     "local_cm_median": 6.9,
+     "local_cm_p90": 10.1,
+     "local_deg_median": 2.6,
+     "local_deg_p90": 3.23,
+     "local_s_A_gt_per_est": 0.9047,
+     "local_ate_A_cm": 1.4,
+     "local_a_views": 103
+    }
+   ],
+   "gt_alignment": null,
+   "match": {
+    "predicted": 105,
+    "scored": 105,
+    "right": 80,
+    "precision": 0.762,
+    "precision_box": 0.8,
+    "gt_pairs": 30,
+    "found": 28,
+    "found_exact": 22,
+    "recall": 0.933,
+    "gt_pairs_matched_elsewhere": 6,
+    "gt_pairs_status": {
+     "delineated_otherwise": 1,
+     "not_observed_in_b": 1
+    }
+   },
+   "changes": {
+    "claims": 0,
+    "right": 0,
+    "wrong": 0,
+    "unverifiable": 0,
+    "precision": null,
+    "gt_gone": 0,
+    "gt_gone_found": 0,
+    "gt_came": 0,
+    "gt_came_found": 0,
+    "recall": null,
+    "gt_gone_status": {},
+    "gt_came_status": {},
+    "gt_large": 0,
+    "gt_large_found": 0,
+    "by_kind": {}
+   },
+   "claims": [],
+   "claims_all": [],
+   "false_changes": {
+    "claims": 0,
+    "wrong": 0,
+    "judged_objects": 140,
+    "rate": 0.0
+   },
+   "timing": {
+    "visit_call_written_s": 10.031,
+    "stages_s": {
+     "visits": 7.688,
+     "visits.descriptors": 1.568,
+     "visits.register": 2.573,
+     "visits.compare": 3.469,
+     "visits.evidence": 0.0
+    },
+    "gpu_peak_gib": [
+     44.78,
+     33.57
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-xyz-w0",
+   "b": "gt-desk-w0",
+   "kind": "tum",
+   "a_report": "acc-gt-xyz-w0-shot-81d757fc-1790732153",
+   "b_report": "acc-gt-desk-w0-shot-1ce66758-1790732011",
+   "counts": {
+    "static": 22,
+    "delineated_otherwise": 15,
+    "not_observed_in_b": 15,
+    "not_observed_in_a": 52,
+    "not_compared": 52
+   },
+   "s": 4.241,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 1,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.062,
+     "floor": {
+      "tilt_deg": 1.18,
+      "dz_m": 0.064
+     },
+     "floor_transform": {
+      "s": 0.90956,
+      "yaw_deg": -37.084,
+      "t_m": [
+       0.0222,
+       -0.3344
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 1.1715,
+      "centre_residual_m": 0.003,
+      "rotation_residual_deg": 0.1226,
+      "spread_m": 0.1387,
+      "centre_residual_share": 0.012,
+      "ratio_spread": 0.0021,
+      "s_depth": 1.1387,
+      "s_centres": 1.1715
+     },
+     "fit_b": {
+      "s": 0.9096,
+      "centre_residual_m": 0.0147,
+      "rotation_residual_deg": 0.5431,
+      "spread_m": 0.6004,
+      "centre_residual_share": 0.0244,
+      "ratio_spread": 0.0089,
+      "s_depth": 0.9042,
+      "s_centres": 0.9096
+     },
+     "retrieval_cos_median": 0.863,
+     "da3_s": 1.137
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 0,
+     "a_shot": 1,
+     "n": 103,
+     "u_m": 0.062,
+     "cm_median": 10.4,
+     "cm_p90": 12.7,
+     "deg_median": 1.8,
+     "deg_p90": 2.95,
+     "s_A_gt_per_est": 1.0545,
+     "ate_A_cm": 0.5,
+     "a_views": 75,
+     "local_cm_median": 10.4,
+     "local_cm_p90": 12.7,
+     "local_deg_median": 1.8,
+     "local_deg_p90": 2.95,
+     "local_s_A_gt_per_est": 1.0545,
+     "local_ate_A_cm": 0.5,
+     "local_a_views": 75
+    }
+   ],
+   "gt_alignment": null,
+   "match": {
+    "predicted": 22,
+    "scored": 21,
+    "right": 17,
+    "precision": 0.81,
+    "precision_box": 0.81,
+    "gt_pairs": 14,
+    "found": 12,
+    "found_exact": 1,
+    "recall": 0.857,
+    "gt_pairs_matched_elsewhere": 1,
+    "gt_pairs_status": {
+     "not_compared": 2
+    }
+   },
+   "changes": {
+    "claims": 0,
+    "right": 0,
+    "wrong": 0,
+    "unverifiable": 0,
+    "precision": null,
+    "gt_gone": 3,
+    "gt_gone_found": 0,
+    "gt_came": 1,
+    "gt_came_found": 0,
+    "recall": 0.0,
+    "gt_gone_status": {
+     "not_compared": 1,
+     "not_observed_in_b": 1,
+     "static": 1
+    },
+    "gt_came_status": {
+     "static": 1
+    },
+    "gt_large": 4,
+    "gt_large_found": 0,
+    "by_kind": {}
+   },
+   "claims": [],
+   "claims_all": [],
+   "false_changes": {
+    "claims": 0,
+    "wrong": 0,
+    "judged_objects": 37,
+    "rate": 0.0
+   },
+   "timing": {
+    "visit_call_written_s": 5.717,
+    "stages_s": {
+     "visits": 4.301,
+     "visits.descriptors": 1.522,
+     "visits.register": 1.626,
+     "visits.compare": 1.092,
+     "visits.evidence": 0.0
+    },
+    "gpu_peak_gib": [
+     43.88,
+     33.57
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-arkit47-w0",
+   "b": "gt-arkit47-w1",
+   "kind": "arkit",
+   "a_report": "acc-gt-arkit47-w0-shot-3a3b61c6-1790732534",
+   "b_report": "acc-gt-arkit47-w1-shot-b0c722eb-1790732600",
+   "counts": {
+    "not_compared": 223
+   },
+   "s": 3.671,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "accepted": false,
+     "refused_because": "the site map's cameras do not agree after the similarity",
+     "u_m": null,
+     "floor": null,
+     "floor_transform": null,
+     "fit_a": {
+      "s": 2.4663,
+      "centre_residual_m": 0.157,
+      "rotation_residual_deg": 1.8857,
+      "spread_m": 1.4857,
+      "centre_residual_share": 0.1057,
+      "ratio_spread": 0.0124,
+      "s_depth": 2.4663,
+      "s_centres": 2.5771
+     },
+     "fit_b": null,
+     "retrieval_cos_median": 0.905,
+     "da3_s": 1.01
+    }
+   ],
+   "registration_gt": [],
+   "gt_alignment": null,
+   "match": {
+    "predicted": 0,
+    "scored": 0,
+    "right": 0,
+    "precision": null,
+    "precision_box": null,
+    "gt_pairs": 12,
+    "found": 0,
+    "found_exact": 0,
+    "recall": 0.0,
+    "gt_pairs_matched_elsewhere": 0,
+    "gt_pairs_status": {
+     "not_compared": 12
+    }
+   },
+   "changes": {
+    "claims": 0,
+    "right": 0,
+    "wrong": 0,
+    "unverifiable": 0,
+    "precision": null,
+    "gt_gone": 3,
+    "gt_gone_found": 0,
+    "gt_came": 2,
+    "gt_came_found": 0,
+    "recall": 0.0,
+    "gt_gone_status": {
+     "not_compared": 3
+    },
+    "gt_came_status": {
+     "not_compared": 2
+    },
+    "gt_large": 2,
+    "gt_large_found": 0,
+    "by_kind": {}
+   },
+   "claims": [],
+   "claims_all": [],
+   "false_changes": {
+    "claims": 0,
+    "wrong": 0,
+    "judged_objects": 0,
+    "rate": null
+   },
+   "timing": {
+    "visit_call_written_s": 5.977,
+    "stages_s": {
+     "visits": 4.171,
+     "visits.descriptors": 1.715,
+     "visits.register": 1.955,
+     "visits.compare": 0.0,
+     "visits.evidence": 0.0
+    },
+    "gpu_peak_gib": [
+     43.91,
+     33.57
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-arkit47-w0",
+   "b": "gt-arkit31-w0",
+   "kind": "arkit",
+   "a_report": "acc-gt-arkit47-w0-shot-3a3b61c6-1790732534",
+   "b_report": "acc-gt-arkit31-w0-shot-27688d3c-1790732675",
+   "counts": {
+    "static": 66,
+    "not_observed_in_b": 45,
+    "delineated_otherwise": 27,
+    "not_observed_in_a": 23
+   },
+   "s": 5.967,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.131,
+     "floor": {
+      "tilt_deg": 0.84,
+      "dz_m": -0.011
+     },
+     "floor_transform": {
+      "s": 1.01692,
+      "yaw_deg": 10.593,
+      "t_m": [
+       -0.0647,
+       -0.026
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 2.0704,
+      "centre_residual_m": 0.0997,
+      "rotation_residual_deg": 1.3535,
+      "spread_m": 1.0064,
+      "centre_residual_share": 0.0991,
+      "ratio_spread": 0.0074,
+      "s_depth": 1.987,
+      "s_centres": 2.0704,
+      "views_used": 19,
+      "views": 20
+     },
+     "fit_b": {
+      "s": 1.0169,
+      "centre_residual_m": 0.0488,
+      "rotation_residual_deg": 1.7754,
+      "spread_m": 0.962,
+      "centre_residual_share": 0.0507,
+      "ratio_spread": 0.0066,
+      "s_depth": 1.0426,
+      "s_centres": 1.0169,
+      "views_used": 9,
+      "views": 10
+     },
+     "retrieval_cos_median": 0.898,
+     "da3_s": 0.989
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "n": 128,
+     "u_m": 0.131,
+     "cm_median": 4.9,
+     "cm_p90": 7.1,
+     "deg_median": 0.98,
+     "deg_p90": 1.85,
+     "s_A_gt_per_est": 0.8822,
+     "ate_A_cm": 4.2,
+     "a_views": 128,
+     "local_cm_median": 4.9,
+     "local_cm_p90": 7.1,
+     "local_deg_median": 0.98,
+     "local_deg_p90": 1.85,
+     "local_s_A_gt_per_est": 0.8822,
+     "local_ate_A_cm": 4.2,
+     "local_a_views": 128
+    }
+   ],
+   "gt_alignment": {
+    "R": [
+     [
+      0.995741,
+      -0.092197,
+      -0.000199
+     ],
+     [
+      0.092188,
+      0.995675,
+      -0.011478
+     ],
+     [
+      0.001257,
+      0.01141,
+      0.999934
+     ]
+    ],
+    "t": [
+     0.034664,
+     0.018158,
+     0.055736
+    ],
+    "how": "ICP of the two sessions' LiDAR depth from 36 turns about +z",
+    "fitness": 0.827,
+    "rmse_m": 0.0285,
+    "accepted": true,
+    "points": [
+     25799,
+     21574
+    ],
+    "start_yaw_deg": 0.0
+   },
+   "match": {
+    "predicted": 66,
+    "scored": 66,
+    "right": 50,
+    "precision": 0.758,
+    "precision_box": 0.758,
+    "gt_pairs": 33,
+    "found": 29,
+    "found_exact": 26,
+    "recall": 0.879,
+    "gt_pairs_matched_elsewhere": 7,
+    "gt_pairs_status": {
+     "static": 4
+    }
+   },
+   "changes": {
+    "claims": 0,
+    "right": 0,
+    "wrong": 0,
+    "unverifiable": 0,
+    "precision": null,
+    "gt_gone": 1,
+    "gt_gone_found": 0,
+    "gt_came": 1,
+    "gt_came_found": 0,
+    "recall": 0.0,
+    "gt_gone_status": {
+     "delineated_otherwise": 1
+    },
+    "gt_came_status": {
+     "static": 1
+    },
+    "gt_large": 2,
+    "gt_large_found": 0,
+    "by_kind": {}
+   },
+   "claims": [],
+   "claims_all": [],
+   "false_changes": {
+    "claims": 0,
+    "wrong": 0,
+    "judged_objects": 93,
+    "rate": 0.0
+   },
+   "timing": {
+    "visit_call_written_s": 7.794,
+    "stages_s": {
+     "visits": 6.335,
+     "visits.descriptors": 1.74,
+     "visits.register": 1.54,
+     "visits.compare": 2.686,
+     "visits.evidence": 0.0
+    },
+    "gpu_peak_gib": [
+     43.91,
+     33.57
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "gt-arkit47-w0",
+   "b": "gt-arkit31-w1",
+   "kind": "arkit",
+   "a_report": "acc-gt-arkit47-w0-shot-3a3b61c6-1790732534",
+   "b_report": "acc-gt-arkit31-w1-shot-d37dd926-1790732737",
+   "counts": {
+    "static": 35,
+    "not_observed_in_b": 64,
+    "delineated_otherwise": 31,
+    "not_observed_in_a": 20,
+    "new": 1
+   },
+   "s": 4.541,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.104,
+     "floor": {
+      "tilt_deg": 1.41,
+      "dz_m": -0.024
+     },
+     "floor_transform": {
+      "s": 1.0107,
+      "yaw_deg": -17.272,
+      "t_m": [
+       0.2708,
+       4.1284
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 2.1712,
+      "centre_residual_m": 0.083,
+      "rotation_residual_deg": 0.9069,
+      "spread_m": 1.2663,
+      "centre_residual_share": 0.0656,
+      "ratio_spread": 0.0068,
+      "s_depth": 2.1712,
+      "s_centres": 2.3081,
+      "views_used": 18,
+      "views": 20
+     },
+     "fit_b": {
+      "s": 1.0107,
+      "centre_residual_m": 0.0178,
+      "rotation_residual_deg": 0.4151,
+      "spread_m": 1.1389,
+      "centre_residual_share": 0.0156,
+      "ratio_spread": 0.0029,
+      "s_depth": 1.0107,
+      "s_centres": 0.9895,
+      "views_used": 8,
+      "views": 9
+     },
+     "retrieval_cos_median": 0.735,
+     "da3_s": 0.996
+    }
+   ],
+   "registration_gt": [
+    {
+     "b_shot": 0,
+     "a_shot": 0,
+     "n": 39,
+     "u_m": 0.104,
+     "cm_median": 9.3,
+     "cm_p90": 10.7,
+     "deg_median": 0.72,
+     "deg_p90": 1.73,
+     "s_A_gt_per_est": 0.8822,
+     "ate_A_cm": 4.2,
+     "a_views": 128,
+     "local_cm_median": 9.3,
+     "local_cm_p90": 10.7,
+     "local_deg_median": 0.77,
+     "local_deg_p90": 1.81,
+     "local_s_A_gt_per_est": 0.8814,
+     "local_ate_A_cm": 3.8,
+     "local_a_views": 118
+    }
+   ],
+   "gt_alignment": {
+    "R": [
+     [
+      0.995741,
+      -0.092197,
+      -0.000199
+     ],
+     [
+      0.092188,
+      0.995675,
+      -0.011478
+     ],
+     [
+      0.001257,
+      0.01141,
+      0.999934
+     ]
+    ],
+    "t": [
+     0.034664,
+     0.018158,
+     0.055736
+    ],
+    "how": "ICP of the two sessions' LiDAR depth from 36 turns about +z",
+    "fitness": 0.827,
+    "rmse_m": 0.0285,
+    "accepted": true,
+    "points": [
+     25799,
+     21574
+    ],
+    "start_yaw_deg": 0.0
+   },
+   "match": {
+    "predicted": 35,
+    "scored": 34,
+    "right": 24,
+    "precision": 0.706,
+    "precision_box": 0.735,
+    "gt_pairs": 12,
+    "found": 12,
+    "found_exact": 10,
+    "recall": 1.0,
+    "gt_pairs_matched_elsewhere": 2,
+    "gt_pairs_status": {}
+   },
+   "changes": {
+    "claims": 1,
+    "right": 0,
+    "wrong": 1,
+    "unverifiable": 0,
+    "precision": 0.0,
+    "gt_gone": 4,
+    "gt_gone_found": 0,
+    "gt_came": 1,
+    "gt_came_found": 0,
+    "recall": 0.0,
+    "gt_gone_status": {
+     "delineated_otherwise": 3,
+     "not_observed_in_b": 1
+    },
+    "gt_came_status": {
+     "static": 1
+    },
+    "gt_large": 3,
+    "gt_large_found": 0,
+    "by_kind": {
+     "new:wrong": 1
+    }
+   },
+   "claims": [
+    {
+     "kind": "new",
+     "a": null,
+     "b": "obj-0-44",
+     "name": "clothes",
+     "gt": "occupied",
+     "verdict": "wrong",
+     "tile": "evidence-0"
+    }
+   ],
+   "claims_all": [
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-0-44",
+     "name": "clothes",
+     "tile": "evidence-0",
+     "verdict": "wrong",
+     "file": "evidence/gt-arkit31-w1--gt-arkit47-w0--evidence-0.jpg"
+    }
+   ],
+   "false_changes": {
+    "claims": 1,
+    "wrong": 1,
+    "judged_objects": 67,
+    "rate": 0.0149
+   },
+   "timing": {
+    "visit_call_written_s": 6.539,
+    "stages_s": {
+     "visits": 4.939,
+     "visits.descriptors": 1.221,
+     "visits.register": 1.902,
+     "visits.compare": 1.382,
+     "visits.evidence": 0.035
+    },
+    "gpu_peak_gib": [
+     43.88,
+     33.45
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  },
+  {
+   "a": "own-samsclub-337",
+   "b": "own-samsclub-352",
+   "kind": "own",
+   "a_report": "acc-own-samsclub-337-shot-d5e0c855-1790732775",
+   "b_report": "acc-own-samsclub-352-shot-e0beb6e4-1790732924",
+   "counts": {
+    "static": 252,
+    "delineated_otherwise": 94,
+    "not_observed_in_b": 94,
+    "missing": 1,
+    "not_observed_in_a": 343,
+    "new": 2,
+    "not_compared": 696
+   },
+   "s": 14.678,
+   "registration": [
+    {
+     "b_shot": 0,
+     "a_shot": null,
+     "accepted": false,
+     "refused_because": "shot with 8 keyframes or no floor scale",
+     "u_m": null,
+     "floor": null,
+     "floor_transform": null,
+     "fit_a": null,
+     "fit_b": null,
+     "retrieval_cos_median": null,
+     "da3_s": null
+    },
+    {
+     "b_shot": 1,
+     "a_shot": 1,
+     "accepted": true,
+     "refused_because": null,
+     "u_m": 0.088,
+     "floor": {
+      "tilt_deg": 0.42,
+      "dz_m": 0.087
+     },
+     "floor_transform": {
+      "s": 0.9346,
+      "yaw_deg": -0.028,
+      "t_m": [
+       0.06,
+       -0.0172
+      ],
+      "note": "B floor frame -> A floor frame: a turn about +z, a shift in the floor plane, a scale (floors snapped)"
+     },
+     "fit_a": {
+      "s": 4.7067,
+      "centre_residual_m": 0.0075,
+      "rotation_residual_deg": 0.1248,
+      "spread_m": 2.545,
+      "centre_residual_share": 0.0029,
+      "ratio_spread": 0.0013,
+      "s_depth": 4.7181,
+      "s_centres": 4.7067
+     },
+     "fit_b": {
+      "s": 0.9346,
+      "centre_residual_m": 0.0205,
+      "rotation_residual_deg": 0.1313,
+      "spread_m": 2.5181,
+      "centre_residual_share": 0.0081,
+      "ratio_spread": 0.0027,
+      "s_depth": 0.9255,
+      "s_centres": 0.9346
+     },
+     "retrieval_cos_median": 1.0,
+     "da3_s": 1.021
+    }
+   ],
+   "claims_all": [
+    {
+     "status": "missing",
+     "a": "obj-1-1609",
+     "b": null,
+     "name": "vehicle / handling equipment (type only)",
+     "tile": "evidence-0",
+     "verdict": "right",
+     "file": "evidence/own-samsclub-352--own-samsclub-337--evidence-0.jpg"
+    },
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-1-1384",
+     "name": "cart",
+     "tile": "evidence-1",
+     "verdict": "right",
+     "file": "evidence/own-samsclub-352--own-samsclub-337--evidence-1.jpg"
+    },
+    {
+     "status": "new",
+     "a": null,
+     "b": "obj-1-1352",
+     "name": "vehicle / handling equipment (type only)",
+     "tile": "evidence-2",
+     "verdict": "right",
+     "file": "evidence/own-samsclub-352--own-samsclub-337--evidence-2.jpg"
+    }
+   ],
+   "false_changes": {
+    "claims": 3,
+    "wrong": 0,
+    "judged_objects": 349,
+    "rate": 0.0
+   },
+   "timing": {
+    "visit_call_written_s": 17.414,
+    "stages_s": {
+     "visits": 15.572,
+     "visits.descriptors": 1.697,
+     "visits.register": 1.676,
+     "visits.compare": 11.17,
+     "visits.evidence": 0.132
+    },
+    "gpu_peak_gib": [
+     43.91,
+     33.57
+    ],
+    "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"
+   }
+  }
+ ],
+ "revisits": [
+  {
+   "site": "gt-desk-w0",
+   "report": "acc-gt-desk-w0-revisit-1ce66758-1790735723",
+   "visit_of": "acc-gt-tum-w0-shot-7cf1e116-1790731841",
+   "error": null,
+   "visits_error": null,
+   "cards_final_written_s": 43.816,
+   "visits_written_s": 56.427,
+   "visits_stage_s": 10.896,
+   "gpu_peak_gib": [
+    67.1,
+    64.93
+   ],
+   "first_call_after_boot": true
+  },
+  {
+   "site": "gt-arkit31-w0",
+   "report": "acc-gt-arkit31-w0-revisit-27688d3c-1790735785",
+   "visit_of": "acc-gt-arkit47-w0-shot-3a3b61c6-1790732534",
+   "error": null,
+   "visits_error": null,
+   "cards_final_written_s": 40.522,
+   "visits_written_s": 57.723,
+   "visits_stage_s": 14.718,
+   "gpu_peak_gib": [
+    63.57,
+    60.3
+   ],
+   "first_call_after_boot": false
+  },
+  {
+   "site": "own-samsclub-352",
+   "report": "acc-own-samsclub-352-revisit-e0beb6e4-1790735848",
+   "visit_of": "acc-own-samsclub-337-shot-d5e0c855-1790732775",
+   "error": null,
+   "visits_error": null,
+   "cards_final_written_s": 69.661,
+   "visits_written_s": 99.024,
+   "visits_stage_s": 17.27,
+   "gpu_peak_gib": [
+    66.63,
+    57.58
+   ],
+   "first_call_after_boot": false
+  }
+ ],
+ "bench": {
+  "boot_ready_s": 108.3,
+  "container_life_s": 615.1,
+  "usd_upper": 1.46,
+  "gpus": [
+   "GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-477f3e11-b010-aebb-898b-bffbba649ef6)",
+   "GPU 1: NVIDIA A100-SXM4-80GB (UUID: GPU-a40159b7-1da7-2573-4e0c-9cf269b4426b)"
+  ]
+ }
+}

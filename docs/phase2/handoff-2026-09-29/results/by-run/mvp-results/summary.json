@@ -1,0 +1,3167 @@
+{
+ "schema": "panoptes-mvp-results-v1",
+ "note": "All numbers measured on 2 x A100-SXM4-80GB (MPS), ephemeral Modal runs, analysis time only (cold start apart). Physical values are at estimated scale (floor plane + assumed 1.6 m camera height); 'agreement' is with the delivered report, itself model-made and at estimated scale, not ground truth. Labels on clicks, boxes and judgements are agent-made.",
+ "videos": {
+  "me340": {
+   "times_s": {
+    "first 3D (cameras + light room)": {
+     "warm": 17.713,
+     "first_call": 22.631,
+     "target_ok_warm": true
+    },
+    "objects v1": {
+     "warm": 36.289,
+     "first_call": 37.752,
+     "target_ok_warm": false
+    },
+    "pick v1": {
+     "warm": 39.889,
+     "first_call": 42.078,
+     "target_ok_warm": true
+    },
+    "cards v1": {
+     "warm": 42.018,
+     "first_call": 44.102,
+     "target_ok_warm": true
+    },
+    "judgements v1": {
+     "warm": 43.911,
+     "first_call": 44.102,
+     "target_ok_warm": true
+    },
+    "cards v2 (identity)": {
+     "warm": 52.144,
+     "first_call": 59.404,
+     "target_ok_warm": true
+    },
+    "judgements v2 (VLM)": {
+     "warm": 54.166,
+     "first_call": 61.153,
+     "target_ok_warm": true
+    },
+    "pick v2 (densified)": {
+     "warm": 73.781,
+     "first_call": 76.742,
+     "target_ok_warm": true
+    },
+    "cards v3": {
+     "warm": 75.526,
+     "first_call": 78.624,
+     "target_ok_warm": true
+    },
+    "first SAM 3D model": {
+     "warm": 168.293,
+     "first_call": 175.451,
+     "target_ok_warm": false
+    },
+    "splat preview": {
+     "warm": 223.331,
+     "first_call": 226.257,
+     "target_ok_warm": true
+    }
+   },
+   "gpu_peak_gib": {
+    "first": [
+     61.67,
+     56.38
+    ],
+    "warm": [
+     62.31,
+     56.69
+    ],
+    "shifted": [
+     61.22,
+     56.47
+    ]
+   },
+   "clicks": {
+    "pick v1": {
+     "object_correct": 0.515,
+     "object_correct_iou_only": 0.2918,
+     "object_hit": 0.56,
+     "object_wrong_entity": 0.045,
+     "object_n": 11512,
+     "person_correct": 0.9417,
+     "person_n": 120,
+     "background_false_hit": 0.0067
+    },
+    "pick v2": {
+     "object_correct": 0.5277,
+     "object_correct_iou_only": 0.3298,
+     "object_hit": 0.5819,
+     "object_wrong_entity": 0.0542,
+     "object_n": 11512,
+     "person_correct": 0.9333,
+     "person_n": 120,
+     "background_false_hit": 0.0133
+    },
+    "baseline pick v1 (from outlines)": {
+     "object_correct": 0.4686,
+     "object_correct_iou_only": 0.2401,
+     "person_correct": 0.0,
+     "background_false_hit": 0.01
+    }
+   },
+   "identity": {
+    "matched": 41,
+    "agreement": 0.1463,
+    "by_route": {
+     "sam3 vote": {
+      "n": 15,
+      "agreement": 0.2
+     },
+     "vlm options": {
+      "n": 26,
+      "agreement": 0.1154
+     }
+    },
+    "baseline_agreement": 0.0833,
+    "baseline_matched": 36,
+    "audit": {
+     "n": 38,
+     "right": 0.263,
+     "right_or_close": 0.737,
+     "unclear": 2,
+     "by_route": {
+      "sam3 vote": {
+       "n": 15,
+       "right": 0.2,
+       "right_or_close": 0.733
+      },
+      "vlm options": {
+       "n": 23,
+       "right": 0.304,
+       "right_or_close": 0.739
+      }
+     },
+     "labeller": "agent (contact sheets): right | close (right family, or a part / the whole) | wrong | unclear"
+    }
+   },
+   "physical": {
+    "matched": 41,
+    "agreement": {
+     "top": {
+      "n": 39,
+      "median": 0.052,
+      "p90": 0.202,
+      "coverage": 0.7436,
+      "with_u": 39
+     },
+     "base": {
+      "n": 41,
+      "median": 0.061,
+      "p90": 0.253,
+      "coverage": 0.7561,
+      "with_u": 41
+     },
+     "long_side": {
+      "n": 16,
+      "median": 0.589,
+      "p90": 2.261,
+      "coverage": 0.3125,
+      "with_u": 16
+     },
+     "short_side": {
+      "n": 16,
+      "median": 0.156,
+      "p90": 1.241,
+      "coverage": 0.3125,
+      "with_u": 16
+     }
+    },
+    "baseline_agreement": {
+     "top": {
+      "n": 36,
+      "median": 0.139,
+      "p90": 0.867,
+      "coverage": null,
+      "with_u": 0
+     },
+     "base": {
+      "n": 36,
+      "median": 0.162,
+      "p90": 1.044,
+      "coverage": null,
+      "with_u": 0
+     },
+     "long_side": {
+      "n": 36,
+      "median": 0.562,
+      "p90": 3.125,
+      "coverage": null,
+      "with_u": 0
+     },
+     "short_side": {
+      "n": 36,
+      "median": 0.282,
+      "p90": 1.809,
+      "coverage": null,
+      "with_u": 0
+     }
+    },
+    "inflation": {
+     "objects": 262,
+     "over_3m_share": 0.0267,
+     "median": 0.578,
+     "p90": 2.077,
+     "max": 5.894,
+     "shown_non_large": 190,
+     "shown_non_large_over_3m_share": 0.0053,
+     "implausible": 20,
+     "implausible_by_class": {
+      "machine": 15,
+      "other": 3,
+      "door": 1,
+      "ceiling light": 1
+     },
+     "criterion": "<= 5% of shown (plausible) boxes of non-large classes over 3 m; no implausible size shown as a fact"
+    },
+    "baseline_inflation": {
+     "objects": 251,
+     "over_3m_share": 0.2869,
+     "median": 1.15,
+     "p90": 6.3,
+     "max": 13.85,
+     "shown_non_large": 162,
+     "shown_non_large_over_3m_share": 0.1543,
+     "implausible": 37,
+     "implausible_by_class": {
+      "other": 12,
+      "machine": 6,
+      "table": 4,
+      "sign": 4,
+      "marker": 3,
+      "ceiling light": 3,
+      "door": 2,
+      "monitor": 2,
+      "shelf": 1
+     },
+     "criterion": "<= 5% of shown (plausible) boxes of non-large classes over 3 m; no implausible size shown as a fact"
+    },
+    "known_verticals": {
+     "n": 2,
+     "shown": 0,
+     "misses": [],
+     "checks": [
+      {
+       "id": "obj-1-329",
+       "delivered": "cnc controller panel",
+       "quantity": "slope",
+       "shown": false
+      },
+      {
+       "id": "obj-1-230",
+       "delivered": "cnc control panel",
+       "quantity": "slope",
+       "shown": false
+      }
+     ],
+     "pass": null
+    },
+    "scale_ours_over_delivered": 0.9896
+   },
+   "repeat": {
+    "shifted call 2": {
+     "shots": [
+      {
+       "a": 0,
+       "b": 0,
+       "keyframes_aligned": 12,
+       "skipped": "camera path < 0.5 m: no Sim3"
+      },
+      {
+       "a": 1,
+       "b": 1,
+       "keyframes_aligned": 113,
+       "sim3_scale_b_to_a": 0.9828,
+       "objects": [
+        192,
+        171
+       ]
+      }
+     ],
+     "matched": 114,
+     "not_same_space": 8,
+     "objects": [
+      262,
+      226
+     ],
+     "delta": {
+      "top": {
+       "n": 112,
+       "median": 0.025,
+       "p90": 0.168
+      },
+      "base": {
+       "n": 114,
+       "median": 0.026,
+       "p90": 0.196
+      },
+      "height": {
+       "n": 106,
+       "median": 0.035,
+       "p90": 0.251
+      },
+      "long_side": {
+       "n": 28,
+       "median": 0.096,
+       "p90": 0.336
+      },
+      "short_side": {
+       "n": 28,
+       "median": 0.017,
+       "p90": 0.24
+      },
+      "position": {
+       "n": 114,
+       "median": 0.09,
+       "p90": 0.51
+      },
+      "slope": {
+       "n": 1,
+       "median": 0.141,
+       "p90": 0.141
+      },
+      "tilt": {
+       "n": 4,
+       "median": 1.473,
+       "p90": 2.091
+      }
+     },
+     "coverage_k1": {
+      "height": {
+       "n": 226,
+       "coverage": 0.9292
+      },
+      "extent": {
+       "n": 162,
+       "coverage": 0.9074
+      },
+      "position": {
+       "n": 114,
+       "coverage": 0.7368
+      },
+      "angle": {
+       "n": 5,
+       "coverage": 1.0
+      }
+     },
+     "angles_shown": {
+      "both": 5,
+      "one": 9,
+      "neither": 214
+     },
+     "not_measurable_share": 0.9781,
+     "rule": "coverage: |delta| <= sqrt(u1^2 + u2^2), scale parts removed, B's lengths x the Sim3 scale; pairs: 1:1 centroids <= 0.5 m that are not part and whole (a box >= 4x longer holding the other's centre; counted in not_same_space)"
+    }
+   },
+   "cards": {
+    "cards": 269,
+    "fields": 2358,
+    "violations": 0,
+    "examples": [],
+    "implausible_cards_with_numbers": 0,
+    "implausible_examples": []
+   },
+   "judgements": {},
+   "flags": {
+    "first": [],
+    "warm": [],
+    "shifted": []
+   },
+   "cold_start_s": 133.55,
+   "click_audit": null,
+   "judgements_counts": {
+    "FAIL": 0,
+    "NEEDS_REVIEW": 17,
+    "PASS": 8,
+    "NO_DATA": 16
+   },
+   "box_audit": null,
+   "acceptance": {
+    "times": {
+     "pass": false,
+     "missed": [
+      "first SAM 3D model",
+      "objects v1"
+     ],
+     "not written": []
+    },
+    "memory": {
+     "pass": true,
+     "peaks_gib": [
+      62.31,
+      56.69
+     ]
+    },
+    "L1_shown_non_large_over_3m": {
+     "pass": true,
+     "share": 0.0053
+    },
+    "clicks_v2_beats_v1": {
+     "pass": true,
+     "v1": 0.515,
+     "v2": 0.5277
+    },
+    "clicks_background_false_hits": {
+     "pass": true,
+     "rates": {
+      "pick v1": 0.0067,
+      "pick v2": 0.0133
+     }
+    },
+    "known_verticals_within_u": {
+     "pass": null,
+     "misses": 0
+    },
+    "cards_complete": {
+     "pass": true,
+     "cards": 269,
+     "fields": 2358,
+     "violations": 0,
+     "examples": []
+    },
+    "L1_no_implausible_number": {
+     "pass": true,
+     "cards": 0,
+     "note": "numbers kept on an implausible card count unless the field says 'needs review' (spec 4.2); a viewer that greys them (spec 6) is checked on C's screenshots"
+    }
+   },
+   "usd_estimate": 1.4809,
+   "usd_upper_container_life": 1.86,
+   "reports": {
+    "first": "mvp-me340-e84efffd-1790666448",
+    "warm": "mvp-me340-e84efffd-1790666683",
+    "shifted": "mvp-me340-990486a3-1790666918"
+   },
+   "bench_dir": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-integrate-me340-005"
+  },
+  "samsclub-a2": {
+   "times_s": {
+    "first 3D (cameras + light room)": {
+     "warm": 15.182,
+     "first_call": 18.587,
+     "target_ok_warm": true
+    },
+    "objects v1": {
+     "warm": 27.164,
+     "first_call": 28.582,
+     "target_ok_warm": false
+    },
+    "pick v1": {
+     "warm": 27.164,
+     "first_call": 30.505,
+     "target_ok_warm": true
+    },
+    "cards v1": {
+     "warm": 33.765,
+     "first_call": 35.109,
+     "target_ok_warm": true
+    },
+    "judgements v1": {
+     "warm": 35.373,
+     "first_call": 36.629,
+     "target_ok_warm": true
+    },
+    "cards v2 (identity)": {
+     "warm": 62.504,
+     "first_call": 77.627,
+     "target_ok_warm": true
+    },
+    "judgements v2 (VLM)": {
+     "warm": 78.565,
+     "first_call": 96.505,
+     "target_ok_warm": true
+    },
+    "pick v2 (densified)": {
+     "warm": 56.091,
+     "first_call": 60.741,
+     "target_ok_warm": true
+    },
+    "cards v3": {
+     "warm": 60.098,
+     "first_call": 63.925,
+     "target_ok_warm": true
+    },
+    "first SAM 3D model": {
+     "warm": 159.717,
+     "first_call": 173.314,
+     "target_ok_warm": false
+    },
+    "splat preview": {
+     "warm": 205.892,
+     "first_call": 207.988,
+     "target_ok_warm": true
+    }
+   },
+   "gpu_peak_gib": {
+    "first": [
+     64.21,
+     54.98
+    ],
+    "warm": [
+     65.16,
+     55.0
+    ],
+    "shifted": [
+     68.18,
+     56.78
+    ]
+   },
+   "clicks": {
+    "pick v1": {
+     "object_correct": 0.4052,
+     "object_correct_iou_only": 0.3142,
+     "object_hit": 0.5188,
+     "object_wrong_entity": 0.1136,
+     "object_n": 13064,
+     "person_correct": 0.4286,
+     "person_n": 42,
+     "background_false_hit": 0.0233
+    },
+    "pick v2": {
+     "object_correct": 0.4432,
+     "object_correct_iou_only": 0.3468,
+     "object_hit": 0.5602,
+     "object_wrong_entity": 0.117,
+     "object_n": 13064,
+     "person_correct": 0.4286,
+     "person_n": 42,
+     "background_false_hit": 0.02
+    },
+    "baseline pick v1 (from outlines)": {
+     "object_correct": 0.3963,
+     "object_correct_iou_only": 0.3021,
+     "person_correct": 0.0,
+     "background_false_hit": 0.03
+    }
+   },
+   "identity": {
+    "matched": 61,
+    "agreement": 0.2787,
+    "by_route": {
+     "sam3 vote": {
+      "n": 23,
+      "agreement": 0.0435
+     },
+     "vlm options": {
+      "n": 38,
+      "agreement": 0.4211
+     }
+    },
+    "baseline_agreement": 0.4643,
+    "baseline_matched": 56,
+    "audit": {
+     "n": 40,
+     "right": 0.65,
+     "right_or_close": 0.975,
+     "unclear": 0,
+     "by_route": {
+      "sam3 vote": {
+       "n": 15,
+       "right": 0.4,
+       "right_or_close": 1.0
+      },
+      "vlm options": {
+       "n": 25,
+       "right": 0.8,
+       "right_or_close": 0.96
+      }
+     },
+     "labeller": "agent (contact sheets): right | close (right family, or a part / the whole) | wrong | unclear"
+    }
+   },
+   "physical": {
+    "matched": 61,
+    "agreement": {
+     "top": {
+      "n": 61,
+      "median": 0.242,
+      "p90": 0.751,
+      "coverage": 0.2787,
+      "with_u": 61
+     },
+     "base": {
+      "n": 61,
+      "median": 0.152,
+      "p90": 0.719,
+      "coverage": 0.5246,
+      "with_u": 61
+     },
+     "long_side": {
+      "n": 0,
+      "coverage": null,
+      "with_u": 0
+     },
+     "short_side": {
+      "n": 0,
+      "coverage": null,
+      "with_u": 0
+     }
+    },
+    "baseline_agreement": {
+     "top": {
+      "n": 56,
+      "median": 0.102,
+      "p90": 0.677,
+      "coverage": null,
+      "with_u": 0
+     },
+     "base": {
+      "n": 56,
+      "median": 0.183,
+      "p90": 0.723,
+      "coverage": null,
+      "with_u": 0
+     },
+     "long_side": {
+      "n": 56,
+      "median": 0.528,
+      "p90": 3.324,
+      "coverage": null,
+      "with_u": 0
+     },
+     "short_side": {
+      "n": 56,
+      "median": 0.128,
+      "p90": 1.354,
+      "coverage": null,
+      "with_u": 0
+     }
+    },
+    "inflation": {
+     "objects": 623,
+     "over_3m_share": 0.0144,
+     "median": 0.623,
+     "p90": 1.607,
+     "max": 5.369,
+     "shown_non_large": 594,
+     "shown_non_large_over_3m_share": 0.0034,
+     "implausible": 10,
+     "implausible_by_class": {
+      "pallet": 4,
+      "marker": 3,
+      "stacked boxes": 3
+     },
+     "criterion": "<= 5% of shown (plausible) boxes of non-large classes over 3 m; no implausible size shown as a fact"
+    },
+    "baseline_inflation": {
+     "objects": 589,
+     "over_3m_share": 0.1087,
+     "median": 0.9,
+     "p90": 3.21,
+     "max": 26.9,
+     "shown_non_large": 484,
+     "shown_non_large_over_3m_share": 0.0186,
+     "implausible": 98,
+     "implausible_by_class": {
+      "box": 46,
+      "stacked boxes": 26,
+      "pallet": 21,
+      "marker": 4,
+      "other": 1
+     },
+     "criterion": "<= 5% of shown (plausible) boxes of non-large classes over 3 m; no implausible size shown as a fact"
+    },
+    "known_verticals": {
+     "n": 3,
+     "shown": 0,
+     "misses": [],
+     "checks": [
+      {
+       "id": "obj-0-49",
+       "delivered": "vertical rack support",
+       "quantity": "tilt",
+       "shown": false
+      },
+      {
+       "id": "obj-0-606",
+       "delivered": "refrigerator door",
+       "quantity": "slope",
+       "shown": false
+      },
+      {
+       "id": "obj-0-114",
+       "delivered": "shelf post",
+       "quantity": "tilt",
+       "shown": false
+      }
+     ],
+     "pass": null
+    },
+    "scale_ours_over_delivered": 1.1242
+   },
+   "repeat": {
+    "shifted call 2": {
+     "shots": [
+      {
+       "a": 0,
+       "b": 0,
+       "keyframes_aligned": 49,
+       "sim3_scale_b_to_a": 1.0994,
+       "objects": [
+        338,
+        248
+       ]
+      },
+      {
+       "a": 1,
+       "b": 1,
+       "keyframes_aligned": 54,
+       "sim3_scale_b_to_a": 0.9934,
+       "objects": [
+        285,
+        315
+       ]
+      }
+     ],
+     "matched": 397,
+     "not_same_space": 21,
+     "objects": [
+      623,
+      563
+     ],
+     "delta": {
+      "top": {
+       "n": 388,
+       "median": 0.115,
+       "p90": 0.412
+      },
+      "base": {
+       "n": 397,
+       "median": 0.077,
+       "p90": 0.427
+      },
+      "height": {
+       "n": 383,
+       "median": 0.032,
+       "p90": 0.393
+      },
+      "long_side": {
+       "n": 2,
+       "median": 0.472,
+       "p90": 0.528
+      },
+      "short_side": {
+       "n": 2,
+       "median": 0.196,
+       "p90": 0.353
+      },
+      "position": {
+       "n": 397,
+       "median": 0.17,
+       "p90": 0.424
+      },
+      "slope": {
+       "n": 62,
+       "median": 0.355,
+       "p90": 1.462
+      },
+      "tilt": {
+       "n": 3,
+       "median": 0.119,
+       "p90": 0.935
+      }
+     },
+     "coverage_k1": {
+      "height": {
+       "n": 785,
+       "coverage": 0.8166
+      },
+      "extent": {
+       "n": 387,
+       "coverage": 0.8811
+      },
+      "position": {
+       "n": 397,
+       "coverage": 0.9421
+      },
+      "angle": {
+       "n": 65,
+       "coverage": 1.0
+      }
+     },
+     "angles_shown": {
+      "both": 65,
+      "one": 124,
+      "neither": 605
+     },
+     "not_measurable_share": 0.9181,
+     "rule": "coverage: |delta| <= sqrt(u1^2 + u2^2), scale parts removed, B's lengths x the Sim3 scale; pairs: 1:1 centroids <= 0.5 m that are not part and whole (a box >= 4x longer holding the other's centre; counted in not_same_space)"
+    }
+   },
+   "cards": {
+    "cards": 645,
+    "fields": 5607,
+    "violations": 0,
+    "examples": [],
+    "implausible_cards_with_numbers": 0,
+    "implausible_examples": []
+   },
+   "judgements": {},
+   "flags": {
+    "first": [],
+    "warm": [],
+    "shifted": []
+   },
+   "cold_start_s": 141.84,
+   "click_audit": null,
+   "judgements_counts": {
+    "FAIL": 0,
+    "NEEDS_REVIEW": 143,
+    "PASS": 121,
+    "NO_DATA": 186
+   },
+   "box_audit": null,
+   "acceptance": {
+    "times": {
+     "pass": false,
+     "missed": [
+      "events",
+      "first SAM 3D model",
+      "objects v1",
+      "people"
+     ],
+     "not written": []
+    },
+    "memory": {
+     "pass": true,
+     "peaks_gib": [
+      65.16,
+      55.0
+     ]
+    },
+    "L1_shown_non_large_over_3m": {
+     "pass": true,
+     "share": 0.0034
+    },
+    "clicks_v2_beats_v1": {
+     "pass": true,
+     "v1": 0.4052,
+     "v2": 0.4432
+    },
+    "clicks_background_false_hits": {
+     "pass": true,
+     "rates": {
+      "pick v1": 0.0233,
+      "pick v2": 0.02
+     }
+    },
+    "known_verticals_within_u": {
+     "pass": null,
+     "misses": 0
+    },
+    "cards_complete": {
+     "pass": true,
+     "cards": 645,
+     "fields": 5607,
+     "violations": 0,
+     "examples": []
+    },
+    "L1_no_implausible_number": {
+     "pass": true,
+     "cards": 0,
+     "note": "numbers kept on an implausible card count unless the field says 'needs review' (spec 4.2); a viewer that greys them (spec 6) is checked on C's screenshots"
+    }
+   },
+   "usd_estimate": 1.413,
+   "usd_upper_container_life": 1.81,
+   "reports": {
+    "first": "mvp-samsclub-a2-d5e0c855-1790666469",
+    "warm": "mvp-samsclub-a2-d5e0c855-1790666685",
+    "shifted": "mvp-samsclub-a2-f27afc15-1790666901"
+   },
+   "bench_dir": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-integrate-samsclub-004"
+  },
+  "walmart": {
+   "times_s": {
+    "first 3D (cameras + light room)": {
+     "warm": 15.115,
+     "first_call": 18.279,
+     "target_ok_warm": true
+    },
+    "objects v1": {
+     "warm": 20.2,
+     "first_call": 29.32,
+     "target_ok_warm": true
+    },
+    "pick v1": {
+     "warm": 22.359,
+     "first_call": 37.917,
+     "target_ok_warm": true
+    },
+    "cards v1": {
+     "warm": 25.363,
+     "first_call": 37.917,
+     "target_ok_warm": true
+    },
+    "judgements v1": {
+     "warm": 27.092,
+     "first_call": 37.917,
+     "target_ok_warm": true
+    },
+    "cards v2 (identity)": {
+     "warm": 53.888,
+     "first_call": 64.209,
+     "target_ok_warm": true
+    },
+    "judgements v2 (VLM)": {
+     "warm": 28.671,
+     "first_call": 62.398,
+     "target_ok_warm": true
+    },
+    "pick v2 (densified)": {
+     "warm": 43.022,
+     "first_call": 46.837,
+     "target_ok_warm": true
+    },
+    "cards v3": {
+     "warm": 45.649,
+     "first_call": 50.489,
+     "target_ok_warm": true
+    },
+    "first SAM 3D model": {
+     "warm": 71.05,
+     "first_call": 92.357,
+     "target_ok_warm": true
+    },
+    "splat preview": {
+     "warm": 190.797,
+     "first_call": 196.713,
+     "target_ok_warm": true
+    }
+   },
+   "gpu_peak_gib": {
+    "first": [
+     62.6,
+     56.25
+    ],
+    "warm": [
+     62.07,
+     56.4
+    ],
+    "shifted": [
+     60.75,
+     56.55
+    ]
+   },
+   "clicks": {
+    "pick v1": {
+     "object_correct": 0.3173,
+     "object_correct_iou_only": 0.2812,
+     "object_hit": 0.4309,
+     "object_wrong_entity": 0.1136,
+     "object_n": 8258,
+     "person_correct": 0.0,
+     "person_n": 18,
+     "background_false_hit": 0.0333
+    },
+    "pick v2": {
+     "object_correct": 0.391,
+     "object_correct_iou_only": 0.3264,
+     "object_hit": 0.5217,
+     "object_wrong_entity": 0.1307,
+     "object_n": 8258,
+     "person_correct": 0.0,
+     "person_n": 18,
+     "background_false_hit": 0.0633
+    },
+    "baseline pick v1 (from outlines)": {
+     "object_correct": 0.3093,
+     "object_correct_iou_only": 0.2721,
+     "person_correct": 0.0,
+     "background_false_hit": 0.05
+    }
+   },
+   "identity": {
+    "matched": 51,
+    "agreement": 0.4314,
+    "by_route": {
+     "sam3 vote": {
+      "n": 32,
+      "agreement": 0.4062
+     },
+     "vlm options": {
+      "n": 19,
+      "agreement": 0.4737
+     }
+    },
+    "baseline_agreement": 0.25,
+    "baseline_matched": 40,
+    "audit": {
+     "n": 40,
+     "right": 0.85,
+     "right_or_close": 0.975,
+     "unclear": 0,
+     "by_route": {
+      "sam3 vote": {
+       "n": 24,
+       "right": 0.875,
+       "right_or_close": 1.0
+      },
+      "vlm options": {
+       "n": 16,
+       "right": 0.812,
+       "right_or_close": 0.938
+      }
+     },
+     "labeller": "agent (contact sheets): right | close (right family, or a part / the whole) | wrong | unclear"
+    }
+   },
+   "physical": {
+    "matched": 51,
+    "agreement": {
+     "top": {
+      "n": 46,
+      "median": 0.123,
+      "p90": 0.343,
+      "coverage": 0.7391,
+      "with_u": 46
+     },
+     "base": {
+      "n": 51,
+      "median": 0.08,
+      "p90": 0.262,
+      "coverage": 0.8039,
+      "with_u": 51
+     },
+     "long_side": {
+      "n": 4,
+      "median": 0.526,
+      "p90": 0.938,
+      "coverage": 0.25,
+      "with_u": 4
+     },
+     "short_side": {
+      "n": 4,
+      "median": 0.084,
+      "p90": 0.16,
+      "coverage": 0.5,
+      "with_u": 4
+     }
+    },
+    "baseline_agreement": {
+     "top": {
+      "n": 40,
+      "median": 0.109,
+      "p90": 0.538,
+      "coverage": null,
+      "with_u": 0
+     },
+     "base": {
+      "n": 40,
+      "median": 0.194,
+      "p90": 0.434,
+      "coverage": null,
+      "with_u": 0
+     },
+     "long_side": {
+      "n": 40,
+      "median": 0.393,
+      "p90": 5.416,
+      "coverage": null,
+      "with_u": 0
+     },
+     "short_side": {
+      "n": 40,
+      "median": 0.21,
+      "p90": 0.735,
+      "coverage": null,
+      "with_u": 0
+     }
+    },
+    "inflation": {
+     "objects": 720,
+     "over_3m_share": 0.0181,
+     "median": 0.33,
+     "p90": 0.945,
+     "max": 5.816,
+     "shown_non_large": 639,
+     "shown_non_large_over_3m_share": 0.0,
+     "implausible": 6,
+     "implausible_by_class": {
+      "sign": 5,
+      "cart": 1
+     },
+     "criterion": "<= 5% of shown (plausible) boxes of non-large classes over 3 m; no implausible size shown as a fact"
+    },
+    "baseline_inflation": {
+     "objects": 552,
+     "over_3m_share": 0.0543,
+     "median": 0.7,
+     "p90": 2.395,
+     "max": 18.65,
+     "shown_non_large": 473,
+     "shown_non_large_over_3m_share": 0.0085,
+     "implausible": 33,
+     "implausible_by_class": {
+      "box": 28,
+      "sign": 4,
+      "other": 1
+     },
+     "criterion": "<= 5% of shown (plausible) boxes of non-large classes over 3 m; no implausible size shown as a fact"
+    },
+    "known_verticals": {
+     "n": 2,
+     "shown": 0,
+     "misses": [],
+     "checks": [
+      {
+       "id": "obj-1-1019",
+       "delivered": "shelf vertical support",
+       "quantity": "tilt",
+       "shown": false
+      },
+      {
+       "id": "obj-1-427",
+       "delivered": "shelf vertical support",
+       "quantity": "tilt",
+       "shown": false
+      }
+     ],
+     "pass": null
+    },
+    "scale_ours_over_delivered": 1.0062
+   },
+   "repeat": {
+    "shifted call 2": {
+     "shots": [
+      {
+       "a": 0,
+       "b": 0,
+       "keyframes_aligned": 43,
+       "sim3_scale_b_to_a": 0.9836,
+       "objects": [
+        417,
+        363
+       ]
+      },
+      {
+       "a": 1,
+       "b": 1,
+       "keyframes_aligned": 61,
+       "sim3_scale_b_to_a": 1.0151,
+       "objects": [
+        303,
+        358
+       ]
+      }
+     ],
+     "matched": 566,
+     "not_same_space": 19,
+     "objects": [
+      720,
+      721
+     ],
+     "delta": {
+      "top": {
+       "n": 541,
+       "median": 0.026,
+       "p90": 0.205
+      },
+      "base": {
+       "n": 566,
+       "median": 0.024,
+       "p90": 0.184
+      },
+      "height": {
+       "n": 532,
+       "median": 0.013,
+       "p90": 0.132
+      },
+      "long_side": {
+       "n": 17,
+       "median": 0.029,
+       "p90": 0.434
+      },
+      "short_side": {
+       "n": 17,
+       "median": 0.011,
+       "p90": 0.035
+      },
+      "position": {
+       "n": 566,
+       "median": 0.055,
+       "p90": 0.271
+      },
+      "slope": {
+       "n": 0
+      },
+      "tilt": {
+       "n": 0
+      }
+     },
+     "coverage_k1": {
+      "height": {
+       "n": 1107,
+       "coverage": 0.9431
+      },
+      "extent": {
+       "n": 566,
+       "coverage": 0.9099
+      },
+      "position": {
+       "n": 566,
+       "coverage": 0.9028
+      },
+      "angle": {
+       "n": 0,
+       "coverage": null
+      }
+     },
+     "angles_shown": {
+      "both": 0,
+      "one": 0,
+      "neither": 1132
+     },
+     "not_measurable_share": 1.0,
+     "rule": "coverage: |delta| <= sqrt(u1^2 + u2^2), scale parts removed, B's lengths x the Sim3 scale; pairs: 1:1 centroids <= 0.5 m that are not part and whole (a box >= 4x longer holding the other's centre; counted in not_same_space)"
+    }
+   },
+   "cards": {
+    "cards": 730,
+    "fields": 6480,
+    "violations": 0,
+    "examples": [],
+    "implausible_cards_with_numbers": 0,
+    "implausible_examples": []
+   },
+   "judgements": {},
+   "flags": {
+    "first": [],
+    "warm": [],
+    "shifted": []
+   },
+   "cold_start_s": 128.72,
+   "click_audit": null,
+   "judgements_counts": {
+    "FAIL": 0,
+    "NEEDS_REVIEW": 50,
+    "PASS": 0,
+    "NO_DATA": 10
+   },
+   "box_audit": null,
+   "acceptance": {
+    "times": {
+     "pass": true,
+     "missed": [],
+     "not written": []
+    },
+    "memory": {
+     "pass": true,
+     "peaks_gib": [
+      62.07,
+      56.4
+     ]
+    },
+    "L1_shown_non_large_over_3m": {
+     "pass": true,
+     "share": 0.0
+    },
+    "clicks_v2_beats_v1": {
+     "pass": true,
+     "v1": 0.3173,
+     "v2": 0.391
+    },
+    "clicks_background_false_hits": {
+     "pass": true,
+     "rates": {
+      "pick v1": 0.0333,
+      "pick v2": 0.0633
+     }
+    },
+    "known_verticals_within_u": {
+     "pass": null,
+     "misses": 0
+    },
+    "cards_complete": {
+     "pass": true,
+     "cards": 730,
+     "fields": 6480,
+     "violations": 0,
+     "examples": []
+    },
+    "L1_no_implausible_number": {
+     "pass": true,
+     "cards": 0,
+     "note": "numbers kept on an implausible card count unless the field says 'needs review' (spec 4.2); a viewer that greys them (spec 6) is checked on C's screenshots"
+    }
+   },
+   "usd_estimate": 1.3275000000000001,
+   "usd_upper_container_life": 1.69,
+   "reports": {
+    "first": "mvp-walmart-c0761a2a-1790666452",
+    "warm": "mvp-walmart-c0761a2a-1790666653",
+    "shifted": "mvp-walmart-2eeeb1a3-1790666852"
+   },
+   "bench_dir": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-integrate-walmart-004"
+  }
+ },
+ "k_family": {
+  "pooled": {
+   "height": {
+    "k": 1.028,
+    "n": 2118,
+    "coverage_before": 0.8947,
+    "coverage_after": 0.9004
+   },
+   "extent": {
+    "k": 1.0,
+    "n": 1115,
+    "coverage_before": 0.8996,
+    "coverage_after": 0.9004
+   },
+   "position": {
+    "k": 1.001,
+    "n": 1077,
+    "coverage_before": 0.8997,
+    "coverage_after": 0.9006
+   },
+   "angle": {
+    "k": 1.0,
+    "n": 70,
+    "coverage_before": 1.0,
+    "coverage_after": 1.0
+   }
+  },
+  "source": "warm vs shifted window"
+ },
+ "viewer": {
+  "me340": {
+   "report": "mvp-me340-e84efffd-1790666683",
+   "replay": "mvp-me340-e84efffd-1790666683-check-1790668071",
+   "pickDecodeMs": 702.1000000238419,
+   "pickDecodeSteps": {
+    "fetch": 679.7999999523163,
+    "inflate": 21.90000009536743,
+    "index": 0.3999999761581421
+   },
+   "pickDecodes": [
+    {
+     "seq": 15,
+     "ms": 106.79999995231628,
+     "fetch": 62.59999990463257
+    },
+    {
+     "seq": 29,
+     "ms": 702.1000000238419,
+     "fetch": 679.7999999523163
+    }
+   ],
+   "pickFrames": 147,
+   "clicks": 200,
+   "hits": 84,
+   "unknown": 116,
+   "latencyMs": {
+    "p50": 5.400000095367432,
+    "p95": 26.100000023841858,
+    "max": 28.199999928474426,
+    "mean": 10.980500003695488
+   },
+   "shots": [
+    {
+     "aimed": "obj-1-211",
+     "t": 28.9456,
+     "x": 1027,
+     "y": 497,
+     "title": "workbench NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/me340/mvp-me340-e84efffd-1790666683-click-1.png"
+    },
+    {
+     "aimed": "obj-1-190",
+     "t": 18.785449999999997,
+     "x": 518,
+     "y": 643,
+     "title": "workbench NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/me340/mvp-me340-e84efffd-1790666683-click-2.png"
+    },
+    {
+     "aimed": "obj-1-82",
+     "t": 29.5462,
+     "x": 1163,
+     "y": 409,
+     "title": "power tool PASS",
+     "unknown": false,
+     "chips": [
+      "PASS",
+      "PASS"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/me340/mvp-me340-e84efffd-1790666683-click-3.png"
+    },
+    {
+     "aimed": "obj-1-104",
+     "t": 14.5979,
+     "x": 745,
+     "y": 621,
+     "title": "workbench no checks",
+     "unknown": false,
+     "chips": [
+      "no checks"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/me340/mvp-me340-e84efffd-1790666683-click-4.png"
+    },
+    {
+     "aimed": "miss",
+     "t": 25.4922,
+     "x": 766,
+     "y": 661,
+     "title": "Unknown region",
+     "unknown": true,
+     "chips": [],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/me340/mvp-me340-e84efffd-1790666683-click-5.png"
+    },
+    {
+     "aimed": "person:1-person-0",
+     "t": 25.292,
+     "x": 688,
+     "y": 399,
+     "title": "Person 1-person-0 NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NO DATA",
+      "NO DATA",
+      "NEEDS REVIEW",
+      "NEEDS REVIEW",
+      "NO DATA",
+      "NO DATA",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/me340/mvp-me340-e84efffd-1790666683-click-6.png"
+    }
+   ],
+   "evidence": {
+    "label": "12.2 s",
+    "videoTime": 12.213
+   },
+   "filter": {
+    "verdict": "NEEDS_REVIEW",
+    "count": 16,
+    "shown": 16
+   },
+   "counts": {
+    "all": 269,
+    "FAIL": 0,
+    "NEEDS_REVIEW": 16,
+    "NO_DATA": 11,
+    "PASS": 8,
+    "none": 234
+   },
+   "timing": [
+    [
+     "video",
+     "0.0",
+     "1.8",
+     "0.3",
+     "6.5",
+     ""
+    ],
+    [
+     "cameras",
+     "14.5",
+     "17.7",
+     "14.6",
+     "0.0",
+     ""
+    ],
+    [
+     "people",
+     "17.3",
+     "19.7",
+     "17.6",
+     "0.0",
+     ""
+    ],
+    [
+     "events",
+     "24.7",
+     "26.2",
+     "24.7",
+     "0.0",
+     ""
+    ],
+    [
+     "objects",
+     "34.1",
+     "36.3",
+     "34.3",
+     "0.0",
+     ""
+    ],
+    [
+     "outlines",
+     "37.7",
+     "39.9",
+     "37.9",
+     "3.1",
+     ""
+    ],
+    [
+     "pick",
+     "37.7",
+     "39.9",
+     "37.9",
+     "2.9",
+     "\u2264 40.9 \u2713"
+    ],
+    [
+     "object_cards",
+     "39.1",
+     "42.0",
+     "39.4",
+     "0.0",
+     "\u2264 46.3 \u2713"
+    ],
+    [
+     "objects v2",
+     "39.2",
+     "42.0",
+     "39.4",
+     "0.5",
+     ""
+    ],
+    [
+     "judgements",
+     "40.2",
+     "43.9",
+     "40.5",
+     "0.0",
+     "\u2264 48.3 \u2713"
+    ],
+    [
+     "object_cards v2",
+     "50.0",
+     "52.1",
+     "50.1",
+     "0.0",
+     "\u2264 96.3 \u2713"
+    ],
+    [
+     "judgements v2",
+     "50.7",
+     "54.2",
+     "51.2",
+     "0.7",
+     "\u2264 96.3 \u2713"
+    ],
+    [
+     "object_cards v3",
+     "58.3",
+     "60.3",
+     "58.8",
+     "0.0",
+     "\u2264 76.3 \u2713"
+    ],
+    [
+     "outlines v2",
+     "71.5",
+     "73.8",
+     "71.5",
+     "3.6",
+     ""
+    ],
+    [
+     "pick v2",
+     "71.6",
+     "73.8",
+     "72.0",
+     "3.2",
+     "\u2264 76.3 \u2713"
+    ],
+    [
+     "objects v3",
+     "71.6",
+     "73.8",
+     "72.0",
+     "0.0",
+     ""
+    ],
+    [
+     "object_cards v4",
+     "73.8",
+     "75.5",
+     "73.9",
+     "1.3",
+     ""
+    ],
+    [
+     "judgements v3",
+     "74.3",
+     "77.2",
+     "74.4",
+     "0.0",
+     ""
+    ],
+    [
+     "judgements v4",
+     "79.1",
+     "82.2",
+     "79.6",
+     "0.9",
+     ""
+    ]
+   ],
+   "errors": []
+  },
+  "samsclub-a2": {
+   "report": "mvp-samsclub-a2-d5e0c855-1790666685",
+   "replay": "mvp-samsclub-a2-d5e0c855-1790666685-check-1790668177",
+   "pickDecodeMs": 1939.2000000476837,
+   "pickDecodeSteps": {
+    "fetch": 1893.4000000953674,
+    "inflate": 45.59999990463257,
+    "index": 0.20000004768371582
+   },
+   "pickDecodes": [
+    {
+     "seq": 13,
+     "ms": 89.10000002384186,
+     "fetch": 61.10000002384186
+    },
+    {
+     "seq": 21,
+     "ms": 1939.2000000476837,
+     "fetch": 1893.4000000953674
+    }
+   ],
+   "pickFrames": 125,
+   "clicks": 200,
+   "hits": 64,
+   "unknown": 136,
+   "latencyMs": {
+    "p50": 6.400000095367432,
+    "p95": 29.600000023841858,
+    "max": 32,
+    "mean": 13.828499997854232
+   },
+   "shots": [
+    {
+     "aimed": "obj-0-110",
+     "t": 7.42,
+     "x": 380,
+     "y": 235,
+     "title": "stacked boxes NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NEEDS REVIEW",
+      "NO DATA",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/samsclub-a2/mvp-samsclub-a2-d5e0c855-1790666685-click-1.png"
+    },
+    {
+     "aimed": "obj-0-80",
+     "t": 7.42,
+     "x": 143,
+     "y": 619,
+     "title": "stacked boxes NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NEEDS REVIEW",
+      "NO DATA",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/samsclub-a2/mvp-samsclub-a2-d5e0c855-1790666685-click-2.png"
+    },
+    {
+     "aimed": "obj-0-804",
+     "t": 14.14,
+     "x": 1214,
+     "y": 189,
+     "title": "cable NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/samsclub-a2/mvp-samsclub-a2-d5e0c855-1790666685-click-3.png"
+    },
+    {
+     "aimed": "obj-1-389",
+     "t": 21.28,
+     "x": 1125,
+     "y": 393,
+     "title": "stacked boxes NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "PASS",
+      "NO DATA",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/samsclub-a2/mvp-samsclub-a2-d5e0c855-1790666685-click-4.png"
+    },
+    {
+     "aimed": "miss",
+     "t": 1.42,
+     "x": 645,
+     "y": 595,
+     "title": "Unknown region",
+     "unknown": true,
+     "chips": [],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/samsclub-a2/mvp-samsclub-a2-d5e0c855-1790666685-click-5.png"
+    },
+    {
+     "aimed": "person:0-person-0",
+     "t": 3.16,
+     "x": 45,
+     "y": 405,
+     "title": "Person 0-person-0 NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NO DATA",
+      "NO DATA",
+      "NEEDS REVIEW",
+      "NEEDS REVIEW",
+      "NO DATA",
+      "NO DATA",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/samsclub-a2/mvp-samsclub-a2-d5e0c855-1790666685-click-6.png"
+    }
+   ],
+   "evidence": {
+    "label": "5.8 s",
+    "videoTime": 5.801
+   },
+   "filter": {
+    "verdict": "NEEDS_REVIEW",
+    "count": 125,
+    "shown": 125
+   },
+   "counts": {
+    "all": 645,
+    "FAIL": 0,
+    "NEEDS_REVIEW": 125,
+    "NO_DATA": 99,
+    "PASS": 0,
+    "none": 421
+   },
+   "timing": [
+    [
+     "video",
+     "0.1",
+     "1.9",
+     "0.3",
+     "12.7",
+     ""
+    ],
+    [
+     "cameras",
+     "12.0",
+     "15.2",
+     "12.0",
+     "0.0",
+     ""
+    ],
+    [
+     "people",
+     "18.1",
+     "20.1",
+     "18.6",
+     "0.0",
+     ""
+    ],
+    [
+     "events",
+     "19.7",
+     "24.7",
+     "20.1",
+     "0.0",
+     ""
+    ],
+    [
+     "objects",
+     "21.3",
+     "27.2",
+     "21.7",
+     "0.0",
+     ""
+    ],
+    [
+     "outlines",
+     "24.3",
+     "27.2",
+     "24.7",
+     "2.9",
+     ""
+    ],
+    [
+     "pick",
+     "24.3",
+     "27.2",
+     "24.7",
+     "2.4",
+     "\u2264 28.2 \u2713"
+    ],
+    [
+     "object_cards",
+     "31.3",
+     "33.8",
+     "31.8",
+     "2.0",
+     "\u2264 37.2 \u2713"
+    ],
+    [
+     "objects v2",
+     "31.4",
+     "33.8",
+     "31.8",
+     "1.0",
+     ""
+    ],
+    [
+     "judgements",
+     "32.6",
+     "35.4",
+     "32.9",
+     "0.0",
+     "\u2264 39.2 \u2713"
+    ],
+    [
+     "outlines v2",
+     "53.7",
+     "56.1",
+     "54.2",
+     "3.3",
+     ""
+    ],
+    [
+     "pick v2",
+     "53.8",
+     "56.1",
+     "54.2",
+     "2.6",
+     "\u2264 67.2 \u2713"
+    ],
+    [
+     "objects v3",
+     "53.8",
+     "56.1",
+     "54.2",
+     "0.0",
+     ""
+    ],
+    [
+     "object_cards v2",
+     "58.3",
+     "60.1",
+     "58.7",
+     "2.8",
+     "\u2264 87.2 \u2713"
+    ],
+    [
+     "object_cards v3",
+     "60.8",
+     "62.5",
+     "61.2",
+     "2.9",
+     "\u2264 67.2 \u2713"
+    ],
+    [
+     "judgements v2",
+     "76.5",
+     "78.6",
+     "77.0",
+     "7.2",
+     "\u2264 87.2 \u2713"
+    ],
+    [
+     "judgements v3",
+     "77.6",
+     "80.3",
+     "78.0",
+     "0.0",
+     ""
+    ],
+    [
+     "object_cards v4",
+     "86.3",
+     "88.3",
+     "86.7",
+     "2.9",
+     ""
+    ],
+    [
+     "judgements v4",
+     "113.8",
+     "117.3",
+     "114.3",
+     "11.6",
+     ""
+    ]
+   ],
+   "errors": []
+  },
+  "walmart": {
+   "report": "mvp-walmart-c0761a2a-1790666653",
+   "replay": "mvp-walmart-c0761a2a-1790666653-check-1790668328",
+   "pickDecodeMs": 2554.100000023842,
+   "pickDecodeSteps": {
+    "fetch": 2525.5,
+    "inflate": 28.200000047683716,
+    "index": 0.3999999761581421
+   },
+   "pickDecodes": [
+    {
+     "seq": 14,
+     "ms": 104.20000004768372,
+     "fetch": 71.10000002384186
+    },
+    {
+     "seq": 24,
+     "ms": 2554.100000023842,
+     "fetch": 2525.5
+    }
+   ],
+   "pickFrames": 125,
+   "clicks": 200,
+   "hits": 62,
+   "unknown": 138,
+   "latencyMs": {
+    "p50": 7,
+    "p95": 32.5,
+    "max": 51.300000071525574,
+    "mean": 15.79600000679493
+   },
+   "shots": [
+    {
+     "aimed": "obj-0-124",
+     "t": 5.46,
+     "x": 245,
+     "y": 371,
+     "title": "display rack NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/walmart/mvp-walmart-c0761a2a-1790666653-click-1.png"
+    },
+    {
+     "aimed": "obj-1-483",
+     "t": 21.4,
+     "x": 174,
+     "y": 479,
+     "title": "shelf NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/walmart/mvp-walmart-c0761a2a-1790666653-click-2.png"
+    },
+    {
+     "aimed": "obj-1-496",
+     "t": 26.28,
+     "x": 407,
+     "y": 93,
+     "title": "box NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/walmart/mvp-walmart-c0761a2a-1790666653-click-3.png"
+    },
+    {
+     "aimed": "obj-1-474",
+     "t": 20.86,
+     "x": 1049,
+     "y": 109,
+     "title": "shelf no checks",
+     "unknown": false,
+     "chips": [
+      "no checks"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/walmart/mvp-walmart-c0761a2a-1790666653-click-4.png"
+    },
+    {
+     "aimed": "miss",
+     "t": 26.1,
+     "x": 708,
+     "y": 423,
+     "title": "Unknown region",
+     "unknown": true,
+     "chips": [],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/walmart/mvp-walmart-c0761a2a-1790666653-click-5.png"
+    },
+    {
+     "aimed": "person:1-person-0",
+     "t": 22.2,
+     "x": 229,
+     "y": 105,
+     "title": "Person 1-person-0 NEEDS REVIEW",
+     "unknown": false,
+     "chips": [
+      "NEEDS REVIEW",
+      "NEEDS REVIEW",
+      "NO DATA",
+      "NEEDS REVIEW"
+     ],
+     "file": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/viewer/walmart/mvp-walmart-c0761a2a-1790666653-click-6.png"
+    }
+   ],
+   "evidence": {
+    "label": "5.4 s",
+    "videoTime": 5.361
+   },
+   "filter": {
+    "verdict": "NEEDS_REVIEW",
+    "count": 50,
+    "shown": 50
+   },
+   "counts": {
+    "all": 730,
+    "FAIL": 0,
+    "NEEDS_REVIEW": 50,
+    "NO_DATA": 6,
+    "PASS": 0,
+    "none": 674
+   },
+   "timing": [
+    [
+     "video",
+     "0.0",
+     "2.1",
+     "0.3",
+     "11.8",
+     ""
+    ],
+    [
+     "events",
+     "10.3",
+     "12.6",
+     "10.5",
+     "0.0",
+     ""
+    ],
+    [
+     "cameras",
+     "10.9",
+     "15.1",
+     "11.0",
+     "0.0",
+     ""
+    ],
+    [
+     "room",
+     "10.9",
+     "15.1",
+     "11.0",
+     "8.2",
+     ""
+    ],
+    [
+     "people",
+     "12.0",
+     "15.1",
+     "12.0",
+     "0.0",
+     ""
+    ],
+    [
+     "objects",
+     "17.2",
+     "20.2",
+     "17.6",
+     "0.0",
+     ""
+    ],
+    [
+     "outlines",
+     "19.7",
+     "22.4",
+     "19.8",
+     "2.2",
+     ""
+    ],
+    [
+     "pick",
+     "19.7",
+     "22.4",
+     "19.8",
+     "2.3",
+     "\u2264 23.4 \u2713"
+    ],
+    [
+     "object_cards",
+     "23.3",
+     "25.4",
+     "23.3",
+     "1.9",
+     "\u2264 30.2 \u2713"
+    ],
+    [
+     "objects v2",
+     "23.4",
+     "25.4",
+     "23.8",
+     "0.9",
+     ""
+    ],
+    [
+     "judgements",
+     "23.7",
+     "27.1",
+     "23.8",
+     "0.0",
+     "\u2264 32.2 \u2713"
+    ],
+    [
+     "judgements v2",
+     "26.5",
+     "28.7",
+     "26.9",
+     "0.6",
+     "\u2264 80.2 \u2713"
+    ],
+    [
+     "outlines v2",
+     "37.9",
+     "43.0",
+     "38.1",
+     "3.0",
+     ""
+    ],
+    [
+     "pick v2",
+     "38.0",
+     "43.0",
+     "38.1",
+     "2.6",
+     "\u2264 60.2 \u2713"
+    ],
+    [
+     "objects v3",
+     "38.0",
+     "43.0",
+     "38.1",
+     "0.0",
+     ""
+    ],
+    [
+     "object_cards v2",
+     "42.6",
+     "45.6",
+     "42.9",
+     "3.0",
+     "\u2264 80.2 \u2713"
+    ],
+    [
+     "judgements v3",
+     "43.3",
+     "48.0",
+     "43.5",
+     "0.0",
+     ""
+    ],
+    [
+     "object_cards v3",
+     "51.0",
+     "53.9",
+     "51.1",
+     "3.2",
+     "\u2264 60.2 \u2713"
+    ],
+    [
+     "judgements v4",
+     "52.9",
+     "55.9",
+     "53.2",
+     "1.2",
+     ""
+    ],
+    [
+     "object_cards v4",
+     "67.5",
+     "69.5",
+     "67.7",
+     "3.2",
+     ""
+    ],
+    [
+     "models",
+     "69.2",
+     "71.0",
+     "69.7",
+     "0.8",
+     ""
+    ],
+    [
+     "models v2",
+     "92.1",
+     "94.1",
+     "92.1",
+     "1.6",
+     ""
+    ],
+    [
+     "models v3",
+     "93.5",
+     "\u2014",
+     "94.0",
+     "2.4",
+     ""
+    ],
+    [
+     "models v4",
+     "94.3",
+     "\u2014",
+     "94.5",
+     "3.2",
+     ""
+    ]
+   ],
+   "errors": []
+  }
+ },
+ "plugged": {
+  "X1 frame rates (plugged, via A)": "densify: SAM 3 on every 5 fps keyframe after objects v1 (pick v2 / cards v3); X1's robust per-view extents and int64 lift codes. Measured here as pick v2 vs pick v1 and cards v3 timing.",
+  "X6 windows + object time (plugged, via A)": "fast_report/timeline.py is identical to fx/x6-windows-time's head: the association rule (3 sigma, sigma = sqrt(0.04^2 + (0.05 z)^2), or box IoU >= 0.2) for the fragment merge, and the free-space test for 'disappeared'. X6's per-window geometry (b) is not plugged: its verification found the stitch-chain gate blocks most comparisons and the '0 false changes' in-sample on few judgements.",
+  "X7 per-object models (plugged, via A)": "parametric primitives only from >= 2 views >= 15 deg apart that pass the held-out gate (A4).",
+  "X8 decider (plugged, Qwen; Jev-Omni not)": "Qwen3-VL-8B option-letter log-probs (B's vlm.options) decide identity and ask the judgement questions; Platt calibration on set d. Jev-Omni is not swapped in: spec 5.5 needs Brier -0.02 and ECE <= 0.05 against calibrated Qwen; cross-fitted it is Brier 0.175 vs 0.138 and ECE 0.129 (D), and it needs ~22 GiB that GPU 0 does not have beside the integrated core (60-66 GiB peaks; X8's verification).",
+  "X9 same-object reuse (not plugged)": "its verification: the outline gain measures lift vs no lift, not reuse (blocker); the totals leave out 17-25 s of 15 fps DA3 depth; worse look-alike identity on Walmart and Sam's Club. Densify (X1) stays.",
+  "X10 class-agnostic discovery (not plugged)": "verified +0.16 own-look recall (0.69 -> 0.85) for the recommended stack, but it adds 16.5-22.5 s of GPU work on the object keyframes (before objects, or on top of densify after them), two more resident models (OWLv2-L, SAM 2.1-L), and its masks' precision was never audited; its names would be generic words ('object', 'item') that the decider would have to name. Not without slowing the first layers; a later coverage pass.",
+  "X11 local bundle adjustment (not plugged)": "no spot confirmed on both frame sets; BA alone not significant; the held-out outline IoU got worse (0.555 -> 0.501). The u model keeps the pose term instead.",
+  "X12 motion fps": "people at 5 fps (unchanged)."
+ },
+ "baseline": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-d1-baseline-001/summary.json",
+ "notes_md": "## What this is\n\nBranch `mvp/integrate` (worktree `/Users/adam/.codex/worktrees/panoptes-phase2-video-mvp-integrate`), from `fb/integrate`, with\n`mvp/d-validate`, `mvp/c-viewer`, `mvp/a-cards` and `mvp/b-judge` merged in that order, then fixed in place. One command per\nvideo runs the whole thing on 2 x A100-80GB (a first call after boot, a warm call, and a +5 s shifted-window call for\nrepeatability):\n\n    cd /Users/adam/.codex/worktrees/panoptes-phase2-video-mvp-integrate\n    PYTHONPATH=. /Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/python scripts/fast_report_bench.py \\\n        --out RUNS/mvp-integrate-<site>-NNN --sites <me340|samsclub-a2|walmart> --plan first,warm,shifted --mirror-max-mb 8 --no-gpu-eval\n\nFinal runs (round 5): `runs/mvp-integrate-me340-005`, `-samsclub-004`, `-walmart-004`. Scored together (one pooled k, one\njudgement table) with D's harness into `runs/mvp-results/eval` (`fast_report_eval.py --mvp ... --labels ... --no-gpu`,\nreusing D1's SAM 3 click references). Viewer checks and screenshots: `runs/mvp-results/viewer/<site>/`.\n\n## Open the viewer\n\n    cd /Users/adam/.codex/worktrees/panoptes-phase2-video-mvp-integrate\n    PY=/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/python; R=/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs\n    PYTHONPATH=. $PY -m fast_report.layers serve $R/mvp-integrate-me340-005/mirror --port 8793 \\\n        --replay $R/mvp-integrate-me340-005/mirror mvp-me340-e84efffd-1790666683 --as me340-demo --speed 4\n    cd web && npx vite --host 127.0.0.1        # second terminal; proxies /fast to 8793\n    open \"http://127.0.0.1:5173/app.html#/live/me340-demo\"\n\nSam's Club: `mvp-integrate-samsclub-004` / `mvp-samsclub-a2-d5e0c855-1790666685`; Walmart: `mvp-integrate-walmart-004` /\n`mvp-walmart-c0761a2a-1790666653`. Click anything in the video: the card opens with what it is, its physical values\n(each \u00b1 u, 'estimated' on every metre, 'not observed' / 'not measurable' with the reason) and its judgements. The mirrors keep\nblobs under 8 MB only, so the full room and the splat stay on the Modal Volume; the replay leaves those two layers out.\n\n## Main changes made while integrating (all general; no per-video case)\n\n- Judge wired to A's cards v1 and v3 (B's stand-in removed), its rules in the process pool, VLM answers carried from the v1\n  run to the v3 run.\n- Identity: the decider's prompt now lists the options as letters (A's prompt listed none); both crops sent; asked for\n  every object seen on >= 3 views (EHS classes first) on 336 px crops; replaces the free-text naming (spec 4.7), which\n  held vLLM 34 s on Sam's Club; identity that lands after densify is merged into cards v3 as v4.\n- Heights carry an `up` part (the walls' p90 plumb reading x horizontal distance): warm-vs-shifted height coverage\n  72% -> 93% on ME340. Angles with a fit term over 15 deg are 'not measurable' (bulky objects read 70 \u00b1 43 deg).\n- k from repeatability written to `fast_report/calibration.json` (round 2, pooled): height 1.071, extent 1.345, position 1.024,\n  angle 1.0; round 5 re-measured 1.028 / 1.0 / 1.001 / 1.0 with it applied (same clips: in-sample).\n- J1 on goods off the floor uses the stack's own height (rack goods at 3.6-4.1 m had failed a floor-stack rule, 20 false\n  FAILs on Sam's Club); J2 ignores principal axes at >= 45 deg; J4 shows the base height when its PASS rests on it; J5 scans\n  from the nearest free path point within the path's band.\n- Pick maps end at a shot cut (viewer, eval and core agree); objects v1 boxes in the process pool; the identity pass never\n  raises (a raise ended round 3's runs while densify ran and faulted both GPUs for every later call).\n- Eval: blob cards read; still-camera shots are not Sim3-aligned (ME340 shot 0: 2 cm path, scale 0.80); part/whole pairs\n  (a 2 m stack vs one box of it) are not counted as repeats (8 / 23 / 18 pairs).\n\n## Reading the numbers\n\n- Everything metric is at estimated scale (floor plane + an assumed 1.6 m camera height). 'Agreement' is with the\n  delivered reports, themselves model-made and at estimated scale. Sam's Club's delivered heights are known to sit\n  0.7-1.5 m off (L2), which is where the MVP agrees least (top median 0.24 m).\n- Identity 'agreement' is exact-name agreement with the delivered report's product-level names after a 0.5 m match\n  ('stacked boxes' vs 'paper towel pack' counts as wrong). The agent audit (40 cards a video on their best view) is the\n  direct measure of 'does it recognise what things are'.\n- Judgements: no FAIL on any of the three videos; PASS only where value - u clears the threshold (J1, J4). J5 never\n  decides: the spec's gap rule turns every PASS into NEEDS_REVIEW while the far side of a footprint is unseen (79-99% of\n  cards, forward walks), and person paths from mono depth run through footprints. The 60 audited rows found no hazard\n  present; the audit shows 0 false PASS but cannot measure FAIL precision (n = 0).\n- Timing misses: objects v1's Volume commit queues behind events and the full room (sent at fb + ~0.5 s, written 1-2 s\n  later); the first SAM 3D model on ME340 (168 s) and Sam's Club (160 s) waits for the facts (spec 7 moved it after cards v3);\n  pick v2's fetch in the browser waits 0.7-2.6 s behind the densify burst (v1 at load: 89-107 ms).\n- Earlier rounds: round 1 `mvp-integrate-me340-001`; round 2 `-me340-002`, `-samsclub-001`, `-walmart-001` (k fitted here);\n  round 3 `-me340-003`, `-samsclub-002`, `-walmart-002` failed (the identity-pass TypeError); round 4 `-me340-004`,\n  `-samsclub-003`, `-walmart-003`.\n",
+ "judgement_accuracy": {
+  "checks": {
+   "J1": {
+    "rows": 174,
+    "labelled": 18,
+    "shares": {
+     "NEEDS_REVIEW": 0.3046,
+     "PASS": 0.6954
+    },
+    "fail_precision": null,
+    "fail_precision_n": 0,
+    "false_pass": 0,
+    "false_pass_rows": []
+   },
+   "J2": {
+    "rows": 174,
+    "labelled": 0,
+    "shares": {
+     "NO_DATA": 1.0
+    },
+    "fail_precision": null,
+    "fail_precision_n": 0,
+    "false_pass": 0,
+    "false_pass_rows": []
+   },
+   "J3a": {
+    "rows": 39,
+    "labelled": 9,
+    "shares": {
+     "NEEDS_REVIEW": 0.3333,
+     "NO_DATA": 0.6667
+    },
+    "fail_precision": null,
+    "fail_precision_n": 0,
+    "false_pass": 0,
+    "false_pass_rows": []
+   },
+   "J3b": {
+    "rows": 1,
+    "labelled": 1,
+    "shares": {
+     "NEEDS_REVIEW": 1.0
+    },
+    "fail_precision": null,
+    "fail_precision_n": 0,
+    "false_pass": 0,
+    "false_pass_rows": []
+   },
+   "J4": {
+    "rows": 24,
+    "labelled": 16,
+    "shares": {
+     "NEEDS_REVIEW": 0.4167,
+     "NO_DATA": 0.25,
+     "PASS": 0.3333
+    },
+    "fail_precision": null,
+    "fail_precision_n": 0,
+    "false_pass": 0,
+    "false_pass_rows": []
+   },
+   "J5": {
+    "rows": 109,
+    "labelled": 8,
+    "shares": {
+     "NEEDS_REVIEW": 1.0
+    },
+    "fail_precision": null,
+    "fail_precision_n": 0,
+    "false_pass": 0,
+    "false_pass_rows": []
+   },
+   "J8": {
+    "rows": 30,
+    "labelled": 8,
+    "shares": {
+     "NEEDS_REVIEW": 0.8,
+     "NO_DATA": 0.2
+    },
+    "fail_precision": null,
+    "fail_precision_n": 0,
+    "false_pass": 0,
+    "false_pass_rows": []
+   }
+  },
+  "false_pass_total": 0,
+  "labelled": 60,
+  "labeller": "agent-made labels (contact sheets); not ground truth",
+  "pass": true
+ },
+ "decider": {
+  "qwen": {
+   "source": "decisions-d-pass2.json:qwen",
+   "folds": 5,
+   "fold_of_source": {
+    "samsclub": 0,
+    "lightning": 1,
+    "nasa": 2,
+    "walmart": 3,
+    "tum": 4,
+    "me340": 0,
+    "tank": 1,
+    "agv": 2
+   },
+   "rule": "p' = sigmoid(a * logit(p_yes) + b)",
+   "questions": {
+    "q1": {
+     "a": 0.41324,
+     "b": -0.32619,
+     "fit": "per-question",
+     "n": 38,
+     "positives": 9,
+     "raw": {
+      "n": 38,
+      "positives": 9,
+      "brier": 0.0743,
+      "ece": 0.0817,
+      "ece_p_yes": 0.0817,
+      "auroc": 0.9693,
+      "accuracy": 0.9211,
+      "said_yes_share": 0.2105,
+      "false_yes": 1,
+      "false_no": 2
+     },
+     "calibrated_cv": {
+      "n": 38,
+      "positives": 9,
+      "brier": 0.1199,
+      "ece": 0.0964,
+      "ece_p_yes": 0.1347,
+      "auroc": 0.8008,
+      "accuracy": 0.8421,
+      "said_yes_share": 0.2895,
+      "false_yes": 4,
+      "false_no": 2
+     }
+    },
+    "q2": {
+     "a": 0.38376,
+     "b": 1.58068,
+     "fit": "pooled",
+     "n": 19,
+     "positives": 0,
+     "raw": {
+      "n": 19,
+      "positives": 0,
+      "brier": 0.0,
+      "ece": 0.0001,
+      "ece_p_yes": 0.0001,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     },
+     "calibrated_cv": {
+      "n": 19,
+      "positives": 0,
+      "brier": 0.0207,
+      "ece": 0.1351,
+      "ece_p_yes": 0.1351,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     }
+    },
+    "q3": {
+     "a": 0.38376,
+     "b": 1.58068,
+     "fit": "pooled",
+     "n": 13,
+     "positives": 0,
+     "raw": {
+      "n": 13,
+      "positives": 0,
+      "brier": 0.0,
+      "ece": 0.0001,
+      "ece_p_yes": 0.0001,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     },
+     "calibrated_cv": {
+      "n": 13,
+      "positives": 0,
+      "brier": 0.0164,
+      "ece": 0.1186,
+      "ece_p_yes": 0.1186,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     }
+    },
+    "q4": {
+     "a": 0.47847,
+     "b": 3.18116,
+     "fit": "per-question",
+     "n": 69,
+     "positives": 28,
+     "raw": {
+      "n": 69,
+      "positives": 28,
+      "brier": 0.3698,
+      "ece": 0.3775,
+      "ece_p_yes": 0.3776,
+      "auroc": 0.7783,
+      "accuracy": 0.6232,
+      "said_yes_share": 0.029,
+      "false_yes": 0,
+      "false_no": 26
+     },
+     "calibrated_cv": {
+      "n": 69,
+      "positives": 28,
+      "brier": 0.2056,
+      "ece": 0.1474,
+      "ece_p_yes": 0.1477,
+      "auroc": 0.6738,
+      "accuracy": 0.7101,
+      "said_yes_share": 0.2899,
+      "false_yes": 6,
+      "false_no": 14
+     }
+    },
+    "q5": {
+     "a": 0.41512,
+     "b": 1.74545,
+     "fit": "per-question",
+     "n": 15,
+     "positives": 6,
+     "raw": {
+      "n": 15,
+      "positives": 6,
+      "brier": 0.2234,
+      "ece": 0.2304,
+      "ece_p_yes": 0.2508,
+      "auroc": 0.9444,
+      "accuracy": 0.7333,
+      "said_yes_share": 0.2667,
+      "false_yes": 1,
+      "false_no": 3
+     },
+     "calibrated_cv": {
+      "n": 15,
+      "positives": 6,
+      "brier": 0.1243,
+      "ece": 0.0889,
+      "ece_p_yes": 0.2325,
+      "auroc": 0.9444,
+      "accuracy": 0.8,
+      "said_yes_share": 0.3333,
+      "false_yes": 1,
+      "false_no": 2
+     }
+    }
+   },
+   "all": {
+    "raw": {
+     "n": 154,
+     "positives": 43,
+     "brier": 0.2058,
+     "ece": 0.2117,
+     "ece_p_yes": 0.2117,
+     "auroc": 0.8706,
+     "accuracy": 0.7857,
+     "said_yes_share": 0.0909,
+     "false_yes": 2,
+     "false_no": 31
+    },
+    "calibrated_cv": {
+     "n": 154,
+     "positives": 43,
+     "brier": 0.1378,
+     "ece": 0.055,
+     "ece_p_yes": 0.0676,
+     "auroc": 0.8321,
+     "accuracy": 0.8117,
+     "said_yes_share": 0.2338,
+     "false_yes": 11,
+     "false_no": 18
+    }
+   }
+  },
+  "jev": {
+   "source": "decisions-d-pass2.json:jev",
+   "folds": 5,
+   "fold_of_source": {
+    "samsclub": 0,
+    "lightning": 1,
+    "nasa": 2,
+    "walmart": 3,
+    "tum": 4,
+    "me340": 0,
+    "tank": 1,
+    "agv": 2
+   },
+   "rule": "p' = sigmoid(a * logit(p_yes) + b)",
+   "questions": {
+    "q1": {
+     "a": 5.01472,
+     "b": -2.12442,
+     "fit": "per-question",
+     "n": 38,
+     "positives": 9,
+     "raw": {
+      "n": 38,
+      "positives": 9,
+      "brier": 0.0764,
+      "ece": 0.1265,
+      "ece_p_yes": 0.1869,
+      "auroc": 0.9885,
+      "accuracy": 0.9211,
+      "said_yes_share": 0.3158,
+      "false_yes": 3,
+      "false_no": 0
+     },
+     "calibrated_cv": {
+      "n": 38,
+      "positives": 9,
+      "brier": 0.0605,
+      "ece": 0.0915,
+      "ece_p_yes": 0.1241,
+      "auroc": 0.9579,
+      "accuracy": 0.9474,
+      "said_yes_share": 0.2368,
+      "false_yes": 1,
+      "false_no": 1
+     }
+    },
+    "q2": {
+     "a": 0.48198,
+     "b": 0.1268,
+     "fit": "pooled",
+     "n": 19,
+     "positives": 0,
+     "raw": {
+      "n": 19,
+      "positives": 0,
+      "brier": 0.0028,
+      "ece": 0.0403,
+      "ece_p_yes": 0.0403,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     },
+     "calibrated_cv": {
+      "n": 19,
+      "positives": 0,
+      "brier": 0.028,
+      "ece": 0.1553,
+      "ece_p_yes": 0.1553,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     }
+    },
+    "q3": {
+     "a": 0.48198,
+     "b": 0.1268,
+     "fit": "pooled",
+     "n": 13,
+     "positives": 0,
+     "raw": {
+      "n": 13,
+      "positives": 0,
+      "brier": 0.0072,
+      "ece": 0.0288,
+      "ece_p_yes": 0.0288,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     },
+     "calibrated_cv": {
+      "n": 13,
+      "positives": 0,
+      "brier": 0.0258,
+      "ece": 0.0868,
+      "ece_p_yes": 0.0868,
+      "auroc": null,
+      "accuracy": 0.9231,
+      "said_yes_share": 0.0769,
+      "false_yes": 1,
+      "false_no": 0
+     }
+    },
+    "q4": {
+     "a": 0.36491,
+     "b": 0.64166,
+     "fit": "per-question",
+     "n": 69,
+     "positives": 28,
+     "raw": {
+      "n": 69,
+      "positives": 28,
+      "brier": 0.3198,
+      "ece": 0.3167,
+      "ece_p_yes": 0.3167,
+      "auroc": 0.642,
+      "accuracy": 0.5942,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 28
+     },
+     "calibrated_cv": {
+      "n": 69,
+      "positives": 28,
+      "brier": 0.3161,
+      "ece": 0.2914,
+      "ece_p_yes": 0.2951,
+      "auroc": 0.4774,
+      "accuracy": 0.6377,
+      "said_yes_share": 0.1014,
+      "false_yes": 2,
+      "false_no": 23
+     }
+    },
+    "q5": {
+     "a": 9.27478,
+     "b": 15.04982,
+     "fit": "per-question",
+     "n": 15,
+     "positives": 6,
+     "raw": {
+      "n": 15,
+      "positives": 6,
+      "brier": 0.1396,
+      "ece": 0.1325,
+      "ece_p_yes": 0.1891,
+      "auroc": 1.0,
+      "accuracy": 0.8,
+      "said_yes_share": 0.2,
+      "false_yes": 0,
+      "false_no": 3
+     },
+     "calibrated_cv": {
+      "n": 15,
+      "positives": 6,
+      "brier": 0.1285,
+      "ece": 0.1943,
+      "ece_p_yes": 0.2444,
+      "auroc": 1.0,
+      "accuracy": 0.8,
+      "said_yes_share": 0.2,
+      "false_yes": 0,
+      "false_no": 3
+     }
+    }
+   },
+   "all": {
+    "raw": {
+     "n": 154,
+     "positives": 43,
+     "brier": 0.1767,
+     "ece": 0.1276,
+     "ece_p_yes": 0.1569,
+     "auroc": 0.7384,
+     "accuracy": 0.7792,
+     "said_yes_share": 0.0974,
+     "false_yes": 3,
+     "false_no": 31
+    },
+    "calibrated_cv": {
+     "n": 154,
+     "positives": 43,
+     "brier": 0.1747,
+     "ece": 0.129,
+     "ece_p_yes": 0.1346,
+     "auroc": 0.7186,
+     "accuracy": 0.7987,
+     "said_yes_share": 0.1299,
+     "false_yes": 4,
+     "false_no": 27
+    }
+   }
+  },
+  "gemini-stated-p": {
+   "source": "decisions-d-pass2.json:gemini-stated-p",
+   "folds": 5,
+   "fold_of_source": {
+    "samsclub": 0,
+    "lightning": 1,
+    "nasa": 2,
+    "walmart": 3,
+    "tum": 4,
+    "me340": 0,
+    "tank": 1,
+    "agv": 2
+   },
+   "rule": "p' = sigmoid(a * logit(p_yes) + b)",
+   "questions": {
+    "q1": {
+     "a": 0.29815,
+     "b": -1.04154,
+     "fit": "per-question",
+     "n": 38,
+     "positives": 9,
+     "raw": {
+      "n": 38,
+      "positives": 9,
+      "brier": 0.2458,
+      "ece": 0.2053,
+      "ece_p_yes": 0.2605,
+      "auroc": 0.749,
+      "accuracy": 0.7105,
+      "said_yes_share": 0.3158,
+      "false_yes": 7,
+      "false_no": 4
+     },
+     "calibrated_cv": {
+      "n": 38,
+      "positives": 9,
+      "brier": 0.2503,
+      "ece": 0.1935,
+      "ece_p_yes": 0.1942,
+      "auroc": 0.5153,
+      "accuracy": 0.7105,
+      "said_yes_share": 0.3158,
+      "false_yes": 7,
+      "false_no": 4
+     }
+    },
+    "q2": {
+     "a": 0.63697,
+     "b": -0.81954,
+     "fit": "pooled",
+     "n": 19,
+     "positives": 0,
+     "raw": {
+      "n": 19,
+      "positives": 0,
+      "brier": 0.017,
+      "ece": 0.1237,
+      "ece_p_yes": 0.1237,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     },
+     "calibrated_cv": {
+      "n": 19,
+      "positives": 0,
+      "brier": 0.0136,
+      "ece": 0.112,
+      "ece_p_yes": 0.112,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     }
+    },
+    "q3": {
+     "a": 0.63697,
+     "b": -0.81954,
+     "fit": "pooled",
+     "n": 13,
+     "positives": 0,
+     "raw": {
+      "n": 13,
+      "positives": 0,
+      "brier": 0.0052,
+      "ece": 0.0592,
+      "ece_p_yes": 0.0592,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     },
+     "calibrated_cv": {
+      "n": 13,
+      "positives": 0,
+      "brier": 0.0051,
+      "ece": 0.0656,
+      "ece_p_yes": 0.0656,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     }
+    },
+    "q4": {
+     "a": 0.91954,
+     "b": -0.15528,
+     "fit": "per-question",
+     "n": 69,
+     "positives": 28,
+     "raw": {
+      "n": 69,
+      "positives": 28,
+      "brier": 0.1149,
+      "ece": 0.0565,
+      "ece_p_yes": 0.0536,
+      "auroc": 0.8789,
+      "accuracy": 0.8696,
+      "said_yes_share": 0.4203,
+      "false_yes": 5,
+      "false_no": 4
+     },
+     "calibrated_cv": {
+      "n": 69,
+      "positives": 28,
+      "brier": 0.1441,
+      "ece": 0.1862,
+      "ece_p_yes": 0.1862,
+      "auroc": 0.8288,
+      "accuracy": 0.8696,
+      "said_yes_share": 0.4203,
+      "false_yes": 5,
+      "false_no": 4
+     }
+    },
+    "q5": {
+     "a": 0.68967,
+     "b": -2.02846,
+     "fit": "per-question",
+     "n": 15,
+     "positives": 6,
+     "raw": {
+      "n": 15,
+      "positives": 6,
+      "brier": 0.2485,
+      "ece": 0.22,
+      "ece_p_yes": 0.2613,
+      "auroc": 0.8056,
+      "accuracy": 0.7333,
+      "said_yes_share": 0.6667,
+      "false_yes": 4,
+      "false_no": 0
+     },
+     "calibrated_cv": {
+      "n": 15,
+      "positives": 6,
+      "brier": 0.1977,
+      "ece": 0.1796,
+      "ece_p_yes": 0.2182,
+      "auroc": 0.8056,
+      "accuracy": 0.7333,
+      "said_yes_share": 0.6667,
+      "false_yes": 4,
+      "false_no": 0
+     }
+    }
+   },
+   "all": {
+    "raw": {
+     "n": 154,
+     "positives": 43,
+     "brier": 0.1389,
+     "ece": 0.0836,
+     "ece_p_yes": 0.0977,
+     "auroc": 0.8462,
+     "accuracy": 0.8442,
+     "said_yes_share": 0.3312,
+     "false_yes": 16,
+     "false_no": 8
+    },
+    "calibrated_cv": {
+     "n": 154,
+     "positives": 43,
+     "brier": 0.1477,
+     "ece": 0.1207,
+     "ece_p_yes": 0.1392,
+     "auroc": 0.8088,
+     "accuracy": 0.8442,
+     "said_yes_share": 0.3312,
+     "false_yes": 16,
+     "false_no": 8
+    }
+   }
+  },
+  "qwen deployed (B)": {
+   "source": "decisions-d-pass2.json:qwen deployed (B)",
+   "folds": 5,
+   "fold_of_source": {
+    "samsclub": 0,
+    "lightning": 1,
+    "nasa": 2,
+    "walmart": 3,
+    "me340": 4,
+    "tum": 0,
+    "tank": 1,
+    "agv": 2
+   },
+   "rule": "p' = sigmoid(a * logit(p_yes) + b)",
+   "questions": {
+    "q1": {
+     "a": 0.43457,
+     "b": -0.38246,
+     "fit": "per-question",
+     "n": 37,
+     "positives": 9,
+     "raw": {
+      "n": 37,
+      "positives": 9,
+      "brier": 0.0742,
+      "ece": 0.0737,
+      "ece_p_yes": 0.0737,
+      "auroc": 0.9603,
+      "accuracy": 0.9189,
+      "said_yes_share": 0.2162,
+      "false_yes": 1,
+      "false_no": 2
+     },
+     "calibrated_cv": {
+      "n": 37,
+      "positives": 9,
+      "brier": 0.1008,
+      "ece": 0.0773,
+      "ece_p_yes": 0.0948,
+      "auroc": 0.7976,
+      "accuracy": 0.8919,
+      "said_yes_share": 0.2432,
+      "false_yes": 2,
+      "false_no": 2
+     }
+    },
+    "q2": {
+     "a": 0.40575,
+     "b": 1.54253,
+     "fit": "pooled",
+     "n": 19,
+     "positives": 0,
+     "raw": {
+      "n": 19,
+      "positives": 0,
+      "brier": 0.0,
+      "ece": 0.0001,
+      "ece_p_yes": 0.0001,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     },
+     "calibrated_cv": {
+      "n": 19,
+      "positives": 0,
+      "brier": 0.0125,
+      "ece": 0.1053,
+      "ece_p_yes": 0.1053,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     }
+    },
+    "q3": {
+     "a": 0.40575,
+     "b": 1.54253,
+     "fit": "pooled",
+     "n": 13,
+     "positives": 0,
+     "raw": {
+      "n": 13,
+      "positives": 0,
+      "brier": 0.0,
+      "ece": 0.0001,
+      "ece_p_yes": 0.0001,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     },
+     "calibrated_cv": {
+      "n": 13,
+      "positives": 0,
+      "brier": 0.012,
+      "ece": 0.0955,
+      "ece_p_yes": 0.0955,
+      "auroc": null,
+      "accuracy": 1.0,
+      "said_yes_share": 0.0,
+      "false_yes": 0,
+      "false_no": 0
+     }
+    },
+    "q4": {
+     "a": 0.44043,
+     "b": 2.60773,
+     "fit": "per-question",
+     "n": 69,
+     "positives": 28,
+     "raw": {
+      "n": 69,
+      "positives": 28,
+      "brier": 0.3495,
+      "ece": 0.3632,
+      "ece_p_yes": 0.3632,
+      "auroc": 0.7997,
+      "accuracy": 0.6232,
+      "said_yes_share": 0.029,
+      "false_yes": 0,
+      "false_no": 26
+     },
+     "calibrated_cv": {
+      "n": 69,
+      "positives": 28,
+      "brier": 0.2212,
+      "ece": 0.1403,
+      "ece_p_yes": 0.1827,
+      "auroc": 0.6886,
+      "accuracy": 0.6957,
+      "said_yes_share": 0.3043,
+      "false_yes": 7,
+      "false_no": 14
+     }
+    },
+    "q5": {
+     "a": 0.48753,
+     "b": 2.19206,
+     "fit": "per-question",
+     "n": 15,
+     "positives": 6,
+     "raw": {
+      "n": 15,
+      "positives": 6,
+      "brier": 0.207,
+      "ece": 0.2422,
+      "ece_p_yes": 0.2444,
+      "auroc": 0.9444,
+      "accuracy": 0.8,
+      "said_yes_share": 0.2,
+      "false_yes": 0,
+      "false_no": 3
+     },
+     "calibrated_cv": {
+      "n": 15,
+      "positives": 6,
+      "brier": 0.1224,
+      "ece": 0.2548,
+      "ece_p_yes": 0.2548,
+      "auroc": 0.9444,
+      "accuracy": 0.8,
+      "said_yes_share": 0.3333,
+      "false_yes": 1,
+      "false_no": 2
+     }
+    }
+   },
+   "all": {
+    "raw": {
+     "n": 153,
+     "positives": 43,
+     "brier": 0.1958,
+     "ece": 0.1985,
+     "ece_p_yes": 0.2026,
+     "auroc": 0.8791,
+     "accuracy": 0.7908,
+     "said_yes_share": 0.085,
+     "false_yes": 1,
+     "false_no": 31
+    },
+    "calibrated_cv": {
+     "n": 153,
+     "positives": 43,
+     "brier": 0.1387,
+     "ece": 0.0635,
+     "ece_p_yes": 0.0941,
+     "auroc": 0.7908,
+     "accuracy": 0.817,
+     "said_yes_share": 0.2288,
+     "false_yes": 10,
+     "false_no": 18
+    }
+   }
+  }
+ },
+ "jev_swap": {
+  "brier_qwen": 0.1378,
+  "brier_jev": 0.1747,
+  "ece_jev": 0.129,
+  "jev_s_per_question_batched": 0.0632,
+  "swap": false,
+  "rule": "spec 5.5: Brier lower by >= 0.02, ECE <= 0.05, <= 0.2 s a question, all cross-fitted on set d"
+ },
+ "eval_dir": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp-results/eval",
+ "acceptance_all": {
+  "repeat_coverage_k_le_2": {
+   "pass": true,
+   "k": {
+    "height": 1.028,
+    "extent": 1.0,
+    "position": 1.001,
+    "angle": 1.0
+   },
+   "source": "warm vs shifted window"
+  },
+  "decider_ece_le_0.10": {
+   "pass": false,
+   "decider": "qwen deployed (B)",
+   "ece_p_yes_cv": {
+    "q1": 0.0948,
+    "q4": 0.1827,
+    "q5": 0.2548
+   },
+   "false_alarm_only": {
+    "q2": 0,
+    "q3": 0
+   }
+  },
+  "judgements_zero_false_pass": {
+   "pass": true,
+   "false_pass": 0
+  }
+ },
+ "spend": "Modal billing (complete hours, 2026-09-29 UTC) for the 13 integrate apps: $18.52 so far; list-price upper bound over the containers' lives $22.98 (5 rounds x 1-3 videos, boot included; the final round alone $5.36). Viewer checks and scoring ran locally ($0). The cost ledger was not edited."
+}

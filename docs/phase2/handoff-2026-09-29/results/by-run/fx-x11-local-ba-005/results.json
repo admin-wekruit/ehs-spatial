@@ -1,0 +1,2019 @@
+{
+ "schema": "panoptes-x11-local-ba-results-v1",
+ "run": "fx-x11-local-ba-005",
+ "boot": {
+  "entered_unix": 1790653855.735177,
+  "models_s": 25.66,
+  "matcher_s": 26.95,
+  "vllm_ready_s": 98.01,
+  "mvs_self_check": {
+   "median_abs_err_m": 0.0,
+   "accepted_share": [
+    0.7999,
+    0.003
+   ]
+  },
+  "ready_s": 112.03,
+  "gpus": [
+   "GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-d34f5069-822d-d8b8-9264-bec5d77afdb6)"
+  ],
+  "resident_gib": 29.28
+ },
+ "units": {
+  "*_s": "seconds of wall time inside the container (perf_counter), models resident, cold start excluded",
+  "*_m / *_cm / *_mm": "estimated: floor plane + an assumed 1.6 m camera height; never measured",
+  "reprojection_px_at_504_crop": "pixels of the 504 px crop (x 720/504 = 1.43 for source pixels of the 1280x720 videos; 480/504 for the 640x480 factory clip)",
+  "before / after (BA)": "before = the same objective with the coarse cameras and the anchor depth frozen (only the track points move); after = the joint solve",
+  "tilt_repeatability": "frames A = X4's selection, frames B = the same selector with A's frames +-5 excluded; fine plane tilt |A - B|",
+  "*_gib / peak_gb": "GiB, whole device (nvidia-smi, incl. vLLM), per stage window; over_90 flags > 90 %"
+ },
+ "confirmation_rule": {
+  "pairwise_median_m": 0.015,
+  "coarse_nn_median_m": 0.05,
+  "photometric_ratio": 1.05,
+  "outline_iou": 0.5,
+  "plane_ci_width_deg": 2.0,
+  "thin_min_height_m": 0.004
+ },
+ "matcher": {
+  "lightglue_commit": "eb42fee2d71449efb0aa5c10549752b5d75384d8",
+  "extractor": "ALIKED aliked-n16, 2048 keypoints, threshold 0.05, on the 504 px crop",
+  "verification": "fundamental matrix MAGSAC 1.0 px",
+  "licences": {
+   "ALIKED (code + aliked-n16 weights)": "BSD-3-Clause, github.com/Shiaoming/ALIKED",
+   "LightGlue (code + aliked_lightglue weights)": "Apache-2.0, github.com/cvg/LightGlue",
+   "kornia (LightGlue dependency)": "Apache-2.0"
+  }
+ },
+ "ba_settings": {
+  "sigma_px": 1.0,
+  "pose_prior_sigma": [
+   1.5,
+   0.05
+  ],
+  "bounds_per_component": [
+   3.0,
+   0.1
+  ],
+  "depth_sigma": [
+   0.01,
+   0.01
+  ],
+  "depth_scale_shift_prior_sigma": [
+   0.1,
+   0.05
+  ],
+  "depth_term_region_m": 0.3,
+  "loss": "soft_l1, knee 2.0 sigma",
+  "tri_field": [
+   40.0,
+   0.25
+  ]
+ },
+ "hardware": "1 x A100-80GB (Modal), vLLM Qwen3-VL-8B on the same card at 30 %",
+ "videos": {
+  "me340-165": {
+   "error": null,
+   "source_file": "data/clips/me340-165/source-full.mp4",
+   "coarse": {
+    "shots": [
+     [
+      14,
+      225
+     ],
+     [
+      226,
+      898
+     ]
+    ],
+    "keyframes": 150,
+    "frames": 899,
+    "fps": 29.97,
+    "trigger_detections": 4834,
+    "clusters": 273
+   },
+   "coarse_pass_s": 46.361,
+   "analysis_wall_s": 88.615,
+   "client_wall_s": 90.72,
+   "spot_finding": {
+    "x4_s": 5.152,
+    "fast_s": 1.843,
+    "same_picks": true,
+    "fast_substeps": {
+     "cluster_s": 0.0638,
+     "negatives_s": 0.0371,
+     "per_cluster_s": 1.7407,
+     "pick_s": 0.0012,
+     "clusters": 273,
+     "pickable": 38,
+     "coarse_tilts": 17
+    },
+    "x4_candidates": 194,
+    "detections": 4834,
+    "picks": [
+     [
+      "cable",
+      "wire",
+      23,
+      [
+       4.676,
+       0.3135,
+       1.9588
+      ]
+     ],
+     [
+      "box_stack",
+      "pallet",
+      20,
+      [
+       1.7066,
+       0.562,
+       -0.3766
+      ]
+     ]
+    ]
+   },
+   "methods": [
+    "anchor",
+    "anchor+ba",
+    "anchor+ba+mvs"
+   ],
+   "spots": [
+    {
+     "id": "s0",
+     "group": "cable",
+     "word": "wire",
+     "centre_m_estimated": [
+      4.676,
+      0.314,
+      1.959
+     ],
+     "frames_A": [
+      665,
+      492,
+      282,
+      595
+     ],
+     "frames_B": [
+      659,
+      486,
+      324,
+      578
+     ],
+     "methods": {
+      "A:anchor": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "holdout_outline",
+        "vlm"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": false,
+        "thin_visible": true,
+        "vlm": false
+       },
+       "multi_view_median_m": 0.02313,
+       "multi_view_within_2cm": 0.4453,
+       "multi_view_occl10_median_m": 0.02198,
+       "fine_to_coarse_nn_median_m": 0.0198,
+       "holdout": {
+        "photometric_ratio": 0.9108,
+        "outline_iou_fine": 0.0344,
+        "outline_iou_coarse": 0.1727,
+        "resect": null,
+        "skipped": null
+       },
+       "plane_fine": null,
+       "plane_coarse": null,
+       "thin": {
+        "observed_height_mm": 24.74,
+        "coarse_map": {
+         "height_mm": 15.13,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": 26.51,
+         "mask_coverage": 0.651,
+         "thin_object_visible": true
+        }
+       },
+       "vlm": {
+        "object": "yes",
+        "outline": "wrong",
+        "detail": "the red outline does not follow the wire's edges"
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 7828,
+        "fine_raw_da3_pixels": 18530,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         14979,
+         7541,
+         4961,
+         8946
+        ]
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "gpu0_peak_gib": 40.36,
+       "time_s": {
+        "fine_i_iii": 0.983,
+        "da3": 0.336,
+        "anchor_icp": 0.031,
+        "tsdf_1cm": 0.2,
+        "holdout_check": 0.626,
+        "metrics": 0.274,
+        "vlm": 1.212,
+        "propagate": 0.275,
+        "select": 1.26,
+        "total_without_sweeps": 4.355
+       }
+      },
+      "A:anchor+ba": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "agrees_with_coarse",
+        "holdout_outline",
+        "thin_visible"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": false,
+        "holdout_photometric": true,
+        "holdout_outline": false,
+        "thin_visible": false,
+        "vlm": true
+       },
+       "multi_view_median_m": 0.02652,
+       "multi_view_within_2cm": 0.3718,
+       "multi_view_occl10_median_m": 0.0258,
+       "fine_to_coarse_nn_median_m": 0.1022,
+       "holdout": {
+        "photometric_ratio": 0.9678,
+        "outline_iou_fine": 0.0172,
+        "outline_iou_coarse": 0.0,
+        "resect": {
+         "correspondences": 241,
+         "reprojection_px_before": {
+          "median": 23.7386,
+          "p90": 36.8297,
+          "rms": 27.3214,
+          "n": 241
+         },
+         "reprojection_px_after": {
+          "median": 2.362,
+          "p90": 7.9077,
+          "rms": 5.5584,
+          "n": 241
+         },
+         "rot_deg": 2.662,
+         "move_cm": 10.47
+        },
+        "skipped": null
+       },
+       "plane_fine": null,
+       "plane_coarse": null,
+       "thin": {
+        "observed_height_mm": 24.08,
+        "coarse_map": {
+         "height_mm": 32.19,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": 10.39,
+         "mask_coverage": 0.678,
+         "thin_object_visible": false
+        }
+       },
+       "vlm": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "The red outline does not tightly follow the wire's edges."
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 8005,
+        "fine_raw_da3_pixels": 16256,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         12772,
+         8854,
+         6383,
+         10692
+        ]
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "gpu0_peak_gib": 36.47,
+       "time_s": {
+        "fine_i_iii": 1.668,
+        "da3": 0.344,
+        "anchor_icp": 0.828,
+        "tsdf_1cm": 0.172,
+        "holdout_check": 1.065,
+        "metrics": 0.228,
+        "vlm": 1.165,
+        "propagate": 0.254,
+        "select": 1.26,
+        "total_without_sweeps": 5.412
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "keypoints": [
+         1580,
+         1877,
+         1840,
+         1781
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 299,
+          "magsac_inliers": 261
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 151,
+          "magsac_inliers": 117
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 436,
+          "magsac_inliers": 403
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 487,
+          "magsac_inliers": 444
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 395,
+          "magsac_inliers": 374
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 240,
+          "magsac_inliers": 194
+         }
+        ],
+        "tracks": 795,
+        "observations": 1933,
+        "tracks_in_region": 66,
+        "depth_observations": 169,
+        "track_length_hist": {
+         "2": 515,
+         "3": 217,
+         "4": 63
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 1.4033,
+          "p90": 4.4739,
+          "rms": 6.1387,
+          "n": 1933
+         },
+         "after": {
+          "median": 0.4052,
+          "p90": 1.3276,
+          "rms": 5.5288,
+          "n": 1933
+         },
+         "within_2px_before": 0.6591,
+         "within_2px_after": 0.9529
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.034,
+          "p90": 0.1707,
+          "rms": 0.1215,
+          "n": 169
+         },
+         "after": {
+          "median": 0.0322,
+          "p90": 0.1054,
+          "rms": 0.0785,
+          "n": 169
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          1.322,
+          2.788,
+          2.1,
+          2.377
+         ],
+         "move_cm": [
+          16.14,
+          13.37,
+          3.17,
+          3.78
+         ],
+         "move_vec_cm": [
+          [
+           -0.07,
+           -3.51,
+           15.75
+          ],
+          [
+           -0.51,
+           2.59,
+           -13.1
+          ],
+          [
+           3.04,
+           0.68,
+           -0.59
+          ],
+          [
+           -1.95,
+           0.47,
+           -3.2
+          ]
+         ],
+         "at_bound": true,
+         "gauge_removed": {
+          "rot_deg": 1.337,
+          "move_cm": 0.28
+         },
+         "note": "after the rigid gauge fit back onto the coarse cameras"
+        },
+        "depth_scale": [
+         0.9827,
+         1.0084,
+         0.9876,
+         1.0014
+        ],
+        "depth_shift_m": [
+         -0.0391,
+         0.035,
+         0.0555,
+         -0.0118
+        ],
+        "baseline_scale": 1.0492,
+        "solver": {
+         "iterations": 23,
+         "cost_start": 153260.722,
+         "cost_end": 3457.411,
+         "s": 0.235,
+         "before_iterations": 20,
+         "before_s": 0.096
+        },
+        "tri_field": null,
+        "da3_rerun": null,
+        "mvs": null,
+        "geometry": {
+         "distance_m": 5.337,
+         "baseline_max_m": 3.441,
+         "focal_px_504": 405.0,
+         "tri_sigma_m_at_0_5px": 0.0102
+        },
+        "tracks_before_cap": null,
+        "consistency_before": {
+         "median_abs_pair_offset_m": 0.0091,
+         "median_pair_mad_m": 0.0203,
+         "median_abs_dz_m": 0.0217
+        },
+        "consistency_after": {
+         "median_abs_pair_offset_m": 0.018,
+         "median_pair_mad_m": 0.0169,
+         "median_abs_dz_m": 0.0254
+        }
+       },
+       "time_split_s": {
+        "matching": 0.215,
+        "ba": 0.289,
+        "fuse_tsdf_1cm": 0.172,
+        "checks": 2.458,
+        "of_which_holdout_matching_ba_resect": 0.309,
+        "da3_crops_sam3": 0.668
+       }
+      },
+      "A:anchor+ba+mvs": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "agrees_with_coarse",
+        "holdout_outline",
+        "thin_visible"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": false,
+        "holdout_photometric": true,
+        "holdout_outline": false,
+        "thin_visible": false,
+        "vlm": true
+       },
+       "multi_view_median_m": 0.03814,
+       "multi_view_within_2cm": 0.266,
+       "multi_view_occl10_median_m": 0.03682,
+       "fine_to_coarse_nn_median_m": 0.0872,
+       "holdout": {
+        "photometric_ratio": 0.9697,
+        "outline_iou_fine": 0.028,
+        "outline_iou_coarse": 0.0,
+        "resect": {
+         "correspondences": 241,
+         "reprojection_px_before": {
+          "median": 23.7386,
+          "p90": 36.8297,
+          "rms": 27.3214,
+          "n": 241
+         },
+         "reprojection_px_after": {
+          "median": 2.362,
+          "p90": 7.9077,
+          "rms": 5.5584,
+          "n": 241
+         },
+         "rot_deg": 2.662,
+         "move_cm": 10.47
+        },
+        "skipped": null
+       },
+       "plane_fine": null,
+       "plane_coarse": null,
+       "thin": {
+        "observed_height_mm": 74.54,
+        "coarse_map": {
+         "height_mm": 32.19,
+         "mask_coverage": 1.0,
+         "thin_object_visible": false
+        },
+        "fine_map": {
+         "height_mm": 12.96,
+         "mask_coverage": 0.678,
+         "thin_object_visible": false
+        }
+       },
+       "vlm": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "the red outline is not tight to the wire's edges"
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 8004,
+        "fine_raw_da3_pixels": 16106,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         12678,
+         8530,
+         5951,
+         9985
+        ]
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "gpu0_peak_gib": 36.51,
+       "time_s": {
+        "fine_i_iii": 2.591,
+        "da3": 0.311,
+        "anchor_icp": 1.745,
+        "tsdf_1cm": 0.184,
+        "holdout_check": 1.713,
+        "metrics": 0.23,
+        "vlm": 1.152,
+        "propagate": 0.267,
+        "select": 1.26,
+        "total_without_sweeps": 6.983
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "keypoints": [
+         1580,
+         1877,
+         1840,
+         1781
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 299,
+          "magsac_inliers": 261
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 151,
+          "magsac_inliers": 117
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 436,
+          "magsac_inliers": 403
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 487,
+          "magsac_inliers": 444
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 395,
+          "magsac_inliers": 374
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 240,
+          "magsac_inliers": 194
+         }
+        ],
+        "tracks": 795,
+        "observations": 1933,
+        "tracks_in_region": 66,
+        "depth_observations": 169,
+        "track_length_hist": {
+         "2": 515,
+         "3": 217,
+         "4": 63
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 1.4033,
+          "p90": 4.4739,
+          "rms": 6.1387,
+          "n": 1933
+         },
+         "after": {
+          "median": 0.4052,
+          "p90": 1.3276,
+          "rms": 5.5288,
+          "n": 1933
+         },
+         "within_2px_before": 0.6591,
+         "within_2px_after": 0.9529
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.034,
+          "p90": 0.1707,
+          "rms": 0.1215,
+          "n": 169
+         },
+         "after": {
+          "median": 0.0322,
+          "p90": 0.1054,
+          "rms": 0.0785,
+          "n": 169
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          1.322,
+          2.788,
+          2.1,
+          2.377
+         ],
+         "move_cm": [
+          16.14,
+          13.37,
+          3.17,
+          3.78
+         ],
+         "move_vec_cm": [
+          [
+           -0.07,
+           -3.51,
+           15.75
+          ],
+          [
+           -0.51,
+           2.59,
+           -13.1
+          ],
+          [
+           3.04,
+           0.68,
+           -0.59
+          ],
+          [
+           -1.95,
+           0.47,
+           -3.2
+          ]
+         ],
+         "at_bound": true,
+         "gauge_removed": {
+          "rot_deg": 1.337,
+          "move_cm": 0.28
+         },
+         "note": "after the rigid gauge fit back onto the coarse cameras"
+        },
+        "depth_scale": [
+         0.9827,
+         1.0084,
+         0.9876,
+         1.0014
+        ],
+        "depth_shift_m": [
+         -0.0391,
+         0.035,
+         0.0555,
+         -0.0118
+        ],
+        "baseline_scale": 1.0492,
+        "solver": {
+         "iterations": 23,
+         "cost_start": 153260.722,
+         "cost_end": 3457.411,
+         "s": 0.179,
+         "before_iterations": 20,
+         "before_s": 0.094
+        },
+        "tri_field": null,
+        "da3_rerun": null,
+        "mvs": {
+         "views": [
+          {
+           "view": 0,
+           "region_px": 12799,
+           "accepted_share": [
+            0.0635,
+            0.0213
+           ],
+           "field_abs_median_m": [
+            0.0188,
+            0.0047
+           ],
+           "best_ncc_median": [
+            0.107,
+            0.112
+           ]
+          },
+          {
+           "view": 1,
+           "region_px": 8864,
+           "accepted_share": [
+            0.0452,
+            0.0043
+           ],
+           "field_abs_median_m": [
+            0.0175,
+            0.006
+           ],
+           "best_ncc_median": [
+            0.119,
+            0.164
+           ]
+          },
+          {
+           "view": 2,
+           "region_px": 6417,
+           "accepted_share": [
+            0.0812,
+            0.0101
+           ],
+           "field_abs_median_m": [
+            0.0073,
+            0.0058
+           ],
+           "best_ncc_median": [
+            0.139,
+            0.174
+           ]
+          },
+          {
+           "view": 3,
+           "region_px": 10777,
+           "accepted_share": [
+            0.1125,
+            0.0227
+           ],
+           "field_abs_median_m": [
+            0.0272,
+            0.0107
+           ],
+           "best_ncc_median": [
+            0.215,
+            0.329
+           ]
+          }
+         ],
+         "s": 0.986
+        },
+        "geometry": {
+         "distance_m": 5.337,
+         "baseline_max_m": 3.441,
+         "focal_px_504": 405.0,
+         "tri_sigma_m_at_0_5px": 0.0102
+        },
+        "tracks_before_cap": null,
+        "consistency_before": {
+         "median_abs_pair_offset_m": 0.0091,
+         "median_pair_mad_m": 0.0203,
+         "median_abs_dz_m": 0.0217
+        },
+        "consistency_after": {
+         "median_abs_pair_offset_m": 0.0258,
+         "median_pair_mad_m": 0.019,
+         "median_abs_dz_m": 0.0348
+        }
+       },
+       "time_split_s": {
+        "matching": 0.188,
+        "ba": 1.224,
+        "fuse_tsdf_1cm": 0.184,
+        "checks": 3.095,
+        "of_which_holdout_matching_ba_resect": 0.931,
+        "da3_crops_sam3": 0.662
+       }
+      }
+     },
+     "tilt_repeatability": {},
+     "x4_run006": {
+      "id": "s0",
+      "word": "wire",
+      "centre_shift_m": 0.0,
+      "same_spot": true,
+      "verdict_006": "NEEDS_REVIEW",
+      "multi_view_median_m_006": 0.02313
+     },
+     "clip": "me340-165"
+    },
+    {
+     "id": "s1",
+     "group": "box_stack",
+     "word": "pallet",
+     "centre_m_estimated": [
+      1.707,
+      0.562,
+      -0.377
+     ],
+     "frames_A": [
+      562,
+      508,
+      536,
+      473,
+      429
+     ],
+     "frames_B": [
+      555,
+      501,
+      464,
+      527,
+      409
+     ],
+     "methods": {
+      "A:anchor": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": true
+       },
+       "multi_view_median_m": 0.07839,
+       "multi_view_within_2cm": 0.1108,
+       "multi_view_occl10_median_m": 0.05969,
+       "fine_to_coarse_nn_median_m": 0.0303,
+       "holdout": {
+        "photometric_ratio": 1.0123,
+        "outline_iou_fine": 0.6283,
+        "outline_iou_coarse": 0.6402,
+        "resect": null,
+        "skipped": null
+       },
+       "plane_fine": {
+        "tilt_deg": 0.293,
+        "ci95_deg": [
+         0.164,
+         0.451
+        ],
+        "ci_width_deg": 0.288,
+        "inliers": 1504
+       },
+       "plane_coarse": {
+        "tilt_deg": 24.403,
+        "ci95_deg": [
+         23.165,
+         25.483
+        ]
+       },
+       "thin": null,
+       "vlm": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "The red outline loosely encloses the pallet, missing some edges and including some surrounding clutter."
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 6041,
+        "fine_raw_da3_pixels": 61502,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         43382,
+         18032,
+         26924,
+         12975,
+         8905
+        ]
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "gpu0_peak_gib": 37.93,
+       "time_s": {
+        "fine_i_iii": 1.123,
+        "da3": 0.381,
+        "anchor_icp": 0.033,
+        "tsdf_1cm": 0.224,
+        "holdout_check": 0.851,
+        "metrics": 0.196,
+        "vlm": 1.352,
+        "propagate": 0.535,
+        "select": 0.119,
+        "total_without_sweeps": 3.98
+       }
+      },
+      "A:anchor+ba": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "vlm"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": false
+       },
+       "multi_view_median_m": 0.02818,
+       "multi_view_within_2cm": 0.3821,
+       "multi_view_occl10_median_m": 0.0228,
+       "fine_to_coarse_nn_median_m": 0.0285,
+       "holdout": {
+        "photometric_ratio": 0.7295,
+        "outline_iou_fine": 0.6876,
+        "outline_iou_coarse": 0.6558,
+        "resect": {
+         "correspondences": 567,
+         "reprojection_px_before": {
+          "median": 4.4031,
+          "p90": 8.1345,
+          "rms": 6.3269,
+          "n": 567
+         },
+         "reprojection_px_after": {
+          "median": 0.853,
+          "p90": 3.3555,
+          "rms": 3.4741,
+          "n": 567
+         },
+         "rot_deg": 0.864,
+         "move_cm": 4.78
+        },
+        "skipped": null
+       },
+       "plane_fine": {
+        "tilt_deg": 1.818,
+        "ci95_deg": [
+         1.675,
+         1.998
+        ],
+        "ci_width_deg": 0.322,
+        "inliers": 1269
+       },
+       "plane_coarse": {
+        "tilt_deg": 24.403,
+        "ci95_deg": [
+         23.165,
+         25.483
+        ]
+       },
+       "thin": null,
+       "vlm": {
+        "object": "no",
+        "outline": "wrong",
+        "detail": "the outlined object is not a pallet, it's a metal fixture or jig"
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 5748,
+        "fine_raw_da3_pixels": 61387,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         42698,
+         19145,
+         27398,
+         13806,
+         8852
+        ]
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "gpu0_peak_gib": 36.94,
+       "time_s": {
+        "fine_i_iii": 1.928,
+        "da3": 0.359,
+        "anchor_icp": 0.967,
+        "tsdf_1cm": 0.205,
+        "holdout_check": 1.468,
+        "metrics": 0.185,
+        "vlm": 1.285,
+        "propagate": 0.526,
+        "select": 0.119,
+        "total_without_sweeps": 5.327
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "keypoints": [
+         1886,
+         1945,
+         1866,
+         1979,
+         2048
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 616,
+          "magsac_inliers": 573
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 966,
+          "magsac_inliers": 943
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 391,
+          "magsac_inliers": 366
+         },
+         {
+          "pair": [
+           0,
+           4
+          ],
+          "lightglue": 266,
+          "magsac_inliers": 227
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 861,
+          "magsac_inliers": 828
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 903,
+          "magsac_inliers": 870
+         },
+         {
+          "pair": [
+           1,
+           4
+          ],
+          "lightglue": 556,
+          "magsac_inliers": 532
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 590,
+          "magsac_inliers": 551
+         },
+         {
+          "pair": [
+           2,
+           4
+          ],
+          "lightglue": 342,
+          "magsac_inliers": 312
+         },
+         {
+          "pair": [
+           3,
+           4
+          ],
+          "lightglue": 918,
+          "magsac_inliers": 888
+         }
+        ],
+        "tracks": 800,
+        "observations": 2781,
+        "tracks_in_region": 182,
+        "depth_observations": 431,
+        "track_length_hist": {
+         "2": 116,
+         "3": 341,
+         "4": 189,
+         "5": 154
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 1.0679,
+          "p90": 2.6256,
+          "rms": 5.4582,
+          "n": 2781
+         },
+         "after": {
+          "median": 0.4954,
+          "p90": 1.3521,
+          "rms": 5.2114,
+          "n": 2781
+         },
+         "within_2px_before": 0.7968,
+         "within_2px_after": 0.9644
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.0679,
+          "p90": 0.1761,
+          "rms": 0.1391,
+          "n": 431
+         },
+         "after": {
+          "median": 0.0159,
+          "p90": 0.0591,
+          "rms": 0.1102,
+          "n": 431
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          1.552,
+          0.969,
+          1.315,
+          0.999,
+          0.849
+         ],
+         "move_cm": [
+          6.06,
+          3.08,
+          4.12,
+          2.58,
+          3.42
+         ],
+         "move_vec_cm": [
+          [
+           -1.46,
+           -1.11,
+           5.78
+          ],
+          [
+           -0.43,
+           0.18,
+           -3.04
+          ],
+          [
+           -2.53,
+           -0.74,
+           3.17
+          ],
+          [
+           0.76,
+           0.57,
+           -2.4
+          ],
+          [
+           2.71,
+           1.06,
+           -1.8
+          ]
+         ],
+         "at_bound": false,
+         "gauge_removed": {
+          "rot_deg": 0.925,
+          "move_cm": 0.39
+         },
+         "note": "after the rigid gauge fit back onto the coarse cameras"
+        },
+        "depth_scale": [
+         1.0552,
+         0.9729,
+         0.9722,
+         0.9501,
+         0.975
+        ],
+        "depth_shift_m": [
+         -0.0431,
+         0.0052,
+         0.0434,
+         0.0225,
+         -0.0307
+        ],
+        "baseline_scale": 1.0542,
+        "solver": {
+         "iterations": 15,
+         "cost_start": 44850.879,
+         "cost_end": 4920.182,
+         "s": 0.154,
+         "before_iterations": 13,
+         "before_s": 0.077
+        },
+        "tri_field": null,
+        "da3_rerun": null,
+        "mvs": null,
+        "geometry": {
+         "distance_m": 1.993,
+         "baseline_max_m": 1.879,
+         "focal_px_504": 405.0,
+         "tri_sigma_m_at_0_5px": 0.0026
+        },
+        "tracks_before_cap": 1595,
+        "consistency_before": {
+         "median_abs_pair_offset_m": 0.0319,
+         "median_pair_mad_m": 0.0251,
+         "median_abs_dz_m": 0.0444
+        },
+        "consistency_after": {
+         "median_abs_pair_offset_m": 0.0107,
+         "median_pair_mad_m": 0.0198,
+         "median_abs_dz_m": 0.0222
+        }
+       },
+       "time_split_s": {
+        "matching": 0.313,
+        "ba": 0.269,
+        "fuse_tsdf_1cm": 0.205,
+        "checks": 2.938,
+        "of_which_holdout_matching_ba_resect": 0.485,
+        "da3_crops_sam3": 0.756
+       }
+      },
+      "A:anchor+ba+mvs": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": true
+       },
+       "multi_view_median_m": 0.02517,
+       "multi_view_within_2cm": 0.4297,
+       "multi_view_occl10_median_m": 0.01982,
+       "fine_to_coarse_nn_median_m": 0.0288,
+       "holdout": {
+        "photometric_ratio": 0.6904,
+        "outline_iou_fine": 0.6789,
+        "outline_iou_coarse": 0.6558,
+        "resect": {
+         "correspondences": 567,
+         "reprojection_px_before": {
+          "median": 4.4031,
+          "p90": 8.1345,
+          "rms": 6.3269,
+          "n": 567
+         },
+         "reprojection_px_after": {
+          "median": 0.853,
+          "p90": 3.3555,
+          "rms": 3.4741,
+          "n": 567
+         },
+         "rot_deg": 0.864,
+         "move_cm": 4.78
+        },
+        "skipped": null
+       },
+       "plane_fine": {
+        "tilt_deg": 1.966,
+        "ci95_deg": [
+         1.8,
+         2.13
+        ],
+        "ci_width_deg": 0.33,
+        "inliers": 1242
+       },
+       "plane_coarse": {
+        "tilt_deg": 24.403,
+        "ci95_deg": [
+         23.165,
+         25.483
+        ]
+       },
+       "thin": null,
+       "vlm": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "The red outline loosely follows the object's edges, missing some corners and parts."
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 5788,
+        "fine_raw_da3_pixels": 62284,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         42228,
+         18538,
+         27327,
+         13333,
+         8485
+        ]
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "gpu0_peak_gib": 36.98,
+       "time_s": {
+        "fine_i_iii": 3.392,
+        "da3": 0.361,
+        "anchor_icp": 2.319,
+        "tsdf_1cm": 0.203,
+        "holdout_check": 2.469,
+        "metrics": 0.181,
+        "vlm": 1.447,
+        "propagate": 0.533,
+        "select": 0.119,
+        "total_without_sweeps": 7.961
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "keypoints": [
+         1886,
+         1945,
+         1866,
+         1979,
+         2048
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 616,
+          "magsac_inliers": 573
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 966,
+          "magsac_inliers": 943
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 391,
+          "magsac_inliers": 366
+         },
+         {
+          "pair": [
+           0,
+           4
+          ],
+          "lightglue": 266,
+          "magsac_inliers": 227
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 861,
+          "magsac_inliers": 828
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 903,
+          "magsac_inliers": 870
+         },
+         {
+          "pair": [
+           1,
+           4
+          ],
+          "lightglue": 556,
+          "magsac_inliers": 532
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 590,
+          "magsac_inliers": 551
+         },
+         {
+          "pair": [
+           2,
+           4
+          ],
+          "lightglue": 342,
+          "magsac_inliers": 312
+         },
+         {
+          "pair": [
+           3,
+           4
+          ],
+          "lightglue": 918,
+          "magsac_inliers": 888
+         }
+        ],
+        "tracks": 800,
+        "observations": 2781,
+        "tracks_in_region": 182,
+        "depth_observations": 431,
+        "track_length_hist": {
+         "2": 116,
+         "3": 341,
+         "4": 189,
+         "5": 154
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 1.0679,
+          "p90": 2.6256,
+          "rms": 5.4582,
+          "n": 2781
+         },
+         "after": {
+          "median": 0.4954,
+          "p90": 1.3521,
+          "rms": 5.2114,
+          "n": 2781
+         },
+         "within_2px_before": 0.7968,
+         "within_2px_after": 0.9644
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.0679,
+          "p90": 0.1761,
+          "rms": 0.1391,
+          "n": 431
+         },
+         "after": {
+          "median": 0.0159,
+          "p90": 0.0591,
+          "rms": 0.1102,
+          "n": 431
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          1.552,
+          0.969,
+          1.315,
+          0.999,
+          0.849
+         ],
+         "move_cm": [
+          6.06,
+          3.08,
+          4.12,
+          2.58,
+          3.42
+         ],
+         "move_vec_cm": [
+          [
+           -1.46,
+           -1.11,
+           5.78
+          ],
+          [
+           -0.43,
+           0.18,
+           -3.04
+          ],
+          [
+           -2.53,
+           -0.74,
+           3.17
+          ],
+          [
+           0.76,
+           0.57,
+           -2.4
+          ],
+          [
+           2.71,
+           1.06,
+           -1.8
+          ]
+         ],
+         "at_bound": false,
+         "gauge_removed": {
+          "rot_deg": 0.925,
+          "move_cm": 0.39
+         },
+         "note": "after the rigid gauge fit back onto the coarse cameras"
+        },
+        "depth_scale": [
+         1.0552,
+         0.9729,
+         0.9722,
+         0.9501,
+         0.975
+        ],
+        "depth_shift_m": [
+         -0.0431,
+         0.0052,
+         0.0434,
+         0.0225,
+         -0.0307
+        ],
+        "baseline_scale": 1.0542,
+        "solver": {
+         "iterations": 15,
+         "cost_start": 44850.879,
+         "cost_end": 4920.182,
+         "s": 0.14,
+         "before_iterations": 13,
+         "before_s": 0.077
+        },
+        "tri_field": null,
+        "da3_rerun": null,
+        "mvs": {
+         "views": [
+          {
+           "view": 0,
+           "region_px": 44242,
+           "accepted_share": [
+            0.2614,
+            0.099
+           ],
+           "field_abs_median_m": [
+            0.0125,
+            0.0031
+           ],
+           "best_ncc_median": [
+            0.392,
+            0.388
+           ]
+          },
+          {
+           "view": 1,
+           "region_px": 20389,
+           "accepted_share": [
+            0.3041,
+            0.063
+           ],
+           "field_abs_median_m": [
+            0.0152,
+            0.0045
+           ],
+           "best_ncc_median": [
+            0.533,
+            0.561
+           ]
+          },
+          {
+           "view": 2,
+           "region_px": 28641,
+           "accepted_share": [
+            0.2448,
+            0.0784
+           ],
+           "field_abs_median_m": [
+            0.0091,
+            0.0042
+           ],
+           "best_ncc_median": [
+            0.434,
+            0.46
+           ]
+          },
+          {
+           "view": 3,
+           "region_px": 14604,
+           "accepted_share": [
+            0.3361,
+            0.0473
+           ],
+           "field_abs_median_m": [
+            0.0165,
+            0.0034
+           ],
+           "best_ncc_median": [
+            0.587,
+            0.599
+           ]
+          },
+          {
+           "view": 4,
+           "region_px": 9522,
+           "accepted_share": [
+            0.3288,
+            0.0901
+           ],
+           "field_abs_median_m": [
+            0.0139,
+            0.0035
+           ],
+           "best_ncc_median": [
+            0.588,
+            0.569
+           ]
+          }
+         ],
+         "s": 1.38
+        },
+        "geometry": {
+         "distance_m": 1.993,
+         "baseline_max_m": 1.879,
+         "focal_px_504": 405.0,
+         "tri_sigma_m_at_0_5px": 0.0026
+        },
+        "tracks_before_cap": 1595,
+        "consistency_before": {
+         "median_abs_pair_offset_m": 0.0319,
+         "median_pair_mad_m": 0.0251,
+         "median_abs_dz_m": 0.0444
+        },
+        "consistency_after": {
+         "median_abs_pair_offset_m": 0.0051,
+         "median_pair_mad_m": 0.0214,
+         "median_abs_dz_m": 0.0192
+        }
+       },
+       "time_split_s": {
+        "matching": 0.294,
+        "ba": 1.64,
+        "fuse_tsdf_1cm": 0.203,
+        "checks": 4.097,
+        "of_which_holdout_matching_ba_resect": 1.478,
+        "da3_crops_sam3": 0.87
+       }
+      }
+     },
+     "tilt_repeatability": {},
+     "x4_run006": {
+      "id": "s1",
+      "word": "pallet",
+      "centre_shift_m": 0.0,
+      "same_spot": true,
+      "verdict_006": "NEEDS_REVIEW",
+      "multi_view_median_m_006": 0.07839
+     },
+     "clip": "me340-165"
+    }
+   ],
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 80.0,
+     "peak_gb": 48.0,
+     "at_s": 32.045,
+     "stages_active": [
+      "sam3.person"
+     ]
+    }
+   ],
+   "flags": [],
+   "torch_reserved_peak_gib": 26.76,
+   "sheet_jpg": "me340-165-sheet.jpg"
+  }
+ },
+ "aggregate": {
+  "A:anchor": {
+   "spots": 2,
+   "confirmed": 0,
+   "failed_checks": {
+    "multi_view": 2,
+    "holdout_outline": 1,
+    "vlm": 1
+   },
+   "median_multi_view_m": 0.0508,
+   "median_multi_view_within_2cm": 0.278,
+   "multi_view_le_1_5cm": 0,
+   "median_fine_to_coarse_m": 0.0251,
+   "median_photometric_ratio": 0.9616,
+   "median_outline_iou_fine": 0.3313,
+   "median_plane_ci_width_deg": 0.288,
+   "median_total_without_sweeps_s": 4.168
+  },
+  "A:anchor+ba": {
+   "spots": 2,
+   "confirmed": 0,
+   "failed_checks": {
+    "multi_view": 2,
+    "agrees_with_coarse": 1,
+    "holdout_outline": 1,
+    "thin_visible": 1,
+    "vlm": 1
+   },
+   "median_multi_view_m": 0.0273,
+   "median_multi_view_within_2cm": 0.377,
+   "multi_view_le_1_5cm": 0,
+   "median_fine_to_coarse_m": 0.0654,
+   "median_photometric_ratio": 0.8487,
+   "median_outline_iou_fine": 0.3524,
+   "median_plane_ci_width_deg": 0.322,
+   "median_total_without_sweeps_s": 5.37,
+   "ba": {
+    "solved": 2,
+    "not_solved": [],
+    "median_tracks": 797.5,
+    "median_tracks_in_region": 124.0,
+    "median_reprojection_px_before": 1.2356,
+    "median_reprojection_px_after": 0.4503,
+    "median_p90_reprojection_px_before": 3.5498,
+    "median_p90_reprojection_px_after": 1.3398,
+    "median_rot_deg": 1.322,
+    "median_move_cm": 3.78,
+    "max_move_cm": 16.14,
+    "any_at_bound": 1,
+    "median_depth_scale": 0.9827,
+    "median_depth_shift_m": 0.0052,
+    "median_baseline_scale": 1.0517,
+    "baseline_scale_range": [
+     1.0492,
+     1.0542
+    ],
+    "median_tri_sigma_m_at_0_5px": 0.0064,
+    "median_consistency_before": {
+     "median_abs_pair_offset_m": 0.0205,
+     "median_pair_mad_m": 0.0227,
+     "median_abs_dz_m": 0.0331
+    },
+    "median_consistency_after": {
+     "median_abs_pair_offset_m": 0.0143,
+     "median_pair_mad_m": 0.0183,
+     "median_abs_dz_m": 0.0238
+    },
+    "median_depth_residual_m_before": 0.051,
+    "median_depth_residual_m_after": 0.0241,
+    "median_resect_px_before": 14.0709,
+    "median_resect_px_after": 1.6075,
+    "median_time_split_s": {
+     "matching": 0.264,
+     "ba": 0.279,
+     "fuse_tsdf_1cm": 0.189,
+     "checks": 2.698,
+     "of_which_holdout_matching_ba_resect": 0.397,
+     "da3_crops_sam3": 0.712
+    }
+   }
+  },
+  "A:anchor+ba+mvs": {
+   "spots": 2,
+   "confirmed": 0,
+   "failed_checks": {
+    "multi_view": 2,
+    "agrees_with_coarse": 1,
+    "holdout_outline": 1,
+    "thin_visible": 1
+   },
+   "median_multi_view_m": 0.0317,
+   "median_multi_view_within_2cm": 0.3478,
+   "multi_view_le_1_5cm": 0,
+   "median_fine_to_coarse_m": 0.058,
+   "median_photometric_ratio": 0.83,
+   "median_outline_iou_fine": 0.3534,
+   "median_plane_ci_width_deg": 0.33,
+   "median_total_without_sweeps_s": 7.472,
+   "ba": {
+    "solved": 2,
+    "not_solved": [],
+    "median_tracks": 797.5,
+    "median_tracks_in_region": 124.0,
+    "median_reprojection_px_before": 1.2356,
+    "median_reprojection_px_after": 0.4503,
+    "median_p90_reprojection_px_before": 3.5498,
+    "median_p90_reprojection_px_after": 1.3398,
+    "median_rot_deg": 1.322,
+    "median_move_cm": 3.78,
+    "max_move_cm": 16.14,
+    "any_at_bound": 1,
+    "median_depth_scale": 0.9827,
+    "median_depth_shift_m": 0.0052,
+    "median_baseline_scale": 1.0517,
+    "baseline_scale_range": [
+     1.0492,
+     1.0542
+    ],
+    "median_tri_sigma_m_at_0_5px": 0.0064,
+    "median_consistency_before": {
+     "median_abs_pair_offset_m": 0.0205,
+     "median_pair_mad_m": 0.0227,
+     "median_abs_dz_m": 0.0331
+    },
+    "median_consistency_after": {
+     "median_abs_pair_offset_m": 0.0155,
+     "median_pair_mad_m": 0.0202,
+     "median_abs_dz_m": 0.027
+    },
+    "median_depth_residual_m_before": 0.051,
+    "median_depth_residual_m_after": 0.0241,
+    "median_resect_px_before": 14.0709,
+    "median_resect_px_after": 1.6075,
+    "median_time_split_s": {
+     "matching": 0.241,
+     "ba": 1.432,
+     "fuse_tsdf_1cm": 0.194,
+     "checks": 3.596,
+     "of_which_holdout_matching_ba_resect": 1.204,
+     "da3_crops_sam3": 0.766
+    }
+   }
+  }
+ },
+ "tilt_repeatability": {}
+}

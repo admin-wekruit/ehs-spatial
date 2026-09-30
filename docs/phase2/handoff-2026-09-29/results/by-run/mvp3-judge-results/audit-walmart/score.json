@@ -1,0 +1,38 @@
+{
+ "walmart first": {
+  "of_pass": 58,
+  "of_fail": 0,
+  "checks": {
+   "J1": {
+    "pass_audited": 6,
+    "pass_right": 6
+   },
+   "J5": {
+    "pass_audited": 24,
+    "pass_right": 24
+   }
+  },
+  "all": {
+   "pass_audited": 30,
+   "pass_right": 30
+  }
+ },
+ "walmart warm": {
+  "of_pass": 62,
+  "of_fail": 0,
+  "checks": {
+   "J5": {
+    "pass_audited": 26,
+    "pass_right": 26
+   },
+   "J1": {
+    "pass_audited": 4,
+    "pass_right": 4
+   }
+  },
+  "all": {
+   "pass_audited": 30,
+   "pass_right": 30
+  }
+ }
+}

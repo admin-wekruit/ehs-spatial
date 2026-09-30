@@ -1,7 +1,7 @@
 # Panoptes phase 2 handoff: video → clickable 3D object layer (2026-09-29)
 
 **What to solve next and the definition of done: `NEXT-SESSION-GOAL.md` (includes a paste-ready prompt and a
-suggested `/goal`).** Research memos: `research/`; per-round result summaries: `results/runs/`; ledger: `research/cost-ledger.json`.
+suggested `/goal`).** Research memos: `research/`; per-round result summaries: `results/by-run/`; ledger: `research/cost-ledger.json`.
 
 You are taking over the Panoptes phase-2 video work from a long agent session. Read this file first, then
 `digest.md` in the same folder (research paths, every experiment with numbers and sources), then the round-5 results.

@@ -20,7 +20,7 @@ Suggested `/goal` line for the new session (the user writes goals in Chinese):
   An empty worktree `panoptes-phase2-video-r6-correct` on branch `r6/correct` (at `ac04f0d`) is ready.
 - Planned-but-not-run workflow for this goal: `workflows/r6-correctness.js`.
 - Current report: https://claude.ai/artifact/86jUzcrvntqFAgXPQiUnuC (source and rendered copy in `report/`).
-- Current numbers and files: `HANDOFF.md` §6, `results/runs/r5b-results/` (quick.json, alignment.json, gt/).
+- Current numbers and files: `HANDOFF.md` §6, `results/by-run/r5b-results/` (quick.json, alignment.json, gt/).
 
 ## Problems (priority order, with evidence)
 

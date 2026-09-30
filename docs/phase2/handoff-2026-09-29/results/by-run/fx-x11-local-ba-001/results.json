@@ -1,0 +1,1055 @@
+{
+ "schema": "panoptes-x11-local-ba-results-v1",
+ "run": "fx-x11-local-ba-001",
+ "boot": {
+  "entered_unix": 1790652010.2642837,
+  "models_s": 20.14,
+  "matcher_s": 22.34,
+  "vllm_ready_s": 61.3,
+  "ready_s": 69.22,
+  "gpus": [
+   "GPU 0: NVIDIA A100 80GB PCIe (UUID: GPU-0da6a6d0-c17b-7b6a-fc01-55293fa96f43)"
+  ],
+  "resident_gib": 29.28
+ },
+ "units": {
+  "*_s": "seconds of wall time inside the container (perf_counter), models resident, cold start excluded",
+  "*_m / *_cm / *_mm": "estimated: floor plane + an assumed 1.6 m camera height; never measured",
+  "reprojection_px_at_504_crop": "pixels of the 504 px crop (x 720/504 = 1.43 for source pixels of the 1280x720 videos; 480/504 for the 640x480 factory clip)",
+  "before / after (BA)": "before = the same objective with the coarse cameras and the anchor depth frozen (only the track points move); after = the joint solve",
+  "tilt_repeatability": "frames A = X4's selection, frames B = the same selector with A's frames +-5 excluded; fine plane tilt |A - B|",
+  "*_gib / peak_gb": "GiB, whole device (nvidia-smi, incl. vLLM), per stage window; over_90 flags > 90 %"
+ },
+ "confirmation_rule": {
+  "pairwise_median_m": 0.015,
+  "coarse_nn_median_m": 0.05,
+  "photometric_ratio": 1.05,
+  "outline_iou": 0.5,
+  "plane_ci_width_deg": 2.0,
+  "thin_min_height_m": 0.004
+ },
+ "matcher": {
+  "lightglue_commit": "eb42fee2d71449efb0aa5c10549752b5d75384d8",
+  "extractor": "ALIKED aliked-n16, 2048 keypoints, threshold 0.05, on the 504 px crop",
+  "verification": "fundamental matrix MAGSAC 1.0 px",
+  "licences": {
+   "ALIKED (code + aliked-n16 weights)": "BSD-3-Clause, github.com/Shiaoming/ALIKED",
+   "LightGlue (code + aliked_lightglue weights)": "Apache-2.0, github.com/cvg/LightGlue",
+   "kornia (LightGlue dependency)": "Apache-2.0"
+  }
+ },
+ "ba_settings": {
+  "sigma_px": 1.0,
+  "pose_prior_sigma": [
+   1.5,
+   0.05
+  ],
+  "bounds_per_component": [
+   3.0,
+   0.1
+  ],
+  "depth_sigma": [
+   0.01,
+   0.01
+  ],
+  "depth_scale_shift_prior_sigma": [
+   0.1,
+   0.05
+  ],
+  "depth_term_region_m": 0.3,
+  "loss": "soft_l1, knee 2.0 sigma",
+  "tri_field": [
+   40.0,
+   0.25
+  ]
+ },
+ "hardware": "1 x A100-80GB (Modal), vLLM Qwen3-VL-8B on the same card at 30 %",
+ "videos": {
+  "me340-165": {
+   "error": null,
+   "source_file": "data/clips/me340-165/source-full.mp4",
+   "coarse": {
+    "shots": [
+     [
+      14,
+      225
+     ],
+     [
+      226,
+      898
+     ]
+    ],
+    "keyframes": 150,
+    "frames": 899,
+    "fps": 29.97,
+    "trigger_detections": 4834,
+    "clusters": 273
+   },
+   "coarse_pass_s": 40.522,
+   "analysis_wall_s": 69.506,
+   "client_wall_s": 70.55,
+   "spot_finding": {
+    "x4_s": 2.924,
+    "fast_s": 1.033,
+    "same_picks": true,
+    "fast_substeps": {
+     "cluster_s": 0.0344,
+     "negatives_s": 0.0192,
+     "per_cluster_s": 0.9788,
+     "pick_s": 0.0009,
+     "clusters": 273,
+     "pickable": 38,
+     "coarse_tilts": 17
+    },
+    "x4_candidates": 194,
+    "detections": 4834,
+    "picks": [
+     [
+      "cable",
+      "wire",
+      23,
+      [
+       4.676,
+       0.3135,
+       1.9588
+      ]
+     ],
+     [
+      "box_stack",
+      "pallet",
+      20,
+      [
+       1.7066,
+       0.562,
+       -0.3766
+      ]
+     ]
+    ]
+   },
+   "methods": [
+    "anchor",
+    "anchor+ba"
+   ],
+   "spots": [
+    {
+     "id": "s0",
+     "group": "cable",
+     "word": "wire",
+     "centre_m_estimated": [
+      4.676,
+      0.314,
+      1.959
+     ],
+     "frames_A": [
+      665,
+      492,
+      282,
+      595
+     ],
+     "frames_B": [
+      659,
+      486,
+      324,
+      578
+     ],
+     "methods": {
+      "A:anchor": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "holdout_outline",
+        "vlm"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": false,
+        "thin_visible": true,
+        "vlm": false
+       },
+       "multi_view_median_m": 0.02313,
+       "multi_view_within_2cm": 0.4453,
+       "multi_view_occl10_median_m": 0.02198,
+       "fine_to_coarse_nn_median_m": 0.0198,
+       "holdout": {
+        "photometric_ratio": 0.9108,
+        "outline_iou_fine": 0.0344,
+        "outline_iou_coarse": 0.1727,
+        "resect": null,
+        "skipped": null
+       },
+       "plane_fine": null,
+       "plane_coarse": null,
+       "thin": {
+        "observed_height_mm": 24.74,
+        "coarse_map": {
+         "height_mm": 15.13,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": 26.51,
+         "mask_coverage": 0.651,
+         "thin_object_visible": true
+        }
+       },
+       "vlm": {
+        "object": "yes",
+        "outline": "wrong",
+        "detail": "the red outline does not follow the wire's edges"
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 7828,
+        "fine_raw_da3_pixels": 18530,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         14979,
+         7541,
+         4961,
+         8946
+        ]
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "gpu0_peak_gib": 40.36,
+       "time_s": {
+        "fine_i_iii": 0.725,
+        "da3": 0.283,
+        "anchor_icp": 0.016,
+        "tsdf_1cm": 0.101,
+        "holdout_check": 0.4,
+        "metrics": 0.177,
+        "vlm": 0.809,
+        "propagate": 0.185,
+        "select": 0.844,
+        "total_without_sweeps": 2.963
+       }
+      },
+      "A:anchor+ba": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view",
+        "agrees_with_coarse",
+        "holdout_outline",
+        "thin_visible",
+        "vlm"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": false,
+        "holdout_photometric": true,
+        "holdout_outline": false,
+        "thin_visible": false,
+        "vlm": false
+       },
+       "multi_view_median_m": 0.02648,
+       "multi_view_within_2cm": 0.3769,
+       "multi_view_occl10_median_m": 0.0259,
+       "fine_to_coarse_nn_median_m": 0.0749,
+       "holdout": {
+        "photometric_ratio": 0.9228,
+        "outline_iou_fine": 0.0169,
+        "outline_iou_coarse": 0.0,
+        "resect": {
+         "correspondences": 241,
+         "reprojection_px_before": {
+          "median": 9.4738,
+          "p90": 18.9738,
+          "rms": 12.4906,
+          "n": 241
+         },
+         "reprojection_px_after": {
+          "median": 2.7924,
+          "p90": 8.6442,
+          "rms": 6.2757,
+          "n": 241
+         },
+         "rot_deg": 0.256,
+         "move_cm": 14.35
+        },
+        "skipped": null
+       },
+       "plane_fine": null,
+       "plane_coarse": null,
+       "thin": {
+        "observed_height_mm": 23.67,
+        "coarse_map": {
+         "height_mm": 13.69,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": 11.15,
+         "mask_coverage": 0.738,
+         "thin_object_visible": false
+        }
+       },
+       "vlm": {
+        "object": "no",
+        "outline": "wrong",
+        "detail": "the red outline does not match the shape of a wire"
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 7986,
+        "fine_raw_da3_pixels": 19500,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         15128,
+         7311,
+         4972,
+         8332
+        ]
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "gpu0_peak_gib": 36.47,
+       "time_s": {
+        "fine_i_iii": 2.62,
+        "da3": 0.269,
+        "anchor_icp": 1.939,
+        "tsdf_1cm": 0.095,
+        "holdout_check": 2.731,
+        "metrics": 0.177,
+        "vlm": 0.829,
+        "propagate": 0.186,
+        "select": 0.844,
+        "total_without_sweeps": 7.21
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "keypoints": [
+         1580,
+         1877,
+         1840,
+         1781
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 299,
+          "magsac_inliers": 261
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 151,
+          "magsac_inliers": 117
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 436,
+          "magsac_inliers": 403
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 487,
+          "magsac_inliers": 444
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 395,
+          "magsac_inliers": 374
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 240,
+          "magsac_inliers": 194
+         }
+        ],
+        "tracks": 795,
+        "observations": 1933,
+        "tracks_in_region": 66,
+        "depth_observations": 169,
+        "track_length_hist": {
+         "2": 515,
+         "3": 217,
+         "4": 63
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 2.3448,
+          "p90": 8.2901,
+          "rms": 9.3434,
+          "n": 1933
+         },
+         "after": {
+          "median": 0.4337,
+          "p90": 1.421,
+          "rms": 6.0618,
+          "n": 1933
+         },
+         "within_2px_before": 0.4444,
+         "within_2px_after": 0.9483
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.0338,
+          "p90": 0.1702,
+          "rms": 0.1209,
+          "n": 169
+         },
+         "after": {
+          "median": 0.0299,
+          "p90": 0.1075,
+          "rms": 0.0779,
+          "n": 169
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          0.489,
+          0.989,
+          0.801,
+          1.033
+         ],
+         "move_cm": [
+          15.74,
+          10.49,
+          10.66,
+          8.01
+         ],
+         "at_bound": true
+        },
+        "depth_scale": [
+         0.9599,
+         0.987,
+         0.9676,
+         0.9823
+        ],
+        "depth_shift_m": [
+         -0.0172,
+         0.0636,
+         0.1064,
+         0.005
+        ],
+        "baseline_scale": null,
+        "solver": {
+         "nfev": 60,
+         "status": 0,
+         "s": 1.401,
+         "before_s": 0.253
+        },
+        "tri_field": null,
+        "da3_rerun": null,
+        "mvs": null,
+        "geometry": null,
+        "tracks_before_cap": null,
+        "consistency_before": null,
+        "consistency_after": null
+       },
+       "time_split_s": {
+        "matching": 0.138,
+        "ba": 1.532,
+        "fuse_tsdf_1cm": 0.095,
+        "checks": 3.737,
+        "of_which_holdout_matching_ba_resect": 2.067,
+        "da3_crops_sam3": 0.586
+       }
+      }
+     },
+     "tilt_repeatability": {},
+     "x4_run006": {
+      "id": "s0",
+      "word": "wire",
+      "centre_shift_m": 0.0,
+      "same_spot": true,
+      "verdict_006": "NEEDS_REVIEW",
+      "multi_view_median_m_006": 0.02313
+     },
+     "clip": "me340-165"
+    },
+    {
+     "id": "s1",
+     "group": "box_stack",
+     "word": "pallet",
+     "centre_m_estimated": [
+      1.707,
+      0.562,
+      -0.377
+     ],
+     "frames_A": [
+      562,
+      508,
+      536,
+      473,
+      429
+     ],
+     "frames_B": [
+      555,
+      501,
+      464,
+      527,
+      409
+     ],
+     "methods": {
+      "A:anchor": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": true
+       },
+       "multi_view_median_m": 0.07839,
+       "multi_view_within_2cm": 0.1108,
+       "multi_view_occl10_median_m": 0.05969,
+       "fine_to_coarse_nn_median_m": 0.0303,
+       "holdout": {
+        "photometric_ratio": 1.0123,
+        "outline_iou_fine": 0.6283,
+        "outline_iou_coarse": 0.6402,
+        "resect": null,
+        "skipped": null
+       },
+       "plane_fine": {
+        "tilt_deg": 0.684,
+        "ci95_deg": [
+         0.564,
+         0.829
+        ],
+        "ci_width_deg": 0.264,
+        "inliers": 1522
+       },
+       "plane_coarse": {
+        "tilt_deg": 29.104,
+        "ci95_deg": [
+         28.224,
+         29.93
+        ]
+       },
+       "thin": null,
+       "vlm": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "The red outline loosely encloses the pallet, missing some edges and including some surrounding clutter."
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 6041,
+        "fine_raw_da3_pixels": 61502,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         43382,
+         18032,
+         26924,
+         12975,
+         8905
+        ]
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "gpu0_peak_gib": 37.93,
+       "time_s": {
+        "fine_i_iii": 0.87,
+        "da3": 0.331,
+        "anchor_icp": 0.019,
+        "tsdf_1cm": 0.127,
+        "holdout_check": 0.496,
+        "metrics": 0.149,
+        "vlm": 0.986,
+        "propagate": 0.393,
+        "select": 0.104,
+        "total_without_sweeps": 2.849
+       }
+      },
+      "A:anchor+ba": {
+       "verdict": "NEEDS_REVIEW",
+       "failed": [
+        "multi_view"
+       ],
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": true
+       },
+       "multi_view_median_m": 0.02855,
+       "multi_view_within_2cm": 0.3906,
+       "multi_view_occl10_median_m": 0.02258,
+       "fine_to_coarse_nn_median_m": 0.0279,
+       "holdout": {
+        "photometric_ratio": 0.7092,
+        "outline_iou_fine": 0.698,
+        "outline_iou_coarse": 0.5006,
+        "resect": {
+         "correspondences": 679,
+         "reprojection_px_before": {
+          "median": 10.106,
+          "p90": 27.1694,
+          "rms": 15.3211,
+          "n": 679
+         },
+         "reprojection_px_after": {
+          "median": 1.1086,
+          "p90": 4.0892,
+          "rms": 3.2856,
+          "n": 679
+         },
+         "rot_deg": 0.583,
+         "move_cm": 10.41
+        },
+        "skipped": null
+       },
+       "plane_fine": {
+        "tilt_deg": 1.828,
+        "ci95_deg": [
+         1.664,
+         1.993
+        ],
+        "ci_width_deg": 0.329,
+        "inliers": 1331
+       },
+       "plane_coarse": {
+        "tilt_deg": 29.104,
+        "ci95_deg": [
+         28.224,
+         29.93
+        ]
+       },
+       "thin": null,
+       "vlm": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "The red outline loosely follows the edges of the pallet, missing some corners and parts."
+       },
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 6191,
+        "fine_raw_da3_pixels": 57847,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         37956,
+         17832,
+         26014,
+         13179,
+         8680
+        ]
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "gpu0_peak_gib": 36.91,
+       "time_s": {
+        "fine_i_iii": 5.121,
+        "da3": 0.325,
+        "anchor_icp": 4.294,
+        "tsdf_1cm": 0.119,
+        "holdout_check": 4.693,
+        "metrics": 0.139,
+        "vlm": 0.963,
+        "propagate": 0.397,
+        "select": 0.104,
+        "total_without_sweeps": 11.279
+       },
+       "ba": {
+        "status": "solved",
+        "views": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "keypoints": [
+         1886,
+         1945,
+         1866,
+         1979,
+         2048
+        ],
+        "pairs": [
+         {
+          "pair": [
+           0,
+           1
+          ],
+          "lightglue": 616,
+          "magsac_inliers": 573
+         },
+         {
+          "pair": [
+           0,
+           2
+          ],
+          "lightglue": 966,
+          "magsac_inliers": 943
+         },
+         {
+          "pair": [
+           0,
+           3
+          ],
+          "lightglue": 391,
+          "magsac_inliers": 366
+         },
+         {
+          "pair": [
+           0,
+           4
+          ],
+          "lightglue": 266,
+          "magsac_inliers": 227
+         },
+         {
+          "pair": [
+           1,
+           2
+          ],
+          "lightglue": 861,
+          "magsac_inliers": 828
+         },
+         {
+          "pair": [
+           1,
+           3
+          ],
+          "lightglue": 903,
+          "magsac_inliers": 870
+         },
+         {
+          "pair": [
+           1,
+           4
+          ],
+          "lightglue": 556,
+          "magsac_inliers": 532
+         },
+         {
+          "pair": [
+           2,
+           3
+          ],
+          "lightglue": 590,
+          "magsac_inliers": 551
+         },
+         {
+          "pair": [
+           2,
+           4
+          ],
+          "lightglue": 342,
+          "magsac_inliers": 312
+         },
+         {
+          "pair": [
+           3,
+           4
+          ],
+          "lightglue": 918,
+          "magsac_inliers": 888
+         }
+        ],
+        "tracks": 1595,
+        "observations": 4412,
+        "tracks_in_region": 182,
+        "depth_observations": 431,
+        "track_length_hist": {
+         "2": 870,
+         "3": 382,
+         "4": 189,
+         "5": 154
+        },
+        "reprojection_px_at_504_crop": {
+         "before": {
+          "median": 0.8474,
+          "p90": 2.292,
+          "rms": 4.3403,
+          "n": 4412
+         },
+         "after": {
+          "median": 0.4607,
+          "p90": 1.2237,
+          "rms": 4.2457,
+          "n": 4412
+         },
+         "within_2px_before": 0.8558,
+         "within_2px_after": 0.9703
+        },
+        "depth_residual_m": {
+         "before": {
+          "median": 0.0679,
+          "p90": 0.1761,
+          "rms": 0.1393,
+          "n": 431
+         },
+         "after": {
+          "median": 0.0164,
+          "p90": 0.0571,
+          "rms": 0.1144,
+          "n": 431
+         }
+        },
+        "pose_change": {
+         "rot_deg": [
+          0.436,
+          0.661,
+          0.523,
+          0.39,
+          0.27
+         ],
+         "move_cm": [
+          9.01,
+          6.6,
+          6.88,
+          7.67,
+          10.14
+         ],
+         "at_bound": true
+        },
+        "depth_scale": [
+         1.0964,
+         1.0179,
+         1.0245,
+         0.9886,
+         1.0038
+        ],
+        "depth_shift_m": [
+         -0.0265,
+         0.0105,
+         0.039,
+         0.0566,
+         0.0484
+        ],
+        "baseline_scale": null,
+        "solver": {
+         "nfev": 60,
+         "status": 0,
+         "s": 2.974,
+         "before_s": 0.807
+        },
+        "tri_field": null,
+        "da3_rerun": null,
+        "mvs": null,
+        "geometry": null,
+        "tracks_before_cap": null,
+        "consistency_before": null,
+        "consistency_after": null
+       },
+       "time_split_s": {
+        "matching": 0.211,
+        "ba": 3.256,
+        "fuse_tsdf_1cm": 0.119,
+        "checks": 5.795,
+        "of_which_holdout_matching_ba_resect": 3.52,
+        "da3_crops_sam3": 0.708
+       }
+      }
+     },
+     "tilt_repeatability": {},
+     "x4_run006": {
+      "id": "s1",
+      "word": "pallet",
+      "centre_shift_m": 0.0,
+      "same_spot": true,
+      "verdict_006": "NEEDS_REVIEW",
+      "multi_view_median_m_006": 0.07839
+     },
+     "clip": "me340-165"
+    }
+   ],
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 80.0,
+     "peak_gb": 48.0,
+     "at_s": 29.932,
+     "stages_active": [
+      "sam3.person"
+     ]
+    }
+   ],
+   "flags": [],
+   "torch_reserved_peak_gib": 26.76,
+   "sheet_jpg": "me340-165-sheet.jpg"
+  }
+ },
+ "aggregate": {
+  "A:anchor": {
+   "spots": 2,
+   "confirmed": 0,
+   "failed_checks": {
+    "multi_view": 2,
+    "holdout_outline": 1,
+    "vlm": 1
+   },
+   "median_multi_view_m": 0.0508,
+   "median_multi_view_within_2cm": 0.278,
+   "multi_view_le_1_5cm": 0,
+   "median_fine_to_coarse_m": 0.0251,
+   "median_photometric_ratio": 0.9616,
+   "median_outline_iou_fine": 0.3313,
+   "median_plane_ci_width_deg": 0.264,
+   "median_total_without_sweeps_s": 2.906
+  },
+  "A:anchor+ba": {
+   "spots": 2,
+   "confirmed": 0,
+   "failed_checks": {
+    "multi_view": 2,
+    "agrees_with_coarse": 1,
+    "holdout_outline": 1,
+    "thin_visible": 1,
+    "vlm": 1
+   },
+   "median_multi_view_m": 0.0275,
+   "median_multi_view_within_2cm": 0.3838,
+   "multi_view_le_1_5cm": 0,
+   "median_fine_to_coarse_m": 0.0514,
+   "median_photometric_ratio": 0.816,
+   "median_outline_iou_fine": 0.3574,
+   "median_plane_ci_width_deg": 0.329,
+   "median_total_without_sweeps_s": 9.245,
+   "ba": {
+    "solved": 2,
+    "not_solved": [],
+    "median_tracks": 1195.0,
+    "median_tracks_in_region": 124.0,
+    "median_reprojection_px_before": 1.5961,
+    "median_reprojection_px_after": 0.4472,
+    "median_p90_reprojection_px_before": 5.2911,
+    "median_p90_reprojection_px_after": 1.3224,
+    "median_rot_deg": 0.523,
+    "median_move_cm": 9.01,
+    "max_move_cm": 15.74,
+    "any_at_bound": 2,
+    "median_depth_scale": 0.9886,
+    "median_depth_shift_m": 0.039,
+    "median_baseline_scale": null,
+    "baseline_scale_range": [
+     null,
+     null
+    ],
+    "median_tri_sigma_m_at_0_5px": null,
+    "median_consistency_before": {
+     "median_abs_pair_offset_m": null,
+     "median_pair_mad_m": null,
+     "median_abs_dz_m": null
+    },
+    "median_consistency_after": {
+     "median_abs_pair_offset_m": null,
+     "median_pair_mad_m": null,
+     "median_abs_dz_m": null
+    },
+    "median_depth_residual_m_before": 0.0508,
+    "median_depth_residual_m_after": 0.0232,
+    "median_resect_px_before": 9.7899,
+    "median_resect_px_after": 1.9505,
+    "median_time_split_s": {
+     "matching": 0.174,
+     "ba": 2.394,
+     "fuse_tsdf_1cm": 0.107,
+     "checks": 4.766,
+     "of_which_holdout_matching_ba_resect": 2.793,
+     "da3_crops_sam3": 0.647
+    }
+   }
+  }
+ },
+ "tilt_repeatability": {}
+}

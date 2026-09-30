@@ -1,0 +1,1767 @@
+{
+ "schema": "mvp2-identity-results-v1",
+ "bench": {
+  "me340": "mvp2-identity-me340-005",
+  "samsclub-a2": "mvp2-identity-samsclub-a2-005",
+  "walmart": "mvp2-identity-walmart-005"
+ },
+ "timing": {
+  "me340": [
+   {
+    "call": "first",
+    "report": "mvp-me340-e84efffd-1790678241",
+    "first_call_after_boot": true,
+    "objects_v1_written_s": 38.92,
+    "cards_v1_written_s": 46.191,
+    "identity_gemini_written_s": 66.195,
+    "identity_gemini_densify_written_s": 99.905,
+    "identity_gemini_sent_s": 43.761,
+    "identity_first_pass_written_s": 66.195,
+    "identity_minus_objects_s": 27.27,
+    "last_judgements_written_s": 103.225,
+    "namer": {
+     "asked": 260,
+     "requests": 19,
+     "named": 260,
+     "late_requests": [],
+     "resent": [
+      0,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      12,
+      14,
+      15,
+      16,
+      17,
+      18
+     ],
+     "error": null
+    },
+    "namer_request_s": [
+     11.73,
+     12.18,
+     12.22,
+     12.51,
+     12.71,
+     12.76,
+     12.86,
+     13.33,
+     13.4,
+     13.48,
+     13.52,
+     13.59,
+     13.71,
+     13.83,
+     13.94,
+     13.97,
+     15.86,
+     16.75,
+     17.18
+    ],
+    "namer_densify": {
+     "asked": 79,
+     "requests": 6,
+     "named": 79,
+     "late_requests": [],
+     "resent": [],
+     "error": null
+    },
+    "gemini_tokens": {
+     "input": 191582,
+     "output": 11082
+    },
+    "gpu_peak_gib": [
+     60.35,
+     56.41
+    ],
+    "stages_over_72_gib": [],
+    "identity_stage_peaks_gib": {
+     "identity.gemini.sheets": [
+      51.02,
+      56.41
+     ],
+     "identity.gemini": [
+      46.17,
+      50.82
+     ]
+    },
+    "usd_estimate": 0.4994,
+    "error": null
+   },
+   {
+    "call": "warm",
+    "report": "mvp-me340-e84efffd-1790678476",
+    "first_call_after_boot": false,
+    "objects_v1_written_s": 35.398,
+    "cards_v1_written_s": 41.895,
+    "identity_gemini_written_s": 61.816,
+    "identity_gemini_densify_written_s": 91.117,
+    "identity_gemini_sent_s": 39.377,
+    "identity_first_pass_written_s": 61.816,
+    "identity_minus_objects_s": 26.42,
+    "last_judgements_written_s": 94.229,
+    "namer": {
+     "asked": 274,
+     "requests": 20,
+     "named": 274,
+     "late_requests": [],
+     "resent": [
+      3,
+      5,
+      6,
+      7,
+      9,
+      11,
+      14,
+      15,
+      17
+     ],
+     "error": null
+    },
+    "namer_request_s": [
+     10.01,
+     10.06,
+     10.26,
+     10.37,
+     10.7,
+     11.12,
+     11.31,
+     11.38,
+     11.43,
+     12.6,
+     13.09,
+     14.11,
+     14.26,
+     14.43,
+     14.45,
+     14.9,
+     15.01,
+     16.11,
+     17.24,
+     17.31
+    ],
+    "namer_densify": {
+     "asked": 54,
+     "requests": 4,
+     "named": 54,
+     "late_requests": [],
+     "resent": [],
+     "error": null
+    },
+    "gemini_tokens": {
+     "input": 184805,
+     "output": 11470
+    },
+    "gpu_peak_gib": [
+     65.15,
+     56.9
+    ],
+    "stages_over_72_gib": [],
+    "identity_stage_peaks_gib": {
+     "identity.gemini.sheets": [
+      57.08,
+      56.9
+     ],
+     "identity.gemini": [
+      46.34,
+      56.9
+     ]
+    },
+    "usd_estimate": 0.4881,
+    "error": null
+   }
+  ],
+  "samsclub-a2": [
+   {
+    "call": "first",
+    "report": "mvp-samsclub-a2-d5e0c855-1790677133",
+    "first_call_after_boot": true,
+    "objects_v1_written_s": 25.65,
+    "cards_v1_written_s": 33.569,
+    "identity_gemini_written_s": 64.81,
+    "identity_gemini_densify_written_s": 101.069,
+    "identity_gemini_sent_s": 29.67,
+    "identity_first_pass_written_s": 64.81,
+    "identity_minus_objects_s": 39.16,
+    "last_judgements_written_s": 117.257,
+    "namer": {
+     "asked": 604,
+     "requests": 44,
+     "named": 604,
+     "late_requests": [],
+     "resent": [
+      2,
+      4,
+      6,
+      7,
+      10,
+      11,
+      12,
+      13,
+      14,
+      17,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43
+     ],
+     "error": null
+    },
+    "namer_request_s": [
+     11.54,
+     11.96,
+     11.98,
+     12.02,
+     12.13,
+     12.18,
+     12.22,
+     12.4,
+     12.41,
+     12.45,
+     12.45,
+     12.71,
+     12.8,
+     13.0,
+     13.21,
+     13.23,
+     13.39,
+     13.4,
+     13.45,
+     13.45,
+     13.49,
+     13.53,
+     13.67,
+     13.79,
+     14.04,
+     14.2,
+     14.68,
+     14.72,
+     14.85,
+     14.87,
+     14.95,
+     15.12,
+     15.14,
+     15.42,
+     15.62,
+     15.63,
+     15.72,
+     16.09,
+     16.86,
+     17.37,
+     19.04,
+     19.27,
+     19.41,
+     20.93
+    ],
+    "namer_densify": {
+     "asked": 177,
+     "requests": 13,
+     "named": 177,
+     "late_requests": [],
+     "resent": [
+      102,
+      103,
+      106,
+      107,
+      109,
+      110
+     ],
+     "error": null
+    },
+    "gemini_tokens": {
+     "input": 440553,
+     "output": 28126
+    },
+    "gpu_peak_gib": [
+     67.76,
+     54.97
+    ],
+    "stages_over_72_gib": [],
+    "identity_stage_peaks_gib": {
+     "identity.gemini.sheets": [
+      56.32,
+      32.43
+     ],
+     "identity.gemini": [
+      56.32,
+      32.46
+     ]
+    },
+    "usd_estimate": 0.4351,
+    "error": null
+   },
+   {
+    "call": "warm",
+    "report": "mvp-samsclub-a2-d5e0c855-1790677339",
+    "first_call_after_boot": false,
+    "objects_v1_written_s": 23.866,
+    "cards_v1_written_s": 28.835,
+    "identity_gemini_written_s": 59.788,
+    "identity_gemini_densify_written_s": 83.007,
+    "identity_gemini_sent_s": 25.284,
+    "identity_first_pass_written_s": 59.788,
+    "identity_minus_objects_s": 35.92,
+    "last_judgements_written_s": 104.422,
+    "namer": {
+     "asked": 604,
+     "requests": 44,
+     "named": 604,
+     "late_requests": [],
+     "resent": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      15,
+      16,
+      18,
+      19,
+      20,
+      22,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      33,
+      34,
+      35,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43
+     ],
+     "error": null
+    },
+    "namer_request_s": [
+     11.23,
+     11.89,
+     11.9,
+     11.96,
+     11.96,
+     12.1,
+     12.23,
+     12.41,
+     12.44,
+     12.63,
+     12.75,
+     12.78,
+     12.78,
+     12.84,
+     12.93,
+     12.94,
+     12.98,
+     13.06,
+     13.12,
+     13.16,
+     13.3,
+     13.34,
+     13.43,
+     13.47,
+     13.74,
+     13.92,
+     13.97,
+     14.0,
+     14.02,
+     14.57,
+     14.61,
+     14.69,
+     14.73,
+     14.74,
+     14.92,
+     15.03,
+     15.09,
+     16.12,
+     16.22,
+     16.28,
+     16.68,
+     16.7,
+     17.34,
+     18.65
+    ],
+    "namer_densify": {
+     "asked": 178,
+     "requests": 13,
+     "named": 178,
+     "late_requests": [],
+     "resent": [
+      102
+     ],
+     "error": null
+    },
+    "gemini_tokens": {
+     "input": 440562,
+     "output": 26688
+    },
+    "gpu_peak_gib": [
+     61.74,
+     54.88
+    ],
+    "stages_over_72_gib": [],
+    "identity_stage_peaks_gib": {
+     "identity.gemini.sheets": [
+      51.0,
+      32.39
+     ],
+     "identity.gemini": [
+      51.0,
+      32.45
+     ]
+    },
+    "usd_estimate": 0.4247,
+    "error": null
+   }
+  ],
+  "walmart": [
+   {
+    "call": "first",
+    "report": "mvp-walmart-c0761a2a-1790677645",
+    "first_call_after_boot": true,
+    "objects_v1_written_s": 22.615,
+    "cards_v1_written_s": 26.117,
+    "identity_gemini_written_s": 61.823,
+    "identity_gemini_densify_written_s": 91.465,
+    "identity_gemini_sent_s": 26.555,
+    "identity_first_pass_written_s": 61.823,
+    "identity_minus_objects_s": 39.21,
+    "last_judgements_written_s": 93.215,
+    "namer": {
+     "asked": 538,
+     "requests": 39,
+     "named": 538,
+     "late_requests": [],
+     "resent": [
+      1,
+      3,
+      6,
+      7,
+      8,
+      9,
+      10,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      28,
+      29,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38
+     ],
+     "error": null
+    },
+    "namer_request_s": [
+     10.34,
+     10.87,
+     10.9,
+     11.62,
+     11.64,
+     12.16,
+     12.17,
+     12.25,
+     12.49,
+     12.79,
+     13.66,
+     13.72,
+     13.84,
+     13.98,
+     14.5,
+     14.51,
+     14.53,
+     14.78,
+     14.79,
+     14.87,
+     14.96,
+     14.98,
+     14.98,
+     15.01,
+     15.24,
+     15.26,
+     15.41,
+     15.56,
+     15.59,
+     15.64,
+     15.65,
+     15.78,
+     16.82,
+     16.85,
+     17.41,
+     18.42,
+     19.14,
+     19.45,
+     19.81
+    ],
+    "namer_densify": {
+     "asked": 250,
+     "requests": 18,
+     "named": 250,
+     "late_requests": [],
+     "resent": [
+      102,
+      108,
+      111,
+      117
+     ],
+     "error": null
+    },
+    "gemini_tokens": {
+     "input": 443849,
+     "output": 26438
+    },
+    "gpu_peak_gib": [
+     59.89,
+     56.81
+    ],
+    "stages_over_72_gib": [],
+    "identity_stage_peaks_gib": {
+     "identity.gemini.sheets": [
+      59.01,
+      32.52
+     ],
+     "identity.gemini": [
+      59.87,
+      32.63
+     ]
+    },
+    "usd_estimate": 0.4126,
+    "error": null
+   },
+   {
+    "call": "warm",
+    "report": "mvp-walmart-c0761a2a-1790677853",
+    "first_call_after_boot": false,
+    "objects_v1_written_s": 23.272,
+    "cards_v1_written_s": 27.185,
+    "identity_gemini_written_s": 59.342,
+    "identity_gemini_densify_written_s": 81.917,
+    "identity_gemini_sent_s": 23.432,
+    "identity_first_pass_written_s": 59.342,
+    "identity_minus_objects_s": 36.07,
+    "last_judgements_written_s": 83.944,
+    "namer": {
+     "asked": 538,
+     "requests": 39,
+     "named": 538,
+     "late_requests": [],
+     "resent": [
+      0,
+      1,
+      2,
+      7,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      16,
+      17,
+      19,
+      22,
+      23,
+      25,
+      26,
+      27,
+      28,
+      29,
+      31,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38
+     ],
+     "error": null
+    },
+    "namer_request_s": [
+     9.48,
+     10.32,
+     10.68,
+     11.39,
+     11.53,
+     11.62,
+     11.74,
+     11.84,
+     11.89,
+     11.98,
+     11.99,
+     12.13,
+     12.25,
+     12.37,
+     12.4,
+     12.43,
+     12.5,
+     12.54,
+     12.55,
+     12.85,
+     12.85,
+     13.38,
+     13.41,
+     13.57,
+     13.65,
+     13.79,
+     13.88,
+     14.2,
+     14.21,
+     14.24,
+     14.39,
+     14.6,
+     14.91,
+     15.07,
+     15.66,
+     16.02,
+     17.1,
+     24.13,
+     26.22
+    ],
+    "namer_densify": {
+     "asked": 248,
+     "requests": 18,
+     "named": 248,
+     "late_requests": [],
+     "resent": [
+      102,
+      103,
+      106,
+      116
+     ],
+     "error": null
+    },
+    "gemini_tokens": {
+     "input": 442752,
+     "output": 26363
+    },
+    "gpu_peak_gib": [
+     62.61,
+     56.62
+    ],
+    "stages_over_72_gib": [],
+    "identity_stage_peaks_gib": {
+     "identity.gemini.sheets": [
+      60.57,
+      32.62
+     ],
+     "identity.gemini": [
+      60.57,
+      32.78
+     ]
+    },
+    "usd_estimate": 0.4037,
+    "error": null
+   }
+  ]
+ },
+ "r1_violations": {
+  "me340": 0,
+  "samsclub-a2": 0,
+  "walmart": 0
+ },
+ "r1_detail": {
+  "me340": {
+   "mvp-me340-e84efffd-1790678241": {
+    "cards v1 (seq 17)": {
+     "object_cards": 184,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v2 (seq 24)": {
+     "object_cards": 184,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v3 (seq 34)": {
+     "object_cards": 261,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v4 (seq 40)": {
+     "object_cards": 261,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "judgements seq 20 (cards v1)": {
+     "rows": 20,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 22 (cards v1)": {
+     "rows": 20,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 26 (cards v2)": {
+     "rows": 29,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 28 (cards v2)": {
+     "rows": 29,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 36 (cards v3)": {
+     "rows": 30,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 38 (cards v3)": {
+     "rows": 30,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 42 (cards v4)": {
+     "rows": 35,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 44 (cards v4)": {
+     "rows": 35,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    }
+   },
+   "mvp-me340-e84efffd-1790678476": {
+    "cards v1 (seq 17)": {
+     "object_cards": 190,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v2 (seq 24)": {
+     "object_cards": 190,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v3 (seq 34)": {
+     "object_cards": 254,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v4 (seq 40)": {
+     "object_cards": 254,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "judgements seq 20 (cards v1)": {
+     "rows": 25,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 22 (cards v1)": {
+     "rows": 25,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 26 (cards v2)": {
+     "rows": 30,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 28 (cards v2)": {
+     "rows": 30,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 36 (cards v3)": {
+     "rows": 32,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 38 (cards v3)": {
+     "rows": 32,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 42 (cards v4)": {
+     "rows": 39,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 44 (cards v4)": {
+     "rows": 39,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    }
+   }
+  },
+  "samsclub-a2": {
+   "mvp-samsclub-a2-d5e0c855-1790677133": {
+    "cards v1 (seq 17)": {
+     "object_cards": 464,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v3 (seq 26)": {
+     "object_cards": 625,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v4 (seq 31)": {
+     "object_cards": 625,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v4 (seq 37)": {
+     "object_cards": 625,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "judgements seq 20 (cards v1)": {
+     "rows": 286,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 28 (cards v1)": {
+     "rows": 286,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 29 (cards v3)": {
+     "rows": 448,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 33 (cards v3)": {
+     "rows": 448,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 35 (cards v4)": {
+     "rows": 413,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 39 (cards v4)": {
+     "rows": 413,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 41 (cards v4)": {
+     "rows": 398,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 43 (cards v4)": {
+     "rows": 398,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    }
+   },
+   "mvp-samsclub-a2-d5e0c855-1790677339": {
+    "cards v1 (seq 16)": {
+     "object_cards": 464,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v3 (seq 25)": {
+     "object_cards": 625,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v4 (seq 31)": {
+     "object_cards": 625,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v4 (seq 34)": {
+     "object_cards": 625,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "judgements seq 19 (cards v1)": {
+     "rows": 286,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 27 (cards v1)": {
+     "rows": 286,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 29 (cards v3)": {
+     "rows": 454,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 33 (cards v3)": {
+     "rows": 454,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 36 (cards v4)": {
+     "rows": 418,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 38 (cards v4)": {
+     "rows": 418,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 40 (cards v4)": {
+     "rows": 393,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 42 (cards v4)": {
+     "rows": 393,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    }
+   }
+  },
+  "walmart": {
+   "mvp-walmart-c0761a2a-1790677645": {
+    "cards v1 (seq 17)": {
+     "object_cards": 447,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v3 (seq 28)": {
+     "object_cards": 720,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v4 (seq 34)": {
+     "object_cards": 720,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v4 (seq 45)": {
+     "object_cards": 720,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "judgements seq 18 (cards v1)": {
+     "rows": 43,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 22 (cards v1)": {
+     "rows": 43,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 30 (cards v3)": {
+     "rows": 74,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 32 (cards v3)": {
+     "rows": 74,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 36 (cards v4)": {
+     "rows": 72,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 37 (cards v4)": {
+     "rows": 72,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 47 (cards v4)": {
+     "rows": 74,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 49 (cards v4)": {
+     "rows": 74,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    }
+   },
+   "mvp-walmart-c0761a2a-1790677853": {
+    "cards v1 (seq 15)": {
+     "object_cards": 447,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v3 (seq 26)": {
+     "object_cards": 714,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v4 (seq 32)": {
+     "object_cards": 714,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "cards v4 (seq 41)": {
+     "object_cards": 714,
+     "kind_not_from_name": 0,
+     "size_class_not_from_name": 0,
+     "not_derived_by_apply_name": 0,
+     "examples": []
+    },
+    "judgements seq 18 (cards v1)": {
+     "rows": 42,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 20 (cards v1)": {
+     "rows": 42,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 28 (cards v3)": {
+     "rows": 72,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 30 (cards v3)": {
+     "rows": 72,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 34 (cards v4)": {
+     "rows": 73,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 36 (cards v4)": {
+     "rows": 73,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 44 (cards v4)": {
+     "rows": 70,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    },
+    "judgements seq 46 (cards v4)": {
+     "rows": 70,
+     "on_a_check_the_final_class_does_not_apply": 0,
+     "examples": []
+    }
+   }
+  }
+ },
+ "heldout_final": {
+  "items": 131,
+  "labelled": 119,
+  "runs": {
+   "me340": [
+    "mvp2-identity-me340-005",
+    "mvp-me340-e84efffd-1790678476"
+   ],
+   "samsclub-a2": [
+    "mvp2-identity-samsclub-a2-005",
+    "mvp-samsclub-a2-d5e0c855-1790677339"
+   ],
+   "walmart": [
+    "mvp2-identity-walmart-005",
+    "mvp-walmart-c0761a2a-1790677853"
+   ]
+  },
+  "not_matched": [
+   "me340:obj-0-299",
+   "samsclub-a2:obj-0-263"
+  ],
+  "final_names": {
+   "me340": {
+    "n": 61,
+    "right": 0.803,
+    "right_or_close": 0.836
+   },
+   "samsclub-a2": {
+    "n": 27,
+    "right": 0.852,
+    "right_or_close": 0.852
+   },
+   "walmart": {
+    "n": 29,
+    "right": 0.931,
+    "right_or_close": 0.931
+   },
+   "all": {
+    "n": 117,
+    "right": 0.846,
+    "right_or_close": 0.863
+   }
+  },
+  "round1_names_same_objects": {
+   "me340": {
+    "n": 53,
+    "right": 0.453,
+    "right_or_close": 0.679
+   },
+   "samsclub-a2": {
+    "n": 27,
+    "right": 0.889,
+    "right_or_close": 0.926
+   },
+   "walmart": {
+    "n": 29,
+    "right": 0.724,
+    "right_or_close": 0.828
+   },
+   "all": {
+    "n": 109,
+    "right": 0.633,
+    "right_or_close": 0.78
+   }
+  },
+  "round1_matched": 120,
+  "hazard_names": {
+   "shown": 11,
+   "shown_right": 9,
+   "shown_unclear_truth": 2,
+   "held_back": 5,
+   "held_back_but_true": 1,
+   "detail": {
+    "shown": [
+     {
+      "id": "me340:obj-0-7",
+      "proposed": "pneumatic hose",
+      "class": "hose",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-0-5",
+      "proposed": "power cord",
+      "class": "cable",
+      "truth": "hose",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-0-307",
+      "proposed": "hose",
+      "class": "hose",
+      "truth": "unclear",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-481",
+      "proposed": "air hose",
+      "class": "hose",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-99",
+      "proposed": "air hose",
+      "class": "hose",
+      "truth": "hose",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-482",
+      "proposed": "cable",
+      "class": "cable",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-473",
+      "proposed": "air hose",
+      "class": "hose",
+      "truth": "hose",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-96",
+      "proposed": "extension cord",
+      "class": "cable",
+      "truth": "unclear",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-452",
+      "proposed": "hose",
+      "class": "hose",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-461",
+      "proposed": "power cord",
+      "class": "cable",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-392",
+      "proposed": "extension cord",
+      "class": "cable",
+      "truth": "hose",
+      "failed": []
+     }
+    ],
+    "held_back": [
+     {
+      "id": "me340:obj-0-19",
+      "proposed": "metal guard",
+      "class": "guard",
+      "truth": "metal part",
+      "failed": [
+       "the detector's words do not include it"
+      ]
+     },
+     {
+      "id": "me340:obj-0-311",
+      "proposed": "protective shield",
+      "class": "guard",
+      "truth": "other:machine cover",
+      "failed": [
+       "the detector's words do not include it"
+      ]
+     },
+     {
+      "id": "me340:obj-0-59",
+      "proposed": "splash guard",
+      "class": "guard",
+      "truth": "unclear",
+      "failed": [
+       "the detector's words do not include it"
+      ]
+     },
+     {
+      "id": "samsclub-a2:obj-0-280",
+      "proposed": "pallet jack",
+      "class": "pallet jack",
+      "truth": "bin",
+      "failed": [
+       "the detector's words do not include it",
+       "a pallet jack should stand on the floor (base 0.19 m above it): needs review"
+      ]
+     },
+     {
+      "id": "samsclub-a2:obj-0-884",
+      "proposed": "pallet jack",
+      "class": "pallet jack",
+      "truth": "pallet jack",
+      "failed": [
+       "the detector's words do not include it"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ "dev_study": {
+  "A: lettered Qwen decider (round 1, deployed)": {
+   "me340": {
+    "n": 87,
+    "right": 0.414,
+    "right_or_close": 0.724
+   },
+   "samsclub-a2": {
+    "n": 47,
+    "right": 0.851,
+    "right_or_close": 0.894
+   },
+   "walmart": {
+    "n": 47,
+    "right": 0.83,
+    "right_or_close": 0.851
+   },
+   "all": {
+    "n": 181,
+    "right": 0.635,
+    "right_or_close": 0.801
+   },
+   "hazard_items": {
+    "n": 35,
+    "right": 0.429,
+    "right_or_close": 0.571
+   }
+  },
+  "D: Gemini open name, 6 a request, context + close crop as 2 images": {
+   "me340": {
+    "n": 87,
+    "right": 0.747,
+    "right_or_close": 0.805
+   },
+   "samsclub-a2": {
+    "n": 47,
+    "right": 0.957,
+    "right_or_close": 1.0
+   },
+   "walmart": {
+    "n": 47,
+    "right": 0.979,
+    "right_or_close": 0.979
+   },
+   "all": {
+    "n": 181,
+    "right": 0.862,
+    "right_or_close": 0.901
+   },
+   "hazard_items": {
+    "n": 35,
+    "right": 0.829,
+    "right_or_close": 0.886
+   }
+  },
+  "D: Gemini open name, 2 a sheet, 28 a request": {
+   "me340": {
+    "n": 87,
+    "right": 0.736,
+    "right_or_close": 0.851
+   },
+   "samsclub-a2": {
+    "n": 47,
+    "right": 0.979,
+    "right_or_close": 0.979
+   },
+   "walmart": {
+    "n": 47,
+    "right": 0.979,
+    "right_or_close": 0.979
+   },
+   "all": {
+    "n": 181,
+    "right": 0.862,
+    "right_or_close": 0.917
+   },
+   "hazard_items": {
+    "n": 35,
+    "right": 0.943,
+    "right_or_close": 1.0
+   }
+  },
+  "D: Gemini open name, 4 context tiles a sheet": {
+   "me340": {
+    "n": 87,
+    "right": 0.632,
+    "right_or_close": 0.782
+   },
+   "samsclub-a2": {
+    "n": 47,
+    "right": 0.957,
+    "right_or_close": 0.979
+   },
+   "walmart": {
+    "n": 47,
+    "right": 0.936,
+    "right_or_close": 0.957
+   },
+   "all": {
+    "n": 181,
+    "right": 0.796,
+    "right_or_close": 0.878
+   },
+   "hazard_items": {
+    "n": 35,
+    "right": 0.743,
+    "right_or_close": 0.886
+   }
+  },
+  "D: Gemini open name, 16 context tiles a sheet": {
+   "me340": {
+    "n": 87,
+    "right": 0.713,
+    "right_or_close": 0.793
+   },
+   "samsclub-a2": {
+    "n": 47,
+    "right": 0.894,
+    "right_or_close": 0.936
+   },
+   "walmart": {
+    "n": 47,
+    "right": 0.809,
+    "right_or_close": 0.809
+   },
+   "all": {
+    "n": 181,
+    "right": 0.785,
+    "right_or_close": 0.834
+   },
+   "hazard_items": {
+    "n": 35,
+    "right": 0.571,
+    "right_or_close": 0.686
+   }
+  },
+  "B1: Qwen open name, context + close crop": {
+   "me340": {
+    "n": 87,
+    "right": 0.368,
+    "right_or_close": 0.437
+   },
+   "samsclub-a2": {
+    "n": 47,
+    "right": 0.255,
+    "right_or_close": 0.766
+   },
+   "walmart": {
+    "n": 47,
+    "right": 0.553,
+    "right_or_close": 0.596
+   },
+   "all": {
+    "n": 181,
+    "right": 0.387,
+    "right_or_close": 0.564
+   },
+   "hazard_items": {
+    "n": 35,
+    "right": 0.429,
+    "right_or_close": 0.514
+   }
+  },
+  "B2: Qwen open name, set-of-marks pair": {
+   "me340": {
+    "n": 87,
+    "right": 0.264,
+    "right_or_close": 0.356
+   },
+   "samsclub-a2": {
+    "n": 47,
+    "right": 0.213,
+    "right_or_close": 0.66
+   },
+   "walmart": {
+    "n": 47,
+    "right": 0.426,
+    "right_or_close": 0.638
+   },
+   "all": {
+    "n": 181,
+    "right": 0.293,
+    "right_or_close": 0.508
+   },
+   "hazard_items": {
+    "n": 35,
+    "right": 0.343,
+    "right_or_close": 0.486
+   }
+  },
+  "C: decider, 'none of these' or p < 0.5 -> B1": {
+   "me340": {
+    "n": 87,
+    "right": 0.425,
+    "right_or_close": 0.69
+   },
+   "samsclub-a2": {
+    "n": 47,
+    "right": 0.787,
+    "right_or_close": 0.872
+   },
+   "walmart": {
+    "n": 47,
+    "right": 0.723,
+    "right_or_close": 0.745
+   },
+   "all": {
+    "n": 181,
+    "right": 0.597,
+    "right_or_close": 0.751
+   },
+   "hazard_items": {
+    "n": 35,
+    "right": 0.4,
+    "right_or_close": 0.543
+   }
+  }
+ },
+ "heldout_repeat": {
+  "items": 131,
+  "labelled": 119,
+  "runs": {
+   "me340": [
+    "mvp2-identity-me340-004",
+    "mvp-me340-e84efffd-1790676152"
+   ],
+   "samsclub-a2": [
+    "mvp2-identity-samsclub-a2-004",
+    "mvp-samsclub-a2-d5e0c855-1790676471"
+   ]
+  },
+  "not_matched": [
+   "me340:obj-0-299"
+  ],
+  "final_names": {
+   "me340": {
+    "n": 61,
+    "right": 0.656,
+    "right_or_close": 0.754
+   },
+   "samsclub-a2": {
+    "n": 28,
+    "right": 0.893,
+    "right_or_close": 0.893
+   },
+   "all": {
+    "n": 89,
+    "right": 0.73,
+    "right_or_close": 0.798
+   }
+  },
+  "round1_names_same_objects": {
+   "me340": {
+    "n": 53,
+    "right": 0.453,
+    "right_or_close": 0.679
+   },
+   "samsclub-a2": {
+    "n": 28,
+    "right": 0.893,
+    "right_or_close": 0.929
+   },
+   "all": {
+    "n": 81,
+    "right": 0.605,
+    "right_or_close": 0.765
+   }
+  },
+  "round1_matched": 92,
+  "hazard_names": {
+   "shown": 11,
+   "shown_right": 10,
+   "shown_unclear_truth": 1,
+   "held_back": 5,
+   "held_back_but_true": 2,
+   "detail": {
+    "shown": [
+     {
+      "id": "me340:obj-0-7",
+      "proposed": "extension cords",
+      "class": "cable",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-0-5",
+      "proposed": "coolant hose",
+      "class": "hose",
+      "truth": "hose",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-0-307",
+      "proposed": "power cord",
+      "class": "cable",
+      "truth": "unclear",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-481",
+      "proposed": "power cord",
+      "class": "cable",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-99",
+      "proposed": "hose",
+      "class": "hose",
+      "truth": "hose",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-482",
+      "proposed": "power cord",
+      "class": "cable",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-473",
+      "proposed": "air hose",
+      "class": "hose",
+      "truth": "hose",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-84",
+      "proposed": "power cord",
+      "class": "cable",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-452",
+      "proposed": "power cord",
+      "class": "cable",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-461",
+      "proposed": "power cord",
+      "class": "cable",
+      "truth": "cable",
+      "failed": []
+     },
+     {
+      "id": "me340:obj-1-392",
+      "proposed": "air hose",
+      "class": "hose",
+      "truth": "hose",
+      "failed": []
+     }
+    ],
+    "held_back": [
+     {
+      "id": "me340:obj-0-50",
+      "proposed": "safety guard",
+      "class": "guard",
+      "truth": "bin",
+      "failed": [
+       "the detector's words do not include it"
+      ]
+     },
+     {
+      "id": "me340:obj-0-59",
+      "proposed": "machine guard",
+      "class": "guard",
+      "truth": "unclear",
+      "failed": [
+       "the detector's words do not include it"
+      ]
+     },
+     {
+      "id": "samsclub-a2:obj-0-280",
+      "proposed": "pallet jack with crates",
+      "class": "pallet jack",
+      "truth": "bin",
+      "failed": [
+       "the detector's words do not include it",
+       "a pallet jack should stand on the floor (base 0.19 m above it): needs review"
+      ]
+     },
+     {
+      "id": "samsclub-a2:obj-0-884",
+      "proposed": "pallet jack",
+      "class": "pallet jack",
+      "truth": "pallet jack",
+      "failed": [
+       "the detector's words do not include it"
+      ]
+     },
+     {
+      "id": "samsclub-a2:obj-0-885",
+      "proposed": "pallet jack",
+      "class": "pallet jack",
+      "truth": "pallet jack",
+      "failed": [
+       "the detector's words do not include it",
+       "a pallet jack should stand on the floor (base 1.60 m above it): needs review"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ "spend": {
+  "modal_usd_upper_by_bench": {
+   "mvp2-identity-me340-001": 3.34,
+   "mvp2-identity-me340-002": 2.74,
+   "mvp2-identity-me340-003": 1.34,
+   "mvp2-identity-me340-004": 1.18,
+   "mvp2-identity-me340-005": 1.42,
+   "mvp2-identity-samsclub-a2-004": 1.09,
+   "mvp2-identity-samsclub-a2-005": 1.15,
+   "mvp2-identity-walmart-005": 1.08
+  },
+  "modal_usd_upper_sum": 13.34,
+  "gemini_tokens_in_out": [
+   6711452,
+   599789
+  ]
+ }
+}

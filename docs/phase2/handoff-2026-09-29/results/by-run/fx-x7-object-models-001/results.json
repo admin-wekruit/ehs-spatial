@@ -1,0 +1,6219 @@
+{
+ "experiment": "X7 per-unique-object models from the best views (fx/x7-object-models)",
+ "run": "fx-x7-object-models-001",
+ "rules": {
+  "clock": "t0 = the core's hand-off in the model container's memory; each model: its held-out gate decided and GLB written",
+  "held_out_gate": "build_lingbot_object_model.evaluate on a view never used to generate or place: IoU >= 0.65, rel. depth median <= 0.04, p95 <= 0.10, and its 300-px floor (640x480 clip raster) as the same source-frame area on the DA3 grid 504x280 = 103 px",
+  "views": "good views >= 15 deg apart (arm sep15, the spec) or >= 5 deg (arm sep5, sensitivity), up to 4 generate + 1 held out",
+  "scale": "estimated",
+  "models": "display only, never measurements",
+  "recgen_licence": "non-commercial research (demo only)"
+ },
+ "run1_repeat_sep15_300px_on_grid": {
+  "me340-165/sep15": {
+   "recgen": {
+    "attempted": 16,
+    "generated": 16,
+    "accepted_held_out": 3,
+    "first_accepted_s": 38.127,
+    "last_decided_s": 60.197
+   },
+   "sam3d_b": {
+    "attempted": 16,
+    "generated": 6,
+    "accepted_held_out": 3,
+    "first_accepted_s": 35.004,
+    "last_decided_s": 42.675
+   },
+   "sam3d_c": {
+    "attempted": 10,
+    "generated": 1,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": 19.224
+   },
+   "param": {
+    "attempted": 4,
+    "generated": 4,
+    "accepted_held_out": 2,
+    "first_accepted_s": 25.085,
+    "last_decided_s": 34.737
+   },
+   "sam3d_b_or_c": {
+    "attempted": 16,
+    "generated": 7,
+    "accepted_held_out": 3,
+    "first_accepted_s": 35.004,
+    "last_decided_s": 42.675
+   },
+   "analysis_elapsed_s": 60.213
+  },
+  "samsclub-337/sep15": {
+   "recgen": {
+    "attempted": 6,
+    "generated": 6,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": 35.339
+   },
+   "sam3d_b": {
+    "attempted": 6,
+    "generated": 6,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": 31.895
+   },
+   "sam3d_c": {
+    "attempted": 0,
+    "generated": 0,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": null
+   },
+   "param": {
+    "attempted": 6,
+    "generated": 6,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": 25.83
+   },
+   "sam3d_b_or_c": {
+    "attempted": 6,
+    "generated": 6,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": 31.895
+   },
+   "analysis_elapsed_s": 35.352
+  },
+  "walmart-190/sep15": {
+   "recgen": {
+    "attempted": 1,
+    "generated": 1,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": 26.24
+   },
+   "sam3d_b": {
+    "attempted": 1,
+    "generated": 1,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": 23.224
+   },
+   "sam3d_c": {
+    "attempted": 0,
+    "generated": 0,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": null
+   },
+   "param": {
+    "attempted": 1,
+    "generated": 1,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": 17.079
+   },
+   "sam3d_b_or_c": {
+    "attempted": 1,
+    "generated": 1,
+    "accepted_held_out": 0,
+    "first_accepted_s": null,
+    "last_decided_s": 23.224
+   },
+   "analysis_elapsed_s": 26.259
+  }
+ },
+ "timing_model": {
+  "basis": "samsclub-337/sep5",
+  "rates": {
+   "recgen": {
+    "generated": 58,
+    "busy_s": 166.7,
+    "objects_per_s": 0.348,
+    "first_dispatch_s": 1.6
+   },
+   "sam3d": {
+    "generated": 50,
+    "busy_s": 155.0,
+    "objects_per_s": 0.323,
+    "first_dispatch_s": 1.6
+   }
+  },
+  "sam3d_share_of_objects": 0.86,
+  "ramp_s": 1.6,
+  "gate_median_s": 1.65,
+  "expected": {
+   "20": {
+    "recgen_s": 61.0,
+    "sam3d_s": 57.0,
+    "param_s": 6.236
+   },
+   "40": {
+    "recgen_s": 118.0,
+    "sam3d_s": 110.0,
+    "param_s": 6.236
+   },
+   "70": {
+    "recgen_s": 204.0,
+    "sam3d_s": 190.0,
+    "param_s": 6.236
+   }
+  },
+  "note": "both generators run at once on both GPUs; each alone would get more of the GPUs (not measured)"
+ },
+ "core_reused": {
+  "branch": "fb/a-core (+ masks_lr hand-off, dump after the clock)",
+  "runs": {
+   "me340-165": {
+    "report": "x7-me340-165-e84efffd-1790647193",
+    "objects": 251,
+    "layers_written_s": {
+     "video.v1": 1.438,
+     "cameras.v1": 16.862,
+     "room.v1": 21.678,
+     "people.v1": 23.309,
+     "events.v1": 23.309,
+     "objects.v1": 27.806,
+     "outlines.v1": 29.747,
+     "objects.v2": 38.222
+    },
+    "core_outputs_ready_s": 38.222,
+    "gpu_peak_gib": [
+     46.13,
+     51.94
+    ],
+    "flags": [],
+    "fixture": {
+     "folder": "/v/layers/x7/fx-x7-001/me340-165",
+     "objects": 251,
+     "object_keyframes": 49,
+     "bytes": 520706164,
+     "dump_s": 1.9
+    },
+    "analysis_usd_estimate": 0.0828
+   },
+   "samsclub-337": {
+    "report": "x7-samsclub-337-d5e0c855-1790647241",
+    "objects": 589,
+    "layers_written_s": {
+     "video.v1": 1.416,
+     "cameras.v1": 10.941,
+     "room.v1": 15.02,
+     "people.v1": 17.264,
+     "events.v1": 19.109,
+     "objects.v1": 19.109,
+     "outlines.v1": 19.109,
+     "objects.v2": 34.351
+    },
+    "core_outputs_ready_s": 34.351,
+    "gpu_peak_gib": [
+     33.24,
+     43.46
+    ],
+    "flags": [],
+    "fixture": {
+     "folder": "/v/layers/x7/fx-x7-001/samsclub-337",
+     "objects": 589,
+     "object_keyframes": 42,
+     "bytes": 555174308,
+     "dump_s": 2.27
+    },
+    "analysis_usd_estimate": 0.0744
+   },
+   "walmart-190": {
+    "report": "x7-walmart-190-c0761a2a-1790647291",
+    "objects": 552,
+    "layers_written_s": {
+     "video.v1": 1.797,
+     "events.v1": 11.238,
+     "cameras.v1": 15.094,
+     "room.v1": 15.094,
+     "people.v1": 17.557,
+     "objects.v1": 17.557,
+     "outlines.v1": 17.557,
+     "objects.v2": 27.943
+    },
+    "core_outputs_ready_s": 27.943,
+    "gpu_peak_gib": [
+     31.03,
+     42.99
+    ],
+    "flags": [],
+    "fixture": {
+     "folder": "/v/layers/x7/fx-x7-001/walmart-190",
+     "objects": 552,
+     "object_keyframes": 42,
+     "bytes": 508539860,
+     "dump_s": 2.05
+    },
+    "analysis_usd_estimate": 0.0606
+   }
+  },
+  "boot": {
+   "entered_unix": 1790647122.7836173,
+   "mps": true,
+   "vllm_mps": false,
+   "vllm_spawned_s": 0.12,
+   "imports_s": 15.06,
+   "da3_gpu0_s": 24.59,
+   "sam3_siglip_gpu0_s": 31.37,
+   "vllm_ready_s": 60.53,
+   "warm_da3_s": 61.8,
+   "warm_sam3_s": 64.51,
+   "warm_siglip_s": 64.72,
+   "warm_open3d_s": 64.93,
+   "vllm_idle_one_sequence_decode_per_s": 64.1,
+   "vllm_warm_s": 5.17,
+   "process_pool_pids": 24,
+   "ready_s": 70.57,
+   "ready_unix": 1790647193.3544955,
+   "gpus": [
+    "GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-37af3734-d934-6ebc-19fd-f379ddbbbfd2)",
+    "GPU 1: NVIDIA A100-SXM4-80GB (UUID: GPU-c548e9d5-47ba-a9f5-ee12-318f0d8f9429)"
+   ],
+   "torch": "2.14.0+cu130",
+   "transformers": "5.17.0",
+   "open3d": "0.19.0",
+   "resident_gb": [
+    15.15,
+    30.32
+   ],
+   "client_submitted_unix": 1790647103.950476,
+   "submit_to_ready_s_two_clocks": 89.4
+  }
+ },
+ "model_container_boot": {
+  "ready_s": 106.5,
+  "cpu_ready_s": 44.4,
+  "sam3d_ready_s": 106.4,
+  "recgen_ready_s": 106.4,
+  "vram_after_boot_gib": [
+   25.94,
+   28.93
+  ],
+  "mps": true,
+  "sam3d_workers": [
+   {
+    "ready": true,
+    "load_s": 87.3,
+    "warm_s": 10.0,
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "reserved_after_warm_gb": 20.29,
+    "idle_reserved_gb": 12.17,
+    "allocated_gb": 12.1
+   },
+   {
+    "ready": true,
+    "load_s": 87.3,
+    "warm_s": 10.1,
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "reserved_after_warm_gb": 20.29,
+    "idle_reserved_gb": 12.17,
+    "allocated_gb": 12.1
+   }
+  ],
+  "recgen_workers": [
+   {
+    "ready": true,
+    "load_s": 56.5,
+    "warm_s": 12.5,
+    "warm_error": null,
+    "gpu": "0",
+    "reserved_after_warm_gb": 14.55,
+    "idle_reserved_gb": 5.35
+   },
+   {
+    "ready": true,
+    "load_s": 55.9,
+    "warm_s": 12.5,
+    "warm_error": null,
+    "gpu": "0",
+    "reserved_after_warm_gb": 14.55,
+    "idle_reserved_gb": 5.35
+   },
+   {
+    "ready": true,
+    "load_s": 55.4,
+    "warm_s": 13.3,
+    "warm_error": null,
+    "gpu": "1",
+    "reserved_after_warm_gb": 14.55,
+    "idle_reserved_gb": 5.35
+   },
+   {
+    "ready": true,
+    "load_s": 55.9,
+    "warm_s": 12.8,
+    "warm_error": null,
+    "gpu": "1",
+    "reserved_after_warm_gb": 14.55,
+    "idle_reserved_gb": 5.35
+   }
+  ]
+ },
+ "videos": {
+  "me340-165/sep15": {
+   "core": {
+    "report": "x7-me340-165-e84efffd-1790647193",
+    "objects": 251,
+    "layers_written_s": {
+     "video.v1": 1.438,
+     "cameras.v1": 16.862,
+     "room.v1": 21.678,
+     "people.v1": 23.309,
+     "events.v1": 23.309,
+     "objects.v1": 27.806,
+     "outlines.v1": 29.747,
+     "objects.v2": 38.222
+    },
+    "core_outputs_ready_s": 38.222,
+    "gpu_peak_gib": [
+     46.13,
+     51.94
+    ],
+    "flags": [],
+    "fixture": {
+     "folder": "/v/layers/x7/fx-x7-001/me340-165",
+     "objects": 251,
+     "object_keyframes": 49,
+     "bytes": 520706164,
+     "dump_s": 1.9
+    },
+    "analysis_usd_estimate": 0.0828
+   },
+   "fixture_load_s_not_analysis": 3.36,
+   "objects_in_core": 251,
+   "ranked_attempt_list": 100,
+   "selection": {
+    "eligible": 16,
+    "not_eligible": 84,
+    "generation_views": {
+     "1": 13,
+     "2": 3,
+     "3": 0,
+     "4": 0
+    },
+    "select_s": {
+     "n": 100,
+     "median": 1.49,
+     "p10": 0.55,
+     "p90": 3.0,
+     "max": 5.24,
+     "sum": 173.8
+    }
+   },
+   "analysis_elapsed_s": 45.312,
+   "volume_commit_s": 0.01,
+   "methods": {
+    "recgen": {
+     "attempted": 16,
+     "prepare_or_input_rejected": 0,
+     "generated": 16,
+     "errors": 0,
+     "gated": 16,
+     "accepted_held_out": 3,
+     "acceptance_rate": 0.188,
+     "acceptance_rate_of_generated": 0.188,
+     "first_accepted_s": 23.104,
+     "last_accepted_s": 35.03,
+     "last_decided_s": 45.301,
+     "inference_s": {
+      "n": 16,
+      "median": 8.21,
+      "p10": 7.39,
+      "p90": 11.65,
+      "max": 15.54,
+      "sum": 149.4
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 16,
+      "median": 1.16,
+      "p10": 1.03,
+      "p90": 1.88,
+      "max": 2.13,
+      "sum": 21.1
+     },
+     "queue_wait_s": {
+      "n": 16,
+      "median": 14.57,
+      "p10": 0.03,
+      "p90": 26.68,
+      "max": 29.14,
+      "sum": 220.8
+     },
+     "max_reserved_gib_per_process": 16.52
+    },
+    "sam3d_b": {
+     "attempted": 16,
+     "prepare_or_input_rejected": 10,
+     "generated": 6,
+     "errors": 0,
+     "gated": 6,
+     "accepted_held_out": 2,
+     "acceptance_rate": 0.125,
+     "acceptance_rate_of_generated": 0.333,
+     "first_accepted_s": 20.568,
+     "last_accepted_s": 22.751,
+     "last_decided_s": 26.4,
+     "inference_s": {
+      "n": 6,
+      "median": 6.42,
+      "p10": 3.96,
+      "p90": 7.08,
+      "max": 7.29,
+      "sum": 34.9
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 6,
+      "median": 1.46,
+      "p10": 1.06,
+      "p90": 2.18,
+      "max": 2.69,
+      "sum": 9.4
+     },
+     "queue_wait_s": {
+      "n": 6,
+      "median": 6.69,
+      "p10": 1.97,
+      "p90": 12.22,
+      "max": 12.35,
+      "sum": 41.7
+     },
+     "max_reserved_gib_per_process": 24.05
+    },
+    "sam3d_c": {
+     "attempted": 10,
+     "prepare_or_input_rejected": 9,
+     "generated": 1,
+     "errors": 0,
+     "gated": 1,
+     "accepted_held_out": 0,
+     "acceptance_rate": 0.0,
+     "acceptance_rate_of_generated": 0.0,
+     "first_accepted_s": null,
+     "last_accepted_s": null,
+     "last_decided_s": 11.426,
+     "inference_s": {
+      "n": 1,
+      "median": 6.44,
+      "p10": 6.44,
+      "p90": 6.44,
+      "max": 6.44,
+      "sum": 6.4
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 1,
+      "median": 1.57,
+      "p10": 1.57,
+      "p90": 1.57,
+      "max": 1.57,
+      "sum": 1.6
+     },
+     "queue_wait_s": {
+      "n": 1,
+      "median": 0.12,
+      "p10": 0.12,
+      "p90": 0.12,
+      "max": 0.12,
+      "sum": 0.1
+     },
+     "max_reserved_gib_per_process": 23.61
+    },
+    "param": {
+     "attempted": 4,
+     "prepare_or_input_rejected": 0,
+     "generated": 4,
+     "errors": 0,
+     "gated": 4,
+     "accepted_held_out": 2,
+     "acceptance_rate": 0.5,
+     "acceptance_rate_of_generated": 0.5,
+     "first_accepted_s": 6.096,
+     "last_accepted_s": 9.125,
+     "last_decided_s": 9.125,
+     "inference_s": null,
+     "fit_s": {
+      "n": 4,
+      "median": 0.04,
+      "p10": 0.03,
+      "p90": 0.05,
+      "max": 0.05,
+      "sum": 0.2
+     },
+     "gate_s": {
+      "n": 4,
+      "median": 0.11,
+      "p10": 0.1,
+      "p90": 0.16,
+      "max": 0.18,
+      "sum": 0.5
+     },
+     "queue_wait_s": null,
+     "max_reserved_gib_per_process": 0
+    },
+    "sam3d_b_or_c": {
+     "attempted": 16,
+     "prepare_or_input_rejected": 9,
+     "generated": 7,
+     "errors": 0,
+     "gated": 7,
+     "accepted_held_out": 2,
+     "acceptance_rate": 0.125,
+     "acceptance_rate_of_generated": 0.286,
+     "first_accepted_s": 20.568,
+     "last_accepted_s": 22.751,
+     "last_decided_s": 26.4,
+     "inference_s": {
+      "n": 7,
+      "median": 6.44,
+      "p10": 4.0,
+      "p90": 7.04,
+      "max": 7.29,
+      "sum": 41.4
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 7,
+      "median": 1.57,
+      "p10": 1.07,
+      "p90": 2.08,
+      "max": 2.69,
+      "sum": 11.0
+     },
+     "queue_wait_s": {
+      "n": 7,
+      "median": 5.07,
+      "p10": 0.12,
+      "p90": 12.19,
+      "max": 12.35,
+      "sum": 41.9
+     },
+     "max_reserved_gib_per_process": 24.05
+    }
+   },
+   "delivered_overlap": {
+    "publication": "c40fbd08",
+    "delivered_models": 22,
+    "our_objects_matching_a_delivered_model": 17,
+    "delivered_models_matched_by_any_attempted_object": 7,
+    "recgen": {
+     "accepted": 3,
+     "accepted_matching_delivered": 1,
+     "delivered_models_covered": 1,
+     "delivered_coverage": 0.045,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_b": {
+     "accepted": 2,
+     "accepted_matching_delivered": 1,
+     "delivered_models_covered": 1,
+     "delivered_coverage": 0.045,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_c": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "param": {
+     "accepted": 2,
+     "accepted_matching_delivered": 1,
+     "delivered_models_covered": 1,
+     "delivered_coverage": 0.045,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_b_or_c": {
+     "accepted": 2,
+     "accepted_matching_delivered": 1,
+     "delivered_models_covered": 1,
+     "delivered_coverage": 0.045,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "any_generator": {
+     "accepted": 3,
+     "accepted_matching_delivered": 1,
+     "delivered_models_covered": 1,
+     "delivered_coverage": 0.045,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "any": {
+     "accepted": 3,
+     "accepted_matching_delivered": 1,
+     "delivered_models_covered": 1,
+     "delivered_coverage": 0.045,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 0,
+      "box": 0
+     }
+    }
+   },
+   "per_gpu_peak_gib_by_stage": {
+    "x7.rank_stage": {
+     "n": 1,
+     "s": {
+      "n": 1,
+      "median": 0.6,
+      "p10": 0.6,
+      "p90": 0.6,
+      "max": 0.6,
+      "sum": 0.6
+     },
+     "peak_gib_per_gpu": [
+      23.62,
+      23.62
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.select": {
+     "n": 100,
+     "s": {
+      "n": 100,
+      "median": 1.5,
+      "p10": 0.55,
+      "p90": 3.02,
+      "max": 5.26,
+      "sum": 174.5
+     },
+     "peak_gib_per_gpu": [
+      34.87,
+      25.43
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "recgen.generate": {
+     "n": 16,
+     "s": {
+      "n": 16,
+      "median": 8.21,
+      "p10": 7.4,
+      "p90": 11.65,
+      "max": 15.54,
+      "sum": 149.4
+     },
+     "peak_gib_per_gpu": [
+      46.74,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.fit": {
+     "n": 4,
+     "s": {
+      "n": 4,
+      "median": 0.13,
+      "p10": 0.1,
+      "p90": 0.17,
+      "max": 0.18,
+      "sum": 0.5
+     },
+     "peak_gib_per_gpu": [
+      25.7,
+      25.42
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "sam3d.generate": {
+     "n": 7,
+     "s": {
+      "n": 7,
+      "median": 6.44,
+      "p10": 4.0,
+      "p90": 7.04,
+      "max": 7.29,
+      "sum": 41.4
+     },
+     "peak_gib_per_gpu": [
+      46.74,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.gate": {
+     "n": 23,
+     "s": {
+      "n": 23,
+      "median": 1.18,
+      "p10": 1.02,
+      "p90": 1.92,
+      "max": 2.69,
+      "sum": 32.1
+     },
+     "peak_gib_per_gpu": [
+      46.74,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    }
+   },
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 80.0,
+     "peak_gb": 46.74,
+     "at_s": 14.912,
+     "stages_active": [
+      "x7.gate",
+      "recgen.generate",
+      "x7.gate",
+      "x7.gate",
+      "recgen.generate",
+      "sam3d.generate",
+      "sam3d.generate",
+      "recgen.generate",
+      "recgen.generate",
+      "recgen.generate"
+     ]
+    },
+    {
+     "gpu": 1,
+     "total_gb": 80.0,
+     "peak_gb": 54.84,
+     "at_s": 24.024,
+     "stages_active": [
+      "sam3d.generate",
+      "recgen.generate",
+      "x7.gate",
+      "sam3d.generate",
+      "recgen.generate",
+      "recgen.generate",
+      "recgen.generate"
+     ]
+    }
+   ],
+   "flags_over_90": [],
+   "analysis_usd_estimate": 0.0915,
+   "contact_sheet": {
+    "file": "me340-165-sep15-contact.jpg",
+    "objects": 4,
+    "tiles": 7
+   },
+   "accepted_with_300px_on_grid_floor": {
+    "recgen": 3,
+    "sam3d_b": 2,
+    "sam3d_c": 0,
+    "param": 2
+   },
+   "throughput": {
+    "recgen": {
+     "generated": 16,
+     "busy_s": 40.8,
+     "objects_per_s": 0.393,
+     "first_dispatch_s": 3.2
+    },
+    "sam3d": {
+     "generated": 7,
+     "busy_s": 21.9,
+     "objects_per_s": 0.319,
+     "first_dispatch_s": 3.2
+    }
+   }
+  },
+  "me340-165/sep5": {
+   "core": {
+    "report": "x7-me340-165-e84efffd-1790647193",
+    "objects": 251,
+    "layers_written_s": {
+     "video.v1": 1.438,
+     "cameras.v1": 16.862,
+     "room.v1": 21.678,
+     "people.v1": 23.309,
+     "events.v1": 23.309,
+     "objects.v1": 27.806,
+     "outlines.v1": 29.747,
+     "objects.v2": 38.222
+    },
+    "core_outputs_ready_s": 38.222,
+    "gpu_peak_gib": [
+     46.13,
+     51.94
+    ],
+    "flags": [],
+    "fixture": {
+     "folder": "/v/layers/x7/fx-x7-001/me340-165",
+     "objects": 251,
+     "object_keyframes": 49,
+     "bytes": 520706164,
+     "dump_s": 1.9
+    },
+    "analysis_usd_estimate": 0.0828
+   },
+   "fixture_load_s_not_analysis": 4.17,
+   "objects_in_core": 251,
+   "ranked_attempt_list": 100,
+   "selection": {
+    "eligible": 30,
+    "not_eligible": 70,
+    "generation_views": {
+     "1": 4,
+     "2": 12,
+     "3": 6,
+     "4": 8
+    },
+    "select_s": {
+     "n": 100,
+     "median": 1.18,
+     "p10": 0.44,
+     "p90": 2.52,
+     "max": 4.21,
+     "sum": 137.7
+    }
+   },
+   "analysis_elapsed_s": 103.678,
+   "volume_commit_s": 0.01,
+   "methods": {
+    "recgen": {
+     "attempted": 30,
+     "prepare_or_input_rejected": 0,
+     "generated": 30,
+     "errors": 0,
+     "gated": 30,
+     "accepted_held_out": 3,
+     "acceptance_rate": 0.1,
+     "acceptance_rate_of_generated": 0.1,
+     "first_accepted_s": 29.161,
+     "last_accepted_s": 64.294,
+     "last_decided_s": 103.668,
+     "inference_s": {
+      "n": 30,
+      "median": 11.76,
+      "p10": 8.14,
+      "p90": 19.32,
+      "max": 23.17,
+      "sum": 391.3
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 30,
+      "median": 2.13,
+      "p10": 1.13,
+      "p90": 3.36,
+      "max": 3.68,
+      "sum": 68.2
+     },
+     "queue_wait_s": {
+      "n": 30,
+      "median": 50.54,
+      "p10": 0.01,
+      "p90": 83.27,
+      "max": 87.11,
+      "sum": 1391.3
+     },
+     "max_reserved_gib_per_process": 16.52
+    },
+    "sam3d_b": {
+     "attempted": 30,
+     "prepare_or_input_rejected": 18,
+     "generated": 12,
+     "errors": 0,
+     "gated": 12,
+     "accepted_held_out": 3,
+     "acceptance_rate": 0.1,
+     "acceptance_rate_of_generated": 0.25,
+     "first_accepted_s": 24.025,
+     "last_accepted_s": 43.347,
+     "last_decided_s": 55.902,
+     "inference_s": {
+      "n": 12,
+      "median": 6.94,
+      "p10": 5.54,
+      "p90": 8.08,
+      "max": 8.54,
+      "sum": 81.4
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 12,
+      "median": 2.27,
+      "p10": 1.31,
+      "p90": 2.89,
+      "max": 4.43,
+      "sum": 28.3
+     },
+     "queue_wait_s": {
+      "n": 12,
+      "median": 18.0,
+      "p10": 5.34,
+      "p90": 38.52,
+      "max": 39.78,
+      "sum": 237.4
+     },
+     "max_reserved_gib_per_process": 24.05
+    },
+    "sam3d_c": {
+     "attempted": 18,
+     "prepare_or_input_rejected": 15,
+     "generated": 3,
+     "errors": 0,
+     "gated": 3,
+     "accepted_held_out": 0,
+     "acceptance_rate": 0.0,
+     "acceptance_rate_of_generated": 0.0,
+     "first_accepted_s": null,
+     "last_accepted_s": null,
+     "last_decided_s": 48.935,
+     "inference_s": {
+      "n": 3,
+      "median": 7.04,
+      "p10": 5.08,
+      "p90": 7.47,
+      "max": 7.58,
+      "sum": 19.2
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 3,
+      "median": 1.71,
+      "p10": 1.26,
+      "p90": 3.07,
+      "max": 3.4,
+      "sum": 6.3
+     },
+     "queue_wait_s": {
+      "n": 3,
+      "median": 29.73,
+      "p10": 5.98,
+      "p90": 34.0,
+      "max": 35.07,
+      "sum": 64.8
+     },
+     "max_reserved_gib_per_process": 24.05
+    },
+    "param": {
+     "attempted": 8,
+     "prepare_or_input_rejected": 0,
+     "generated": 8,
+     "errors": 0,
+     "gated": 8,
+     "accepted_held_out": 2,
+     "acceptance_rate": 0.25,
+     "acceptance_rate_of_generated": 0.25,
+     "first_accepted_s": 4.952,
+     "last_accepted_s": 6.663,
+     "last_decided_s": 7.69,
+     "inference_s": null,
+     "fit_s": {
+      "n": 8,
+      "median": 0.06,
+      "p10": 0.02,
+      "p90": 0.09,
+      "max": 0.09,
+      "sum": 0.5
+     },
+     "gate_s": {
+      "n": 8,
+      "median": 0.14,
+      "p10": 0.05,
+      "p90": 0.24,
+      "max": 0.25,
+      "sum": 1.2
+     },
+     "queue_wait_s": null,
+     "max_reserved_gib_per_process": 0
+    },
+    "sam3d_b_or_c": {
+     "attempted": 30,
+     "prepare_or_input_rejected": 15,
+     "generated": 15,
+     "errors": 0,
+     "gated": 15,
+     "accepted_held_out": 3,
+     "acceptance_rate": 0.1,
+     "acceptance_rate_of_generated": 0.2,
+     "first_accepted_s": 24.025,
+     "last_accepted_s": 43.347,
+     "last_decided_s": 55.902,
+     "inference_s": {
+      "n": 15,
+      "median": 6.98,
+      "p10": 5.01,
+      "p90": 8.02,
+      "max": 8.54,
+      "sum": 100.6
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 15,
+      "median": 2.23,
+      "p10": 1.19,
+      "p90": 3.2,
+      "max": 4.43,
+      "sum": 34.5
+     },
+     "queue_wait_s": {
+      "n": 15,
+      "median": 18.43,
+      "p10": 2.08,
+      "p90": 37.43,
+      "max": 39.78,
+      "sum": 302.2
+     },
+     "max_reserved_gib_per_process": 24.05
+    }
+   },
+   "delivered_overlap": {
+    "publication": "c40fbd08",
+    "delivered_models": 22,
+    "our_objects_matching_a_delivered_model": 17,
+    "delivered_models_matched_by_any_attempted_object": 7,
+    "recgen": {
+     "accepted": 3,
+     "accepted_matching_delivered": 2,
+     "delivered_models_covered": 2,
+     "delivered_coverage": 0.091,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 1,
+      "box": 0
+     }
+    },
+    "sam3d_b": {
+     "accepted": 3,
+     "accepted_matching_delivered": 1,
+     "delivered_models_covered": 1,
+     "delivered_coverage": 0.045,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_c": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "param": {
+     "accepted": 2,
+     "accepted_matching_delivered": 1,
+     "delivered_models_covered": 1,
+     "delivered_coverage": 0.045,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_b_or_c": {
+     "accepted": 3,
+     "accepted_matching_delivered": 1,
+     "delivered_models_covered": 1,
+     "delivered_coverage": 0.045,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "any_generator": {
+     "accepted": 4,
+     "accepted_matching_delivered": 2,
+     "delivered_models_covered": 2,
+     "delivered_coverage": 0.091,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 1,
+      "box": 0
+     }
+    },
+    "any": {
+     "accepted": 4,
+     "accepted_matching_delivered": 2,
+     "delivered_models_covered": 2,
+     "delivered_coverage": 0.091,
+     "delivered_by_generator": {
+      "recgen": 1,
+      "sam3d": 1,
+      "box": 0
+     }
+    }
+   },
+   "per_gpu_peak_gib_by_stage": {
+    "x7.rank_stage": {
+     "n": 1,
+     "s": {
+      "n": 1,
+      "median": 0.59,
+      "p10": 0.59,
+      "p90": 0.59,
+      "max": 0.59,
+      "sum": 0.6
+     },
+     "peak_gib_per_gpu": [
+      46.74,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.select": {
+     "n": 100,
+     "s": {
+      "n": 100,
+      "median": 1.19,
+      "p10": 0.44,
+      "p90": 2.53,
+      "max": 4.21,
+      "sum": 138.3
+     },
+     "peak_gib_per_gpu": [
+      46.74,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "recgen.generate": {
+     "n": 30,
+     "s": {
+      "n": 30,
+      "median": 11.76,
+      "p10": 8.15,
+      "p90": 19.32,
+      "max": 23.17,
+      "sum": 391.3
+     },
+     "peak_gib_per_gpu": [
+      49.77,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "sam3d.generate": {
+     "n": 15,
+     "s": {
+      "n": 15,
+      "median": 6.98,
+      "p10": 5.01,
+      "p90": 8.02,
+      "max": 8.54,
+      "sum": 100.6
+     },
+     "peak_gib_per_gpu": [
+      49.77,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.fit": {
+     "n": 8,
+     "s": {
+      "n": 8,
+      "median": 0.15,
+      "p10": 0.05,
+      "p90": 0.24,
+      "max": 0.25,
+      "sum": 1.3
+     },
+     "peak_gib_per_gpu": [
+      46.74,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.gate": {
+     "n": 45,
+     "s": {
+      "n": 45,
+      "median": 2.16,
+      "p10": 1.14,
+      "p90": 3.38,
+      "max": 4.43,
+      "sum": 102.8
+     },
+     "peak_gib_per_gpu": [
+      49.77,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    }
+   },
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 80.0,
+     "peak_gb": 49.77,
+     "at_s": 35.92,
+     "stages_active": [
+      "x7.gate",
+      "recgen.generate",
+      "x7.gate",
+      "recgen.generate",
+      "sam3d.generate",
+      "sam3d.generate",
+      "recgen.generate",
+      "recgen.generate"
+     ]
+    },
+    {
+     "gpu": 1,
+     "total_gb": 80.0,
+     "peak_gb": 54.84,
+     "at_s": 0.031,
+     "stages_active": [
+      "x7.rank_stage"
+     ]
+    }
+   ],
+   "flags_over_90": [],
+   "analysis_usd_estimate": 0.2095,
+   "contact_sheet": {
+    "file": "me340-165-sep5-contact.jpg",
+    "objects": 4,
+    "tiles": 8
+   },
+   "accepted_with_300px_on_grid_floor": {
+    "recgen": 2,
+    "sam3d_b": 3,
+    "sam3d_c": 0,
+    "param": 2
+   },
+   "throughput": {
+    "recgen": {
+     "generated": 30,
+     "busy_s": 100.4,
+     "objects_per_s": 0.299,
+     "first_dispatch_s": 2.3
+    },
+    "sam3d": {
+     "generated": 15,
+     "busy_s": 51.6,
+     "objects_per_s": 0.29,
+     "first_dispatch_s": 2.3
+    }
+   }
+  },
+  "samsclub-337/sep15": {
+   "core": {
+    "report": "x7-samsclub-337-d5e0c855-1790647241",
+    "objects": 589,
+    "layers_written_s": {
+     "video.v1": 1.416,
+     "cameras.v1": 10.941,
+     "room.v1": 15.02,
+     "people.v1": 17.264,
+     "events.v1": 19.109,
+     "objects.v1": 19.109,
+     "outlines.v1": 19.109,
+     "objects.v2": 34.351
+    },
+    "core_outputs_ready_s": 34.351,
+    "gpu_peak_gib": [
+     33.24,
+     43.46
+    ],
+    "flags": [],
+    "fixture": {
+     "folder": "/v/layers/x7/fx-x7-001/samsclub-337",
+     "objects": 589,
+     "object_keyframes": 42,
+     "bytes": 555174308,
+     "dump_s": 2.27
+    },
+    "analysis_usd_estimate": 0.0744
+   },
+   "fixture_load_s_not_analysis": 4.09,
+   "objects_in_core": 589,
+   "ranked_attempt_list": 100,
+   "selection": {
+    "eligible": 6,
+    "not_eligible": 94,
+    "generation_views": {
+     "1": 6,
+     "2": 0,
+     "3": 0,
+     "4": 0
+    },
+    "select_s": {
+     "n": 100,
+     "median": 0.71,
+     "p10": 0.33,
+     "p90": 1.59,
+     "max": 1.96,
+     "sum": 88.6
+    }
+   },
+   "analysis_elapsed_s": 27.716,
+   "volume_commit_s": 1.33,
+   "methods": {
+    "recgen": {
+     "attempted": 6,
+     "prepare_or_input_rejected": 0,
+     "generated": 6,
+     "errors": 0,
+     "gated": 6,
+     "accepted_held_out": 3,
+     "acceptance_rate": 0.5,
+     "acceptance_rate_of_generated": 0.5,
+     "first_accepted_s": 15.302,
+     "last_accepted_s": 18.046,
+     "last_decided_s": 26.389,
+     "inference_s": {
+      "n": 6,
+      "median": 11.29,
+      "p10": 10.95,
+      "p90": 13.12,
+      "max": 13.57,
+      "sum": 70.7
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 6,
+      "median": 1.18,
+      "p10": 1.12,
+      "p90": 1.43,
+      "max": 1.61,
+      "sum": 7.4
+     },
+     "queue_wait_s": {
+      "n": 6,
+      "median": 0.01,
+      "p10": 0.0,
+      "p90": 8.98,
+      "max": 9.28,
+      "sum": 18.0
+     },
+     "max_reserved_gib_per_process": 16.6
+    },
+    "sam3d_b": {
+     "attempted": 6,
+     "prepare_or_input_rejected": 0,
+     "generated": 6,
+     "errors": 0,
+     "gated": 6,
+     "accepted_held_out": 4,
+     "acceptance_rate": 0.667,
+     "acceptance_rate_of_generated": 0.667,
+     "first_accepted_s": 11.52,
+     "last_accepted_s": 23.604,
+     "last_decided_s": 23.604,
+     "inference_s": {
+      "n": 6,
+      "median": 6.27,
+      "p10": 4.19,
+      "p90": 7.45,
+      "max": 7.74,
+      "sum": 35.8
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 6,
+      "median": 1.57,
+      "p10": 1.44,
+      "p90": 1.84,
+      "max": 1.98,
+      "sum": 9.7
+     },
+     "queue_wait_s": {
+      "n": 6,
+      "median": 7.42,
+      "p10": 0.04,
+      "p90": 10.53,
+      "max": 10.92,
+      "sum": 36.0
+     },
+     "max_reserved_gib_per_process": 29.03
+    },
+    "sam3d_c": {
+     "attempted": 0,
+     "prepare_or_input_rejected": 0,
+     "generated": 0,
+     "errors": 0,
+     "gated": 0,
+     "accepted_held_out": 0,
+     "acceptance_rate": 0.0,
+     "acceptance_rate_of_generated": 0.0,
+     "first_accepted_s": null,
+     "last_accepted_s": null,
+     "last_decided_s": null,
+     "inference_s": null,
+     "fit_s": null,
+     "gate_s": null,
+     "queue_wait_s": null,
+     "max_reserved_gib_per_process": null
+    },
+    "param": {
+     "attempted": 6,
+     "prepare_or_input_rejected": 0,
+     "generated": 6,
+     "errors": 0,
+     "gated": 6,
+     "accepted_held_out": 5,
+     "acceptance_rate": 0.833,
+     "acceptance_rate_of_generated": 0.833,
+     "first_accepted_s": 2.79,
+     "last_accepted_s": 5.576,
+     "last_decided_s": 5.576,
+     "inference_s": null,
+     "fit_s": {
+      "n": 6,
+      "median": 0.04,
+      "p10": 0.04,
+      "p90": 0.06,
+      "max": 0.08,
+      "sum": 0.3
+     },
+     "gate_s": {
+      "n": 6,
+      "median": 0.1,
+      "p10": 0.08,
+      "p90": 0.14,
+      "max": 0.16,
+      "sum": 0.6
+     },
+     "queue_wait_s": null,
+     "max_reserved_gib_per_process": 0
+    },
+    "sam3d_b_or_c": {
+     "attempted": 6,
+     "prepare_or_input_rejected": 0,
+     "generated": 6,
+     "errors": 0,
+     "gated": 6,
+     "accepted_held_out": 4,
+     "acceptance_rate": 0.667,
+     "acceptance_rate_of_generated": 0.667,
+     "first_accepted_s": 11.52,
+     "last_accepted_s": 23.604,
+     "last_decided_s": 23.604,
+     "inference_s": {
+      "n": 6,
+      "median": 6.27,
+      "p10": 4.19,
+      "p90": 7.45,
+      "max": 7.74,
+      "sum": 35.8
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 6,
+      "median": 1.57,
+      "p10": 1.44,
+      "p90": 1.84,
+      "max": 1.98,
+      "sum": 9.7
+     },
+     "queue_wait_s": {
+      "n": 6,
+      "median": 7.42,
+      "p10": 0.04,
+      "p90": 10.53,
+      "max": 10.92,
+      "sum": 36.0
+     },
+     "max_reserved_gib_per_process": 29.03
+    }
+   },
+   "delivered_overlap": {
+    "publication": "913daf2a",
+    "delivered_models": 67,
+    "our_objects_matching_a_delivered_model": 29,
+    "delivered_models_matched_by_any_attempted_object": 23,
+    "recgen": {
+     "accepted": 3,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_b": {
+     "accepted": 4,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_c": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "param": {
+     "accepted": 5,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_b_or_c": {
+     "accepted": 4,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "any_generator": {
+     "accepted": 4,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "any": {
+     "accepted": 5,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    }
+   },
+   "per_gpu_peak_gib_by_stage": {
+    "x7.rank_stage": {
+     "n": 1,
+     "s": {
+      "n": 1,
+      "median": 0.89,
+      "p10": 0.89,
+      "p90": 0.89,
+      "max": 0.89,
+      "sum": 0.9
+     },
+     "peak_gib_per_gpu": [
+      49.77,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.select": {
+     "n": 100,
+     "s": {
+      "n": 100,
+      "median": 0.7,
+      "p10": 0.33,
+      "p90": 1.61,
+      "max": 1.97,
+      "sum": 89.1
+     },
+     "peak_gib_per_gpu": [
+      49.77,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "recgen.generate": {
+     "n": 6,
+     "s": {
+      "n": 6,
+      "median": 11.3,
+      "p10": 10.95,
+      "p90": 13.12,
+      "max": 13.57,
+      "sum": 70.7
+     },
+     "peak_gib_per_gpu": [
+      52.03,
+      61.76
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.fit": {
+     "n": 6,
+     "s": {
+      "n": 6,
+      "median": 0.11,
+      "p10": 0.08,
+      "p90": 0.14,
+      "max": 0.16,
+      "sum": 0.7
+     },
+     "peak_gib_per_gpu": [
+      49.77,
+      54.84
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "sam3d.generate": {
+     "n": 6,
+     "s": {
+      "n": 6,
+      "median": 6.27,
+      "p10": 4.18,
+      "p90": 7.44,
+      "max": 7.74,
+      "sum": 35.8
+     },
+     "peak_gib_per_gpu": [
+      49.77,
+      61.76
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.gate": {
+     "n": 12,
+     "s": {
+      "n": 12,
+      "median": 1.44,
+      "p10": 1.17,
+      "p90": 1.69,
+      "max": 1.98,
+      "sum": 17.2
+     },
+     "peak_gib_per_gpu": [
+      52.03,
+      61.76
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    }
+   },
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 80.0,
+     "peak_gb": 52.03,
+     "at_s": 24.645,
+     "stages_active": [
+      "recgen.generate",
+      "recgen.generate"
+     ]
+    },
+    {
+     "gpu": 1,
+     "total_gb": 80.0,
+     "peak_gb": 61.76,
+     "at_s": 15.156,
+     "stages_active": [
+      "x7.gate",
+      "x7.gate",
+      "recgen.generate",
+      "sam3d.generate",
+      "recgen.generate",
+      "x7.gate",
+      "sam3d.generate",
+      "recgen.generate",
+      "recgen.generate"
+     ]
+    }
+   ],
+   "flags_over_90": [],
+   "analysis_usd_estimate": 0.056,
+   "contact_sheet": {
+    "file": "samsclub-337-sep15-contact.jpg",
+    "objects": 6,
+    "tiles": 12
+   },
+   "accepted_with_300px_on_grid_floor": {
+    "recgen": 0,
+    "sam3d_b": 0,
+    "sam3d_c": 0,
+    "param": 0
+   },
+   "throughput": {
+    "recgen": {
+     "generated": 6,
+     "busy_s": 22.5,
+     "objects_per_s": 0.267,
+     "first_dispatch_s": 2.7
+    },
+    "sam3d": {
+     "generated": 6,
+     "busy_s": 19.2,
+     "objects_per_s": 0.312,
+     "first_dispatch_s": 2.7
+    }
+   }
+  },
+  "samsclub-337/sep5": {
+   "core": {
+    "report": "x7-samsclub-337-d5e0c855-1790647241",
+    "objects": 589,
+    "layers_written_s": {
+     "video.v1": 1.416,
+     "cameras.v1": 10.941,
+     "room.v1": 15.02,
+     "people.v1": 17.264,
+     "events.v1": 19.109,
+     "objects.v1": 19.109,
+     "outlines.v1": 19.109,
+     "objects.v2": 34.351
+    },
+    "core_outputs_ready_s": 34.351,
+    "gpu_peak_gib": [
+     33.24,
+     43.46
+    ],
+    "flags": [],
+    "fixture": {
+     "folder": "/v/layers/x7/fx-x7-001/samsclub-337",
+     "objects": 589,
+     "object_keyframes": 42,
+     "bytes": 555174308,
+     "dump_s": 2.27
+    },
+    "analysis_usd_estimate": 0.0744
+   },
+   "fixture_load_s_not_analysis": 4.1,
+   "objects_in_core": 589,
+   "ranked_attempt_list": 100,
+   "selection": {
+    "eligible": 58,
+    "not_eligible": 42,
+    "generation_views": {
+     "1": 41,
+     "2": 16,
+     "3": 1,
+     "4": 0
+    },
+    "select_s": {
+     "n": 100,
+     "median": 0.75,
+     "p10": 0.38,
+     "p90": 1.71,
+     "max": 2.06,
+     "sum": 94.5
+    }
+   },
+   "analysis_elapsed_s": 171.867,
+   "volume_commit_s": 2.33,
+   "methods": {
+    "recgen": {
+     "attempted": 58,
+     "prepare_or_input_rejected": 0,
+     "generated": 58,
+     "errors": 0,
+     "gated": 58,
+     "accepted_held_out": 36,
+     "acceptance_rate": 0.621,
+     "acceptance_rate_of_generated": 0.621,
+     "first_accepted_s": 14.686,
+     "last_accepted_s": 169.534,
+     "last_decided_s": 169.534,
+     "inference_s": {
+      "n": 58,
+      "median": 10.84,
+      "p10": 9.73,
+      "p90": 13.61,
+      "max": 23.29,
+      "sum": 657.8
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 58,
+      "median": 1.38,
+      "p10": 0.99,
+      "p90": 2.05,
+      "max": 3.55,
+      "sum": 85.8
+     },
+     "queue_wait_s": {
+      "n": 58,
+      "median": 82.22,
+      "p10": 11.44,
+      "p90": 142.5,
+      "max": 155.05,
+      "sum": 4661.1
+     },
+     "max_reserved_gib_per_process": 22.41
+    },
+    "sam3d_b": {
+     "attempted": 58,
+     "prepare_or_input_rejected": 9,
+     "generated": 49,
+     "errors": 0,
+     "gated": 49,
+     "accepted_held_out": 36,
+     "acceptance_rate": 0.621,
+     "acceptance_rate_of_generated": 0.735,
+     "first_accepted_s": 9.754,
+     "last_accepted_s": 157.646,
+     "last_decided_s": 158.411,
+     "inference_s": {
+      "n": 49,
+      "median": 6.15,
+      "p10": 4.83,
+      "p90": 7.7,
+      "max": 8.45,
+      "sum": 298.3
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 49,
+      "median": 1.65,
+      "p10": 1.14,
+      "p90": 2.42,
+      "max": 3.29,
+      "sum": 85.3
+     },
+     "queue_wait_s": {
+      "n": 49,
+      "median": 71.97,
+      "p10": 12.32,
+      "p90": 128.32,
+      "max": 144.31,
+      "sum": 3583.9
+     },
+     "max_reserved_gib_per_process": 30.17
+    },
+    "sam3d_c": {
+     "attempted": 9,
+     "prepare_or_input_rejected": 8,
+     "generated": 1,
+     "errors": 0,
+     "gated": 1,
+     "accepted_held_out": 0,
+     "acceptance_rate": 0.0,
+     "acceptance_rate_of_generated": 0.0,
+     "first_accepted_s": null,
+     "last_accepted_s": null,
+     "last_decided_s": 152.182,
+     "inference_s": {
+      "n": 1,
+      "median": 5.41,
+      "p10": 5.41,
+      "p90": 5.41,
+      "max": 5.41,
+      "sum": 5.4
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 1,
+      "median": 1.64,
+      "p10": 1.64,
+      "p90": 1.64,
+      "max": 1.64,
+      "sum": 1.6
+     },
+     "queue_wait_s": {
+      "n": 1,
+      "median": 138.73,
+      "p10": 138.73,
+      "p90": 138.73,
+      "max": 138.73,
+      "sum": 138.7
+     },
+     "max_reserved_gib_per_process": 30.02
+    },
+    "param": {
+     "attempted": 54,
+     "prepare_or_input_rejected": 0,
+     "generated": 54,
+     "errors": 0,
+     "gated": 54,
+     "accepted_held_out": 44,
+     "acceptance_rate": 0.815,
+     "acceptance_rate_of_generated": 0.815,
+     "first_accepted_s": 2.495,
+     "last_accepted_s": 6.236,
+     "last_decided_s": 6.236,
+     "inference_s": null,
+     "fit_s": {
+      "n": 54,
+      "median": 0.04,
+      "p10": 0.03,
+      "p90": 0.06,
+      "max": 0.19,
+      "sum": 2.8
+     },
+     "gate_s": {
+      "n": 54,
+      "median": 0.08,
+      "p10": 0.06,
+      "p90": 0.16,
+      "max": 0.24,
+      "sum": 4.8
+     },
+     "queue_wait_s": null,
+     "max_reserved_gib_per_process": 0
+    },
+    "sam3d_b_or_c": {
+     "attempted": 58,
+     "prepare_or_input_rejected": 8,
+     "generated": 50,
+     "errors": 0,
+     "gated": 50,
+     "accepted_held_out": 36,
+     "acceptance_rate": 0.621,
+     "acceptance_rate_of_generated": 0.72,
+     "first_accepted_s": 9.754,
+     "last_accepted_s": 157.646,
+     "last_decided_s": 158.411,
+     "inference_s": {
+      "n": 50,
+      "median": 6.09,
+      "p10": 4.83,
+      "p90": 7.69,
+      "max": 8.45,
+      "sum": 303.7
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 50,
+      "median": 1.65,
+      "p10": 1.14,
+      "p90": 2.41,
+      "max": 3.29,
+      "sum": 87.0
+     },
+     "queue_wait_s": {
+      "n": 50,
+      "median": 74.7,
+      "p10": 12.56,
+      "p90": 131.73,
+      "max": 144.31,
+      "sum": 3722.6
+     },
+     "max_reserved_gib_per_process": 30.17
+    }
+   },
+   "delivered_overlap": {
+    "publication": "913daf2a",
+    "delivered_models": 67,
+    "our_objects_matching_a_delivered_model": 29,
+    "delivered_models_matched_by_any_attempted_object": 23,
+    "recgen": {
+     "accepted": 36,
+     "accepted_matching_delivered": 11,
+     "delivered_models_covered": 9,
+     "delivered_coverage": 0.134,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 8,
+      "box": 1
+     }
+    },
+    "sam3d_b": {
+     "accepted": 36,
+     "accepted_matching_delivered": 12,
+     "delivered_models_covered": 10,
+     "delivered_coverage": 0.149,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 9,
+      "box": 1
+     }
+    },
+    "sam3d_c": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "param": {
+     "accepted": 44,
+     "accepted_matching_delivered": 13,
+     "delivered_models_covered": 11,
+     "delivered_coverage": 0.164,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 9,
+      "box": 2
+     }
+    },
+    "sam3d_b_or_c": {
+     "accepted": 36,
+     "accepted_matching_delivered": 12,
+     "delivered_models_covered": 10,
+     "delivered_coverage": 0.149,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 9,
+      "box": 1
+     }
+    },
+    "any_generator": {
+     "accepted": 43,
+     "accepted_matching_delivered": 13,
+     "delivered_models_covered": 11,
+     "delivered_coverage": 0.164,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 10,
+      "box": 1
+     }
+    },
+    "any": {
+     "accepted": 48,
+     "accepted_matching_delivered": 14,
+     "delivered_models_covered": 12,
+     "delivered_coverage": 0.179,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 10,
+      "box": 2
+     }
+    }
+   },
+   "per_gpu_peak_gib_by_stage": {
+    "x7.rank_stage": {
+     "n": 1,
+     "s": {
+      "n": 1,
+      "median": 0.86,
+      "p10": 0.86,
+      "p90": 0.86,
+      "max": 0.86,
+      "sum": 0.9
+     },
+     "peak_gib_per_gpu": [
+      52.03,
+      61.76
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.select": {
+     "n": 100,
+     "s": {
+      "n": 100,
+      "median": 0.75,
+      "p10": 0.38,
+      "p90": 1.73,
+      "max": 2.08,
+      "sum": 95.1
+     },
+     "peak_gib_per_gpu": [
+      52.03,
+      61.76
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "recgen.generate": {
+     "n": 58,
+     "s": {
+      "n": 58,
+      "median": 10.85,
+      "p10": 9.73,
+      "p90": 13.61,
+      "max": 23.29,
+      "sum": 657.8
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "sam3d.generate": {
+     "n": 50,
+     "s": {
+      "n": 50,
+      "median": 6.09,
+      "p10": 4.83,
+      "p90": 7.69,
+      "max": 8.45,
+      "sum": 303.7
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.fit": {
+     "n": 54,
+     "s": {
+      "n": 54,
+      "median": 0.08,
+      "p10": 0.06,
+      "p90": 0.16,
+      "max": 0.24,
+      "sum": 5.0
+     },
+     "peak_gib_per_gpu": [
+      52.03,
+      61.76
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.gate": {
+     "n": 108,
+     "s": {
+      "n": 108,
+      "median": 1.56,
+      "p10": 1.01,
+      "p90": 2.32,
+      "max": 3.55,
+      "sum": 172.8
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    }
+   },
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 80.0,
+     "peak_gb": 61.55,
+     "at_s": 50.88,
+     "stages_active": [
+      "recgen.generate",
+      "recgen.generate",
+      "recgen.generate",
+      "sam3d.generate",
+      "sam3d.generate",
+      "recgen.generate"
+     ]
+    },
+    {
+     "gpu": 1,
+     "total_gb": 80.0,
+     "peak_gb": 68.56,
+     "at_s": 90.867,
+     "stages_active": [
+      "sam3d.generate",
+      "recgen.generate",
+      "sam3d.generate",
+      "recgen.generate",
+      "recgen.generate",
+      "recgen.generate"
+     ]
+    }
+   ],
+   "flags_over_90": [],
+   "analysis_usd_estimate": 0.3472,
+   "contact_sheet": {
+    "file": "samsclub-337-sep5-contact.jpg",
+    "objects": 48,
+    "tiles": 116
+   },
+   "accepted_with_300px_on_grid_floor": {
+    "recgen": 23,
+    "sam3d_b": 21,
+    "sam3d_c": 0,
+    "param": 26
+   },
+   "throughput": {
+    "recgen": {
+     "generated": 58,
+     "busy_s": 166.7,
+     "objects_per_s": 0.348,
+     "first_dispatch_s": 1.6
+    },
+    "sam3d": {
+     "generated": 50,
+     "busy_s": 155.0,
+     "objects_per_s": 0.323,
+     "first_dispatch_s": 1.6
+    }
+   }
+  },
+  "walmart-190/sep15": {
+   "core": {
+    "report": "x7-walmart-190-c0761a2a-1790647291",
+    "objects": 552,
+    "layers_written_s": {
+     "video.v1": 1.797,
+     "events.v1": 11.238,
+     "cameras.v1": 15.094,
+     "room.v1": 15.094,
+     "people.v1": 17.557,
+     "objects.v1": 17.557,
+     "outlines.v1": 17.557,
+     "objects.v2": 27.943
+    },
+    "core_outputs_ready_s": 27.943,
+    "gpu_peak_gib": [
+     31.03,
+     42.99
+    ],
+    "flags": [],
+    "fixture": {
+     "folder": "/v/layers/x7/fx-x7-001/walmart-190",
+     "objects": 552,
+     "object_keyframes": 42,
+     "bytes": 508539860,
+     "dump_s": 2.05
+    },
+    "analysis_usd_estimate": 0.0606
+   },
+   "fixture_load_s_not_analysis": 6.62,
+   "objects_in_core": 552,
+   "ranked_attempt_list": 100,
+   "selection": {
+    "eligible": 1,
+    "not_eligible": 99,
+    "generation_views": {
+     "1": 1,
+     "2": 0,
+     "3": 0,
+     "4": 0
+    },
+    "select_s": {
+     "n": 100,
+     "median": 0.42,
+     "p10": 0.17,
+     "p90": 1.55,
+     "max": 1.91,
+     "sum": 61.9
+    }
+   },
+   "analysis_elapsed_s": 11.833,
+   "volume_commit_s": 0.01,
+   "methods": {
+    "recgen": {
+     "attempted": 1,
+     "prepare_or_input_rejected": 0,
+     "generated": 1,
+     "errors": 0,
+     "gated": 1,
+     "accepted_held_out": 0,
+     "acceptance_rate": 0.0,
+     "acceptance_rate_of_generated": 0.0,
+     "first_accepted_s": null,
+     "last_accepted_s": null,
+     "last_decided_s": 11.823,
+     "inference_s": {
+      "n": 1,
+      "median": 6.8,
+      "p10": 6.8,
+      "p90": 6.8,
+      "max": 6.8,
+      "sum": 6.8
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 1,
+      "median": 1.17,
+      "p10": 1.17,
+      "p90": 1.17,
+      "max": 1.17,
+      "sum": 1.2
+     },
+     "queue_wait_s": {
+      "n": 1,
+      "median": 0.0,
+      "p10": 0.0,
+      "p90": 0.0,
+      "max": 0.0,
+      "sum": 0.0
+     },
+     "max_reserved_gib_per_process": 22.41
+    },
+    "sam3d_b": {
+     "attempted": 1,
+     "prepare_or_input_rejected": 0,
+     "generated": 1,
+     "errors": 0,
+     "gated": 1,
+     "accepted_held_out": 0,
+     "acceptance_rate": 0.0,
+     "acceptance_rate_of_generated": 0.0,
+     "first_accepted_s": null,
+     "last_accepted_s": null,
+     "last_decided_s": 8.827,
+     "inference_s": {
+      "n": 1,
+      "median": 3.61,
+      "p10": 3.61,
+      "p90": 3.61,
+      "max": 3.61,
+      "sum": 3.6
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 1,
+      "median": 1.3,
+      "p10": 1.3,
+      "p90": 1.3,
+      "max": 1.3,
+      "sum": 1.3
+     },
+     "queue_wait_s": {
+      "n": 1,
+      "median": 0.03,
+      "p10": 0.03,
+      "p90": 0.03,
+      "max": 0.03,
+      "sum": 0.0
+     },
+     "max_reserved_gib_per_process": 30.17
+    },
+    "sam3d_c": {
+     "attempted": 0,
+     "prepare_or_input_rejected": 0,
+     "generated": 0,
+     "errors": 0,
+     "gated": 0,
+     "accepted_held_out": 0,
+     "acceptance_rate": 0.0,
+     "acceptance_rate_of_generated": 0.0,
+     "first_accepted_s": null,
+     "last_accepted_s": null,
+     "last_decided_s": null,
+     "inference_s": null,
+     "fit_s": null,
+     "gate_s": null,
+     "queue_wait_s": null,
+     "max_reserved_gib_per_process": null
+    },
+    "param": {
+     "attempted": 1,
+     "prepare_or_input_rejected": 0,
+     "generated": 1,
+     "errors": 0,
+     "gated": 1,
+     "accepted_held_out": 0,
+     "acceptance_rate": 0.0,
+     "acceptance_rate_of_generated": 0.0,
+     "first_accepted_s": null,
+     "last_accepted_s": null,
+     "last_decided_s": 3.915,
+     "inference_s": null,
+     "fit_s": {
+      "n": 1,
+      "median": 0.06,
+      "p10": 0.06,
+      "p90": 0.06,
+      "max": 0.06,
+      "sum": 0.1
+     },
+     "gate_s": {
+      "n": 1,
+      "median": 0.09,
+      "p10": 0.09,
+      "p90": 0.09,
+      "max": 0.09,
+      "sum": 0.1
+     },
+     "queue_wait_s": null,
+     "max_reserved_gib_per_process": 0
+    },
+    "sam3d_b_or_c": {
+     "attempted": 1,
+     "prepare_or_input_rejected": 0,
+     "generated": 1,
+     "errors": 0,
+     "gated": 1,
+     "accepted_held_out": 0,
+     "acceptance_rate": 0.0,
+     "acceptance_rate_of_generated": 0.0,
+     "first_accepted_s": null,
+     "last_accepted_s": null,
+     "last_decided_s": 8.827,
+     "inference_s": {
+      "n": 1,
+      "median": 3.61,
+      "p10": 3.61,
+      "p90": 3.61,
+      "max": 3.61,
+      "sum": 3.6
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 1,
+      "median": 1.3,
+      "p10": 1.3,
+      "p90": 1.3,
+      "max": 1.3,
+      "sum": 1.3
+     },
+     "queue_wait_s": {
+      "n": 1,
+      "median": 0.03,
+      "p10": 0.03,
+      "p90": 0.03,
+      "max": 0.03,
+      "sum": 0.0
+     },
+     "max_reserved_gib_per_process": 30.17
+    }
+   },
+   "delivered_overlap": {
+    "publication": "32cec650",
+    "delivered_models": 40,
+    "our_objects_matching_a_delivered_model": 10,
+    "delivered_models_matched_by_any_attempted_object": 8,
+    "recgen": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_b": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_c": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "param": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_b_or_c": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "any_generator": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "any": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    }
+   },
+   "per_gpu_peak_gib_by_stage": {
+    "x7.rank_stage": {
+     "n": 1,
+     "s": {
+      "n": 1,
+      "median": 0.82,
+      "p10": 0.82,
+      "p90": 0.82,
+      "max": 0.82,
+      "sum": 0.8
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.select": {
+     "n": 100,
+     "s": {
+      "n": 100,
+      "median": 0.42,
+      "p10": 0.17,
+      "p90": 1.56,
+      "max": 1.92,
+      "sum": 62.4
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "recgen.generate": {
+     "n": 1,
+     "s": {
+      "n": 1,
+      "median": 6.8,
+      "p10": 6.8,
+      "p90": 6.8,
+      "max": 6.8,
+      "sum": 6.8
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.fit": {
+     "n": 1,
+     "s": {
+      "n": 1,
+      "median": 0.1,
+      "p10": 0.1,
+      "p90": 0.1,
+      "max": 0.1,
+      "sum": 0.1
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "sam3d.generate": {
+     "n": 1,
+     "s": {
+      "n": 1,
+      "median": 3.61,
+      "p10": 3.61,
+      "p90": 3.61,
+      "max": 3.61,
+      "sum": 3.6
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.gate": {
+     "n": 2,
+     "s": {
+      "n": 2,
+      "median": 1.23,
+      "p10": 1.18,
+      "p90": 1.28,
+      "max": 1.3,
+      "sum": 2.5
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    }
+   },
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 80.0,
+     "peak_gb": 61.55,
+     "at_s": 0.053,
+     "stages_active": [
+      "x7.rank_stage"
+     ]
+    },
+    {
+     "gpu": 1,
+     "total_gb": 80.0,
+     "peak_gb": 68.56,
+     "at_s": 0.053,
+     "stages_active": [
+      "x7.rank_stage"
+     ]
+    }
+   ],
+   "flags_over_90": [],
+   "analysis_usd_estimate": 0.0239,
+   "contact_sheet": {
+    "file": "walmart-190-sep15-contact.jpg",
+    "objects": 0,
+    "tiles": 0
+   },
+   "accepted_with_300px_on_grid_floor": {
+    "recgen": 0,
+    "sam3d_b": 0,
+    "sam3d_c": 0,
+    "param": 0
+   },
+   "throughput": {}
+  },
+  "walmart-190/sep5": {
+   "core": {
+    "report": "x7-walmart-190-c0761a2a-1790647291",
+    "objects": 552,
+    "layers_written_s": {
+     "video.v1": 1.797,
+     "events.v1": 11.238,
+     "cameras.v1": 15.094,
+     "room.v1": 15.094,
+     "people.v1": 17.557,
+     "objects.v1": 17.557,
+     "outlines.v1": 17.557,
+     "objects.v2": 27.943
+    },
+    "core_outputs_ready_s": 27.943,
+    "gpu_peak_gib": [
+     31.03,
+     42.99
+    ],
+    "flags": [],
+    "fixture": {
+     "folder": "/v/layers/x7/fx-x7-001/walmart-190",
+     "objects": 552,
+     "object_keyframes": 42,
+     "bytes": 508539860,
+     "dump_s": 2.05
+    },
+    "analysis_usd_estimate": 0.0606
+   },
+   "fixture_load_s_not_analysis": 3.1,
+   "objects_in_core": 552,
+   "ranked_attempt_list": 100,
+   "selection": {
+    "eligible": 33,
+    "not_eligible": 67,
+    "generation_views": {
+     "1": 31,
+     "2": 2,
+     "3": 0,
+     "4": 0
+    },
+    "select_s": {
+     "n": 100,
+     "median": 0.44,
+     "p10": 0.18,
+     "p90": 1.59,
+     "max": 2.15,
+     "sum": 68.1
+    }
+   },
+   "analysis_elapsed_s": 82.873,
+   "volume_commit_s": 1.54,
+   "methods": {
+    "recgen": {
+     "attempted": 33,
+     "prepare_or_input_rejected": 0,
+     "generated": 33,
+     "errors": 0,
+     "gated": 33,
+     "accepted_held_out": 11,
+     "acceptance_rate": 0.333,
+     "acceptance_rate_of_generated": 0.333,
+     "first_accepted_s": 13.657,
+     "last_accepted_s": 78.24,
+     "last_decided_s": 81.334,
+     "inference_s": {
+      "n": 33,
+      "median": 8.6,
+      "p10": 7.99,
+      "p90": 10.96,
+      "max": 11.58,
+      "sum": 299.0
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 33,
+      "median": 1.18,
+      "p10": 0.91,
+      "p90": 1.59,
+      "max": 2.27,
+      "sum": 39.5
+     },
+     "queue_wait_s": {
+      "n": 33,
+      "median": 37.35,
+      "p10": 1.85,
+      "p90": 62.44,
+      "max": 69.46,
+      "sum": 1131.2
+     },
+     "max_reserved_gib_per_process": 22.41
+    },
+    "sam3d_b": {
+     "attempted": 33,
+     "prepare_or_input_rejected": 26,
+     "generated": 7,
+     "errors": 0,
+     "gated": 7,
+     "accepted_held_out": 3,
+     "acceptance_rate": 0.091,
+     "acceptance_rate_of_generated": 0.429,
+     "first_accepted_s": 16.975,
+     "last_accepted_s": 27.823,
+     "last_decided_s": 27.823,
+     "inference_s": {
+      "n": 7,
+      "median": 5.61,
+      "p10": 4.61,
+      "p90": 6.11,
+      "max": 6.68,
+      "sum": 37.8
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 7,
+      "median": 1.45,
+      "p10": 1.01,
+      "p90": 2.28,
+      "max": 2.37,
+      "sum": 10.7
+     },
+     "queue_wait_s": {
+      "n": 7,
+      "median": 10.42,
+      "p10": 3.29,
+      "p90": 16.18,
+      "max": 16.85,
+      "sum": 64.5
+     },
+     "max_reserved_gib_per_process": 30.17
+    },
+    "sam3d_c": {
+     "attempted": 26,
+     "prepare_or_input_rejected": 25,
+     "generated": 1,
+     "errors": 0,
+     "gated": 1,
+     "accepted_held_out": 0,
+     "acceptance_rate": 0.0,
+     "acceptance_rate_of_generated": 0.0,
+     "first_accepted_s": null,
+     "last_accepted_s": null,
+     "last_decided_s": 11.193,
+     "inference_s": {
+      "n": 1,
+      "median": 6.99,
+      "p10": 6.99,
+      "p90": 6.99,
+      "max": 6.99,
+      "sum": 7.0
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 1,
+      "median": 1.46,
+      "p10": 1.46,
+      "p90": 1.46,
+      "max": 1.46,
+      "sum": 1.5
+     },
+     "queue_wait_s": {
+      "n": 1,
+      "median": 0.05,
+      "p10": 0.05,
+      "p90": 0.05,
+      "max": 0.05,
+      "sum": 0.1
+     },
+     "max_reserved_gib_per_process": 30.02
+    },
+    "param": {
+     "attempted": 33,
+     "prepare_or_input_rejected": 0,
+     "generated": 33,
+     "errors": 0,
+     "gated": 33,
+     "accepted_held_out": 14,
+     "acceptance_rate": 0.424,
+     "acceptance_rate_of_generated": 0.424,
+     "first_accepted_s": 2.486,
+     "last_accepted_s": 4.742,
+     "last_decided_s": 4.742,
+     "inference_s": null,
+     "fit_s": {
+      "n": 33,
+      "median": 0.03,
+      "p10": 0.03,
+      "p90": 0.08,
+      "max": 0.11,
+      "sum": 1.3
+     },
+     "gate_s": {
+      "n": 33,
+      "median": 0.06,
+      "p10": 0.05,
+      "p90": 0.12,
+      "max": 0.15,
+      "sum": 2.4
+     },
+     "queue_wait_s": null,
+     "max_reserved_gib_per_process": 0
+    },
+    "sam3d_b_or_c": {
+     "attempted": 33,
+     "prepare_or_input_rejected": 25,
+     "generated": 8,
+     "errors": 0,
+     "gated": 8,
+     "accepted_held_out": 3,
+     "acceptance_rate": 0.091,
+     "acceptance_rate_of_generated": 0.375,
+     "first_accepted_s": 16.975,
+     "last_accepted_s": 27.823,
+     "last_decided_s": 27.823,
+     "inference_s": {
+      "n": 8,
+      "median": 5.62,
+      "p10": 4.65,
+      "p90": 6.77,
+      "max": 6.99,
+      "sum": 44.8
+     },
+     "fit_s": null,
+     "gate_s": {
+      "n": 8,
+      "median": 1.45,
+      "p10": 1.02,
+      "p90": 2.26,
+      "max": 2.37,
+      "sum": 12.2
+     },
+     "queue_wait_s": {
+      "n": 8,
+      "median": 7.99,
+      "p10": 0.05,
+      "p90": 16.07,
+      "max": 16.85,
+      "sum": 64.5
+     },
+     "max_reserved_gib_per_process": 30.17
+    }
+   },
+   "delivered_overlap": {
+    "publication": "32cec650",
+    "delivered_models": 40,
+    "our_objects_matching_a_delivered_model": 10,
+    "delivered_models_matched_by_any_attempted_object": 8,
+    "recgen": {
+     "accepted": 11,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_b": {
+     "accepted": 3,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_c": {
+     "accepted": 0,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "param": {
+     "accepted": 14,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "sam3d_b_or_c": {
+     "accepted": 3,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "any_generator": {
+     "accepted": 11,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    },
+    "any": {
+     "accepted": 14,
+     "accepted_matching_delivered": 0,
+     "delivered_models_covered": 0,
+     "delivered_coverage": 0.0,
+     "delivered_by_generator": {
+      "recgen": 0,
+      "sam3d": 0,
+      "box": 0
+     }
+    }
+   },
+   "per_gpu_peak_gib_by_stage": {
+    "x7.rank_stage": {
+     "n": 1,
+     "s": {
+      "n": 1,
+      "median": 0.82,
+      "p10": 0.82,
+      "p90": 0.82,
+      "max": 0.82,
+      "sum": 0.8
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.select": {
+     "n": 100,
+     "s": {
+      "n": 100,
+      "median": 0.44,
+      "p10": 0.18,
+      "p90": 1.6,
+      "max": 2.16,
+      "sum": 68.6
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "recgen.generate": {
+     "n": 33,
+     "s": {
+      "n": 33,
+      "median": 8.6,
+      "p10": 7.99,
+      "p90": 10.96,
+      "max": 11.58,
+      "sum": 299.0
+     },
+     "peak_gib_per_gpu": [
+      61.56,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.fit": {
+     "n": 33,
+     "s": {
+      "n": 33,
+      "median": 0.06,
+      "p10": 0.05,
+      "p90": 0.13,
+      "max": 0.15,
+      "sum": 2.5
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "sam3d.generate": {
+     "n": 8,
+     "s": {
+      "n": 8,
+      "median": 5.62,
+      "p10": 4.65,
+      "p90": 6.77,
+      "max": 6.99,
+      "sum": 44.8
+     },
+     "peak_gib_per_gpu": [
+      61.55,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    "x7.gate": {
+     "n": 41,
+     "s": {
+      "n": 41,
+      "median": 1.2,
+      "p10": 0.96,
+      "p90": 1.61,
+      "max": 2.37,
+      "sum": 51.7
+     },
+     "peak_gib_per_gpu": [
+      61.56,
+      68.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    }
+   },
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 80.0,
+     "peak_gb": 61.56,
+     "at_s": 60.015,
+     "stages_active": [
+      "recgen.generate",
+      "x7.gate",
+      "recgen.generate",
+      "recgen.generate",
+      "recgen.generate"
+     ]
+    },
+    {
+     "gpu": 1,
+     "total_gb": 80.0,
+     "peak_gb": 68.56,
+     "at_s": 0.03,
+     "stages_active": [
+      "x7.rank_stage"
+     ]
+    }
+   ],
+   "flags_over_90": [],
+   "analysis_usd_estimate": 0.1674,
+   "contact_sheet": {
+    "file": "walmart-190-sep5-contact.jpg",
+    "objects": 14,
+    "tiles": 28
+   },
+   "accepted_with_300px_on_grid_floor": {
+    "recgen": 4,
+    "sam3d_b": 3,
+    "sam3d_c": 0,
+    "param": 5
+   },
+   "throughput": {
+    "recgen": {
+     "generated": 33,
+     "busy_s": 78.1,
+     "objects_per_s": 0.423,
+     "first_dispatch_s": 2.4
+    },
+    "sam3d": {
+     "generated": 8,
+     "busy_s": 23.4,
+     "objects_per_s": 0.342,
+     "first_dispatch_s": 2.6
+    }
+   }
+  }
+ },
+ "acceptance_by_type": {
+  "sep15": {
+   "other": {
+    "recgen": {
+     "attempted": 11,
+     "accepted": 0,
+     "rate": 0.0
+    },
+    "sam3d_b": {
+     "attempted": 11,
+     "accepted": 0,
+     "rate": 0.0
+    },
+    "sam3d_c": {
+     "attempted": 9,
+     "accepted": 0,
+     "rate": 0.0
+    }
+   },
+   "partition": {
+    "recgen": {
+     "attempted": 2,
+     "accepted": 2,
+     "rate": 1.0
+    },
+    "sam3d_b": {
+     "attempted": 2,
+     "accepted": 1,
+     "rate": 0.5
+    },
+    "param": {
+     "attempted": 2,
+     "accepted": 2,
+     "rate": 1.0
+    }
+   },
+   "machine": {
+    "recgen": {
+     "attempted": 1,
+     "accepted": 1,
+     "rate": 1.0
+    },
+    "sam3d_b": {
+     "attempted": 1,
+     "accepted": 1,
+     "rate": 1.0
+    }
+   },
+   "box": {
+    "recgen": {
+     "attempted": 9,
+     "accepted": 3,
+     "rate": 0.333
+    },
+    "sam3d_b": {
+     "attempted": 9,
+     "accepted": 4,
+     "rate": 0.444
+    },
+    "param": {
+     "attempted": 9,
+     "accepted": 5,
+     "rate": 0.556
+    },
+    "sam3d_c": {
+     "attempted": 1,
+     "accepted": 0,
+     "rate": 0.0
+    }
+   }
+  },
+  "sep5": {
+   "other": {
+    "recgen": {
+     "attempted": 25,
+     "accepted": 3,
+     "rate": 0.12
+    },
+    "sam3d_b": {
+     "attempted": 25,
+     "accepted": 3,
+     "rate": 0.12
+    },
+    "sam3d_c": {
+     "attempted": 16,
+     "accepted": 0,
+     "rate": 0.0
+    }
+   },
+   "partition": {
+    "recgen": {
+     "attempted": 4,
+     "accepted": 2,
+     "rate": 0.5
+    },
+    "sam3d_b": {
+     "attempted": 4,
+     "accepted": 2,
+     "rate": 0.5
+    },
+    "param": {
+     "attempted": 4,
+     "accepted": 2,
+     "rate": 0.5
+    }
+   },
+   "machine": {
+    "recgen": {
+     "attempted": 1,
+     "accepted": 0,
+     "rate": 0.0
+    },
+    "sam3d_b": {
+     "attempted": 1,
+     "accepted": 0,
+     "rate": 0.0
+    }
+   },
+   "box": {
+    "recgen": {
+     "attempted": 87,
+     "accepted": 45,
+     "rate": 0.517
+    },
+    "sam3d_b": {
+     "attempted": 87,
+     "accepted": 37,
+     "rate": 0.425
+    },
+    "param": {
+     "attempted": 87,
+     "accepted": 58,
+     "rate": 0.667
+    },
+    "sam3d_c": {
+     "attempted": 36,
+     "accepted": 0,
+     "rate": 0.0
+    }
+   },
+   "shelf": {
+    "recgen": {
+     "attempted": 4,
+     "accepted": 0,
+     "rate": 0.0
+    },
+    "sam3d_b": {
+     "attempted": 4,
+     "accepted": 0,
+     "rate": 0.0
+    },
+    "param": {
+     "attempted": 4,
+     "accepted": 0,
+     "rate": 0.0
+    },
+    "sam3d_c": {
+     "attempted": 1,
+     "accepted": 0,
+     "rate": 0.0
+    }
+   }
+  }
+ },
+ "facts": [
+  {
+   "video": "me340-165/sep15",
+   "object": "obj-1-140",
+   "label": "control panel",
+   "kind": "partition",
+   "facts": {
+    "tilt_from_vertical_deg": {
+     "value": 0.077,
+     "pm": 0.163
+    },
+    "top_above_floor_m": {
+     "value": 2.01,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 1.269,
+     "pm": 0.002
+    }
+   },
+   "observed_s": [
+    7.81,
+    20.59
+   ],
+   "evidence_frames": {
+    "fit": [
+     617,
+     504
+    ],
+    "held_out": 328
+   },
+   "held_out_iou": 0.7455357142857143,
+   "held_out_depth_median": 0.003253909759223461,
+   "residual_median_m": 0.0206,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "me340-165/sep15",
+   "object": "obj-1-143",
+   "label": "clipboard",
+   "kind": "partition",
+   "facts": {
+    "tilt_from_vertical_deg": {
+     "value": 0.366,
+     "pm": 0.035
+    },
+    "top_above_floor_m": {
+     "value": 1.802,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 1.026,
+     "pm": 0.003
+    }
+   },
+   "observed_s": [
+    7.81,
+    18.72
+   ],
+   "evidence_frames": {
+    "fit": [
+     362
+    ],
+    "held_out": 542
+   },
+   "held_out_iou": 0.7878172588832487,
+   "held_out_depth_median": 0.02568773180246353,
+   "residual_median_m": 0.0025,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "me340-165/sep5",
+   "object": "obj-1-140",
+   "label": "control panel",
+   "kind": "partition",
+   "facts": {
+    "tilt_from_vertical_deg": {
+     "value": 1.73,
+     "pm": 0.124
+    },
+    "top_above_floor_m": {
+     "value": 2.008,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 1.268,
+     "pm": 0.002
+    }
+   },
+   "observed_s": [
+    7.81,
+    20.59
+   ],
+   "evidence_frames": {
+    "fit": [
+     617,
+     577,
+     524,
+     486
+    ],
+    "held_out": 450
+   },
+   "held_out_iou": 0.7669172932330827,
+   "held_out_depth_median": 0.0043876878917217255,
+   "residual_median_m": 0.0203,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "me340-165/sep5",
+   "object": "obj-1-143",
+   "label": "clipboard",
+   "kind": "partition",
+   "facts": {
+    "tilt_from_vertical_deg": {
+     "value": 0.695,
+     "pm": 0.106
+    },
+    "top_above_floor_m": {
+     "value": 1.809,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 1.034,
+     "pm": 0.002
+    }
+   },
+   "observed_s": [
+    7.81,
+    18.72
+   ],
+   "evidence_frames": {
+    "fit": [
+     362,
+     437,
+     504
+    ],
+    "held_out": 542
+   },
+   "held_out_iou": 0.9263736263736264,
+   "held_out_depth_median": 0.009645186364650726,
+   "residual_median_m": 0.0326,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep15",
+   "object": "obj-1-389",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.905,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.573,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.417,
+      0.02
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    27.44
+   ],
+   "evidence_frames": {
+    "fit": [
+     667
+    ],
+    "held_out": 540
+   },
+   "held_out_iou": 0.7870370370370371,
+   "held_out_depth_median": 0.0021050083450973034,
+   "residual_median_m": 0.0051,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep15",
+   "object": "obj-1-390",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.609,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 1.276,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.416,
+      0.031
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    27.44
+   ],
+   "evidence_frames": {
+    "fit": [
+     667
+    ],
+    "held_out": 540
+   },
+   "held_out_iou": 0.8159203980099502,
+   "held_out_depth_median": 0.0024460633285343647,
+   "residual_median_m": 0.0092,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep15",
+   "object": "obj-1-394",
+   "label": "package",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.261,
+     "pm": 0.005
+    },
+    "bottom_above_floor_m": {
+     "value": 0.928,
+     "pm": 0.005
+    },
+    "footprint_m": {
+     "value": [
+      0.381,
+      0.02
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    27.44
+   ],
+   "evidence_frames": {
+    "fit": [
+     667
+    ],
+    "held_out": 540
+   },
+   "held_out_iou": 0.8112244897959183,
+   "held_out_depth_median": 0.0021133306436240673,
+   "residual_median_m": 0.0052,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep15",
+   "object": "obj-1-494",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.146,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.841,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.073,
+      0.317
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    24.68,
+    29.0
+   ],
+   "evidence_frames": {
+    "fit": [
+     706
+    ],
+    "held_out": 617
+   },
+   "held_out_iou": 0.7,
+   "held_out_depth_median": 0.011678799986839294,
+   "residual_median_m": 0.0067,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep15",
+   "object": "obj-1-493",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.453,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 1.154,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.04,
+      0.367
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    24.68,
+    28.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     706
+    ],
+    "held_out": 635
+   },
+   "held_out_iou": 0.8301158301158301,
+   "held_out_depth_median": 0.019811229780316353,
+   "residual_median_m": 0.0098,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-194",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.72,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 1.576,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.419,
+      0.718
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    7.92,
+    15.12
+   ],
+   "evidence_frames": {
+    "fit": [
+     344
+    ],
+    "held_out": 198
+   },
+   "held_out_iou": 0.7365269461077845,
+   "held_out_depth_median": 0.005244239699095488,
+   "residual_median_m": 0.0175,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-386",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.601,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.238,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      1.233,
+      0.084
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    28.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     648,
+     617
+    ],
+    "held_out": 558
+   },
+   "held_out_iou": 0.9469026548672567,
+   "held_out_depth_median": 0.007136273197829723,
+   "residual_median_m": 0.0248,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-32",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.949,
+     "pm": 0.003
+    },
+    "bottom_above_floor_m": {
+     "value": 0.262,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.036,
+      0.496
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.2,
+    6.56
+   ],
+   "evidence_frames": {
+    "fit": [
+     108
+    ],
+    "held_out": 36
+   },
+   "held_out_iou": 0.8928,
+   "held_out_depth_median": 0.0038397093303501606,
+   "residual_median_m": 0.0098,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-389",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.905,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 0.574,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.444,
+      0.029
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    27.44
+   ],
+   "evidence_frames": {
+    "fit": [
+     667,
+     635
+    ],
+    "held_out": 580
+   },
+   "held_out_iou": 0.8531468531468531,
+   "held_out_depth_median": 0.0007436935557052493,
+   "residual_median_m": 0.005,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-390",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.608,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 1.277,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.429,
+      0.03
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    27.44
+   ],
+   "evidence_frames": {
+    "fit": [
+     667,
+     635
+    ],
+    "held_out": 558
+   },
+   "held_out_iou": 0.9113924050632911,
+   "held_out_depth_median": 0.0006632718723267317,
+   "residual_median_m": 0.0101,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-394",
+   "label": "package",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.263,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 0.93,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.405,
+      0.03
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    27.44
+   ],
+   "evidence_frames": {
+    "fit": [
+     667,
+     635
+    ],
+    "held_out": 540
+   },
+   "held_out_iou": 0.8629441624365483,
+   "held_out_depth_median": 0.0033106072805821896,
+   "residual_median_m": 0.007,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-422",
+   "label": "tissue box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.984,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 1.72,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.494,
+      0.323
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    22.32,
+    29.6
+   ],
+   "evidence_frames": {
+    "fit": [
+     706,
+     667,
+     740
+    ],
+    "held_out": 617
+   },
+   "held_out_iou": 0.7768595041322314,
+   "held_out_depth_median": 0.007028450723737478,
+   "residual_median_m": 0.0239,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-33",
+   "label": "roll of paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.346,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 1.659,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.179,
+      0.427
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.2,
+    6.56
+   ],
+   "evidence_frames": {
+    "fit": [
+     126
+    ],
+    "held_out": 36
+   },
+   "held_out_iou": 0.6763754045307443,
+   "held_out_depth_median": 0.00642472505569458,
+   "residual_median_m": 0.0176,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-37",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.957,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.266,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.033,
+      0.489
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.2,
+    5.8
+   ],
+   "evidence_frames": {
+    "fit": [
+     95
+    ],
+    "held_out": 5
+   },
+   "held_out_iou": 0.8808510638297873,
+   "held_out_depth_median": 0.0010001367190852761,
+   "residual_median_m": 0.007,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-43",
+   "label": "bounty paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.961,
+     "pm": 0.003
+    },
+    "bottom_above_floor_m": {
+     "value": 0.261,
+     "pm": 0.004
+    },
+    "footprint_m": {
+     "value": [
+      0.054,
+      0.318
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.2,
+    6.56
+   ],
+   "evidence_frames": {
+    "fit": [
+     108
+    ],
+    "held_out": 36
+   },
+   "held_out_iou": 0.7105263157894737,
+   "held_out_depth_median": 0.0045141009613871574,
+   "residual_median_m": 0.0102,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-48",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.328,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 1.634,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.059,
+      0.327
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.2,
+    5.8
+   ],
+   "evidence_frames": {
+    "fit": [
+     145
+    ],
+    "held_out": 19
+   },
+   "held_out_iou": 0.8010335917312662,
+   "held_out_depth_median": 0.0010707145556807518,
+   "residual_median_m": 0.0164,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-49",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.635,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.982,
+     "pm": 0.003
+    },
+    "footprint_m": {
+     "value": [
+      0.065,
+      0.361
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.2,
+    6.56
+   ],
+   "evidence_frames": {
+    "fit": [
+     108
+    ],
+    "held_out": 19
+   },
+   "held_out_iou": 0.8217054263565892,
+   "held_out_depth_median": 0.0014764892403036356,
+   "residual_median_m": 0.02,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-392",
+   "label": "package",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.907,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 0.579,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.053,
+      0.368
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    26.68
+   ],
+   "evidence_frames": {
+    "fit": [
+     635,
+     599
+    ],
+    "held_out": 540
+   },
+   "held_out_iou": 0.796875,
+   "held_out_depth_median": 0.007726683747023344,
+   "residual_median_m": 0.0077,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-516",
+   "label": "tissue box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.122,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 0.827,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.288,
+      0.151
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    23.96,
+    29.6
+   ],
+   "evidence_frames": {
+    "fit": [
+     706,
+     667
+    ],
+    "held_out": 617
+   },
+   "held_out_iou": 0.8922413793103449,
+   "held_out_depth_median": 0.0015965556958690286,
+   "residual_median_m": 0.0087,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-40",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.643,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.977,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.051,
+      0.497
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.2,
+    5.04
+   ],
+   "evidence_frames": {
+    "fit": [
+     108
+    ],
+    "held_out": 19
+   },
+   "held_out_iou": 0.913894324853229,
+   "held_out_depth_median": 0.0011769873090088367,
+   "residual_median_m": 0.014,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-378",
+   "label": "pallet",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.824,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 2.692,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.044,
+      0.858
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    25.92
+   ],
+   "evidence_frames": {
+    "fit": [
+     617,
+     580
+    ],
+    "held_out": 524
+   },
+   "held_out_iou": 0.6708074534161491,
+   "held_out_depth_median": 0.0038684799801558256,
+   "residual_median_m": 0.0113,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-403",
+   "label": "tissues",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 3.928,
+     "pm": 0.006
+    },
+    "bottom_above_floor_m": {
+     "value": 2.99,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.045,
+      0.943
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    22.32,
+    27.44
+   ],
+   "evidence_frames": {
+    "fit": [
+     617
+    ],
+    "held_out": 558
+   },
+   "held_out_iou": 0.863568215892054,
+   "held_out_depth_median": 0.0022356598637998104,
+   "residual_median_m": 0.0082,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-103",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.323,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.259,
+     "pm": 0.003
+    },
+    "footprint_m": {
+     "value": [
+      0.961,
+      1.491
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    3.8,
+    7.92
+   ],
+   "evidence_frames": {
+    "fit": [
+     108
+    ],
+    "held_out": 145
+   },
+   "held_out_iou": 0.7224160750812176,
+   "held_out_depth_median": 0.018847042694687843,
+   "residual_median_m": 0.0737,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-166",
+   "label": "pallet jack",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.848,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 2.705,
+     "pm": 0.003
+    },
+    "footprint_m": {
+     "value": [
+      0.094,
+      1.35
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    6.56,
+    11.0
+   ],
+   "evidence_frames": {
+    "fit": [
+     254
+    ],
+    "held_out": 221
+   },
+   "held_out_iou": 0.6533333333333333,
+   "held_out_depth_median": 0.022486070170998573,
+   "residual_median_m": 0.0203,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-34",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.634,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.956,
+     "pm": 0.003
+    },
+    "footprint_m": {
+     "value": [
+      0.062,
+      0.631
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.2,
+    4.32
+   ],
+   "evidence_frames": {
+    "fit": [
+     95
+    ],
+    "held_out": 36
+   },
+   "held_out_iou": 0.9038208168642952,
+   "held_out_depth_median": 0.0004457028699107468,
+   "residual_median_m": 0.0166,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-39",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.32,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 1.664,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.077,
+      0.629
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.2,
+    4.32
+   ],
+   "evidence_frames": {
+    "fit": [
+     95
+    ],
+    "held_out": 36
+   },
+   "held_out_iou": 0.9148936170212766,
+   "held_out_depth_median": 0.0015073041431605816,
+   "residual_median_m": 0.0065,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-53",
+   "label": "pallet",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.86,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 2.734,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.085,
+      1.282
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.76,
+    6.56
+   ],
+   "evidence_frames": {
+    "fit": [
+     126,
+     19
+    ],
+    "held_out": 77
+   },
+   "held_out_iou": 0.7457627118644068,
+   "held_out_depth_median": 0.0030467831529676914,
+   "residual_median_m": 0.0178,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-76",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.953,
+     "pm": 0.004
+    },
+    "bottom_above_floor_m": {
+     "value": 0.253,
+     "pm": 0.003
+    },
+    "footprint_m": {
+     "value": [
+      0.045,
+      0.506
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    1.44,
+    6.56
+   ],
+   "evidence_frames": {
+    "fit": [
+     108
+    ],
+    "held_out": 59
+   },
+   "held_out_iou": 0.796037296037296,
+   "held_out_depth_median": 0.0028850785456597805,
+   "residual_median_m": 0.0076,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-301",
+   "label": "package of tissues",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.734,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 1.465,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.548,
+      0.295
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    17.44,
+    21.6
+   ],
+   "evidence_frames": {
+    "fit": [
+     524
+    ],
+    "held_out": 455
+   },
+   "held_out_iou": 0.8951965065502183,
+   "held_out_depth_median": 0.006329661700874567,
+   "residual_median_m": 0.0112,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-379",
+   "label": "spill",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.208,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.039,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.092,
+      1.006
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    25.92
+   ],
+   "evidence_frames": {
+    "fit": [
+     580
+    ],
+    "held_out": 524
+   },
+   "held_out_iou": 0.7248677248677249,
+   "held_out_depth_median": 0.01117877196520567,
+   "residual_median_m": 0.0173,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-395",
+   "label": "package",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.264,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 0.925,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.39,
+      0.022
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    26.68
+   ],
+   "evidence_frames": {
+    "fit": [
+     635
+    ],
+    "held_out": 558
+   },
+   "held_out_iou": 0.7407407407407407,
+   "held_out_depth_median": 0.000803900882601738,
+   "residual_median_m": 0.0057,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-451",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.309,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.764,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.136,
+      0.988
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    23.2,
+    27.44
+   ],
+   "evidence_frames": {
+    "fit": [
+     648
+    ],
+    "held_out": 599
+   },
+   "held_out_iou": 0.6696696696696697,
+   "held_out_depth_median": 0.002614872995764017,
+   "residual_median_m": 0.0069,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-471",
+   "label": "napkin box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.604,
+     "pm": 0.003
+    },
+    "bottom_above_floor_m": {
+     "value": 1.328,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.023,
+      0.544
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    23.2,
+    27.44
+   ],
+   "evidence_frames": {
+    "fit": [
+     667,
+     635
+    ],
+    "held_out": 580
+   },
+   "held_out_iou": 0.8167539267015707,
+   "held_out_depth_median": 0.0022985581308603287,
+   "residual_median_m": 0.0065,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-494",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.146,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.836,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.074,
+      0.33
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    24.68,
+    29.0
+   ],
+   "evidence_frames": {
+    "fit": [
+     706,
+     686
+    ],
+    "held_out": 648
+   },
+   "held_out_iou": 0.713855421686747,
+   "held_out_depth_median": 0.011910996399819851,
+   "residual_median_m": 0.0076,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-114",
+   "label": "tissue box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.289,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.95,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.05,
+      0.463
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    3.8,
+    7.92
+   ],
+   "evidence_frames": {
+    "fit": [
+     164
+    ],
+    "held_out": 95
+   },
+   "held_out_iou": 0.66,
+   "held_out_depth_median": 0.00170559948310256,
+   "residual_median_m": 0.006,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-119",
+   "label": "towel package",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.932,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.598,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.054,
+      0.828
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    3.8,
+    7.92
+   ],
+   "evidence_frames": {
+    "fit": [
+     164
+    ],
+    "held_out": 108
+   },
+   "held_out_iou": 0.759581881533101,
+   "held_out_depth_median": 0.003307186532765627,
+   "residual_median_m": 0.0132,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-126",
+   "label": "towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.315,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 1.995,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.607,
+      0.702
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    3.8,
+    7.92
+   ],
+   "evidence_frames": {
+    "fit": [
+     164
+    ],
+    "held_out": 95
+   },
+   "held_out_iou": 0.6983333333333334,
+   "held_out_depth_median": 0.002120701130479574,
+   "residual_median_m": 0.0087,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-54",
+   "label": "pallet",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.253,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.065,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.181,
+      1.262
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    0.76,
+    5.8
+   ],
+   "evidence_frames": {
+    "fit": [
+     95
+    ],
+    "held_out": 19
+   },
+   "held_out_iou": 0.7817745803357314,
+   "held_out_depth_median": 0.006777321919798851,
+   "residual_median_m": 0.02,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-71",
+   "label": "pallet",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.234,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.046,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.194,
+      1.366
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    2.36,
+    5.8
+   ],
+   "evidence_frames": {
+    "fit": [
+     77
+    ],
+    "held_out": 126
+   },
+   "held_out_iou": 0.7233082706766917,
+   "held_out_depth_median": 0.01743803545832634,
+   "residual_median_m": 0.0211,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-86",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.633,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.983,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.047,
+      0.338
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    2.36,
+    6.56
+   ],
+   "evidence_frames": {
+    "fit": [
+     164
+    ],
+    "held_out": 59
+   },
+   "held_out_iou": 0.7237762237762237,
+   "held_out_depth_median": 0.004955514334142208,
+   "residual_median_m": 0.006,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-0-91",
+   "label": "paper towels",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.631,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.981,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.03,
+      0.325
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    2.36,
+    6.56
+   ],
+   "evidence_frames": {
+    "fit": [
+     164
+    ],
+    "held_out": 59
+   },
+   "held_out_iou": 0.6862385321100918,
+   "held_out_depth_median": 0.006854447070509195,
+   "residual_median_m": 0.0071,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-381",
+   "label": "pallet jack",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.843,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 2.692,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.153,
+      0.924
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    20.96,
+    24.68
+   ],
+   "evidence_frames": {
+    "fit": [
+     580
+    ],
+    "held_out": 540
+   },
+   "held_out_iou": 0.731629392971246,
+   "held_out_depth_median": 0.013238116167485714,
+   "residual_median_m": 0.0235,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-462",
+   "label": "napkin box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.769,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.527,
+     "pm": 0.003
+    },
+    "footprint_m": {
+     "value": [
+      0.119,
+      0.347
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    23.2,
+    26.68
+   ],
+   "evidence_frames": {
+    "fit": [
+     635
+    ],
+    "held_out": 599
+   },
+   "held_out_iou": 0.7910447761194029,
+   "held_out_depth_median": 0.01023882906883955,
+   "residual_median_m": 0.0053,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-467",
+   "label": "napkin box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.615,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 1.345,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.158,
+      0.386
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    23.2,
+    26.68
+   ],
+   "evidence_frames": {
+    "fit": [
+     648
+    ],
+    "held_out": 617
+   },
+   "held_out_iou": 0.7957371225577264,
+   "held_out_depth_median": 0.003976296633481979,
+   "residual_median_m": 0.0058,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-469",
+   "label": "napkin box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.329,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 1.059,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.127,
+      0.438
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    23.2,
+    26.68
+   ],
+   "evidence_frames": {
+    "fit": [
+     648
+    ],
+    "held_out": 617
+   },
+   "held_out_iou": 0.8249566724436742,
+   "held_out_depth_median": 0.004382618702948093,
+   "residual_median_m": 0.0059,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-493",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.452,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 1.151,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.045,
+      0.372
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    24.68,
+    28.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     706,
+     686
+    ],
+    "held_out": 648
+   },
+   "held_out_iou": 0.7388888888888889,
+   "held_out_depth_median": 0.014272443950176239,
+   "residual_median_m": 0.0088,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-498",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.821,
+     "pm": 0.003
+    },
+    "bottom_above_floor_m": {
+     "value": 0.522,
+     "pm": 0.003
+    },
+    "footprint_m": {
+     "value": [
+      0.02,
+      0.323
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    24.68,
+    28.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     667
+    ],
+    "held_out": 617
+   },
+   "held_out_iou": 0.7560975609756098,
+   "held_out_depth_median": 0.0006753819761797786,
+   "residual_median_m": 0.0018,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-502",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.131,
+     "pm": 0.003
+    },
+    "bottom_above_floor_m": {
+     "value": 0.826,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.407,
+      0.038
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    24.68,
+    28.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     686
+    ],
+    "held_out": 648
+   },
+   "held_out_iou": 0.7787234042553192,
+   "held_out_depth_median": 0.0077658104710280895,
+   "residual_median_m": 0.0064,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "samsclub-337/sep5",
+   "object": "obj-1-506",
+   "label": "carton",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.136,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.83,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.02,
+      0.325
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    24.68,
+    28.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     686
+    ],
+    "held_out": 648
+   },
+   "held_out_iou": 0.8617021276595744,
+   "held_out_depth_median": 0.0033004404976963997,
+   "residual_median_m": 0.005,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-174",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.402,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.228,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.329,
+      0.079
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    7.36,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     311
+    ],
+    "held_out": 364
+   },
+   "held_out_iou": 0.6706730769230769,
+   "held_out_depth_median": 0.004115012940019369,
+   "residual_median_m": 0.0147,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-203",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.1,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.949,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.314,
+      0.08
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    8.0,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     381
+    ],
+    "held_out": 311
+   },
+   "held_out_iou": 0.8830409356725146,
+   "held_out_depth_median": 0.002856418490409851,
+   "residual_median_m": 0.0125,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-200",
+   "label": "shoe box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.094,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 0.939,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.324,
+      0.079
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    8.0,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     364
+    ],
+    "held_out": 311
+   },
+   "held_out_iou": 0.8433734939759037,
+   "held_out_depth_median": 0.0032030250877141953,
+   "residual_median_m": 0.0127,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-172",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.557,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.393,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.334,
+      0.198
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    7.36,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     311
+    ],
+    "held_out": 381
+   },
+   "held_out_iou": 0.811864406779661,
+   "held_out_depth_median": 0.006373843643814325,
+   "residual_median_m": 0.007,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-207",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.367,
+     "pm": 0.003
+    },
+    "bottom_above_floor_m": {
+     "value": 0.218,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.379,
+      0.047
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    8.0,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     381
+    ],
+    "held_out": 290
+   },
+   "held_out_iou": 0.7365853658536585,
+   "held_out_depth_median": 0.001247314503416419,
+   "residual_median_m": 0.0063,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-268",
+   "label": "boot box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.367,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.236,
+     "pm": 0.002
+    },
+    "footprint_m": {
+     "value": [
+      0.384,
+      0.029
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    10.28,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     381
+    ],
+    "held_out": 311
+   },
+   "held_out_iou": 0.7285067873303167,
+   "held_out_depth_median": 0.005614920053631067,
+   "residual_median_m": 0.0079,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-274",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.27,
+     "pm": 0.004
+    },
+    "bottom_above_floor_m": {
+     "value": 2.066,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.062,
+      0.355
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    10.28,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     364
+    ],
+    "held_out": 290
+   },
+   "held_out_iou": 0.8181818181818182,
+   "held_out_depth_median": 0.005270969122648239,
+   "residual_median_m": 0.0127,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-291",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.285,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 1.114,
+     "pm": 0.003
+    },
+    "footprint_m": {
+     "value": [
+      0.405,
+      0.066
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    11.6,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     381
+    ],
+    "held_out": 329
+   },
+   "held_out_iou": 0.8136882129277566,
+   "held_out_depth_median": 0.0034735524095594883,
+   "residual_median_m": 0.0103,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-1-516",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.565,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.22,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.332,
+      0.186
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    26.84,
+    29.68
+   ],
+   "evidence_frames": {
+    "fit": [
+     742,
+     720
+    ],
+    "held_out": 684
+   },
+   "held_out_iou": 0.6915887850467289,
+   "held_out_depth_median": 0.0068953074514865875,
+   "residual_median_m": 0.0159,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-1-517",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.565,
+     "pm": 0.001
+    },
+    "bottom_above_floor_m": {
+     "value": 0.217,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.202,
+      0.321
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    26.84,
+    29.68
+   ],
+   "evidence_frames": {
+    "fit": [
+     720,
+     742
+    ],
+    "held_out": 684
+   },
+   "held_out_iou": 0.775894538606403,
+   "held_out_depth_median": 0.003089300822466612,
+   "residual_median_m": 0.0126,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-324",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.988,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 1.837,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.286,
+      0.177
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    12.44,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     364
+    ],
+    "held_out": 311
+   },
+   "held_out_iou": 0.9197080291970803,
+   "held_out_depth_median": 0.007354768458753824,
+   "residual_median_m": 0.0118,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-314",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 1.839,
+     "pm": 0.0
+    },
+    "bottom_above_floor_m": {
+     "value": 1.699,
+     "pm": 0.0
+    },
+    "footprint_m": {
+     "value": [
+      0.328,
+      0.047
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    12.44,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     329
+    ],
+    "held_out": 381
+   },
+   "held_out_iou": 0.8527918781725888,
+   "held_out_depth_median": 0.004102714359760284,
+   "residual_median_m": 0.0122,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-0-346",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 0.682,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 0.556,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.256,
+      0.178
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    13.16,
+    15.24
+   ],
+   "evidence_frames": {
+    "fit": [
+     381
+    ],
+    "held_out": 329
+   },
+   "held_out_iou": 0.7245508982035929,
+   "held_out_depth_median": 0.00741025572642684,
+   "residual_median_m": 0.0145,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  },
+  {
+   "video": "walmart-190/sep5",
+   "object": "obj-1-461",
+   "label": "box",
+   "kind": "box",
+   "facts": {
+    "top_above_floor_m": {
+     "value": 2.133,
+     "pm": 0.002
+    },
+    "bottom_above_floor_m": {
+     "value": 1.929,
+     "pm": 0.001
+    },
+    "footprint_m": {
+     "value": [
+      0.04,
+      0.302
+     ],
+     "pm": null
+    }
+   },
+   "observed_s": [
+    18.92,
+    20.32
+   ],
+   "evidence_frames": {
+    "fit": [
+     508
+    ],
+    "held_out": 490
+   },
+   "held_out_iou": 0.7013888888888888,
+   "held_out_depth_median": 0.015909504145383835,
+   "residual_median_m": 0.0089,
+   "status": "estimated (scale from floor plane + assumed 1.6 m camera height)",
+   "pm_meaning": "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+  }
+ ],
+ "spend_usd": {
+  "core_container_usd": 0.564,
+  "models_container_usd": 0.55,
+  "models2_container_usd": 1.209,
+  "smoke_container_usd": 0.324,
+  "total": 2.647
+ },
+ "recommendation": {
+  "basis": "acceptance_by_type (held-out gate, area-equivalent floor), timing_model; sep5 arm has the most objects, sep15 is the spec",
+  "box (carton, package, pallet, bin, stacked boxes)": {
+   "first": "param box",
+   "then_display": "recgen",
+   "numbers": {
+    "sep5": {
+     "recgen": {
+      "attempted": 87,
+      "accepted": 45,
+      "rate": 0.517
+     },
+     "sam3d_b": {
+      "attempted": 87,
+      "accepted": 37,
+      "rate": 0.425
+     },
+     "param": {
+      "attempted": 87,
+      "accepted": 58,
+      "rate": 0.667
+     },
+     "sam3d_c": {
+      "attempted": 36,
+      "accepted": 0,
+      "rate": 0.0
+     }
+    },
+    "sep15": {
+     "recgen": {
+      "attempted": 9,
+      "accepted": 3,
+      "rate": 0.333
+     },
+     "sam3d_b": {
+      "attempted": 9,
+      "accepted": 4,
+      "rate": 0.444
+     },
+     "param": {
+      "attempted": 9,
+      "accepted": 5,
+      "rate": 0.556
+     },
+     "sam3d_c": {
+      "attempted": 1,
+      "accepted": 0,
+      "rate": 0.0
+     }
+    }
+   }
+  },
+  "partition (panel, board, door, sign-like planes)": {
+   "first": "param plane (gives tilt)",
+   "then_display": "recgen",
+   "numbers": {
+    "sep5": {
+     "recgen": {
+      "attempted": 4,
+      "accepted": 2,
+      "rate": 0.5
+     },
+     "sam3d_b": {
+      "attempted": 4,
+      "accepted": 2,
+      "rate": 0.5
+     },
+     "param": {
+      "attempted": 4,
+      "accepted": 2,
+      "rate": 0.5
+     }
+    },
+    "sep15": {
+     "recgen": {
+      "attempted": 2,
+      "accepted": 2,
+      "rate": 1.0
+     },
+     "sam3d_b": {
+      "attempted": 2,
+      "accepted": 1,
+      "rate": 0.5
+     },
+     "param": {
+      "attempted": 2,
+      "accepted": 2,
+      "rate": 1.0
+     }
+    }
+   }
+  },
+  "shelf / rack": {
+   "first": "none accepted by any method: do not generate; fit uprights/beams instead (not done here)",
+   "numbers": {
+    "sep5": {
+     "recgen": {
+      "attempted": 4,
+      "accepted": 0,
+      "rate": 0.0
+     },
+     "sam3d_b": {
+      "attempted": 4,
+      "accepted": 0,
+      "rate": 0.0
+     },
+     "param": {
+      "attempted": 4,
+      "accepted": 0,
+      "rate": 0.0
+     },
+     "sam3d_c": {
+      "attempted": 1,
+      "accepted": 0,
+      "rate": 0.0
+     }
+    }
+   }
+  },
+  "machine": {
+   "first": "recgen or sam3d_b (1 object each arm: too few to rank)",
+   "numbers": {
+    "sep5": {
+     "recgen": {
+      "attempted": 1,
+      "accepted": 0,
+      "rate": 0.0
+     },
+     "sam3d_b": {
+      "attempted": 1,
+      "accepted": 0,
+      "rate": 0.0
+     }
+    },
+    "sep15": {
+     "recgen": {
+      "attempted": 1,
+      "accepted": 1,
+      "rate": 1.0
+     },
+     "sam3d_b": {
+      "attempted": 1,
+      "accepted": 1,
+      "rate": 1.0
+     }
+    }
+   }
+  },
+  "post": {
+   "first": "param cylinder (implemented, self-checked only: no post among the attempted objects)"
+  },
+  "other (tools, cables, handles, small parts)": {
+   "first": "skip 3D generation (2D outlines only)",
+   "numbers": {
+    "sep5": {
+     "recgen": {
+      "attempted": 25,
+      "accepted": 3,
+      "rate": 0.12
+     },
+     "sam3d_b": {
+      "attempted": 25,
+      "accepted": 3,
+      "rate": 0.12
+     },
+     "sam3d_c": {
+      "attempted": 16,
+      "accepted": 0,
+      "rate": 0.0
+     }
+    },
+    "sep15": {
+     "recgen": {
+      "attempted": 11,
+      "accepted": 0,
+      "rate": 0.0
+     },
+     "sam3d_b": {
+      "attempted": 11,
+      "accepted": 0,
+      "rate": 0.0
+     },
+     "sam3d_c": {
+      "attempted": 9,
+      "accepted": 0,
+      "rate": 0.0
+     }
+    }
+   }
+  },
+  "sam3d_c (next view on a prepare rejection)": "drop: almost every rejection is small in every view",
+  "expected_time_2xA100_s": {
+   "20": {
+    "recgen_s": 61.0,
+    "sam3d_s": 57.0,
+    "param_s": 6.236
+   },
+   "40": {
+    "recgen_s": 118.0,
+    "sam3d_s": 110.0,
+    "param_s": 6.236
+   },
+   "70": {
+    "recgen_s": 204.0,
+    "sam3d_s": 190.0,
+    "param_s": 6.236
+   }
+  }
+ }
+}

@@ -1,0 +1,557 @@
+{
+ "schema": "mvp2-physical-summary-v1",
+ "branch": "mvp2/physical",
+ "final_runs": {
+  "me340": "runs/mvp2-physical-me340-008",
+  "samsclub": "runs/mvp2-physical-samsclub-008",
+  "walmart": "runs/mvp2-physical-walmart-008"
+ },
+ "scale": "estimated (floor plane + assumed 1.6 m camera height); delivered = model-made reference (agreement, not truth)",
+ "tops_vs_delivered_same_object_raw": {
+  "me340": {
+   "round1": {
+    "top_card": {
+     "signed_median": -0.052,
+     "n": 9,
+     "median": 0.052,
+     "p90": 0.188,
+     "coverage": 0.778
+    },
+    "base_card": {
+     "signed_median": 0.056,
+     "n": 13,
+     "median": 0.057,
+     "p90": 0.316,
+     "coverage": 0.846
+    }
+   },
+   "mvp2_card": {
+    "top_card": {
+     "signed_median": -0.019,
+     "n": 9,
+     "median": 0.036,
+     "p90": 0.069,
+     "coverage": 0.889
+    },
+    "base_card": {
+     "signed_median": 0.002,
+     "n": 13,
+     "median": 0.042,
+     "p90": 0.352,
+     "coverage": 0.846
+    }
+   },
+   "mvp2_points_same_run": {
+    "top_points": {
+     "signed_median": -0.03,
+     "n": 9,
+     "median": 0.052,
+     "p90": 0.117,
+     "coverage": 0.889
+    },
+    "base_points": {
+     "signed_median": 0.0,
+     "n": 13,
+     "median": 0.041,
+     "p90": 0.32,
+     "coverage": 0.846
+    }
+   },
+   "pairs": 13
+  },
+  "samsclub-a2": {
+   "round1": {
+    "top_card": {
+     "signed_median": -0.045,
+     "n": 37,
+     "median": 0.051,
+     "p90": 0.302,
+     "coverage": 0.865
+    },
+    "base_card": {
+     "signed_median": 0.027,
+     "n": 37,
+     "median": 0.036,
+     "p90": 0.558,
+     "coverage": 0.757
+    }
+   },
+   "mvp2_card": {
+    "top_card": {
+     "signed_median": -0.013,
+     "n": 37,
+     "median": 0.044,
+     "p90": 0.305,
+     "coverage": 0.865
+    },
+    "base_card": {
+     "signed_median": -0.011,
+     "n": 37,
+     "median": 0.031,
+     "p90": 0.512,
+     "coverage": 0.757
+    }
+   },
+   "mvp2_points_same_run": {
+    "top_points": {
+     "signed_median": -0.037,
+     "n": 37,
+     "median": 0.055,
+     "p90": 0.301,
+     "coverage": 0.865
+    },
+    "base_points": {
+     "signed_median": 0.023,
+     "n": 37,
+     "median": 0.036,
+     "p90": 0.55,
+     "coverage": 0.784
+    }
+   },
+   "pairs": 37
+  },
+  "walmart": {
+   "round1": {
+    "top_card": {
+     "signed_median": -0.105,
+     "n": 15,
+     "median": 0.105,
+     "p90": 0.264,
+     "coverage": 0.867
+    },
+    "base_card": {
+     "signed_median": -0.065,
+     "n": 15,
+     "median": 0.071,
+     "p90": 0.144,
+     "coverage": 0.933
+    }
+   },
+   "mvp2_card": {
+    "top_card": {
+     "signed_median": -0.105,
+     "n": 15,
+     "median": 0.105,
+     "p90": 0.245,
+     "coverage": 0.933
+    },
+    "base_card": {
+     "signed_median": -0.084,
+     "n": 15,
+     "median": 0.102,
+     "p90": 0.147,
+     "coverage": 0.933
+    }
+   },
+   "mvp2_points_same_run": {
+    "top_points": {
+     "signed_median": -0.097,
+     "n": 15,
+     "median": 0.097,
+     "p90": 0.218,
+     "coverage": 0.933
+    },
+    "base_points": {
+     "signed_median": -0.066,
+     "n": 15,
+     "median": 0.071,
+     "p90": 0.146,
+     "coverage": 0.933
+    }
+   },
+   "pairs": 15
+  }
+ },
+ "distance_test_m_per_m": {
+  "me340": {
+   "p98": {
+    "objects": 11,
+    "median_m_per_m": 0.1001,
+    "share_negative": 0.364
+   },
+   "edge": {
+    "objects": 11,
+    "median_m_per_m": 0.1148,
+    "share_negative": 0.364
+   }
+  },
+  "samsclub-a2": {
+   "p98": {
+    "objects": 192,
+    "median_m_per_m": -0.0034,
+    "share_negative": 0.693
+   },
+   "edge": {
+    "objects": 192,
+    "median_m_per_m": 0.0021,
+    "share_negative": 0.396
+   }
+  },
+  "walmart": {
+   "p98": {
+    "objects": 147,
+    "median_m_per_m": 0.0001,
+    "share_negative": 0.497
+   },
+   "edge": {
+    "objects": 147,
+    "median_m_per_m": 0.0024,
+    "share_negative": 0.422
+   }
+  }
+ },
+ "repeat_shifted": {
+  "me340": {
+   "mvp2": {
+    "height": {
+     "n": 226,
+     "coverage": 0.9425
+    },
+    "extent": {
+     "n": 154,
+     "coverage": 0.9221
+    },
+    "position": {
+     "n": 114,
+     "coverage": 0.7456
+    },
+    "angle": {
+     "n": 5,
+     "coverage": 1.0
+    }
+   },
+   "round1": {
+    "height": {
+     "n": 226,
+     "coverage": 0.9292
+    },
+    "extent": {
+     "n": 162,
+     "coverage": 0.9074
+    },
+    "position": {
+     "n": 114,
+     "coverage": 0.7368
+    },
+    "angle": {
+     "n": 5,
+     "coverage": 1.0
+    }
+   }
+  },
+  "samsclub-a2": {
+   "mvp2": {
+    "height": {
+     "n": 789,
+     "coverage": 0.815
+    },
+    "extent": {
+     "n": 387,
+     "coverage": 0.8734
+    },
+    "position": {
+     "n": 399,
+     "coverage": 0.9348
+    },
+    "angle": {
+     "n": 68,
+     "coverage": 1.0
+    }
+   },
+   "round1": {
+    "height": {
+     "n": 785,
+     "coverage": 0.8166
+    },
+    "extent": {
+     "n": 387,
+     "coverage": 0.8811
+    },
+    "position": {
+     "n": 397,
+     "coverage": 0.9421
+    },
+    "angle": {
+     "n": 65,
+     "coverage": 1.0
+    }
+   }
+  },
+  "walmart": {
+   "mvp2": {
+    "height": {
+     "n": 1109,
+     "coverage": 0.9459
+    },
+    "extent": {
+     "n": 562,
+     "coverage": 0.8897
+    },
+    "position": {
+     "n": 566,
+     "coverage": 0.9046
+    },
+    "angle": {
+     "n": 0,
+     "coverage": null
+    }
+   },
+   "round1": {
+    "height": {
+     "n": 1107,
+     "coverage": 0.9431
+    },
+    "extent": {
+     "n": 566,
+     "coverage": 0.9099
+    },
+    "position": {
+     "n": 566,
+     "coverage": 0.9028
+    },
+    "angle": {
+     "n": 0,
+     "coverage": null
+    }
+   }
+  }
+ },
+ "people": {
+  "me340": {
+   "tracks": 5,
+   "detections": 156,
+   "whole_body": 2,
+   "feet_rays_m": {
+    "n": 2,
+    "median": 0.106,
+    "p90": 0.266
+   },
+   "feet_rays_signed_median": 0.106,
+   "feet_pixels_m": {
+    "n": 1,
+    "median": 0.391,
+    "p90": 0.391
+   },
+   "feet_u_median": 0.208,
+   "feet_within_u_of_0": 0.5,
+   "stature_m": {
+    "n": 2,
+    "median": 1.827,
+    "p90": 2.005
+   },
+   "feet_on_local_floor": 2,
+   "rejected_masks": 1,
+   "rejected_reasons": [
+    "less than a head and shoulders (a picture or print)"
+   ],
+   "confirmed_by_motion": 2,
+   "likely_pictures": 2,
+   "person_cards": 5,
+   "gate_mps": 12.0
+  },
+  "samsclub-a2": {
+   "tracks": 15,
+   "detections": 145,
+   "whole_body": 17,
+   "feet_rays_m": {
+    "n": 17,
+    "median": 0.284,
+    "p90": 0.366
+   },
+   "feet_rays_signed_median": 0.284,
+   "feet_pixels_m": {
+    "n": 17,
+    "median": 0.349,
+    "p90": 0.565
+   },
+   "feet_u_median": 0.289,
+   "feet_within_u_of_0": 0.647,
+   "stature_m": {
+    "n": 17,
+    "median": 1.784,
+    "p90": 2.201
+   },
+   "feet_on_local_floor": 8,
+   "rejected_masks": 286,
+   "rejected_reasons": [
+    "less than a head and shoulders (a picture or print)"
+   ],
+   "confirmed_by_motion": 7,
+   "likely_pictures": 5,
+   "person_cards": 15,
+   "gate_mps": 12.0
+  },
+  "walmart": {
+   "tracks": 6,
+   "detections": 54,
+   "whole_body": 0,
+   "feet_rays_m": {
+    "n": 0
+   },
+   "feet_rays_signed_median": null,
+   "feet_pixels_m": {
+    "n": 0
+   },
+   "feet_u_median": null,
+   "feet_within_u_of_0": null,
+   "stature_m": {
+    "n": 0
+   },
+   "feet_on_local_floor": 0,
+   "rejected_masks": 28,
+   "rejected_reasons": [
+    "less than a head and shoulders (a picture or print)"
+   ],
+   "confirmed_by_motion": 4,
+   "likely_pictures": 4,
+   "person_cards": 6,
+   "gate_mps": 12.0
+  }
+ },
+ "long_objects": {
+  "me340": {
+   "visible_length": 50,
+   "short_side_not_measurable": 6,
+   "objects": 259
+  },
+  "samsclub-a2": {
+   "visible_length": 108,
+   "short_side_not_measurable": 24,
+   "objects": 625
+  },
+  "walmart": {
+   "visible_length": 61,
+   "short_side_not_measurable": 13,
+   "objects": 719
+  }
+ },
+ "contract_violations": {
+  "me340": {
+   "round1": 1080,
+   "mvp2": 0
+  },
+  "samsclub-a2": {
+   "round1": 2578,
+   "mvp2": 0
+  },
+  "walmart": {
+   "round1": 2916,
+   "mvp2": 0
+  }
+ },
+ "judgements": {
+  "me340": {
+   "round1": {
+    "version": 4,
+    "J3a": {
+     "NO_DATA": 6,
+     "NEEDS_REVIEW": 1
+    },
+    "J8": {
+     "NO_DATA": 4,
+     "NEEDS_REVIEW": 2
+    }
+   },
+   "mvp2": {
+    "version": 4,
+    "J3a": {
+     "NO_DATA": 5,
+     "NEEDS_REVIEW": 1
+    },
+    "J8": {
+     "NO_DATA": 4,
+     "NEEDS_REVIEW": 2
+    }
+   }
+  },
+  "samsclub-a2": {
+   "round1": {
+    "version": 4,
+    "J1": {
+     "NEEDS_REVIEW": 53,
+     "PASS": 121
+    },
+    "J3a": {
+     "NEEDS_REVIEW": 12,
+     "NO_DATA": 10
+    },
+    "J8": {
+     "NO_DATA": 2,
+     "NEEDS_REVIEW": 18
+    }
+   },
+   "mvp2": {
+    "version": 4,
+    "J1": {
+     "NEEDS_REVIEW": 62,
+     "PASS": 115
+    },
+    "J3a": {
+     "NEEDS_REVIEW": 4,
+     "NO_DATA": 12
+    },
+    "J8": {
+     "NO_DATA": 2,
+     "NEEDS_REVIEW": 13
+    }
+   }
+  },
+  "walmart": {
+   "round1": {
+    "version": 4,
+    "J3a": {
+     "NO_DATA": 10
+    },
+    "J8": {
+     "NEEDS_REVIEW": 4
+    }
+   },
+   "mvp2": {
+    "version": 4,
+    "J3a": {
+     "NO_DATA": 7
+    },
+    "J8": {
+     "NEEDS_REVIEW": 3
+    }
+   }
+  }
+ },
+ "people_feet_agent_labelled_run007": {
+  "feet_seen_detections": 79,
+  "on_floor": {
+   "n": 49,
+   "median_m": 0.019,
+   "p10": -0.187,
+   "p90": 0.24,
+   "within_u": 0.714,
+   "within_2u": 0.98,
+   "u_median_m": 0.16,
+   "old_per_pixel_median_m": 0.138,
+   "by_clip_within_u": {
+    "me340": "13/13",
+    "walmart": "11/11",
+    "samsclub": "11/25"
+   }
+  },
+  "raised_on_cart_deck": {
+   "n": 7,
+   "range_m": [
+    0.27,
+    0.31
+   ]
+  },
+  "feet_hidden_read_as_seen": 17,
+  "unclear": 6,
+  "sheets": "sheets-007/people-*.jpg + .json (labels in the json)"
+ },
+ "pictures_rejected_agent_labelled": {
+  "samsclub": "80/80 sampled pictures (Puffs box print)",
+  "walmart": "49/49 pictures (poster, packaging)",
+  "me340": "1 unclear"
+ },
+ "spend_usd": {
+  "modal_billing_settled_so_far": 13.15,
+  "list_price_upper_bound_total_approx": 35
+ }
+}

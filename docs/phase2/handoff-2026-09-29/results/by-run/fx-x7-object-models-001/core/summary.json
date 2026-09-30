@@ -1,0 +1,126 @@
+{
+ "boot": {
+  "entered_unix": 1790647122.7836173,
+  "mps": true,
+  "vllm_mps": false,
+  "vllm_spawned_s": 0.12,
+  "imports_s": 15.06,
+  "da3_gpu0_s": 24.59,
+  "sam3_siglip_gpu0_s": 31.37,
+  "vllm_ready_s": 60.53,
+  "warm_da3_s": 61.8,
+  "warm_sam3_s": 64.51,
+  "warm_siglip_s": 64.72,
+  "warm_open3d_s": 64.93,
+  "vllm_idle_one_sequence_decode_per_s": 64.1,
+  "vllm_warm_s": 5.17,
+  "process_pool_pids": 24,
+  "ready_s": 70.57,
+  "ready_unix": 1790647193.3544955,
+  "gpus": [
+   "GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-37af3734-d934-6ebc-19fd-f379ddbbbfd2)",
+   "GPU 1: NVIDIA A100-SXM4-80GB (UUID: GPU-c548e9d5-47ba-a9f5-ee12-318f0d8f9429)"
+  ],
+  "torch": "2.14.0+cu130",
+  "transformers": "5.17.0",
+  "open3d": "0.19.0",
+  "resident_gb": [
+   15.15,
+   30.32
+  ],
+  "client_submitted_unix": 1790647103.950476,
+  "submit_to_ready_s_two_clocks": 89.4
+ },
+ "runs": [
+  {
+   "clip": "me340-165",
+   "report": "x7-me340-165-e84efffd-1790647193",
+   "error": null,
+   "wall_s": 48.4,
+   "layers": {
+    "video.v1": 1.438,
+    "cameras.v1": 16.862,
+    "room.v1": 21.678,
+    "people.v1": 23.309,
+    "events.v1": 23.309,
+    "objects.v1": 27.806,
+    "outlines.v1": 29.747,
+    "objects.v2": 38.222
+   },
+   "flags": [],
+   "gpu_peak_gb": [
+    46.13,
+    51.94
+   ],
+   "fixture": {
+    "folder": "/v/layers/x7/fx-x7-001/me340-165",
+    "objects": 251,
+    "object_keyframes": 49,
+    "bytes": 520706164,
+    "dump_s": 1.9
+   },
+   "objects": 251,
+   "usd_estimate": 0.0828
+  },
+  {
+   "clip": "samsclub-337",
+   "report": "x7-samsclub-337-d5e0c855-1790647241",
+   "error": null,
+   "wall_s": 49.5,
+   "layers": {
+    "video.v1": 1.416,
+    "cameras.v1": 10.941,
+    "room.v1": 15.02,
+    "people.v1": 17.264,
+    "events.v1": 19.109,
+    "objects.v1": 19.109,
+    "outlines.v1": 19.109,
+    "objects.v2": 34.351
+   },
+   "flags": [],
+   "gpu_peak_gb": [
+    33.24,
+    43.46
+   ],
+   "fixture": {
+    "folder": "/v/layers/x7/fx-x7-001/samsclub-337",
+    "objects": 589,
+    "object_keyframes": 42,
+    "bytes": 555174308,
+    "dump_s": 2.27
+   },
+   "objects": 589,
+   "usd_estimate": 0.0744
+  },
+  {
+   "clip": "walmart-190",
+   "report": "x7-walmart-190-c0761a2a-1790647291",
+   "error": null,
+   "wall_s": 38.2,
+   "layers": {
+    "video.v1": 1.797,
+    "events.v1": 11.238,
+    "cameras.v1": 15.094,
+    "room.v1": 15.094,
+    "people.v1": 17.557,
+    "objects.v1": 17.557,
+    "outlines.v1": 17.557,
+    "objects.v2": 27.943
+   },
+   "flags": [],
+   "gpu_peak_gb": [
+    31.03,
+    42.99
+   ],
+   "fixture": {
+    "folder": "/v/layers/x7/fx-x7-001/walmart-190",
+    "objects": 552,
+    "object_keyframes": 42,
+    "bytes": 508539860,
+    "dump_s": 2.05
+   },
+   "objects": 552,
+   "usd_estimate": 0.0606
+  }
+ ]
+}

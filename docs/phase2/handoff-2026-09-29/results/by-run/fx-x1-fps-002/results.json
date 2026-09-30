@@ -1,0 +1,2211 @@
+{
+ "schema": "fx-x1-fps-results-v1",
+ "run_dir": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/fx-x1-fps-002",
+ "sites": {
+  "me340": {
+   "errors": {},
+   "container_error": null,
+   "shots": [
+    [
+     226,
+     525
+    ]
+   ],
+   "main_shot": 0,
+   "held_out_frames": 10,
+   "sets": {
+    "b6x3": {
+     "frames": 17,
+     "frames_in_geometry_shots": 17,
+     "fps_equivalent": 1.7
+    },
+    "b6": {
+     "frames": 51,
+     "frames_in_geometry_shots": 51,
+     "fps_equivalent": 5.09
+    },
+    "b3": {
+     "frames": 101,
+     "frames_in_geometry_shots": 101,
+     "fps_equivalent": 10.09
+    },
+    "b2": {
+     "frames": 150,
+     "frames_in_geometry_shots": 150,
+     "fps_equivalent": 14.98
+    },
+    "b1": {
+     "frames": 290,
+     "frames_in_geometry_shots": 290,
+     "fps_equivalent": 28.97
+    },
+    "a1-motion": {
+     "frames": 51,
+     "frames_in_geometry_shots": 51,
+     "fps_equivalent": 5.09
+    },
+    "a1-novel": {
+     "frames": 51,
+     "frames_in_geometry_shots": 51,
+     "fps_equivalent": 5.09
+    },
+    "a2-motion": {
+     "frames": 101,
+     "frames_in_geometry_shots": 101,
+     "fps_equivalent": 10.09
+    },
+    "a2-novel": {
+     "frames": 101,
+     "frames_in_geometry_shots": 101,
+     "fps_equivalent": 10.09
+    },
+    "p-adapt": {
+     "frames": 150,
+     "frames_in_geometry_shots": 150,
+     "fps_equivalent": 14.98
+    }
+   },
+   "words": 57,
+   "hardware": [
+    "GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-24c49af3-d7b5-c665-927d-e2279aff4b5f)",
+    "GPU 1: NVIDIA A100-SXM4-80GB (UUID: GPU-07f76866-5d3d-4e2f-9d85-5829d58c2c74)"
+   ],
+   "boot_s": 31.2,
+   "container_s": 253.7,
+   "usd_container_estimate": 0.459,
+   "analysis_s": 208.617,
+   "flags_over_90pct": [],
+   "sam3": {
+    "phases": [
+     {
+      "phase": "b6x3 (+17)",
+      "frames": 17,
+      "start_s": 7.5,
+      "end_s": 13.431,
+      "s": 5.931
+     },
+     {
+      "phase": "b6 (+34)",
+      "frames": 34,
+      "start_s": 13.431,
+      "end_s": 22.427,
+      "s": 8.996
+     },
+     {
+      "phase": "b3 (+50)",
+      "frames": 50,
+      "start_s": 22.427,
+      "end_s": 35.016,
+      "s": 12.589
+     },
+     {
+      "phase": "b2 (+61)",
+      "frames": 61,
+      "start_s": 35.016,
+      "end_s": 50.204,
+      "s": 15.188
+     },
+     {
+      "phase": "b1 (+128)",
+      "frames": 128,
+      "start_s": 50.204,
+      "end_s": 82.609,
+      "s": 32.405
+     },
+     {
+      "phase": "held-out",
+      "frames": 10,
+      "start_s": 82.609,
+      "end_s": 86.296,
+      "s": 3.687
+     }
+    ],
+    "frames": 300,
+    "wall_s_all_phases": 78.8,
+    "gpu_s_per_frame": {
+     "sam3.person": 0.0743,
+     "sam3.vocab": 0.3781,
+     "dedupe": 0.0472
+    },
+    "peak_gib_per_gpu_during_sam3": [
+     37.78,
+     31.56
+    ],
+    "masks": {
+     "vocab_in": 128680,
+     "vocab_kept": 79571,
+     "vocab_in_per_frame_mean": 428.9,
+     "kept_per_frame_mean": 265.2,
+     "person_floor_detections": 624,
+     "packed_cpu_gb": 1.404
+    },
+    "production_layout_gib": {
+     "b6x3": 2.11,
+     "b6": 6.37,
+     "b3": 12.43,
+     "b2": 18.44,
+     "b1": 35.51,
+     "a1-motion": 6.01,
+     "a1-novel": 5.98,
+     "a2-motion": 11.99,
+     "a2-novel": 11.84,
+     "p-adapt": 18.44
+    },
+    "note": "one pass over every frame; a configuration's SAM 3 time = its frames x the measured GPU s/frame / 2 GPUs [M x n]"
+   },
+   "geometry": {
+    "G10": {
+     "ate": {
+      "shot": 0,
+      "keyframes": 101,
+      "ate_m": 0.0218,
+      "path_m": 1.902,
+      "ate_share_of_path": 0.0115,
+      "rotation_error_deg": {
+       "median": 0.207,
+       "max": 0.696
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": true,
+      "within_1.5pct": true
+     },
+     "ate_on_5fps_frames_only": {
+      "shot": 0,
+      "keyframes": 51,
+      "ate_m": 0.0214,
+      "path_m": 1.88,
+      "ate_share_of_path": 0.0114,
+      "rotation_error_deg": {
+       "median": 0.205,
+       "max": 0.701
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": true,
+      "within_1.5pct": true
+     },
+     "scale_vs_reference": {
+      "ours_over_reference": 1.0264,
+      "criterion": "0.9-1.1",
+      "pass": true,
+      "note": "both assume a 1.6 m camera height; ours from the fast floor plane, the reference from its own floor rule"
+     },
+     "views_all_shots": 101,
+     "da3_forwards": 1,
+     "da3_gpu_s": 5.84,
+     "da3_max_views_per_forward": 101,
+     "da3_peak_gib_per_gpu": [
+      23.05,
+      17.08
+     ],
+     "tsdf_s_all_shots": 0.193,
+     "tsdf_peak_gib": [
+      30.09,
+      33.93
+     ],
+     "main_shot_tsdf": {
+      "views": 101,
+      "tsdf_points": 661408,
+      "tsdf_triangles": 1187071,
+      "mesh_volume_path": "panoptes-fx-x1-fps:/fx-x1-fps-002/me340/tsdf-G10-shot0.ply"
+     },
+     "held_out_depth": {
+      "frames": 10,
+      "coverage": 0.9166,
+      "hole_fraction": 0.0834,
+      "absrel_median": 0.0583,
+      "within_5pct": 0.4036,
+      "within_10pct": 0.8426,
+      "sim3_scale_ours_to_droid_m": 0.9743
+     }
+    },
+    "G30c": {
+     "ate": {
+      "shot": 0,
+      "keyframes": 290,
+      "ate_m": 0.1044,
+      "path_m": 1.907,
+      "ate_share_of_path": 0.0548,
+      "rotation_error_deg": {
+       "median": 0.74,
+       "max": 1.84
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": false,
+      "within_1.5pct": false
+     },
+     "ate_on_5fps_frames_only": {
+      "shot": 0,
+      "keyframes": 51,
+      "ate_m": 0.1056,
+      "path_m": 1.88,
+      "ate_share_of_path": 0.0561,
+      "rotation_error_deg": {
+       "median": 0.769,
+       "max": 1.796
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": false,
+      "within_1.5pct": false
+     },
+     "scale_vs_reference": {
+      "ours_over_reference": 0.9347,
+      "criterion": "0.9-1.1",
+      "pass": true,
+      "note": "both assume a 1.6 m camera height; ours from the fast floor plane, the reference from its own floor rule"
+     },
+     "views_all_shots": 290,
+     "da3_forwards": 3,
+     "da3_gpu_s": 27.55,
+     "da3_max_views_per_forward": 150,
+     "da3_peak_gib_per_gpu": [
+      29.73,
+      33.93
+     ],
+     "tsdf_s_all_shots": 0.415,
+     "tsdf_peak_gib": [
+      30.47,
+      33.93
+     ],
+     "main_shot_tsdf": {
+      "views": 290,
+      "tsdf_points": 1180470,
+      "tsdf_triangles": 2205246,
+      "mesh_volume_path": "panoptes-fx-x1-fps:/fx-x1-fps-002/me340/tsdf-G30c-shot0.ply"
+     },
+     "held_out_depth": {
+      "frames": 10,
+      "coverage": 0.9848,
+      "hole_fraction": 0.0152,
+      "absrel_median": 0.049,
+      "within_5pct": 0.5083,
+      "within_10pct": 0.7487,
+      "sim3_scale_ours_to_droid_m": 1.0699
+     }
+    },
+    "G30i": {
+     "ate": {
+      "shot": 0,
+      "keyframes": 290,
+      "ate_m": 0.0212,
+      "path_m": 1.907,
+      "ate_share_of_path": 0.0111,
+      "rotation_error_deg": {
+       "median": 0.13,
+       "max": 0.682
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": true,
+      "within_1.5pct": true
+     },
+     "ate_on_5fps_frames_only": {
+      "shot": 0,
+      "keyframes": 51,
+      "ate_m": 0.0213,
+      "path_m": 1.88,
+      "ate_share_of_path": 0.0113,
+      "rotation_error_deg": {
+       "median": 0.211,
+       "max": 0.691
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": true,
+      "within_1.5pct": true
+     },
+     "scale_vs_reference": {
+      "ours_over_reference": 1.0278,
+      "criterion": "0.9-1.1",
+      "pass": true,
+      "note": "both assume a 1.6 m camera height; ours from the fast floor plane, the reference from its own floor rule"
+     },
+     "views_all_shots": 290,
+     "da3_forwards": 1,
+     "da3_gpu_s": 27.87,
+     "da3_max_views_per_forward": 290,
+     "da3_peak_gib_per_gpu": [
+      29.73,
+      33.93
+     ],
+     "tsdf_s_all_shots": 0.352,
+     "tsdf_peak_gib": [
+      30.47,
+      33.93
+     ],
+     "main_shot_tsdf": {
+      "views": 290,
+      "tsdf_points": 750661,
+      "tsdf_triangles": 1358999,
+      "mesh_volume_path": "panoptes-fx-x1-fps:/fx-x1-fps-002/me340/tsdf-G30i-shot0.ply"
+     },
+     "held_out_depth": {
+      "frames": 10,
+      "coverage": 0.9364,
+      "hole_fraction": 0.0636,
+      "absrel_median": 0.0555,
+      "within_5pct": 0.4351,
+      "within_10pct": 0.8406,
+      "sim3_scale_ours_to_droid_m": 0.973
+     }
+    },
+    "G30single": {
+     "ate": {
+      "shot": 0,
+      "keyframes": 290,
+      "ate_m": 0.0156,
+      "path_m": 1.907,
+      "ate_share_of_path": 0.0082,
+      "rotation_error_deg": {
+       "median": 0.126,
+       "max": 0.658
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": true,
+      "within_1.5pct": true
+     },
+     "ate_on_5fps_frames_only": {
+      "shot": 0,
+      "keyframes": 51,
+      "ate_m": 0.0156,
+      "path_m": 1.88,
+      "ate_share_of_path": 0.0083,
+      "rotation_error_deg": {
+       "median": 0.126,
+       "max": 0.634
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": true,
+      "within_1.5pct": true
+     },
+     "scale_vs_reference": {
+      "ours_over_reference": 1.0285,
+      "criterion": "0.9-1.1",
+      "pass": true,
+      "note": "both assume a 1.6 m camera height; ours from the fast floor plane, the reference from its own floor rule"
+     },
+     "views_all_shots": 290,
+     "da3_forwards": 1,
+     "da3_gpu_s": 28.29,
+     "da3_max_views_per_forward": 290,
+     "da3_peak_gib_per_gpu": [
+      29.73,
+      33.93
+     ],
+     "tsdf_s_all_shots": 0.354,
+     "tsdf_peak_gib": [
+      30.47,
+      33.93
+     ],
+     "main_shot_tsdf": {
+      "views": 290,
+      "tsdf_points": 738262,
+      "tsdf_triangles": 1336217,
+      "mesh_volume_path": "panoptes-fx-x1-fps:/fx-x1-fps-002/me340/tsdf-G30single-shot0.ply"
+     },
+     "held_out_depth": {
+      "frames": 10,
+      "coverage": 0.9352,
+      "hole_fraction": 0.0648,
+      "absrel_median": 0.0548,
+      "within_5pct": 0.4424,
+      "within_10pct": 0.8374,
+      "sim3_scale_ours_to_droid_m": 0.9723
+     }
+    },
+    "G5": {
+     "ate": {
+      "shot": 0,
+      "keyframes": 51,
+      "ate_m": 0.0213,
+      "path_m": 1.88,
+      "ate_share_of_path": 0.0113,
+      "rotation_error_deg": {
+       "median": 0.211,
+       "max": 0.691
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": true,
+      "within_1.5pct": true
+     },
+     "ate_on_5fps_frames_only": {
+      "shot": 0,
+      "keyframes": 51,
+      "ate_m": 0.0213,
+      "path_m": 1.88,
+      "ate_share_of_path": 0.0113,
+      "rotation_error_deg": {
+       "median": 0.211,
+       "max": 0.691
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": true,
+      "within_1.5pct": true
+     },
+     "scale_vs_reference": {
+      "ours_over_reference": 1.0253,
+      "criterion": "0.9-1.1",
+      "pass": true,
+      "note": "both assume a 1.6 m camera height; ours from the fast floor plane, the reference from its own floor rule"
+     },
+     "views_all_shots": 51,
+     "da3_forwards": 1,
+     "da3_gpu_s": 2.57,
+     "da3_max_views_per_forward": 51,
+     "da3_peak_gib_per_gpu": [
+      20.43,
+      14.77
+     ],
+     "tsdf_s_all_shots": 0.1,
+     "tsdf_peak_gib": [
+      30.47,
+      33.93
+     ],
+     "main_shot_tsdf": {
+      "views": 51,
+      "tsdf_points": 579752,
+      "tsdf_triangles": 1029845,
+      "mesh_volume_path": "panoptes-fx-x1-fps:/fx-x1-fps-002/me340/tsdf-G5-shot0.ply"
+     },
+     "held_out_depth": {
+      "frames": 10,
+      "coverage": 0.8923,
+      "hole_fraction": 0.1077,
+      "absrel_median": 0.0555,
+      "within_5pct": 0.4359,
+      "within_10pct": 0.8587,
+      "sim3_scale_ours_to_droid_m": 0.9753
+     }
+    },
+    "Gmotion": {
+     "ate": {
+      "shot": 0,
+      "keyframes": 101,
+      "ate_m": 0.0166,
+      "path_m": 1.883,
+      "ate_share_of_path": 0.0088,
+      "rotation_error_deg": {
+       "median": 0.206,
+       "max": 0.537
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": true,
+      "within_1.5pct": true
+     },
+     "ate_on_5fps_frames_only": {
+      "shot": 0,
+      "keyframes": 51,
+      "ate_m": 0.014,
+      "path_m": 1.88,
+      "ate_share_of_path": 0.0074,
+      "rotation_error_deg": {
+       "median": 0.104,
+       "max": 0.631
+      },
+      "criterion": "ATE <= 0.057 m (E1)",
+      "pass": true,
+      "within_1.5pct": true
+     },
+     "scale_vs_reference": {
+      "ours_over_reference": 0.9907,
+      "criterion": "0.9-1.1",
+      "pass": true,
+      "note": "both assume a 1.6 m camera height; ours from the fast floor plane, the reference from its own floor rule"
+     },
+     "views_all_shots": 101,
+     "da3_forwards": 1,
+     "da3_gpu_s": 4.96,
+     "da3_max_views_per_forward": 101,
+     "da3_peak_gib_per_gpu": [
+      23.97,
+      21.38
+     ],
+     "tsdf_s_all_shots": 0.163,
+     "tsdf_peak_gib": [
+      30.47,
+      33.93
+     ],
+     "main_shot_tsdf": {
+      "views": 101,
+      "tsdf_points": 630665,
+      "tsdf_triangles": 1131146,
+      "mesh_volume_path": "panoptes-fx-x1-fps:/fx-x1-fps-002/me340/tsdf-Gmotion-shot0.ply"
+     },
+     "held_out_depth": {
+      "frames": 10,
+      "coverage": 0.9345,
+      "hole_fraction": 0.0655,
+      "absrel_median": 0.0533,
+      "within_5pct": 0.459,
+      "within_10pct": 0.824,
+      "sim3_scale_ours_to_droid_m": 1.0094
+     }
+    }
+   },
+   "chunks": {
+    "0": {
+     "consecutive_starts": [
+      0,
+      70,
+      140
+     ],
+     "consecutive_views": [
+      150,
+      150,
+      150
+     ],
+     "consecutive_chained_fits": [
+      {
+       "shared_frames": 80,
+       "points": 152092,
+       "scale": 1.1093,
+       "residual_median_rel": 0.0328
+      },
+      {
+       "shared_frames": 80,
+       "points": 153076,
+       "scale": 1.144,
+       "residual_median_rel": 0.0367
+      }
+     ],
+     "interleaved_views": [
+      290
+     ],
+     "interleaved_onto_g5_fits": [
+      {
+       "shared_frames": 51,
+       "points": 98109,
+       "scale": 0.9116,
+       "residual_median_rel": 0.0084
+      }
+     ]
+    }
+   },
+   "g30_single": {
+    "shot": 0,
+    "views": 290,
+    "ok": true
+   },
+   "objects": {
+    "b6x3": {
+     "objects": 118,
+     "small": 19,
+     "thin_long": 30,
+     "views_mean": 6.75,
+     "views_median": 4.0,
+     "view_centroid_spread_m": {
+      "median": 0.0331,
+      "p90": 0.1018,
+      "objects": 77
+     },
+     "view_centroid_spread_over_extent_median": 0.0494,
+     "lift_s": 0.229,
+     "segmented_frames": 17,
+     "new_vs_current": 0,
+     "new_small": 0,
+     "new_thin_long": 0,
+     "new_with_3plus_views": 0,
+     "new_words_top": [],
+     "spread_of_objects_shared_with_current_m": 0.0331,
+     "lift_stats": [
+      {
+       "shot": 0,
+       "masks_in": 4571,
+       "masks_dropped_moving": 16,
+       "masks_lifted": 3063,
+       "points": 511819,
+       "voxels": 86662,
+       "edges": 12940,
+       "components": 1390,
+       "overlap_pairs": 189231
+      }
+     ],
+     "harness_objects_3d": {
+      "ours": 118,
+      "reference": 61,
+      "criterion": "report; E9 0.53, E1 with SAM 2 0.64 (recall at 0.5 m, ME340)",
+      "pass": null,
+      "reference_recall_0.3m": 0.41,
+      "ours_near_reference_0.3m": 0.398,
+      "reference_recall_0.5m": 0.525,
+      "ours_near_reference_0.5m": 0.619
+     },
+     "recall_by_delivered_size": {
+      "all": {
+       "pool": 61,
+       "recall_0.3m": 0.41,
+       "recall_0.5m": 0.525
+      },
+      "small_lt_0.3m": {
+       "pool": 14,
+       "recall_0.3m": 0.857,
+       "recall_0.5m": 1.0
+      },
+      "thin_long": {
+       "pool": 7,
+       "recall_0.3m": 0.286,
+       "recall_0.5m": 0.286
+      },
+      "named_clear_partial": {
+       "pool": 54,
+       "recall_0.3m": 0.407,
+       "recall_0.5m": 0.519
+      },
+      "word_matched_named_0.5m": {
+       "pool": 54,
+       "recall": 0.167
+      }
+     },
+     "sam3_s_2gpu_MxN": 3.85,
+     "production_layout_gib_MxN": 2.11
+    },
+    "b6": {
+     "objects": 302,
+     "small": 7,
+     "thin_long": 139,
+     "views_mean": 6.85,
+     "views_median": 2.0,
+     "view_centroid_spread_m": {
+      "median": 0.0253,
+      "p90": 0.1446,
+      "objects": 136
+     },
+     "view_centroid_spread_over_extent_median": 0.0199,
+     "lift_s": 0.163,
+     "segmented_frames": 51,
+     "new_vs_current": 130,
+     "new_small": 0,
+     "new_thin_long": 73,
+     "new_with_3plus_views": 31,
+     "new_words_top": [
+      [
+       "pipe",
+       53
+      ],
+      [
+       "light fixture",
+       19
+      ],
+      [
+       "ventilation duct",
+       13
+      ],
+      [
+       "cable",
+       12
+      ],
+      [
+       "machine",
+       10
+      ],
+      [
+       "power tool",
+       7
+      ],
+      [
+       "sign",
+       4
+      ],
+      [
+       "window",
+       3
+      ],
+      [
+       "clamp",
+       3
+      ],
+      [
+       "power cord",
+       2
+      ],
+      [
+       "door",
+       1
+      ],
+      [
+       "box",
+       1
+      ],
+      [
+       "monitor",
+       1
+      ],
+      [
+       "control panel",
+       1
+      ]
+     ],
+     "spread_of_objects_shared_with_current_m": 0.0312,
+     "lift_stats": [
+      {
+       "shot": 0,
+       "masks_in": 13810,
+       "masks_dropped_moving": 60,
+       "masks_lifted": 9278,
+       "points": 1579032,
+       "voxels": 168294,
+       "edges": 121797,
+       "components": 3089,
+       "overlap_pairs": 1725696
+      }
+     ],
+     "harness_objects_3d": {
+      "ours": 302,
+      "reference": 61,
+      "criterion": "report; E9 0.53, E1 with SAM 2 0.64 (recall at 0.5 m, ME340)",
+      "pass": null,
+      "reference_recall_0.3m": 0.459,
+      "ours_near_reference_0.3m": 0.119,
+      "reference_recall_0.5m": 0.525,
+      "ours_near_reference_0.5m": 0.228
+     },
+     "recall_by_delivered_size": {
+      "all": {
+       "pool": 61,
+       "recall_0.3m": 0.459,
+       "recall_0.5m": 0.525
+      },
+      "small_lt_0.3m": {
+       "pool": 14,
+       "recall_0.3m": 0.929,
+       "recall_0.5m": 1.0
+      },
+      "thin_long": {
+       "pool": 7,
+       "recall_0.3m": 0.286,
+       "recall_0.5m": 0.286
+      },
+      "named_clear_partial": {
+       "pool": 54,
+       "recall_0.3m": 0.444,
+       "recall_0.5m": 0.5
+      },
+      "word_matched_named_0.5m": {
+       "pool": 54,
+       "recall": 0.111
+      }
+     },
+     "sam3_s_2gpu_MxN": 11.54,
+     "production_layout_gib_MxN": 6.37
+    },
+    "b3": {
+     "objects": 461,
+     "small": 4,
+     "thin_long": 225,
+     "views_mean": 7.46,
+     "views_median": 2.0,
+     "view_centroid_spread_m": {
+      "median": 0.0284,
+      "p90": 0.1494,
+      "objects": 186
+     },
+     "view_centroid_spread_over_extent_median": 0.0171,
+     "lift_s": 0.237,
+     "segmented_frames": 101,
+     "new_vs_current": 244,
+     "new_small": 0,
+     "new_thin_long": 137,
+     "new_with_3plus_views": 63,
+     "new_words_top": [
+      [
+       "pipe",
+       94
+      ],
+      [
+       "light fixture",
+       29
+      ],
+      [
+       "ventilation duct",
+       24
+      ],
+      [
+       "cable",
+       22
+      ],
+      [
+       "machine",
+       10
+      ],
+      [
+       "power tool",
+       10
+      ],
+      [
+       "sign",
+       9
+      ],
+      [
+       "clamp",
+       7
+      ],
+      [
+       "power cord",
+       6
+      ],
+      [
+       "monitor",
+       6
+      ],
+      [
+       "workbench",
+       5
+      ],
+      [
+       "window",
+       4
+      ],
+      [
+       "control panel",
+       4
+      ],
+      [
+       "door",
+       3
+      ],
+      [
+       "box",
+       3
+      ]
+     ],
+     "spread_of_objects_shared_with_current_m": 0.0371,
+     "lift_stats": [
+      {
+       "shot": 0,
+       "masks_in": 26882,
+       "masks_dropped_moving": 121,
+       "masks_lifted": 18133,
+       "points": 3130419,
+       "voxels": 258342,
+       "edges": 433424,
+       "components": 5918,
+       "overlap_pairs": 6428411
+      }
+     ],
+     "harness_objects_3d": {
+      "ours": 461,
+      "reference": 61,
+      "criterion": "report; E9 0.53, E1 with SAM 2 0.64 (recall at 0.5 m, ME340)",
+      "pass": null,
+      "reference_recall_0.3m": 0.393,
+      "ours_near_reference_0.3m": 0.113,
+      "reference_recall_0.5m": 0.541,
+      "ours_near_reference_0.5m": 0.202
+     },
+     "recall_by_delivered_size": {
+      "all": {
+       "pool": 61,
+       "recall_0.3m": 0.393,
+       "recall_0.5m": 0.541
+      },
+      "small_lt_0.3m": {
+       "pool": 14,
+       "recall_0.3m": 0.786,
+       "recall_0.5m": 1.0
+      },
+      "thin_long": {
+       "pool": 7,
+       "recall_0.3m": 0.143,
+       "recall_0.5m": 0.286
+      },
+      "named_clear_partial": {
+       "pool": 54,
+       "recall_0.3m": 0.37,
+       "recall_0.5m": 0.537
+      },
+      "word_matched_named_0.5m": {
+       "pool": 54,
+       "recall": 0.111
+      }
+     },
+     "sam3_s_2gpu_MxN": 22.85,
+     "production_layout_gib_MxN": 12.43
+    },
+    "b2": {
+     "objects": 735,
+     "small": 4,
+     "thin_long": 392,
+     "views_mean": 7.63,
+     "views_median": 2.0,
+     "view_centroid_spread_m": {
+      "median": 0.0237,
+      "p90": 0.1256,
+      "objects": 304
+     },
+     "view_centroid_spread_over_extent_median": 0.0106,
+     "lift_s": 0.361,
+     "segmented_frames": 150,
+     "new_vs_current": 475,
+     "new_small": 0,
+     "new_thin_long": 271,
+     "new_with_3plus_views": 162,
+     "new_words_top": [
+      [
+       "pipe",
+       189
+      ],
+      [
+       "light fixture",
+       51
+      ],
+      [
+       "ventilation duct",
+       50
+      ],
+      [
+       "cable",
+       39
+      ],
+      [
+       "machine",
+       18
+      ],
+      [
+       "power tool",
+       16
+      ],
+      [
+       "workbench",
+       15
+      ],
+      [
+       "clamp",
+       15
+      ],
+      [
+       "sign",
+       15
+      ],
+      [
+       "power cord",
+       13
+      ],
+      [
+       "window",
+       11
+      ],
+      [
+       "monitor",
+       11
+      ],
+      [
+       "control panel",
+       10
+      ],
+      [
+       "tool",
+       6
+      ],
+      [
+       "metal part",
+       4
+      ]
+     ],
+     "spread_of_objects_shared_with_current_m": 0.028,
+     "lift_stats": [
+      {
+       "shot": 0,
+       "masks_in": 39848,
+       "masks_dropped_moving": 175,
+       "masks_lifted": 26920,
+       "points": 4609298,
+       "voxels": 308979,
+       "edges": 980553,
+       "components": 7834,
+       "overlap_pairs": 14137692
+      }
+     ],
+     "harness_objects_3d": {
+      "ours": 735,
+      "reference": 61,
+      "criterion": "report; E9 0.53, E1 with SAM 2 0.64 (recall at 0.5 m, ME340)",
+      "pass": null,
+      "reference_recall_0.3m": 0.361,
+      "ours_near_reference_0.3m": 0.068,
+      "reference_recall_0.5m": 0.492,
+      "ours_near_reference_0.5m": 0.155
+     },
+     "recall_by_delivered_size": {
+      "all": {
+       "pool": 61,
+       "recall_0.3m": 0.361,
+       "recall_0.5m": 0.492
+      },
+      "small_lt_0.3m": {
+       "pool": 14,
+       "recall_0.3m": 0.643,
+       "recall_0.5m": 0.786
+      },
+      "thin_long": {
+       "pool": 7,
+       "recall_0.3m": 0.143,
+       "recall_0.5m": 0.286
+      },
+      "named_clear_partial": {
+       "pool": 54,
+       "recall_0.3m": 0.352,
+       "recall_0.5m": 0.481
+      },
+      "word_matched_named_0.5m": {
+       "pool": 54,
+       "recall": 0.111
+      }
+     },
+     "sam3_s_2gpu_MxN": 33.93,
+     "production_layout_gib_MxN": 18.44
+    },
+    "b1": {
+     "objects": 1296,
+     "small": 8,
+     "thin_long": 727,
+     "views_mean": 9.57,
+     "views_median": 2.0,
+     "view_centroid_spread_m": {
+      "median": 0.0244,
+      "p90": 0.1233,
+      "objects": 611
+     },
+     "view_centroid_spread_over_extent_median": 0.0093,
+     "lift_s": 0.483,
+     "segmented_frames": 290,
+     "new_vs_current": 1023,
+     "new_small": 0,
+     "new_thin_long": 576,
+     "new_with_3plus_views": 451,
+     "new_words_top": [
+      [
+       "pipe",
+       362
+      ],
+      [
+       "ventilation duct",
+       151
+      ],
+      [
+       "light fixture",
+       96
+      ],
+      [
+       "machine",
+       66
+      ],
+      [
+       "cable",
+       64
+      ],
+      [
+       "workbench",
+       40
+      ],
+      [
+       "power cord",
+       40
+      ],
+      [
+       "control panel",
+       31
+      ],
+      [
+       "monitor",
+       30
+      ],
+      [
+       "metal part",
+       24
+      ],
+      [
+       "window",
+       23
+      ],
+      [
+       "sign",
+       23
+      ],
+      [
+       "tool",
+       20
+      ],
+      [
+       "power tool",
+       15
+      ],
+      [
+       "clamp",
+       11
+      ]
+     ],
+     "spread_of_objects_shared_with_current_m": 0.023,
+     "lift_stats": [
+      {
+       "shot": 0,
+       "masks_in": 76778,
+       "masks_dropped_moving": 351,
+       "masks_lifted": 51835,
+       "points": 8934923,
+       "voxels": 405732,
+       "edges": 3753410,
+       "components": 11965,
+       "overlap_pairs": 52769321
+      }
+     ],
+     "harness_objects_3d": {
+      "ours": 1296,
+      "reference": 61,
+      "criterion": "report; E9 0.53, E1 with SAM 2 0.64 (recall at 0.5 m, ME340)",
+      "pass": null,
+      "reference_recall_0.3m": 0.361,
+      "ours_near_reference_0.3m": 0.044,
+      "reference_recall_0.5m": 0.59,
+      "ours_near_reference_0.5m": 0.119
+     },
+     "recall_by_delivered_size": {
+      "all": {
+       "pool": 61,
+       "recall_0.3m": 0.361,
+       "recall_0.5m": 0.59
+      },
+      "small_lt_0.3m": {
+       "pool": 14,
+       "recall_0.3m": 0.571,
+       "recall_0.5m": 0.714
+      },
+      "thin_long": {
+       "pool": 7,
+       "recall_0.3m": 0.0,
+       "recall_0.5m": 0.429
+      },
+      "named_clear_partial": {
+       "pool": 54,
+       "recall_0.3m": 0.352,
+       "recall_0.5m": 0.611
+      },
+      "word_matched_named_0.5m": {
+       "pool": 54,
+       "recall": 0.093
+      }
+     },
+     "sam3_s_2gpu_MxN": 65.6,
+     "production_layout_gib_MxN": 35.51
+    },
+    "a1-motion": {
+     "objects": 162,
+     "small": 5,
+     "thin_long": 47,
+     "views_mean": 9.91,
+     "views_median": 3.0,
+     "view_centroid_spread_m": {
+      "median": 0.0376,
+      "p90": 0.1438,
+      "objects": 90
+     },
+     "view_centroid_spread_over_extent_median": 0.05,
+     "lift_s": 0.228,
+     "segmented_frames": 51,
+     "new_vs_current": 38,
+     "new_small": 0,
+     "new_thin_long": 11,
+     "new_with_3plus_views": 13,
+     "new_words_top": [
+      [
+       "power tool",
+       8
+      ],
+      [
+       "tool",
+       7
+      ],
+      [
+       "metal part",
+       6
+      ],
+      [
+       "machine",
+       5
+      ],
+      [
+       "pipe",
+       3
+      ],
+      [
+       "workbench",
+       3
+      ],
+      [
+       "clamp",
+       2
+      ],
+      [
+       "power cord",
+       2
+      ],
+      [
+       "ventilation duct",
+       1
+      ],
+      [
+       "can",
+       1
+      ]
+     ],
+     "spread_of_objects_shared_with_current_m": 0.0415,
+     "lift_stats": [
+      {
+       "shot": 0,
+       "masks_in": 13036,
+       "masks_dropped_moving": 38,
+       "masks_lifted": 9249,
+       "points": 1828015,
+       "voxels": 194242,
+       "edges": 80623,
+       "components": 3841,
+       "overlap_pairs": 1694797
+      }
+     ],
+     "harness_objects_3d": {
+      "ours": 162,
+      "reference": 61,
+      "criterion": "report; E9 0.53, E1 with SAM 2 0.64 (recall at 0.5 m, ME340)",
+      "pass": null,
+      "reference_recall_0.3m": 0.393,
+      "ours_near_reference_0.3m": 0.222,
+      "reference_recall_0.5m": 0.525,
+      "ours_near_reference_0.5m": 0.37
+     },
+     "recall_by_delivered_size": {
+      "all": {
+       "pool": 61,
+       "recall_0.3m": 0.393,
+       "recall_0.5m": 0.525
+      },
+      "small_lt_0.3m": {
+       "pool": 14,
+       "recall_0.3m": 0.929,
+       "recall_0.5m": 1.0
+      },
+      "thin_long": {
+       "pool": 7,
+       "recall_0.3m": 0.0,
+       "recall_0.5m": 0.286
+      },
+      "named_clear_partial": {
+       "pool": 54,
+       "recall_0.3m": 0.37,
+       "recall_0.5m": 0.5
+      },
+      "word_matched_named_0.5m": {
+       "pool": 54,
+       "recall": 0.093
+      }
+     },
+     "sam3_s_2gpu_MxN": 11.54,
+     "production_layout_gib_MxN": 6.01
+    },
+    "a1-novel": {
+     "objects": 152,
+     "small": 6,
+     "thin_long": 43,
+     "views_mean": 10.34,
+     "views_median": 3.0,
+     "view_centroid_spread_m": {
+      "median": 0.0369,
+      "p90": 0.1406,
+      "objects": 88
+     },
+     "view_centroid_spread_over_extent_median": 0.047,
+     "lift_s": 0.22,
+     "segmented_frames": 51,
+     "new_vs_current": 33,
+     "new_small": 0,
+     "new_thin_long": 8,
+     "new_with_3plus_views": 18,
+     "new_words_top": [
+      [
+       "power tool",
+       9
+      ],
+      [
+       "tool",
+       5
+      ],
+      [
+       "clamp",
+       4
+      ],
+      [
+       "metal part",
+       4
+      ],
+      [
+       "power cord",
+       3
+      ],
+      [
+       "machine",
+       2
+      ],
+      [
+       "pipe",
+       2
+      ],
+      [
+       "control panel",
+       2
+      ],
+      [
+       "workbench",
+       1
+      ],
+      [
+       "ventilation duct",
+       1
+      ]
+     ],
+     "spread_of_objects_shared_with_current_m": 0.0367,
+     "lift_stats": [
+      {
+       "shot": 0,
+       "masks_in": 13013,
+       "masks_dropped_moving": 38,
+       "masks_lifted": 9273,
+       "points": 1816770,
+       "voxels": 193496,
+       "edges": 81617,
+       "components": 3852,
+       "overlap_pairs": 1714467
+      }
+     ],
+     "harness_objects_3d": {
+      "ours": 152,
+      "reference": 61,
+      "criterion": "report; E9 0.53, E1 with SAM 2 0.64 (recall at 0.5 m, ME340)",
+      "pass": null,
+      "reference_recall_0.3m": 0.426,
+      "ours_near_reference_0.3m": 0.217,
+      "reference_recall_0.5m": 0.541,
+      "ours_near_reference_0.5m": 0.375
+     },
+     "recall_by_delivered_size": {
+      "all": {
+       "pool": 61,
+       "recall_0.3m": 0.426,
+       "recall_0.5m": 0.541
+      },
+      "small_lt_0.3m": {
+       "pool": 14,
+       "recall_0.3m": 1.0,
+       "recall_0.5m": 1.0
+      },
+      "thin_long": {
+       "pool": 7,
+       "recall_0.3m": 0.0,
+       "recall_0.5m": 0.286
+      },
+      "named_clear_partial": {
+       "pool": 54,
+       "recall_0.3m": 0.407,
+       "recall_0.5m": 0.519
+      },
+      "word_matched_named_0.5m": {
+       "pool": 54,
+       "recall": 0.093
+      }
+     },
+     "sam3_s_2gpu_MxN": 11.54,
+     "production_layout_gib_MxN": 5.98
+    },
+    "a2-motion": {
+     "objects": 408,
+     "small": 6,
+     "thin_long": 189,
+     "views_mean": 8.22,
+     "views_median": 2.0,
+     "view_centroid_spread_m": {
+      "median": 0.0255,
+      "p90": 0.124,
+      "objects": 175
+     },
+     "view_centroid_spread_over_extent_median": 0.0201,
+     "lift_s": 0.215,
+     "segmented_frames": 101,
+     "new_vs_current": 217,
+     "new_small": 0,
+     "new_thin_long": 108,
+     "new_with_3plus_views": 66,
+     "new_words_top": [
+      [
+       "pipe",
+       71
+      ],
+      [
+       "light fixture",
+       23
+      ],
+      [
+       "ventilation duct",
+       17
+      ],
+      [
+       "machine",
+       15
+      ],
+      [
+       "power tool",
+       14
+      ],
+      [
+       "cable",
+       12
+      ],
+      [
+       "tool",
+       11
+      ],
+      [
+       "control panel",
+       10
+      ],
+      [
+       "clamp",
+       9
+      ],
+      [
+       "metal part",
+       8
+      ],
+      [
+       "workbench",
+       8
+      ],
+      [
+       "power cord",
+       6
+      ],
+      [
+       "window",
+       4
+      ],
+      [
+       "sign",
+       4
+      ],
+      [
+       "monitor",
+       2
+      ]
+     ],
+     "spread_of_objects_shared_with_current_m": 0.0296,
+     "lift_stats": [
+      {
+       "shot": 0,
+       "masks_in": 25625,
+       "masks_dropped_moving": 92,
+       "masks_lifted": 18158,
+       "points": 3496952,
+       "voxels": 279446,
+       "edges": 316617,
+       "components": 6540,
+       "overlap_pairs": 6275058
+      }
+     ],
+     "harness_objects_3d": {
+      "ours": 408,
+      "reference": 61,
+      "criterion": "report; E9 0.53, E1 with SAM 2 0.64 (recall at 0.5 m, ME340)",
+      "pass": null,
+      "reference_recall_0.3m": 0.41,
+      "ours_near_reference_0.3m": 0.105,
+      "reference_recall_0.5m": 0.557,
+      "ours_near_reference_0.5m": 0.199
+     },
+     "recall_by_delivered_size": {
+      "all": {
+       "pool": 61,
+       "recall_0.3m": 0.41,
+       "recall_0.5m": 0.557
+      },
+      "small_lt_0.3m": {
+       "pool": 14,
+       "recall_0.3m": 0.929,
+       "recall_0.5m": 1.0
+      },
+      "thin_long": {
+       "pool": 7,
+       "recall_0.3m": 0.0,
+       "recall_0.5m": 0.286
+      },
+      "named_clear_partial": {
+       "pool": 54,
+       "recall_0.3m": 0.407,
+       "recall_0.5m": 0.537
+      },
+      "word_matched_named_0.5m": {
+       "pool": 54,
+       "recall": 0.093
+      }
+     },
+     "sam3_s_2gpu_MxN": 22.85,
+     "production_layout_gib_MxN": 11.99
+    },
+    "a2-novel": {
+     "objects": 471,
+     "small": 5,
+     "thin_long": 212,
+     "views_mean": 7.15,
+     "views_median": 2.0,
+     "view_centroid_spread_m": {
+      "median": 0.0268,
+      "p90": 0.1069,
+      "objects": 189
+     },
+     "view_centroid_spread_over_extent_median": 0.0194,
+     "lift_s": 0.171,
+     "segmented_frames": 101,
+     "new_vs_current": 269,
+     "new_small": 0,
+     "new_thin_long": 130,
+     "new_with_3plus_views": 74,
+     "new_words_top": [
+      [
+       "pipe",
+       89
+      ],
+      [
+       "light fixture",
+       28
+      ],
+      [
+       "ventilation duct",
+       22
+      ],
+      [
+       "machine",
+       20
+      ],
+      [
+       "cable",
+       17
+      ],
+      [
+       "power tool",
+       17
+      ],
+      [
+       "tool",
+       14
+      ],
+      [
+       "clamp",
+       12
+      ],
+      [
+       "workbench",
+       10
+      ],
+      [
+       "power cord",
+       9
+      ],
+      [
+       "monitor",
+       8
+      ],
+      [
+       "metal part",
+       8
+      ],
+      [
+       "sign",
+       4
+      ],
+      [
+       "control panel",
+       4
+      ],
+      [
+       "window",
+       3
+      ]
+     ],
+     "spread_of_objects_shared_with_current_m": 0.0294,
+     "lift_stats": [
+      {
+       "shot": 0,
+       "masks_in": 25527,
+       "masks_dropped_moving": 90,
+       "masks_lifted": 18171,
+       "points": 3475213,
+       "voxels": 278156,
+       "edges": 310674,
+       "components": 6468,
+       "overlap_pairs": 6294255
+      }
+     ],
+     "harness_objects_3d": {
+      "ours": 471,
+      "reference": 61,
+      "criterion": "report; E9 0.53, E1 with SAM 2 0.64 (recall at 0.5 m, ME340)",
+      "pass": null,
+      "reference_recall_0.3m": 0.426,
+      "ours_near_reference_0.3m": 0.076,
+      "reference_recall_0.5m": 0.574,
+      "ours_near_reference_0.5m": 0.191
+     },
+     "recall_by_delivered_size": {
+      "all": {
+       "pool": 61,
+       "recall_0.3m": 0.426,
+       "recall_0.5m": 0.574
+      },
+      "small_lt_0.3m": {
+       "pool": 14,
+       "recall_0.3m": 0.857,
+       "recall_0.5m": 1.0
+      },
+      "thin_long": {
+       "pool": 7,
+       "recall_0.3m": 0.143,
+       "recall_0.5m": 0.286
+      },
+      "named_clear_partial": {
+       "pool": 54,
+       "recall_0.3m": 0.426,
+       "recall_0.5m": 0.574
+      },
+      "word_matched_named_0.5m": {
+       "pool": 54,
+       "recall": 0.093
+      }
+     },
+     "sam3_s_2gpu_MxN": 22.85,
+     "production_layout_gib_MxN": 11.84
+    }
+   },
+   "outlines": {
+    "b6x3": {
+     "projected": {
+      "regions": 1853,
+      "iou_mean": 0.3152,
+      "iou_area_weighted": 0.4435,
+      "coverage_area_weighted": 0.699
+     },
+     "held": {
+      "regions": 1853,
+      "iou_mean": 0.3316,
+      "iou_area_weighted": 0.4609,
+      "coverage_area_weighted": 0.719
+     },
+     "s": 0.77
+    },
+    "b6": {
+     "projected": {
+      "regions": 1853,
+      "iou_mean": 0.5736,
+      "iou_area_weighted": 0.6581,
+      "coverage_area_weighted": 0.838
+     },
+     "held": {
+      "regions": 1853,
+      "iou_mean": 0.6073,
+      "iou_area_weighted": 0.6829,
+      "coverage_area_weighted": 0.8613
+     },
+     "s": 0.78
+    },
+    "b3": {
+     "projected": {
+      "regions": 1853,
+      "iou_mean": 0.6056,
+      "iou_area_weighted": 0.772,
+      "coverage_area_weighted": 0.8576
+     },
+     "held": {
+      "regions": 1853,
+      "iou_mean": 0.6235,
+      "iou_area_weighted": 0.7936,
+      "coverage_area_weighted": 0.8696
+     },
+     "s": 0.78
+    },
+    "b2": {
+     "projected": {
+      "regions": 1853,
+      "iou_mean": 0.6775,
+      "iou_area_weighted": 0.811,
+      "coverage_area_weighted": 0.884
+     },
+     "held": {
+      "regions": 1853,
+      "iou_mean": 0.6912,
+      "iou_area_weighted": 0.8295,
+      "coverage_area_weighted": 0.8933
+     },
+     "s": 0.8
+    },
+    "a1-motion": {
+     "projected": {
+      "regions": 1853,
+      "iou_mean": 0.3458,
+      "iou_area_weighted": 0.5545,
+      "coverage_area_weighted": 0.7224
+     },
+     "held": {
+      "regions": 1853,
+      "iou_mean": 0.3675,
+      "iou_area_weighted": 0.5803,
+      "coverage_area_weighted": 0.7506
+     },
+     "s": 0.74
+    },
+    "a1-novel": {
+     "projected": {
+      "regions": 1853,
+      "iou_mean": 0.3422,
+      "iou_area_weighted": 0.531,
+      "coverage_area_weighted": 0.7192
+     },
+     "held": {
+      "regions": 1853,
+      "iou_mean": 0.3604,
+      "iou_area_weighted": 0.5488,
+      "coverage_area_weighted": 0.742
+     },
+     "s": 0.75
+    },
+    "a2-motion": {
+     "projected": {
+      "regions": 1853,
+      "iou_mean": 0.5905,
+      "iou_area_weighted": 0.75,
+      "coverage_area_weighted": 0.8435
+     },
+     "held": {
+      "regions": 1853,
+      "iou_mean": 0.6259,
+      "iou_area_weighted": 0.7881,
+      "coverage_area_weighted": 0.8654
+     },
+     "s": 0.78
+    },
+    "a2-novel": {
+     "projected": {
+      "regions": 1853,
+      "iou_mean": 0.5863,
+      "iou_area_weighted": 0.7583,
+      "coverage_area_weighted": 0.8387
+     },
+     "held": {
+      "regions": 1853,
+      "iou_mean": 0.6217,
+      "iou_area_weighted": 0.7961,
+      "coverage_area_weighted": 0.8618
+     },
+     "s": 0.78
+    }
+   },
+   "outline_eval_frames": 60,
+   "people": {
+    "b6": {
+     "detections": 57,
+     "s": 0.438,
+     "keyframes": 51,
+     "speed_mps_estimated": {
+      "n": 0,
+      "median": null,
+      "p90": null
+     },
+     "tracks": 3,
+     "harness_people": {
+      "our_points_in_shot": 57,
+      "matched": 51,
+      "extra": 6,
+      "path_difference_floor_m": {
+       "n": 51,
+       "median": 0.092,
+       "p90": 0.118,
+       "max": 0.181
+      },
+      "criterion": "median <= 0.3 m; no PASS<->FAIL flip",
+      "note": "our xyz vs the delivered layer's visible-body centroid (interpolated to our frame, gaps <= 0.45 s), both on the floor plane; a point farther than 1 m from every person there is 'extra'",
+      "rules_vs_e3_ref10": {
+       "R1_zone_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.16,
+        "pass_fail_flips": 0
+       },
+       "R2_min_distance_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.98,
+        "pass_fail_flips": 0
+       },
+       "R3_speed_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.92,
+        "pass_fail_flips": 0
+       },
+       "R1_zone": {
+        "ticks": 50,
+        "agree_share": 0.16,
+        "pass_fail_flips": 0
+       },
+       "R2_min_distance": {
+        "ticks": 50,
+        "agree_share": 0.98,
+        "pass_fail_flips": 0
+       },
+       "R3_speed": {
+        "ticks": 50,
+        "agree_share": 0.92,
+        "pass_fail_flips": 0
+       }
+      },
+      "pass": true
+     },
+     "identity": {
+      "our_tracks_matched": 1,
+      "id_switches_inside_our_tracks": 0,
+      "delivered_people": 4,
+      "delivered_people_matched": 1,
+      "extra_tracks_per_delivered_person": 0
+     },
+     "rules_vs_5fps": "baseline",
+     "sam3_person_s_2gpu_MxN": 1.89
+    },
+    "b3": {
+     "detections": 110,
+     "s": 0.573,
+     "keyframes": 101,
+     "speed_mps_estimated": {
+      "n": 0,
+      "median": null,
+      "p90": null
+     },
+     "tracks": 3,
+     "harness_people": {
+      "our_points_in_shot": 109,
+      "matched": 100,
+      "extra": 9,
+      "path_difference_floor_m": {
+       "n": 100,
+       "median": 0.09,
+       "p90": 0.149,
+       "max": 0.222
+      },
+      "criterion": "median <= 0.3 m; no PASS<->FAIL flip",
+      "note": "our xyz vs the delivered layer's visible-body centroid (interpolated to our frame, gaps <= 0.45 s), both on the floor plane; a point farther than 1 m from every person there is 'extra'",
+      "rules_vs_e3_ref10": {
+       "R1_zone_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.16,
+        "pass_fail_flips": 0
+       },
+       "R2_min_distance_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.98,
+        "pass_fail_flips": 0
+       },
+       "R3_speed_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.9,
+        "pass_fail_flips": 0
+       },
+       "R1_zone": {
+        "ticks": 50,
+        "agree_share": 0.16,
+        "pass_fail_flips": 0
+       },
+       "R2_min_distance": {
+        "ticks": 50,
+        "agree_share": 0.98,
+        "pass_fail_flips": 0
+       },
+       "R3_speed": {
+        "ticks": 50,
+        "agree_share": 0.9,
+        "pass_fail_flips": 0
+       }
+      },
+      "pass": true
+     },
+     "identity": {
+      "our_tracks_matched": 1,
+      "id_switches_inside_our_tracks": 0,
+      "delivered_people": 4,
+      "delivered_people_matched": 1,
+      "extra_tracks_per_delivered_person": 0
+     },
+     "rules_vs_5fps": {
+      "R1_zone_before_gate": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R2_min_distance_before_gate": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R3_speed_before_gate": {
+       "ticks": 50,
+       "agree_share": 0.98,
+       "pass_fail_flips": 0
+      },
+      "R1_zone": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R2_min_distance": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R3_speed": {
+       "ticks": 50,
+       "agree_share": 0.98,
+       "pass_fail_flips": 0
+      }
+     },
+     "sam3_person_s_2gpu_MxN": 3.75
+    },
+    "b2": {
+     "detections": 162,
+     "s": 0.82,
+     "keyframes": 150,
+     "speed_mps_estimated": {
+      "n": 0,
+      "median": null,
+      "p90": null
+     },
+     "tracks": 3,
+     "harness_people": {
+      "our_points_in_shot": 162,
+      "matched": 149,
+      "extra": 13,
+      "path_difference_floor_m": {
+       "n": 149,
+       "median": 0.089,
+       "p90": 0.147,
+       "max": 0.276
+      },
+      "criterion": "median <= 0.3 m; no PASS<->FAIL flip",
+      "note": "our xyz vs the delivered layer's visible-body centroid (interpolated to our frame, gaps <= 0.45 s), both on the floor plane; a point farther than 1 m from every person there is 'extra'",
+      "rules_vs_e3_ref10": {
+       "R1_zone_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.16,
+        "pass_fail_flips": 0
+       },
+       "R2_min_distance_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.98,
+        "pass_fail_flips": 0
+       },
+       "R3_speed_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.88,
+        "pass_fail_flips": 0
+       },
+       "R1_zone": {
+        "ticks": 50,
+        "agree_share": 0.16,
+        "pass_fail_flips": 0
+       },
+       "R2_min_distance": {
+        "ticks": 50,
+        "agree_share": 0.98,
+        "pass_fail_flips": 0
+       },
+       "R3_speed": {
+        "ticks": 50,
+        "agree_share": 0.88,
+        "pass_fail_flips": 0
+       }
+      },
+      "pass": true
+     },
+     "identity": {
+      "our_tracks_matched": 1,
+      "id_switches_inside_our_tracks": 0,
+      "delivered_people": 4,
+      "delivered_people_matched": 1,
+      "extra_tracks_per_delivered_person": 0
+     },
+     "rules_vs_5fps": {
+      "R1_zone_before_gate": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R2_min_distance_before_gate": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R3_speed_before_gate": {
+       "ticks": 50,
+       "agree_share": 0.96,
+       "pass_fail_flips": 0
+      },
+      "R1_zone": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R2_min_distance": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R3_speed": {
+       "ticks": 50,
+       "agree_share": 0.96,
+       "pass_fail_flips": 0
+      }
+     },
+     "sam3_person_s_2gpu_MxN": 5.57
+    },
+    "p-adapt": {
+     "detections": 162,
+     "s": 0.83,
+     "keyframes": 150,
+     "speed_mps_estimated": {
+      "n": 0,
+      "median": null,
+      "p90": null
+     },
+     "tracks": 3,
+     "harness_people": {
+      "our_points_in_shot": 162,
+      "matched": 149,
+      "extra": 13,
+      "path_difference_floor_m": {
+       "n": 149,
+       "median": 0.089,
+       "p90": 0.147,
+       "max": 0.276
+      },
+      "criterion": "median <= 0.3 m; no PASS<->FAIL flip",
+      "note": "our xyz vs the delivered layer's visible-body centroid (interpolated to our frame, gaps <= 0.45 s), both on the floor plane; a point farther than 1 m from every person there is 'extra'",
+      "rules_vs_e3_ref10": {
+       "R1_zone_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.16,
+        "pass_fail_flips": 0
+       },
+       "R2_min_distance_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.98,
+        "pass_fail_flips": 0
+       },
+       "R3_speed_before_gate": {
+        "ticks": 50,
+        "agree_share": 0.88,
+        "pass_fail_flips": 0
+       },
+       "R1_zone": {
+        "ticks": 50,
+        "agree_share": 0.16,
+        "pass_fail_flips": 0
+       },
+       "R2_min_distance": {
+        "ticks": 50,
+        "agree_share": 0.98,
+        "pass_fail_flips": 0
+       },
+       "R3_speed": {
+        "ticks": 50,
+        "agree_share": 0.88,
+        "pass_fail_flips": 0
+       }
+      },
+      "pass": true
+     },
+     "identity": {
+      "our_tracks_matched": 1,
+      "id_switches_inside_our_tracks": 0,
+      "delivered_people": 4,
+      "delivered_people_matched": 1,
+      "extra_tracks_per_delivered_person": 0
+     },
+     "rules_vs_5fps": {
+      "R1_zone_before_gate": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R2_min_distance_before_gate": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R3_speed_before_gate": {
+       "ticks": 50,
+       "agree_share": 0.96,
+       "pass_fail_flips": 0
+      },
+      "R1_zone": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R2_min_distance": {
+       "ticks": 50,
+       "agree_share": 1.0,
+       "pass_fail_flips": 0
+      },
+      "R3_speed": {
+       "ticks": 50,
+       "agree_share": 0.96,
+       "pass_fail_flips": 0
+      }
+     },
+     "sam3_person_s_2gpu_MxN": 5.57
+    }
+   },
+   "render_compare": [
+    {
+     "held_frame": 270,
+     "object": "b1-0-23",
+     "word": "sign",
+     "box_px": [
+      918.0,
+      0.9,
+      1252.4,
+      214.6
+     ]
+    },
+    {
+     "held_frame": 240,
+     "object": "b1-0-120",
+     "word": "box",
+     "box_px": [
+      669.7,
+      262.1,
+      1149.8,
+      372.5
+     ]
+    },
+    {
+     "held_frame": 240,
+     "object": "b1-0-462",
+     "word": "workbench",
+     "box_px": [
+      251.1,
+      238.1,
+      603.2,
+      340.3
+     ]
+    },
+    {
+     "held_frame": 270,
+     "object": "b1-0-249",
+     "word": "box",
+     "box_px": [
+      667.2,
+      183.7,
+      950.8,
+      356.2
+     ]
+    }
+   ]
+  }
+ },
+ "spend_usd_estimate": 0.459
+}

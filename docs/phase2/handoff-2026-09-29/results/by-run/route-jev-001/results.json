@@ -1,0 +1,4071 @@
+{
+ "routers": {
+  "a0 rules: class only": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.617,
+    "accuracy_weighted": 0.5,
+    "precision_complex": 0.385,
+    "recall_complex": 0.442,
+    "missed_complex": 53,
+    "false_complex": 67,
+    "ece": 0.331,
+    "tiers": {
+     "rules": 1.0
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.617
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.757,
+     "accuracy_weighted": 0.781,
+     "precision_complex": 0.837,
+     "recall_complex": 0.695,
+     "missed_complex": 18,
+     "false_complex": 8,
+     "ece": 0.373,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.757
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.627,
+     "accuracy_weighted": 0.622,
+     "precision_complex": 0.027,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 36,
+     "ece": 0.246,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.627
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.462,
+     "accuracy_weighted": 0.314,
+     "precision_complex": 0.0,
+     "recall_complex": 0.0,
+     "missed_complex": 33,
+     "false_complex": 23,
+     "ece": 0.412,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.462
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.493,
+    "accuracy_weighted": 0.383,
+    "precision_complex": 0.387,
+    "recall_complex": 0.387,
+    "missed_complex": 19,
+    "false_complex": 19,
+    "ece": 0.413,
+    "tiers": {
+     "rules": 1.0
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.493
+   },
+   "fitted": {
+    "me340": {
+     "no_class_goes": "simple"
+    },
+    "samsclub-a2": {
+     "no_class_goes": "complex"
+    },
+    "walmart": {
+     "no_class_goes": "simple"
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 113,
+     "routed_complex_and_well_observed": 29,
+     "recgen_gpu_s_at_x7_median": 927.7,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 229,
+     "routed_complex_and_well_observed": 40,
+     "recgen_gpu_s_at_x7_median": 1880.1,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 184,
+     "routed_complex_and_well_observed": 51,
+     "recgen_gpu_s_at_x7_median": 1510.6,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "a1 rules: geometry only": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.655,
+    "accuracy_weighted": 0.681,
+    "precision_complex": 0.24,
+    "recall_complex": 0.063,
+    "missed_complex": 89,
+    "false_complex": 19,
+    "ece": 0.252,
+    "tiers": {
+     "rules": 1.0
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.655
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.458,
+     "accuracy_weighted": 0.482,
+     "precision_complex": 1.0,
+     "recall_complex": 0.017,
+     "missed_complex": 58,
+     "false_complex": 0,
+     "ece": 0.384,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.458
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.843,
+     "accuracy_weighted": 0.858,
+     "precision_complex": 0.0,
+     "recall_complex": 0.0,
+     "missed_complex": 3,
+     "false_complex": 13,
+     "ece": 0.349,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.843
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.673,
+     "accuracy_weighted": 0.589,
+     "precision_complex": 0.455,
+     "recall_complex": 0.152,
+     "missed_complex": 28,
+     "false_complex": 6,
+     "ece": 0.022,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.673
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.587,
+    "accuracy_weighted": 0.634,
+    "precision_complex": 0.5,
+    "recall_complex": 0.129,
+    "missed_complex": 27,
+    "false_complex": 4,
+    "ece": 0.3,
+    "tiers": {
+     "rules": 1.0
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.587
+   },
+   "fitted": {
+    "me340": {
+     "rel_cut": 0.07273430548057774
+    },
+    "samsclub-a2": {
+     "rel_cut": 0.034885639283203394
+    },
+    "walmart": {
+     "rel_cut": 0.05769455900120951
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 9,
+     "routed_complex_and_well_observed": 3,
+     "recgen_gpu_s_at_x7_median": 73.9,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 96,
+     "routed_complex_and_well_observed": 20,
+     "recgen_gpu_s_at_x7_median": 788.2,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 122,
+     "routed_complex_and_well_observed": 39,
+     "recgen_gpu_s_at_x7_median": 1001.6,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "a2 rules: class, else geometry": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.712,
+    "accuracy_weighted": 0.626,
+    "precision_complex": 0.523,
+    "recall_complex": 0.611,
+    "missed_complex": 37,
+    "false_complex": 53,
+    "ece": 0.324,
+    "tiers": {
+     "rules": 1.0
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.712
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.776,
+     "accuracy_weighted": 0.785,
+     "precision_complex": 0.761,
+     "recall_complex": 0.864,
+     "missed_complex": 8,
+     "false_complex": 16,
+     "ece": 0.427,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.776
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.843,
+     "accuracy_weighted": 0.842,
+     "precision_complex": 0.067,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 14,
+     "ece": 0.179,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.843
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.519,
+     "accuracy_weighted": 0.396,
+     "precision_complex": 0.207,
+     "recall_complex": 0.182,
+     "missed_complex": 27,
+     "false_complex": 23,
+     "ece": 0.402,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.519
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.613,
+    "accuracy_weighted": 0.545,
+    "precision_complex": 0.529,
+    "recall_complex": 0.581,
+    "missed_complex": 13,
+    "false_complex": 16,
+    "ece": 0.407,
+    "tiers": {
+     "rules": 1.0
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.613
+   },
+   "fitted": {
+    "me340": {
+     "rel_cut_no_class": 0.03340773546707165,
+     "rel_cut_simple_class": Infinity
+    },
+    "samsclub-a2": {
+     "rel_cut_no_class": 0.02458454103461013,
+     "rel_cut_simple_class": Infinity
+    },
+    "walmart": {
+     "rel_cut_no_class": 0.051779940834238807,
+     "rel_cut_simple_class": Infinity
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 159,
+     "routed_complex_and_well_observed": 38,
+     "recgen_gpu_s_at_x7_median": 1305.4,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 86,
+     "routed_complex_and_well_observed": 20,
+     "recgen_gpu_s_at_x7_median": 706.1,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 320,
+     "routed_complex_and_well_observed": 99,
+     "recgen_gpu_s_at_x7_median": 2627.2,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "a3 rules: class, else geometry, simple class vetoed by geometry": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.703,
+    "accuracy_weighted": 0.618,
+    "precision_complex": 0.509,
+    "recall_complex": 0.611,
+    "missed_complex": 37,
+    "false_complex": 56,
+    "ece": 0.329,
+    "tiers": {
+     "rules": 1.0
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.703
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.776,
+     "accuracy_weighted": 0.785,
+     "precision_complex": 0.761,
+     "recall_complex": 0.864,
+     "missed_complex": 8,
+     "false_complex": 16,
+     "ece": 0.427,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.776
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.843,
+     "accuracy_weighted": 0.842,
+     "precision_complex": 0.067,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 14,
+     "ece": 0.179,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.843
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.49,
+     "accuracy_weighted": 0.378,
+     "precision_complex": 0.188,
+     "recall_complex": 0.182,
+     "missed_complex": 27,
+     "false_complex": 26,
+     "ece": 0.415,
+     "tiers": {
+      "rules": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.49
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.6,
+    "accuracy_weighted": 0.527,
+    "precision_complex": 0.514,
+    "recall_complex": 0.581,
+    "missed_complex": 13,
+    "false_complex": 17,
+    "ece": 0.415,
+    "tiers": {
+     "rules": 1.0
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.6
+   },
+   "fitted": {
+    "me340": {
+     "rel_cut_no_class": 0.03340773546707165,
+     "rel_cut_simple_class": 0.08223590642914529
+    },
+    "samsclub-a2": {
+     "rel_cut_no_class": 0.02458454103461013,
+     "rel_cut_simple_class": 0.08223590642914529
+    },
+    "walmart": {
+     "rel_cut_no_class": 0.051779940834238807,
+     "rel_cut_simple_class": 0.07139123784863287
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 159,
+     "routed_complex_and_well_observed": 38,
+     "recgen_gpu_s_at_x7_median": 1305.4,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 86,
+     "routed_complex_and_well_observed": 20,
+     "recgen_gpu_s_at_x7_median": 706.1,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 324,
+     "routed_complex_and_well_observed": 100,
+     "recgen_gpu_s_at_x7_median": 2660.0,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "b zero-shot (encoder, crop, prompts picked on training videos)": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.802,
+    "accuracy_weighted": 0.761,
+    "precision_complex": 0.762,
+    "recall_complex": 0.505,
+    "missed_complex": 47,
+    "false_complex": 15,
+    "ece": 0.089,
+    "tiers": {
+     "zero-shot": 1.0
+    },
+    "vlm_band_share": 0.173,
+    "accuracy_outside_vlm_band": 0.838
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.794,
+     "accuracy_weighted": 0.834,
+     "precision_complex": 0.825,
+     "recall_complex": 0.797,
+     "missed_complex": 12,
+     "false_complex": 10,
+     "ece": 0.104,
+     "tiers": {
+      "zero-shot": 1.0
+     },
+     "vlm_band_share": 0.299,
+     "accuracy_outside_vlm_band": 0.84
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.931,
+     "accuracy_weighted": 0.95,
+     "precision_complex": 0.0,
+     "recall_complex": 0.0,
+     "missed_complex": 3,
+     "false_complex": 4,
+     "ece": 0.107,
+     "tiers": {
+      "zero-shot": 1.0
+     },
+     "vlm_band_share": 0.118,
+     "accuracy_outside_vlm_band": 0.956
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.683,
+     "accuracy_weighted": 0.58,
+     "precision_complex": 0.5,
+     "recall_complex": 0.03,
+     "missed_complex": 32,
+     "false_complex": 1,
+     "ece": 0.221,
+     "tiers": {
+      "zero-shot": 1.0
+     },
+     "vlm_band_share": 0.096,
+     "accuracy_outside_vlm_band": 0.723
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.813,
+    "accuracy_weighted": 0.748,
+    "precision_complex": 0.84,
+    "recall_complex": 0.677,
+    "missed_complex": 10,
+    "false_complex": 4,
+    "ece": 0.136,
+    "tiers": {
+     "zero-shot": 1.0
+    },
+    "vlm_band_share": 0.133,
+    "accuracy_outside_vlm_band": 0.815
+   },
+   "fitted": {
+    "me340": {
+     "key": [
+      "siglip2-so400m",
+      "som",
+      "classes"
+     ],
+     "platt_a": 1.0246,
+     "platt_b": -1.9742
+    },
+    "samsclub-a2": {
+     "key": [
+      "siglip2-so400m",
+      "som",
+      "classes"
+     ],
+     "platt_a": 1.0138,
+     "platt_b": -1.6346
+    },
+    "walmart": {
+     "key": [
+      "pe-core-l",
+      "som",
+      "generic"
+     ],
+     "platt_a": 0.7663,
+     "platt_b": -3.4782
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 138,
+     "routed_complex_and_well_observed": 39,
+     "recgen_gpu_s_at_x7_median": 1133.0,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 29,
+     "routed_complex_and_well_observed": 2,
+     "recgen_gpu_s_at_x7_median": 238.1,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 19,
+     "routed_complex_and_well_observed": 3,
+     "recgen_gpu_s_at_x7_median": 156.0,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "b zero-shot pe-core-l masked classes": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.722,
+    "accuracy_weighted": 0.807,
+    "precision_complex": 0.559,
+    "recall_complex": 0.4,
+    "missed_complex": 57,
+    "false_complex": 30,
+    "ece": 0.086,
+    "tiers": {
+     "zero-shot": 1.0
+    },
+    "vlm_band_share": 0.3,
+    "accuracy_outside_vlm_band": 0.808
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.514,
+     "accuracy_weighted": 0.533,
+     "precision_complex": 0.818,
+     "recall_complex": 0.153,
+     "missed_complex": 50,
+     "false_complex": 2,
+     "ece": 0.31,
+     "tiers": {
+      "zero-shot": 1.0
+     },
+     "vlm_band_share": 0.336,
+     "accuracy_outside_vlm_band": 0.549
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.853,
+     "accuracy_weighted": 0.882,
+     "precision_complex": 0.0,
+     "recall_complex": 0.0,
+     "missed_complex": 3,
+     "false_complex": 12,
+     "ece": 0.175,
+     "tiers": {
+      "zero-shot": 1.0
+     },
+     "vlm_band_share": 0.206,
+     "accuracy_outside_vlm_band": 0.963
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.808,
+     "accuracy_weighted": 0.824,
+     "precision_complex": 0.644,
+     "recall_complex": 0.879,
+     "missed_complex": 4,
+     "false_complex": 16,
+     "ece": 0.122,
+     "tiers": {
+      "zero-shot": 1.0
+     },
+     "vlm_band_share": 0.356,
+     "accuracy_outside_vlm_band": 0.896
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.693,
+    "accuracy_weighted": 0.78,
+    "precision_complex": 0.722,
+    "recall_complex": 0.419,
+    "missed_complex": 18,
+    "false_complex": 5,
+    "ece": 0.136,
+    "tiers": {
+     "zero-shot": 1.0
+    },
+    "vlm_band_share": 0.333,
+    "accuracy_outside_vlm_band": 0.78
+   },
+   "fitted": {
+    "me340": {
+     "key": [
+      "pe-core-l",
+      "masked",
+      "classes"
+     ],
+     "platt_a": 0.5903,
+     "platt_b": -2.9389
+    },
+    "samsclub-a2": {
+     "key": [
+      "pe-core-l",
+      "masked",
+      "classes"
+     ],
+     "platt_a": 0.4388,
+     "platt_b": -1.3209
+    },
+    "walmart": {
+     "key": [
+      "pe-core-l",
+      "masked",
+      "classes"
+     ],
+     "platt_a": 0.4747,
+     "platt_b": -1.5764
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 22,
+     "routed_complex_and_well_observed": 7,
+     "recgen_gpu_s_at_x7_median": 180.6,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 51,
+     "routed_complex_and_well_observed": 5,
+     "recgen_gpu_s_at_x7_median": 418.7,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 387,
+     "routed_complex_and_well_observed": 125,
+     "recgen_gpu_s_at_x7_median": 3177.3,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "b zero-shot siglip2-so400m masked classes": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.642,
+    "accuracy_weighted": 0.679,
+    "precision_complex": 0.345,
+    "recall_complex": 0.2,
+    "missed_complex": 76,
+    "false_complex": 36,
+    "ece": 0.157,
+    "tiers": {
+     "zero-shot": 1.0
+    },
+    "vlm_band_share": 0.425,
+    "accuracy_outside_vlm_band": 0.694
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.458,
+     "accuracy_weighted": 0.481,
+     "precision_complex": 1.0,
+     "recall_complex": 0.017,
+     "missed_complex": 58,
+     "false_complex": 0,
+     "ece": 0.371,
+     "tiers": {
+      "zero-shot": 1.0
+     },
+     "vlm_band_share": 0.159,
+     "accuracy_outside_vlm_band": 0.5
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.765,
+     "accuracy_weighted": 0.783,
+     "precision_complex": 0.0,
+     "recall_complex": 0.0,
+     "missed_complex": 3,
+     "false_complex": 21,
+     "ece": 0.321,
+     "tiers": {
+      "zero-shot": 1.0
+     },
+     "vlm_band_share": 0.598,
+     "accuracy_outside_vlm_band": 0.927
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.712,
+     "accuracy_weighted": 0.649,
+     "precision_complex": 0.545,
+     "recall_complex": 0.545,
+     "missed_complex": 15,
+     "false_complex": 15,
+     "ece": 0.093,
+     "tiers": {
+      "zero-shot": 1.0
+     },
+     "vlm_band_share": 0.529,
+     "accuracy_outside_vlm_band": 0.857
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.587,
+    "accuracy_weighted": 0.665,
+    "precision_complex": 0.5,
+    "recall_complex": 0.29,
+    "missed_complex": 22,
+    "false_complex": 9,
+    "ece": 0.172,
+    "tiers": {
+     "zero-shot": 1.0
+    },
+    "vlm_band_share": 0.44,
+    "accuracy_outside_vlm_band": 0.643
+   },
+   "fitted": {
+    "me340": {
+     "key": [
+      "siglip2-so400m",
+      "masked",
+      "classes"
+     ],
+     "platt_a": 0.5467,
+     "platt_b": -2.4583
+    },
+    "samsclub-a2": {
+     "key": [
+      "siglip2-so400m",
+      "masked",
+      "classes"
+     ],
+     "platt_a": 0.4691,
+     "platt_b": -0.9495
+    },
+    "walmart": {
+     "key": [
+      "siglip2-so400m",
+      "masked",
+      "classes"
+     ],
+     "platt_a": 0.5196,
+     "platt_b": -1.4953
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 3,
+     "routed_complex_and_well_observed": 1,
+     "recgen_gpu_s_at_x7_median": 24.6,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 114,
+     "routed_complex_and_well_observed": 17,
+     "recgen_gpu_s_at_x7_median": 935.9,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 260,
+     "routed_complex_and_well_observed": 102,
+     "recgen_gpu_s_at_x7_median": 2134.6,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c jev q2 raw": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.671,
+    "accuracy_weighted": 0.686,
+    "precision_complex": 0.479,
+    "recall_complex": 0.979,
+    "missed_complex": 2,
+    "false_complex": 101,
+    "ece": 0.317,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.262,
+    "accuracy_outside_vlm_band": 0.727
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.692,
+     "accuracy_weighted": 0.707,
+     "precision_complex": 0.648,
+     "recall_complex": 0.966,
+     "missed_complex": 2,
+     "false_complex": 31,
+     "ece": 0.246,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.159,
+     "accuracy_outside_vlm_band": 0.744
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.618,
+     "accuracy_weighted": 0.636,
+     "precision_complex": 0.071,
+     "recall_complex": 1.0,
+     "missed_complex": 0,
+     "false_complex": 39,
+     "ece": 0.41,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.422,
+     "accuracy_outside_vlm_band": 0.695
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.702,
+     "accuracy_weighted": 0.722,
+     "precision_complex": 0.516,
+     "recall_complex": 1.0,
+     "missed_complex": 0,
+     "false_complex": 31,
+     "ece": 0.305,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.212,
+     "accuracy_outside_vlm_band": 0.732
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.747,
+    "accuracy_weighted": 0.764,
+    "precision_complex": 0.62,
+    "recall_complex": 1.0,
+    "missed_complex": 0,
+    "false_complex": 19,
+    "ece": 0.27,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.16,
+    "accuracy_outside_vlm_band": 0.762
+   },
+   "fitted": {
+    "me340": {
+     "form": "q2",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "samsclub-a2": {
+     "form": "q2",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "walmart": {
+     "form": "q2",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 207,
+     "routed_complex_and_well_observed": 54,
+     "recgen_gpu_s_at_x7_median": 1699.5,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 265,
+     "routed_complex_and_well_observed": 43,
+     "recgen_gpu_s_at_x7_median": 2175.7,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 522,
+     "routed_complex_and_well_observed": 145,
+     "recgen_gpu_s_at_x7_median": 4285.6,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c jev q2 calibrated": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.875,
+    "accuracy_weighted": 0.902,
+    "precision_complex": 0.811,
+    "recall_complex": 0.768,
+    "missed_complex": 22,
+    "false_complex": 17,
+    "ece": 0.032,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.128,
+    "accuracy_outside_vlm_band": 0.93
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.804,
+     "accuracy_weighted": 0.839,
+     "precision_complex": 0.839,
+     "recall_complex": 0.797,
+     "missed_complex": 12,
+     "false_complex": 9,
+     "ece": 0.11,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.14,
+     "accuracy_outside_vlm_band": 0.837
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.961,
+     "accuracy_weighted": 0.981,
+     "precision_complex": 0.333,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 2,
+     "ece": 0.072,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.059,
+     "accuracy_outside_vlm_band": 0.99
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.865,
+     "accuracy_weighted": 0.854,
+     "precision_complex": 0.806,
+     "recall_complex": 0.758,
+     "missed_complex": 8,
+     "false_complex": 6,
+     "ece": 0.077,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.183,
+     "accuracy_outside_vlm_band": 0.965
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.893,
+    "accuracy_weighted": 0.961,
+    "precision_complex": 0.829,
+    "recall_complex": 0.935,
+    "missed_complex": 2,
+    "false_complex": 6,
+    "ece": 0.068,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.067,
+    "accuracy_outside_vlm_band": 0.929
+   },
+   "fitted": {
+    "me340": {
+     "form": "q2",
+     "platt_a": 1.3903,
+     "platt_b": -4.201
+    },
+    "samsclub-a2": {
+     "form": "q2",
+     "platt_a": 0.9403,
+     "platt_b": -2.564
+    },
+    "walmart": {
+     "form": "q2",
+     "platt_a": 0.9819,
+     "platt_b": -2.9427
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 116,
+     "routed_complex_and_well_observed": 40,
+     "recgen_gpu_s_at_x7_median": 952.4,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 14,
+     "routed_complex_and_well_observed": 1,
+     "recgen_gpu_s_at_x7_median": 114.9,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 271,
+     "routed_complex_and_well_observed": 97,
+     "recgen_gpu_s_at_x7_median": 2224.9,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c jev q2a raw": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.744,
+    "accuracy_weighted": 0.756,
+    "precision_complex": 0.545,
+    "recall_complex": 0.947,
+    "missed_complex": 5,
+    "false_complex": 75,
+    "ece": 0.258,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.233,
+    "accuracy_outside_vlm_band": 0.8
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.757,
+     "accuracy_weighted": 0.776,
+     "precision_complex": 0.714,
+     "recall_complex": 0.932,
+     "missed_complex": 4,
+     "false_complex": 22,
+     "ece": 0.191,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.14,
+     "accuracy_outside_vlm_band": 0.783
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.735,
+     "accuracy_weighted": 0.771,
+     "precision_complex": 0.071,
+     "recall_complex": 0.667,
+     "missed_complex": 1,
+     "false_complex": 26,
+     "ece": 0.33,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.382,
+     "accuracy_outside_vlm_band": 0.841
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.74,
+     "accuracy_weighted": 0.738,
+     "precision_complex": 0.55,
+     "recall_complex": 1.0,
+     "missed_complex": 0,
+     "false_complex": 27,
+     "ece": 0.264,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.183,
+     "accuracy_outside_vlm_band": 0.788
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.747,
+    "accuracy_weighted": 0.764,
+    "precision_complex": 0.625,
+    "recall_complex": 0.968,
+    "missed_complex": 1,
+    "false_complex": 18,
+    "ece": 0.24,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.12,
+    "accuracy_outside_vlm_band": 0.788
+   },
+   "fitted": {
+    "me340": {
+     "form": "q2a",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "samsclub-a2": {
+     "form": "q2a",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "walmart": {
+     "form": "q2a",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 177,
+     "routed_complex_and_well_observed": 49,
+     "recgen_gpu_s_at_x7_median": 1453.2,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 175,
+     "routed_complex_and_well_observed": 34,
+     "recgen_gpu_s_at_x7_median": 1436.8,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 503,
+     "routed_complex_and_well_observed": 145,
+     "recgen_gpu_s_at_x7_median": 4129.6,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c jev q2a calibrated": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.863,
+    "accuracy_weighted": 0.89,
+    "precision_complex": 0.795,
+    "recall_complex": 0.737,
+    "missed_complex": 25,
+    "false_complex": 18,
+    "ece": 0.03,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.144,
+    "accuracy_outside_vlm_band": 0.922
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.776,
+     "accuracy_weighted": 0.814,
+     "precision_complex": 0.843,
+     "recall_complex": 0.729,
+     "missed_complex": 16,
+     "false_complex": 8,
+     "ece": 0.107,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.159,
+     "accuracy_outside_vlm_band": 0.822
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.961,
+     "accuracy_weighted": 0.981,
+     "precision_complex": 0.333,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 2,
+     "ece": 0.084,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.059,
+     "accuracy_outside_vlm_band": 0.99
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.856,
+     "accuracy_weighted": 0.836,
+     "precision_complex": 0.765,
+     "recall_complex": 0.788,
+     "missed_complex": 7,
+     "false_complex": 8,
+     "ece": 0.058,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.212,
+     "accuracy_outside_vlm_band": 0.951
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.88,
+    "accuracy_weighted": 0.94,
+    "precision_complex": 0.824,
+    "recall_complex": 0.903,
+    "missed_complex": 3,
+    "false_complex": 6,
+    "ece": 0.068,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.107,
+    "accuracy_outside_vlm_band": 0.91
+   },
+   "fitted": {
+    "me340": {
+     "form": "q2a",
+     "platt_a": 1.2184,
+     "platt_b": -3.3236
+    },
+    "samsclub-a2": {
+     "form": "q2a",
+     "platt_a": 0.8378,
+     "platt_b": -1.9358
+    },
+    "walmart": {
+     "form": "q2a",
+     "platt_a": 0.8929,
+     "platt_b": -2.296
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 109,
+     "routed_complex_and_well_observed": 38,
+     "recgen_gpu_s_at_x7_median": 894.9,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 14,
+     "routed_complex_and_well_observed": 1,
+     "recgen_gpu_s_at_x7_median": 114.9,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 281,
+     "routed_complex_and_well_observed": 102,
+     "recgen_gpu_s_at_x7_median": 2307.0,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c jev q2b raw": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.591,
+    "accuracy_weighted": 0.591,
+    "precision_complex": 0.425,
+    "recall_complex": 0.989,
+    "missed_complex": 1,
+    "false_complex": 127,
+    "ece": 0.375,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.169,
+    "accuracy_outside_vlm_band": 0.619
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.664,
+     "accuracy_weighted": 0.68,
+     "precision_complex": 0.624,
+     "recall_complex": 0.983,
+     "missed_complex": 1,
+     "false_complex": 35,
+     "ece": 0.3,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.065,
+     "accuracy_outside_vlm_band": 0.67
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.461,
+     "accuracy_weighted": 0.467,
+     "precision_complex": 0.052,
+     "recall_complex": 1.0,
+     "missed_complex": 0,
+     "false_complex": 55,
+     "ece": 0.489,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.265,
+     "accuracy_outside_vlm_band": 0.507
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.644,
+     "accuracy_weighted": 0.67,
+     "precision_complex": 0.471,
+     "recall_complex": 1.0,
+     "missed_complex": 0,
+     "false_complex": 37,
+     "ece": 0.346,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.183,
+     "accuracy_outside_vlm_band": 0.659
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.68,
+    "accuracy_weighted": 0.682,
+    "precision_complex": 0.564,
+    "recall_complex": 1.0,
+    "missed_complex": 0,
+    "false_complex": 24,
+    "ece": 0.299,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.147,
+    "accuracy_outside_vlm_band": 0.734
+   },
+   "fitted": {
+    "me340": {
+     "form": "q2b",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "samsclub-a2": {
+     "form": "q2b",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "walmart": {
+     "form": "q2b",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 220,
+     "routed_complex_and_well_observed": 54,
+     "recgen_gpu_s_at_x7_median": 1806.2,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 321,
+     "routed_complex_and_well_observed": 53,
+     "recgen_gpu_s_at_x7_median": 2635.4,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 543,
+     "routed_complex_and_well_observed": 148,
+     "recgen_gpu_s_at_x7_median": 4458.0,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c jev q2b calibrated": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.891,
+    "accuracy_weighted": 0.903,
+    "precision_complex": 0.835,
+    "recall_complex": 0.8,
+    "missed_complex": 19,
+    "false_complex": 15,
+    "ece": 0.028,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.112,
+    "accuracy_outside_vlm_band": 0.942
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.832,
+     "accuracy_weighted": 0.851,
+     "precision_complex": 0.847,
+     "recall_complex": 0.847,
+     "missed_complex": 9,
+     "false_complex": 9,
+     "ece": 0.113,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.121,
+     "accuracy_outside_vlm_band": 0.872
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.961,
+     "accuracy_weighted": 0.979,
+     "precision_complex": 0.4,
+     "recall_complex": 0.667,
+     "missed_complex": 1,
+     "false_complex": 3,
+     "ece": 0.068,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.059,
+     "accuracy_outside_vlm_band": 0.99
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.885,
+     "accuracy_weighted": 0.855,
+     "precision_complex": 0.889,
+     "recall_complex": 0.727,
+     "missed_complex": 9,
+     "false_complex": 3,
+     "ece": 0.08,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.154,
+     "accuracy_outside_vlm_band": 0.966
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.92,
+    "accuracy_weighted": 0.966,
+    "precision_complex": 0.879,
+    "recall_complex": 0.935,
+    "missed_complex": 2,
+    "false_complex": 4,
+    "ece": 0.078,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.053,
+    "accuracy_outside_vlm_band": 0.93
+   },
+   "fitted": {
+    "me340": {
+     "form": "q2b",
+     "platt_a": 1.57,
+     "platt_b": -6.0024
+    },
+    "samsclub-a2": {
+     "form": "q2b",
+     "platt_a": 1.028,
+     "platt_b": -3.7139
+    },
+    "walmart": {
+     "form": "q2b",
+     "platt_a": 1.0699,
+     "platt_b": -4.2287
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 127,
+     "routed_complex_and_well_observed": 40,
+     "recgen_gpu_s_at_x7_median": 1042.7,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 21,
+     "routed_complex_and_well_observed": 0,
+     "recgen_gpu_s_at_x7_median": 172.4,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 278,
+     "routed_complex_and_well_observed": 90,
+     "recgen_gpu_s_at_x7_median": 2282.4,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c jev q5 raw": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.875,
+    "accuracy_weighted": 0.912,
+    "precision_complex": 0.833,
+    "recall_complex": 0.737,
+    "missed_complex": 25,
+    "false_complex": 14,
+    "ece": 0.075,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.118,
+    "accuracy_outside_vlm_band": 0.909
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.766,
+     "accuracy_weighted": 0.78,
+     "precision_complex": 0.84,
+     "recall_complex": 0.712,
+     "missed_complex": 17,
+     "false_complex": 8,
+     "ece": 0.118,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.187,
+     "accuracy_outside_vlm_band": 0.816
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.98,
+     "accuracy_weighted": 0.996,
+     "precision_complex": 1.0,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 0,
+     "ece": 0.109,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.049,
+     "accuracy_outside_vlm_band": 0.979
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.885,
+     "accuracy_weighted": 0.879,
+     "precision_complex": 0.818,
+     "recall_complex": 0.818,
+     "missed_complex": 6,
+     "false_complex": 6,
+     "ece": 0.065,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.115,
+     "accuracy_outside_vlm_band": 0.924
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.92,
+    "accuracy_weighted": 0.928,
+    "precision_complex": 0.879,
+    "recall_complex": 0.935,
+    "missed_complex": 2,
+    "false_complex": 4,
+    "ece": 0.096,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.133,
+    "accuracy_outside_vlm_band": 0.969
+   },
+   "fitted": {
+    "me340": {
+     "form": "q5",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "samsclub-a2": {
+     "form": "q5",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "walmart": {
+     "form": "q5",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 117,
+     "routed_complex_and_well_observed": 37,
+     "recgen_gpu_s_at_x7_median": 960.6,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 15,
+     "routed_complex_and_well_observed": 1,
+     "recgen_gpu_s_at_x7_median": 123.2,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 329,
+     "routed_complex_and_well_observed": 111,
+     "recgen_gpu_s_at_x7_median": 2701.1,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c jev q5 calibrated": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.885,
+    "accuracy_weighted": 0.925,
+    "precision_complex": 0.904,
+    "recall_complex": 0.695,
+    "missed_complex": 29,
+    "false_complex": 7,
+    "ece": 0.097,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.105,
+    "accuracy_outside_vlm_band": 0.904
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.776,
+     "accuracy_weighted": 0.805,
+     "precision_complex": 0.927,
+     "recall_complex": 0.644,
+     "missed_complex": 21,
+     "false_complex": 3,
+     "ece": 0.171,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.131,
+     "accuracy_outside_vlm_band": 0.806
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.98,
+     "accuracy_weighted": 0.996,
+     "precision_complex": 1.0,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 0,
+     "ece": 0.169,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.108,
+     "accuracy_outside_vlm_band": 0.989
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.904,
+     "accuracy_weighted": 0.901,
+     "precision_complex": 0.871,
+     "recall_complex": 0.818,
+     "missed_complex": 6,
+     "false_complex": 4,
+     "ece": 0.075,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.077,
+     "accuracy_outside_vlm_band": 0.917
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.947,
+    "accuracy_weighted": 0.961,
+    "precision_complex": 0.966,
+    "recall_complex": 0.903,
+    "missed_complex": 3,
+    "false_complex": 1,
+    "ece": 0.122,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.093,
+    "accuracy_outside_vlm_band": 0.956
+   },
+   "fitted": {
+    "me340": {
+     "form": "q5",
+     "platt_a": 1.1002,
+     "platt_b": -1.005
+    },
+    "samsclub-a2": {
+     "form": "q5",
+     "platt_a": 0.6919,
+     "platt_b": -0.0614
+    },
+    "walmart": {
+     "form": "q5",
+     "platt_a": 0.8221,
+     "platt_b": -0.3447
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 92,
+     "routed_complex_and_well_observed": 27,
+     "recgen_gpu_s_at_x7_median": 755.3,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 12,
+     "routed_complex_and_well_observed": 0,
+     "recgen_gpu_s_at_x7_median": 98.5,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 302,
+     "routed_complex_and_well_observed": 105,
+     "recgen_gpu_s_at_x7_median": 2479.4,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c jev qyn raw": {
+   "pooled": {
+    "n": 280,
+    "accuracy": 0.311,
+    "accuracy_weighted": 0.281,
+    "precision_complex": 0.296,
+    "recall_complex": 1.0,
+    "missed_complex": 0,
+    "false_complex": 193,
+    "ece": 0.662,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.032,
+    "accuracy_outside_vlm_band": 0.306
+   },
+   "per_video": {
+    "me340": {
+     "n": 84,
+     "accuracy": 0.595,
+     "accuracy_weighted": 0.576,
+     "precision_complex": 0.58,
+     "recall_complex": 1.0,
+     "missed_complex": 0,
+     "false_complex": 34,
+     "ece": 0.374,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.06,
+     "accuracy_outside_vlm_band": 0.608
+    },
+    "samsclub-a2": {
+     "n": 97,
+     "accuracy": 0.041,
+     "accuracy_weighted": 0.015,
+     "precision_complex": 0.031,
+     "recall_complex": 1.0,
+     "missed_complex": 0,
+     "false_complex": 93,
+     "ece": 0.932,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.0,
+     "accuracy_outside_vlm_band": 0.041
+    },
+    "walmart": {
+     "n": 99,
+     "accuracy": 0.333,
+     "accuracy_weighted": 0.436,
+     "precision_complex": 0.32,
+     "recall_complex": 1.0,
+     "missed_complex": 0,
+     "false_complex": 66,
+     "ece": 0.641,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.04,
+     "accuracy_outside_vlm_band": 0.326
+    }
+   },
+   "well_observed": {
+    "n": 66,
+    "accuracy": 0.455,
+    "accuracy_weighted": 0.409,
+    "precision_complex": 0.438,
+    "recall_complex": 1.0,
+    "missed_complex": 0,
+    "false_complex": 36,
+    "ece": 0.54,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.061,
+    "accuracy_outside_vlm_band": 0.452
+   },
+   "fitted": {
+    "me340": {
+     "form": "qyn",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "samsclub-a2": {
+     "form": "qyn",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "walmart": {
+     "form": "qyn",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    }
+   }
+  },
+  "c jev qyn calibrated": {
+   "pooled": {
+    "n": 280,
+    "accuracy": 0.661,
+    "accuracy_weighted": 0.657,
+    "precision_complex": 0.394,
+    "recall_complex": 0.321,
+    "missed_complex": 55,
+    "false_complex": 40,
+    "ece": 0.121,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.471,
+    "accuracy_outside_vlm_band": 0.764
+   },
+   "per_video": {
+    "me340": {
+     "n": 84,
+     "accuracy": 0.524,
+     "accuracy_weighted": 0.544,
+     "precision_complex": 1.0,
+     "recall_complex": 0.149,
+     "missed_complex": 40,
+     "false_complex": 0,
+     "ece": 0.393,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.226,
+     "accuracy_outside_vlm_band": 0.554
+    },
+    "samsclub-a2": {
+     "n": 97,
+     "accuracy": 0.701,
+     "accuracy_weighted": 0.65,
+     "precision_complex": 0.036,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 27,
+     "ece": 0.329,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.536,
+     "accuracy_outside_vlm_band": 0.911
+    },
+    "walmart": {
+     "n": 99,
+     "accuracy": 0.737,
+     "accuracy_weighted": 0.689,
+     "precision_complex": 0.581,
+     "recall_complex": 0.581,
+     "missed_complex": 13,
+     "false_complex": 13,
+     "ece": 0.099,
+     "tiers": {
+      "jev": 1.0
+     },
+     "vlm_band_share": 0.616,
+     "accuracy_outside_vlm_band": 0.947
+    }
+   },
+   "well_observed": {
+    "n": 66,
+    "accuracy": 0.636,
+    "accuracy_weighted": 0.688,
+    "precision_complex": 0.577,
+    "recall_complex": 0.536,
+    "missed_complex": 13,
+    "false_complex": 11,
+    "ece": 0.138,
+    "tiers": {
+     "jev": 1.0
+    },
+    "vlm_band_share": 0.636,
+    "accuracy_outside_vlm_band": 0.625
+   },
+   "fitted": {
+    "me340": {
+     "form": "qyn",
+     "platt_a": 0.8133,
+     "platt_b": -6.6601
+    },
+    "samsclub-a2": {
+     "form": "qyn",
+     "platt_a": 0.5129,
+     "platt_b": -3.1762
+    },
+    "walmart": {
+     "form": "qyn",
+     "platt_a": 0.4469,
+     "platt_b": -3.3409
+    }
+   }
+  },
+  "d cascade: class -> jev q2": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.815,
+    "accuracy_weighted": 0.787,
+    "precision_complex": 0.653,
+    "recall_complex": 0.832,
+    "missed_complex": 16,
+    "false_complex": 42,
+    "ece": 0.217,
+    "tiers": {
+     "jev": 0.342,
+     "rules": 0.658
+    },
+    "vlm_band_share": 0.054,
+    "accuracy_outside_vlm_band": 0.831
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.822,
+     "accuracy_weighted": 0.847,
+     "precision_complex": 0.77,
+     "recall_complex": 0.966,
+     "missed_complex": 2,
+     "false_complex": 17,
+     "ece": 0.426,
+     "tiers": {
+      "jev": 0.383,
+      "rules": 0.617
+     },
+     "vlm_band_share": 0.037,
+     "accuracy_outside_vlm_band": 0.845
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.961,
+     "accuracy_weighted": 0.989,
+     "precision_complex": 0.333,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 2,
+     "ece": 0.072,
+     "tiers": {
+      "jev": 0.343,
+      "rules": 0.657
+     },
+     "vlm_band_share": 0.059,
+     "accuracy_outside_vlm_band": 0.969
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.663,
+     "accuracy_weighted": 0.599,
+     "precision_complex": 0.477,
+     "recall_complex": 0.636,
+     "missed_complex": 12,
+     "false_complex": 23,
+     "ece": 0.268,
+     "tiers": {
+      "jev": 0.298,
+      "rules": 0.702
+     },
+     "vlm_band_share": 0.067,
+     "accuracy_outside_vlm_band": 0.68
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.8,
+    "accuracy_weighted": 0.811,
+    "precision_complex": 0.682,
+    "recall_complex": 0.968,
+    "missed_complex": 1,
+    "false_complex": 14,
+    "ece": 0.248,
+    "tiers": {
+     "jev": 0.387,
+     "rules": 0.613
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.8
+   },
+   "fitted": {
+    "me340": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q2",
+      "platt_a": 2.7851,
+      "platt_b": -5.8717
+     }
+    },
+    "samsclub-a2": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q2",
+      "platt_a": 0.9781,
+      "platt_b": -2.0997
+     }
+    },
+    "walmart": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q2",
+      "platt_a": 1.2084,
+      "platt_b": -4.3694
+     }
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 165,
+     "routed_complex_and_well_observed": 49,
+     "recgen_gpu_s_at_x7_median": 1354.7,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 13,
+     "routed_complex_and_well_observed": 1,
+     "recgen_gpu_s_at_x7_median": 106.7,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 366,
+     "routed_complex_and_well_observed": 132,
+     "recgen_gpu_s_at_x7_median": 3004.9,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "d cascade: class+geometry -> jev q2": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.815,
+    "accuracy_weighted": 0.787,
+    "precision_complex": 0.653,
+    "recall_complex": 0.832,
+    "missed_complex": 16,
+    "false_complex": 42,
+    "ece": 0.218,
+    "tiers": {
+     "jev": 0.351,
+     "rules": 0.649
+    },
+    "vlm_band_share": 0.054,
+    "accuracy_outside_vlm_band": 0.831
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.822,
+     "accuracy_weighted": 0.847,
+     "precision_complex": 0.77,
+     "recall_complex": 0.966,
+     "missed_complex": 2,
+     "false_complex": 17,
+     "ece": 0.426,
+     "tiers": {
+      "jev": 0.383,
+      "rules": 0.617
+     },
+     "vlm_band_share": 0.037,
+     "accuracy_outside_vlm_band": 0.845
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.961,
+     "accuracy_weighted": 0.989,
+     "precision_complex": 0.333,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 2,
+     "ece": 0.072,
+     "tiers": {
+      "jev": 0.343,
+      "rules": 0.657
+     },
+     "vlm_band_share": 0.059,
+     "accuracy_outside_vlm_band": 0.969
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.663,
+     "accuracy_weighted": 0.599,
+     "precision_complex": 0.477,
+     "recall_complex": 0.636,
+     "missed_complex": 12,
+     "false_complex": 23,
+     "ece": 0.269,
+     "tiers": {
+      "jev": 0.327,
+      "rules": 0.673
+     },
+     "vlm_band_share": 0.067,
+     "accuracy_outside_vlm_band": 0.68
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.8,
+    "accuracy_weighted": 0.811,
+    "precision_complex": 0.682,
+    "recall_complex": 0.968,
+    "missed_complex": 1,
+    "false_complex": 14,
+    "ece": 0.249,
+    "tiers": {
+     "jev": 0.4,
+     "rules": 0.6
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.8
+   },
+   "fitted": {
+    "me340": {
+     "gate": "class+geom",
+     "rel_cut_simple_class": 0.08223590642914529,
+     "tier2": {
+      "form": "q2",
+      "platt_a": 2.7851,
+      "platt_b": -5.8717
+     }
+    },
+    "samsclub-a2": {
+     "gate": "class+geom",
+     "rel_cut_simple_class": 0.08223590642914529,
+     "tier2": {
+      "form": "q2",
+      "platt_a": 0.9781,
+      "platt_b": -2.0997
+     }
+    },
+    "walmart": {
+     "gate": "class+geom",
+     "rel_cut_simple_class": 0.07139123784863287,
+     "tier2": {
+      "form": "q2",
+      "platt_a": 1.2084,
+      "platt_b": -4.3694
+     }
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 165,
+     "routed_complex_and_well_observed": 49,
+     "recgen_gpu_s_at_x7_median": 1354.7,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 13,
+     "routed_complex_and_well_observed": 1,
+     "recgen_gpu_s_at_x7_median": 106.7,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 366,
+     "routed_complex_and_well_observed": 132,
+     "recgen_gpu_s_at_x7_median": 3004.9,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "d cascade: class -> jev q5": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.812,
+    "accuracy_weighted": 0.806,
+    "precision_complex": 0.65,
+    "recall_complex": 0.821,
+    "missed_complex": 17,
+    "false_complex": 42,
+    "ece": 0.252,
+    "tiers": {
+     "jev": 0.342,
+     "rules": 0.658
+    },
+    "vlm_band_share": 0.131,
+    "accuracy_outside_vlm_band": 0.809
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.804,
+     "accuracy_weighted": 0.829,
+     "precision_complex": 0.797,
+     "recall_complex": 0.864,
+     "missed_complex": 8,
+     "false_complex": 13,
+     "ece": 0.454,
+     "tiers": {
+      "jev": 0.383,
+      "rules": 0.617
+     },
+     "vlm_band_share": 0.019,
+     "accuracy_outside_vlm_band": 0.81
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.922,
+     "accuracy_weighted": 0.961,
+     "precision_complex": 0.143,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 6,
+     "ece": 0.153,
+     "tiers": {
+      "jev": 0.343,
+      "rules": 0.657
+     },
+     "vlm_band_share": 0.275,
+     "accuracy_outside_vlm_band": 0.959
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.712,
+     "accuracy_weighted": 0.667,
+     "precision_complex": 0.531,
+     "recall_complex": 0.788,
+     "missed_complex": 7,
+     "false_complex": 23,
+     "ece": 0.263,
+     "tiers": {
+      "jev": 0.298,
+      "rules": 0.702
+     },
+     "vlm_band_share": 0.106,
+     "accuracy_outside_vlm_band": 0.688
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.8,
+    "accuracy_weighted": 0.811,
+    "precision_complex": 0.69,
+    "recall_complex": 0.935,
+    "missed_complex": 2,
+    "false_complex": 13,
+    "ece": 0.293,
+    "tiers": {
+     "jev": 0.387,
+     "rules": 0.613
+    },
+    "vlm_band_share": 0.08,
+    "accuracy_outside_vlm_band": 0.783
+   },
+   "fitted": {
+    "me340": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q5",
+      "platt_a": 2.3297,
+      "platt_b": 1.0918
+     }
+    },
+    "samsclub-a2": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q5",
+      "platt_a": 0.6679,
+      "platt_b": 0.8042
+     }
+    },
+    "walmart": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q5",
+      "platt_a": 0.6165,
+      "platt_b": -0.6971
+     }
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 152,
+     "routed_complex_and_well_observed": 45,
+     "recgen_gpu_s_at_x7_median": 1247.9,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 40,
+     "routed_complex_and_well_observed": 5,
+     "recgen_gpu_s_at_x7_median": 328.4,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 395,
+     "routed_complex_and_well_observed": 138,
+     "recgen_gpu_s_at_x7_median": 3243.0,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "d cascade: class -> zero-shot": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.684,
+    "accuracy_weighted": 0.593,
+    "precision_complex": 0.48,
+    "recall_complex": 0.516,
+    "missed_complex": 46,
+    "false_complex": 53,
+    "ece": 0.334,
+    "tiers": {
+     "rules": 0.658,
+     "zero-shot": 0.342
+    },
+    "vlm_band_share": 0.064,
+    "accuracy_outside_vlm_band": 0.693
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.776,
+     "accuracy_weighted": 0.807,
+     "precision_complex": 0.797,
+     "recall_complex": 0.797,
+     "missed_complex": 12,
+     "false_complex": 12,
+     "ece": 0.435,
+     "tiers": {
+      "rules": 0.617,
+      "zero-shot": 0.383
+     },
+     "vlm_band_share": 0.084,
+     "accuracy_outside_vlm_band": 0.806
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.804,
+     "accuracy_weighted": 0.831,
+     "precision_complex": 0.053,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 18,
+     "ece": 0.189,
+     "tiers": {
+      "rules": 0.657,
+      "zero-shot": 0.343
+     },
+     "vlm_band_share": 0.098,
+     "accuracy_outside_vlm_band": 0.826
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.471,
+     "accuracy_weighted": 0.328,
+     "precision_complex": 0.042,
+     "recall_complex": 0.03,
+     "missed_complex": 32,
+     "false_complex": 23,
+     "ece": 0.446,
+     "tiers": {
+      "rules": 0.702,
+      "zero-shot": 0.298
+     },
+     "vlm_band_share": 0.01,
+     "accuracy_outside_vlm_band": 0.466
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.573,
+    "accuracy_weighted": 0.502,
+    "precision_complex": 0.484,
+    "recall_complex": 0.484,
+    "missed_complex": 16,
+    "false_complex": 16,
+    "ece": 0.438,
+    "tiers": {
+     "rules": 0.613,
+     "zero-shot": 0.387
+    },
+    "vlm_band_share": 0.08,
+    "accuracy_outside_vlm_band": 0.58
+   },
+   "fitted": {
+    "me340": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "key": [
+       "pe-core-l",
+       "masked",
+       "classes"
+      ],
+      "platt_a": 1.371,
+      "platt_b": -5.1701
+     }
+    },
+    "samsclub-a2": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "key": [
+       "siglip2-so400m",
+       "masked",
+       "classes"
+      ],
+      "platt_a": 2.1363,
+      "platt_b": -2.2466
+     }
+    },
+    "walmart": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "key": [
+       "pe-core-l",
+       "som",
+       "generic"
+      ],
+      "platt_a": 0.8726,
+      "platt_b": -4.7559
+     }
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 136,
+     "routed_complex_and_well_observed": 34,
+     "recgen_gpu_s_at_x7_median": 1116.6,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 117,
+     "routed_complex_and_well_observed": 14,
+     "recgen_gpu_s_at_x7_median": 960.6,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 189,
+     "routed_complex_and_well_observed": 53,
+     "recgen_gpu_s_at_x7_median": 1551.7,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c' vlm qwen3-vl-8b q2 calibrated (reference: a VLM for every card)": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.802,
+    "accuracy_weighted": 0.818,
+    "precision_complex": 0.69,
+    "recall_complex": 0.632,
+    "missed_complex": 35,
+    "false_complex": 27,
+    "ece": 0.083,
+    "tiers": {
+     "vlm": 1.0
+    },
+    "vlm_band_share": 0.329,
+    "accuracy_outside_vlm_band": 0.843
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.692,
+     "accuracy_weighted": 0.698,
+     "precision_complex": 0.861,
+     "recall_complex": 0.525,
+     "missed_complex": 28,
+     "false_complex": 5,
+     "ece": 0.249,
+     "tiers": {
+      "vlm": 1.0
+     },
+     "vlm_band_share": 0.467,
+     "accuracy_outside_vlm_band": 0.684
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.922,
+     "accuracy_weighted": 0.914,
+     "precision_complex": 0.222,
+     "recall_complex": 0.667,
+     "missed_complex": 1,
+     "false_complex": 7,
+     "ece": 0.188,
+     "tiers": {
+      "vlm": 1.0
+     },
+     "vlm_band_share": 0.314,
+     "accuracy_outside_vlm_band": 0.971
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.798,
+     "accuracy_weighted": 0.773,
+     "precision_complex": 0.643,
+     "recall_complex": 0.818,
+     "missed_complex": 6,
+     "false_complex": 15,
+     "ece": 0.068,
+     "tiers": {
+      "vlm": 1.0
+     },
+     "vlm_band_share": 0.202,
+     "accuracy_outside_vlm_band": 0.843
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.8,
+    "accuracy_weighted": 0.854,
+    "precision_complex": 0.786,
+    "recall_complex": 0.71,
+    "missed_complex": 9,
+    "false_complex": 6,
+    "ece": 0.136,
+    "tiers": {
+     "vlm": 1.0
+    },
+    "vlm_band_share": 0.493,
+    "accuracy_outside_vlm_band": 0.842
+   },
+   "fitted": {
+    "me340": {
+     "form": "q2",
+     "platt_a": 0.5269,
+     "platt_b": -6.5496
+    },
+    "samsclub-a2": {
+     "form": "q2",
+     "platt_a": 0.3535,
+     "platt_b": -3.5025
+    },
+    "walmart": {
+     "form": "q2",
+     "platt_a": 0.4309,
+     "platt_b": -4.5781
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 77,
+     "routed_complex_and_well_observed": 24,
+     "recgen_gpu_s_at_x7_median": 632.2,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 69,
+     "routed_complex_and_well_observed": 10,
+     "recgen_gpu_s_at_x7_median": 566.5,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 384,
+     "routed_complex_and_well_observed": 121,
+     "recgen_gpu_s_at_x7_median": 3152.6,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "c' vlm qwen3-vl-8b q5 raw (reference)": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.837,
+    "accuracy_weighted": 0.865,
+    "precision_complex": 0.708,
+    "recall_complex": 0.789,
+    "missed_complex": 20,
+    "false_complex": 31,
+    "ece": 0.119,
+    "tiers": {
+     "vlm": 1.0
+    },
+    "vlm_band_share": 0.093,
+    "accuracy_outside_vlm_band": 0.866
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.748,
+     "accuracy_weighted": 0.759,
+     "precision_complex": 0.758,
+     "recall_complex": 0.797,
+     "missed_complex": 12,
+     "false_complex": 15,
+     "ece": 0.176,
+     "tiers": {
+      "vlm": 1.0
+     },
+     "vlm_band_share": 0.14,
+     "accuracy_outside_vlm_band": 0.793
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.98,
+     "accuracy_weighted": 0.993,
+     "precision_complex": 0.667,
+     "recall_complex": 0.667,
+     "missed_complex": 1,
+     "false_complex": 1,
+     "ece": 0.049,
+     "tiers": {
+      "vlm": 1.0
+     },
+     "vlm_band_share": 0.059,
+     "accuracy_outside_vlm_band": 0.979
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.788,
+     "accuracy_weighted": 0.787,
+     "precision_complex": 0.634,
+     "recall_complex": 0.788,
+     "missed_complex": 7,
+     "false_complex": 15,
+     "ece": 0.151,
+     "tiers": {
+      "vlm": 1.0
+     },
+     "vlm_band_share": 0.077,
+     "accuracy_outside_vlm_band": 0.823
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.893,
+    "accuracy_weighted": 0.91,
+    "precision_complex": 0.848,
+    "recall_complex": 0.903,
+    "missed_complex": 3,
+    "false_complex": 5,
+    "ece": 0.084,
+    "tiers": {
+     "vlm": 1.0
+    },
+    "vlm_band_share": 0.053,
+    "accuracy_outside_vlm_band": 0.915
+   },
+   "fitted": {
+    "me340": {
+     "form": "q5",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "samsclub-a2": {
+     "form": "q5",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    },
+    "walmart": {
+     "form": "q5",
+     "platt_a": 1.0,
+     "platt_b": 0.0
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 141,
+     "routed_complex_and_well_observed": 35,
+     "recgen_gpu_s_at_x7_median": 1157.6,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 23,
+     "routed_complex_and_well_observed": 2,
+     "recgen_gpu_s_at_x7_median": 188.8,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 338,
+     "routed_complex_and_well_observed": 106,
+     "recgen_gpu_s_at_x7_median": 2775.0,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "d jev q2 calibrated -> vlm on jev's band (P 0.3-0.7)": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.872,
+    "accuracy_weighted": 0.904,
+    "precision_complex": 0.824,
+    "recall_complex": 0.737,
+    "missed_complex": 25,
+    "false_complex": 15,
+    "ece": 0.04,
+    "tiers": {
+     "jev": 0.872,
+     "vlm": 0.128
+    },
+    "vlm_band_share": 0.051,
+    "accuracy_outside_vlm_band": 0.889
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.766,
+     "accuracy_weighted": 0.807,
+     "precision_complex": 0.854,
+     "recall_complex": 0.695,
+     "missed_complex": 18,
+     "false_complex": 7,
+     "ece": 0.15,
+     "tiers": {
+      "jev": 0.86,
+      "vlm": 0.14
+     },
+     "vlm_band_share": 0.037,
+     "accuracy_outside_vlm_band": 0.786
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.98,
+     "accuracy_weighted": 0.988,
+     "precision_complex": 0.667,
+     "recall_complex": 0.667,
+     "missed_complex": 1,
+     "false_complex": 1,
+     "ece": 0.075,
+     "tiers": {
+      "jev": 0.941,
+      "vlm": 0.059
+     },
+     "vlm_band_share": 0.049,
+     "accuracy_outside_vlm_band": 0.99
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.875,
+     "accuracy_weighted": 0.861,
+     "precision_complex": 0.794,
+     "recall_complex": 0.818,
+     "missed_complex": 6,
+     "false_complex": 7,
+     "ece": 0.07,
+     "tiers": {
+      "jev": 0.817,
+      "vlm": 0.183
+     },
+     "vlm_band_share": 0.067,
+     "accuracy_outside_vlm_band": 0.897
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.893,
+    "accuracy_weighted": 0.96,
+    "precision_complex": 0.871,
+    "recall_complex": 0.871,
+    "missed_complex": 4,
+    "false_complex": 4,
+    "ece": 0.066,
+    "tiers": {
+     "jev": 0.933,
+     "vlm": 0.067
+    },
+    "vlm_band_share": 0.027,
+    "accuracy_outside_vlm_band": 0.918
+   },
+   "fitted": {
+    "me340": {
+     "first": {
+      "form": "q2",
+      "platt_a": 1.3903,
+      "platt_b": -4.201
+     },
+     "vlm": {
+      "form": "q2",
+      "platt_a": 0.5269,
+      "platt_b": -6.5496
+     },
+     "band": [
+      0.3,
+      0.7
+     ]
+    },
+    "samsclub-a2": {
+     "first": {
+      "form": "q2",
+      "platt_a": 0.9403,
+      "platt_b": -2.564
+     },
+     "vlm": {
+      "form": "q2",
+      "platt_a": 0.3535,
+      "platt_b": -3.5025
+     },
+     "band": [
+      0.3,
+      0.7
+     ]
+    },
+    "walmart": {
+     "first": {
+      "form": "q2",
+      "platt_a": 0.9819,
+      "platt_b": -2.9427
+     },
+     "vlm": {
+      "form": "q2",
+      "platt_a": 0.4309,
+      "platt_b": -4.5781
+     },
+     "band": [
+      0.3,
+      0.7
+     ]
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 104,
+     "routed_complex_and_well_observed": 35,
+     "recgen_gpu_s_at_x7_median": 853.8,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 19,
+     "routed_complex_and_well_observed": 1,
+     "recgen_gpu_s_at_x7_median": 156.0,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 315,
+     "routed_complex_and_well_observed": 103,
+     "recgen_gpu_s_at_x7_median": 2586.2,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "d cascade: class -> jev q2 -> vlm on jev's band": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.827,
+    "accuracy_weighted": 0.804,
+    "precision_complex": 0.672,
+    "recall_complex": 0.842,
+    "missed_complex": 15,
+    "false_complex": 39,
+    "ece": 0.214,
+    "tiers": {
+     "jev": 0.288,
+     "rules": 0.658,
+     "vlm": 0.054
+    },
+    "vlm_band_share": 0.019,
+    "accuracy_outside_vlm_band": 0.831
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.832,
+     "accuracy_weighted": 0.863,
+     "precision_complex": 0.789,
+     "recall_complex": 0.949,
+     "missed_complex": 3,
+     "false_complex": 15,
+     "ece": 0.427,
+     "tiers": {
+      "jev": 0.346,
+      "rules": 0.617,
+      "vlm": 0.037
+     },
+     "vlm_band_share": 0.009,
+     "accuracy_outside_vlm_band": 0.84
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.971,
+     "accuracy_weighted": 0.994,
+     "precision_complex": 0.5,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 1,
+     "ece": 0.068,
+     "tiers": {
+      "jev": 0.284,
+      "rules": 0.657,
+      "vlm": 0.059
+     },
+     "vlm_band_share": 0.039,
+     "accuracy_outside_vlm_band": 0.969
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.683,
+     "accuracy_weighted": 0.626,
+     "precision_complex": 0.5,
+     "recall_complex": 0.697,
+     "missed_complex": 10,
+     "false_complex": 23,
+     "ece": 0.255,
+     "tiers": {
+      "jev": 0.231,
+      "rules": 0.702,
+      "vlm": 0.067
+     },
+     "vlm_band_share": 0.01,
+     "accuracy_outside_vlm_band": 0.689
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.8,
+    "accuracy_weighted": 0.811,
+    "precision_complex": 0.682,
+    "recall_complex": 0.968,
+    "missed_complex": 1,
+    "false_complex": 14,
+    "ece": 0.248,
+    "tiers": {
+     "jev": 0.387,
+     "rules": 0.613
+    },
+    "vlm_band_share": 0.0,
+    "accuracy_outside_vlm_band": 0.8
+   },
+   "fitted": {
+    "me340": {
+     "first": {
+      "gate": "class",
+      "rel_cut_simple_class": Infinity,
+      "tier2": {
+       "form": "q2",
+       "platt_a": 2.7851,
+       "platt_b": -5.8717
+      }
+     },
+     "vlm": {
+      "form": "q2",
+      "platt_a": 0.5269,
+      "platt_b": -6.5496
+     },
+     "band": [
+      0.3,
+      0.7
+     ]
+    },
+    "samsclub-a2": {
+     "first": {
+      "gate": "class",
+      "rel_cut_simple_class": Infinity,
+      "tier2": {
+       "form": "q2",
+       "platt_a": 0.9781,
+       "platt_b": -2.0997
+      }
+     },
+     "vlm": {
+      "form": "q2",
+      "platt_a": 0.3535,
+      "platt_b": -3.5025
+     },
+     "band": [
+      0.3,
+      0.7
+     ]
+    },
+    "walmart": {
+     "first": {
+      "gate": "class",
+      "rel_cut_simple_class": Infinity,
+      "tier2": {
+       "form": "q2",
+       "platt_a": 1.2084,
+       "platt_b": -4.3694
+      }
+     },
+     "vlm": {
+      "form": "q2",
+      "platt_a": 0.4309,
+      "platt_b": -4.5781
+     },
+     "band": [
+      0.3,
+      0.7
+     ]
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 159,
+     "routed_complex_and_well_observed": 49,
+     "recgen_gpu_s_at_x7_median": 1305.4,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 15,
+     "routed_complex_and_well_observed": 2,
+     "recgen_gpu_s_at_x7_median": 123.2,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 391,
+     "routed_complex_and_well_observed": 136,
+     "recgen_gpu_s_at_x7_median": 3210.1,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "d cascade: class -> jev q2 (POST HOC class table)": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.885,
+    "accuracy_weighted": 0.889,
+    "precision_complex": 0.824,
+    "recall_complex": 0.789,
+    "missed_complex": 20,
+    "false_complex": 16,
+    "ece": 0.113,
+    "tiers": {
+     "jev": 0.479,
+     "rules": 0.521
+    },
+    "vlm_band_share": 0.089,
+    "accuracy_outside_vlm_band": 0.923
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.841,
+     "accuracy_weighted": 0.872,
+     "precision_complex": 0.809,
+     "recall_complex": 0.932,
+     "missed_complex": 4,
+     "false_complex": 13,
+     "ece": 0.243,
+     "tiers": {
+      "jev": 0.458,
+      "rules": 0.542
+     },
+     "vlm_band_share": 0.084,
+     "accuracy_outside_vlm_band": 0.878
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.971,
+     "accuracy_weighted": 0.994,
+     "precision_complex": 0.5,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 1,
+     "ece": 0.047,
+     "tiers": {
+      "jev": 0.373,
+      "rules": 0.627
+     },
+     "vlm_band_share": 0.01,
+     "accuracy_outside_vlm_band": 0.97
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.846,
+     "accuracy_weighted": 0.806,
+     "precision_complex": 0.905,
+     "recall_complex": 0.576,
+     "missed_complex": 14,
+     "false_complex": 2,
+     "ece": 0.116,
+     "tiers": {
+      "jev": 0.606,
+      "rules": 0.394
+     },
+     "vlm_band_share": 0.173,
+     "accuracy_outside_vlm_band": 0.919
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.893,
+    "accuracy_weighted": 0.961,
+    "precision_complex": 0.811,
+    "recall_complex": 0.968,
+    "missed_complex": 1,
+    "false_complex": 7,
+    "ece": 0.124,
+    "tiers": {
+     "jev": 0.547,
+     "rules": 0.453
+    },
+    "vlm_band_share": 0.067,
+    "accuracy_outside_vlm_band": 0.9
+   },
+   "fitted": {
+    "me340": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q2",
+      "platt_a": 1.2917,
+      "platt_b": -3.4356
+     }
+    },
+    "samsclub-a2": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q2",
+      "platt_a": 0.9213,
+      "platt_b": -2.7988
+     }
+    },
+    "walmart": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q2",
+      "platt_a": 0.8557,
+      "platt_b": -3.2443
+     }
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 151,
+     "routed_complex_and_well_observed": 45,
+     "recgen_gpu_s_at_x7_median": 1239.7,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 8,
+     "routed_complex_and_well_observed": 0,
+     "recgen_gpu_s_at_x7_median": 65.7,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 199,
+     "routed_complex_and_well_observed": 80,
+     "recgen_gpu_s_at_x7_median": 1633.8,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  },
+  "d cascade: class -> jev q5 raw (POST HOC class table)": {
+   "pooled": {
+    "n": 313,
+    "accuracy": 0.904,
+    "accuracy_weighted": 0.923,
+    "precision_complex": 0.857,
+    "recall_complex": 0.821,
+    "missed_complex": 17,
+    "false_complex": 13,
+    "ece": 0.089,
+    "tiers": {
+     "jev": 0.479,
+     "rules": 0.521
+    },
+    "vlm_band_share": 0.064,
+    "accuracy_outside_vlm_band": 0.925
+   },
+   "per_video": {
+    "me340": {
+     "n": 107,
+     "accuracy": 0.85,
+     "accuracy_weighted": 0.858,
+     "precision_complex": 0.877,
+     "recall_complex": 0.847,
+     "missed_complex": 9,
+     "false_complex": 7,
+     "ece": 0.249,
+     "tiers": {
+      "jev": 0.458,
+      "rules": 0.542
+     },
+     "vlm_band_share": 0.075,
+     "accuracy_outside_vlm_band": 0.869
+    },
+    "samsclub-a2": {
+     "n": 102,
+     "accuracy": 0.971,
+     "accuracy_weighted": 0.994,
+     "precision_complex": 0.5,
+     "recall_complex": 0.333,
+     "missed_complex": 2,
+     "false_complex": 1,
+     "ece": 0.068,
+     "tiers": {
+      "jev": 0.373,
+      "rules": 0.627
+     },
+     "vlm_band_share": 0.02,
+     "accuracy_outside_vlm_band": 0.97
+    },
+    "walmart": {
+     "n": 104,
+     "accuracy": 0.894,
+     "accuracy_weighted": 0.881,
+     "precision_complex": 0.844,
+     "recall_complex": 0.818,
+     "missed_complex": 6,
+     "false_complex": 5,
+     "ece": 0.036,
+     "tiers": {
+      "jev": 0.606,
+      "rules": 0.394
+     },
+     "vlm_band_share": 0.096,
+     "accuracy_outside_vlm_band": 0.936
+    }
+   },
+   "well_observed": {
+    "n": 75,
+    "accuracy": 0.92,
+    "accuracy_weighted": 0.929,
+    "precision_complex": 0.879,
+    "recall_complex": 0.935,
+    "missed_complex": 2,
+    "false_complex": 4,
+    "ece": 0.133,
+    "tiers": {
+     "jev": 0.547,
+     "rules": 0.453
+    },
+    "vlm_band_share": 0.107,
+    "accuracy_outside_vlm_band": 0.955
+   },
+   "fitted": {
+    "me340": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q5",
+      "platt_a": 1.0,
+      "platt_b": 0.0
+     }
+    },
+    "samsclub-a2": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q5",
+      "platt_a": 1.0,
+      "platt_b": 0.0
+     }
+    },
+    "walmart": {
+     "gate": "class",
+     "rel_cut_simple_class": Infinity,
+     "tier2": {
+      "form": "q5",
+      "platt_a": 1.0,
+      "platt_b": 0.0
+     }
+    }
+   },
+   "load": {
+    "me340": {
+     "cards": 254,
+     "routed_complex": 138,
+     "routed_complex_and_well_observed": 38,
+     "recgen_gpu_s_at_x7_median": 1133.0,
+     "labels_estimate_complex": 112.1,
+     "labels_estimate_unclear": 42.0
+    },
+    "samsclub-a2": {
+     "cards": 623,
+     "routed_complex": 10,
+     "routed_complex_and_well_observed": 0,
+     "recgen_gpu_s_at_x7_median": 82.1,
+     "labels_estimate_complex": 3.7,
+     "labels_estimate_unclear": 14.7
+    },
+    "walmart": {
+     "cards": 721,
+     "routed_complex": 320,
+     "routed_complex_and_well_observed": 111,
+     "recgen_gpu_s_at_x7_median": 2627.2,
+     "labels_estimate_complex": 308.4,
+     "labels_estimate_unclear": 2.9
+    }
+   }
+  }
+ },
+ "baseline_all_simple": {
+  "accuracy": 0.696,
+  "accuracy_weighted": 0.724
+ },
+ "operating_curve": {
+  "c jev q2 calibrated": {
+   "0.2": {
+    "accuracy": 0.84,
+    "precision_complex": 0.674,
+    "recall_complex": 0.916,
+    "routed_complex": {
+     "me340": 150,
+     "samsclub-a2": 79,
+     "walmart": 412
+    },
+    "routed_complex_well_observed": {
+     "me340": 45,
+     "samsclub-a2": 14,
+     "walmart": 121
+    }
+   },
+   "0.3": {
+    "accuracy": 0.885,
+    "precision_complex": 0.776,
+    "recall_complex": 0.874,
+    "routed_complex": {
+     "me340": 135,
+     "samsclub-a2": 40,
+     "walmart": 354
+    },
+    "routed_complex_well_observed": {
+     "me340": 44,
+     "samsclub-a2": 4,
+     "walmart": 109
+    }
+   },
+   "0.4": {
+    "accuracy": 0.882,
+    "precision_complex": 0.796,
+    "recall_complex": 0.821,
+    "routed_complex": {
+     "me340": 126,
+     "samsclub-a2": 23,
+     "walmart": 316
+    },
+    "routed_complex_well_observed": {
+     "me340": 41,
+     "samsclub-a2": 2,
+     "walmart": 105
+    }
+   },
+   "0.5": {
+    "accuracy": 0.875,
+    "precision_complex": 0.811,
+    "recall_complex": 0.768,
+    "routed_complex": {
+     "me340": 116,
+     "samsclub-a2": 14,
+     "walmart": 271
+    },
+    "routed_complex_well_observed": {
+     "me340": 40,
+     "samsclub-a2": 1,
+     "walmart": 97
+    }
+   },
+   "0.6": {
+    "accuracy": 0.866,
+    "precision_complex": 0.844,
+    "recall_complex": 0.684,
+    "routed_complex": {
+     "me340": 107,
+     "samsclub-a2": 9,
+     "walmart": 233
+    },
+    "routed_complex_well_observed": {
+     "me340": 37,
+     "samsclub-a2": 0,
+     "walmart": 86
+    }
+   },
+   "0.7": {
+    "accuracy": 0.866,
+    "precision_complex": 0.896,
+    "recall_complex": 0.632,
+    "routed_complex": {
+     "me340": 96,
+     "samsclub-a2": 5,
+     "walmart": 201
+    },
+    "routed_complex_well_observed": {
+     "me340": 33,
+     "samsclub-a2": 0,
+     "walmart": 80
+    }
+   }
+  },
+  "c jev q5 raw": {
+   "0.2": {
+    "accuracy": 0.786,
+    "precision_complex": 0.604,
+    "recall_complex": 0.853,
+    "routed_complex": {
+     "me340": 159,
+     "samsclub-a2": 120,
+     "walmart": 459
+    },
+    "routed_complex_well_observed": {
+     "me340": 44,
+     "samsclub-a2": 23,
+     "walmart": 137
+    }
+   },
+   "0.3": {
+    "accuracy": 0.834,
+    "precision_complex": 0.697,
+    "recall_complex": 0.8,
+    "routed_complex": {
+     "me340": 142,
+     "samsclub-a2": 43,
+     "walmart": 402
+    },
+    "routed_complex_well_observed": {
+     "me340": 41,
+     "samsclub-a2": 5,
+     "walmart": 123
+    }
+   },
+   "0.4": {
+    "accuracy": 0.869,
+    "precision_complex": 0.793,
+    "recall_complex": 0.768,
+    "routed_complex": {
+     "me340": 128,
+     "samsclub-a2": 26,
+     "walmart": 357
+    },
+    "routed_complex_well_observed": {
+     "me340": 37,
+     "samsclub-a2": 1,
+     "walmart": 115
+    }
+   },
+   "0.5": {
+    "accuracy": 0.875,
+    "precision_complex": 0.833,
+    "recall_complex": 0.737,
+    "routed_complex": {
+     "me340": 117,
+     "samsclub-a2": 15,
+     "walmart": 329
+    },
+    "routed_complex_well_observed": {
+     "me340": 37,
+     "samsclub-a2": 1,
+     "walmart": 111
+    }
+   },
+   "0.6": {
+    "accuracy": 0.885,
+    "precision_complex": 0.883,
+    "recall_complex": 0.716,
+    "routed_complex": {
+     "me340": 103,
+     "samsclub-a2": 8,
+     "walmart": 302
+    },
+    "routed_complex_well_observed": {
+     "me340": 31,
+     "samsclub-a2": 0,
+     "walmart": 105
+    }
+   },
+   "0.7": {
+    "accuracy": 0.888,
+    "precision_complex": 0.917,
+    "recall_complex": 0.695,
+    "routed_complex": {
+     "me340": 95,
+     "samsclub-a2": 5,
+     "walmart": 270
+    },
+    "routed_complex_well_observed": {
+     "me340": 28,
+     "samsclub-a2": 0,
+     "walmart": 99
+    }
+   }
+  },
+  "recommended cascade (the Jev cut)": {
+   "0.2": {
+    "accuracy": 0.859,
+    "precision_complex": 0.714,
+    "recall_complex": 0.895,
+    "routed_complex": {
+     "me340": 160,
+     "samsclub-a2": 58,
+     "walmart": 426
+    },
+    "routed_complex_well_observed": {
+     "me340": 44,
+     "samsclub-a2": 7,
+     "walmart": 134
+    }
+   },
+   "0.3": {
+    "accuracy": 0.882,
+    "precision_complex": 0.779,
+    "recall_complex": 0.853,
+    "routed_complex": {
+     "me340": 150,
+     "samsclub-a2": 22,
+     "walmart": 381
+    },
+    "routed_complex_well_observed": {
+     "me340": 41,
+     "samsclub-a2": 1,
+     "walmart": 122
+    }
+   },
+   "0.4": {
+    "accuracy": 0.901,
+    "precision_complex": 0.833,
+    "recall_complex": 0.842,
+    "routed_complex": {
+     "me340": 143,
+     "samsclub-a2": 13,
+     "walmart": 348
+    },
+    "routed_complex_well_observed": {
+     "me340": 38,
+     "samsclub-a2": 0,
+     "walmart": 115
+    }
+   },
+   "0.5": {
+    "accuracy": 0.904,
+    "precision_complex": 0.857,
+    "recall_complex": 0.821,
+    "routed_complex": {
+     "me340": 138,
+     "samsclub-a2": 10,
+     "walmart": 320
+    },
+    "routed_complex_well_observed": {
+     "me340": 38,
+     "samsclub-a2": 0,
+     "walmart": 111
+    }
+   },
+   "0.6": {
+    "accuracy": 0.914,
+    "precision_complex": 0.895,
+    "recall_complex": 0.811,
+    "routed_complex": {
+     "me340": 130,
+     "samsclub-a2": 8,
+     "walmart": 296
+    },
+    "routed_complex_well_observed": {
+     "me340": 33,
+     "samsclub-a2": 0,
+     "walmart": 105
+    }
+   },
+   "0.7": {
+    "accuracy": 0.914,
+    "precision_complex": 0.905,
+    "recall_complex": 0.8,
+    "routed_complex": {
+     "me340": 127,
+     "samsclub-a2": 6,
+     "walmart": 265
+    },
+    "routed_complex_well_observed": {
+     "me340": 32,
+     "samsclub-a2": 0,
+     "walmart": 99
+    }
+   }
+  }
+ },
+ "paired_bootstrap_accuracy_vs_jev_q2_calibrated": {
+  "a0 rules: class only": {
+   "difference": -0.259,
+   "ci95": [
+    -0.313,
+    -0.201
+   ]
+  },
+  "a2 rules: class, else geometry": {
+   "difference": -0.163,
+   "ci95": [
+    -0.214,
+    -0.112
+   ]
+  },
+  "b zero-shot (encoder, crop, prompts picked on training videos)": {
+   "difference": -0.073,
+   "ci95": [
+    -0.118,
+    -0.029
+   ]
+  },
+  "c jev q5 raw": {
+   "difference": 0.0,
+   "ci95": [
+    -0.038,
+    0.038
+   ]
+  },
+  "d cascade: class -> jev q2": {
+   "difference": -0.061,
+   "ci95": [
+    -0.099,
+    -0.022
+   ]
+  },
+  "d cascade: class -> jev q2 (POST HOC class table)": {
+   "difference": 0.01,
+   "ci95": [
+    -0.022,
+    0.042
+   ]
+  },
+  "c' vlm qwen3-vl-8b q2 calibrated (reference: a VLM for every card)": {
+   "difference": -0.073,
+   "ci95": [
+    -0.118,
+    -0.032
+   ]
+  },
+  "d jev q2 calibrated -> vlm on jev's band (P 0.3-0.7)": {
+   "difference": -0.003,
+   "ci95": [
+    -0.029,
+    0.022
+   ]
+  }
+ },
+ "rules_s_per_card_incl_fitting": 8.002925526935873e-07,
+ "primitive": {
+  "n": 218,
+  "label_counts": {
+   "box": 160,
+   "cylinder": 9,
+   "open frame": 8,
+   "plane": 41
+  },
+  "display model (cards)": {
+   "accuracy": 0.711,
+   "per_video": {
+    "me340": 0.542,
+    "samsclub-a2": 0.798,
+    "walmart": 0.704
+   },
+   "confusions": {
+    "plane -> box": 21,
+    "box -> cylinder": 15,
+    "box -> plane": 11,
+    "cylinder -> box": 6,
+    "plane -> open frame": 4,
+    "plane -> cylinder": 3,
+    "box -> open frame": 2,
+    "open frame -> box": 1
+   }
+  },
+  "jev q5": {
+   "accuracy": 0.628,
+   "per_video": {
+    "me340": 0.438,
+    "samsclub-a2": 0.697,
+    "walmart": 0.662
+   },
+   "confusions": {
+    "box -> plane": 37,
+    "box -> open frame": 23,
+    "plane -> open frame": 11,
+    "cylinder -> plane": 4,
+    "box -> cylinder": 3,
+    "plane -> cylinder": 2,
+    "plane -> box": 1
+   }
+  },
+  "zero-shot pe-core-l masked": {
+   "accuracy": 0.821,
+   "per_video": {
+    "me340": 0.729,
+    "samsclub-a2": 0.939,
+    "walmart": 0.718
+   },
+   "confusions": {
+    "plane -> box": 23,
+    "plane -> cylinder": 5,
+    "box -> cylinder": 5,
+    "box -> plane": 2,
+    "open frame -> box": 2,
+    "cylinder -> box": 1,
+    "plane -> open frame": 1
+   }
+  },
+  "zero-shot siglip2-so400m masked": {
+   "accuracy": 0.702,
+   "per_video": {
+    "me340": 0.646,
+    "samsclub-a2": 0.788,
+    "walmart": 0.62
+   },
+   "confusions": {
+    "box -> cylinder": 22,
+    "plane -> box": 19,
+    "box -> plane": 10,
+    "plane -> cylinder": 8,
+    "open frame -> box": 2,
+    "open frame -> cylinder": 2,
+    "box -> open frame": 1,
+    "open frame -> plane": 1
+   }
+  }
+ },
+ "latency": {
+  "jev": {
+   "questions": 5094,
+   "requests": 80,
+   "gpu": "GPU 0: NVIDIA A100 80GB PCIe (UUID: GPU-20f388e3-3af5-cdb7-6772-7a47fe3097e1)",
+   "compute_s_per_question_batched_8": 0.0881,
+   "round_trip_s_per_question_in_64_question_requests": 0.1031,
+   "hop_s_per_request_median": 0.789,
+   "request_mb_median": 2.35,
+   "single_question_round_trip_s_median": 0.488,
+   "single_question_compute_s_median": 0.117,
+   "cold_start_s": 43.37,
+   "model_load_s": 28.91,
+   "peak_gib_torch_reserved": 22.94,
+   "all_questions_s": 525.25
+  },
+  "qwen_core_sidecar": {
+   "s_per_question_16_parallel_in_container": 0.0212,
+   "single_s_median": 0.0781,
+   "load_s": 90.55,
+   "gpu": "GPU 0: NVIDIA A100 80GB PCIe (UUID: GPU-8cca90a3-38f6-3a4f-40e0-bf0b927e8056)",
+   "questions": 4794
+  },
+  "embed": {
+   "views_per_card": 2.0,
+   "gpu": [
+    "GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-08d0c54e-3269-a6e9-9f01-626f077b9b98)"
+   ],
+   "pe-core-l": {
+    "ms_per_crop": {
+     "plain": 3.107,
+     "masked": 3.131,
+     "som": 3.132
+    },
+    "load_s": 21.3,
+    "ms_per_card_masked": 6.26,
+    "text_s_once": 0.418
+   },
+   "siglip2-so400m": {
+    "ms_per_crop": {
+     "plain": 2.974,
+     "masked": 2.977,
+     "som": 2.969
+    },
+    "load_s": 6.32,
+    "ms_per_card_masked": 5.95,
+    "text_s_once": 0.355
+   }
+  }
+ },
+ "labels": {
+  "me340": {
+   "clear": 107,
+   "complex": 59,
+   "simple": 48,
+   "unclear": 23
+  },
+  "samsclub-a2": {
+   "clear": 102,
+   "complex": 3,
+   "simple": 99,
+   "unclear": 3
+  },
+  "walmart": {
+   "clear": 104,
+   "complex": 33,
+   "simple": 71,
+   "unclear": 1
+  }
+ },
+ "spend_usd": {
+  "apps": {
+   "ap-Xi5OzB9alMGmLdwgWXcPwn jev + embed smoke": 0.14,
+   "ap-1ZRbWyiSU9hhigfzyWTiuw jev + embed": 1.11,
+   "ap-HuRpnB4gBtMvnT7ygV1PUw qwen smoke": 0.103,
+   "ap-4JDeG9ZLrs5xkioIBW2Va9 qwen": 0.208
+  },
+  "total_usd_upper_bound": 1.56,
+  "method": "fast_report.instrument.PRICE (Modal list prices) x each ephemeral app's wall time (modal app list) for every container of it"
+ },
+ "recommended": {
+  "router": "d cascade: class -> jev q5 raw (POST HOC class table)",
+  "rule": "-> (display model, why): 'primitive', 'generated' or 'ask jev' (then call again with Jev-Omni's Q5 probabilities: raw,\n    one question on the card's outlined best view). 1) A card no generator takes (display_model.well_observed fails) keeps its\n    primitive, no question. 2) A class that fixes the shape decides (FIXED_SHAPE_POST_HOC: machines, tools, carts, furniture,\n    cables -> generated; boxes, pallets, shelves, racks, signs, pipes, boards -> primitive). 3) Jev-Omni Q5 for the rest:\n    P(none of the simple shapes) > cut -> generated. No VLM.",
+  "cut": 0.5,
+  "fixed_shape_simple": [
+   "bollard",
+   "book",
+   "box",
+   "cabinet",
+   "cable tray",
+   "can",
+   "clipboard",
+   "column",
+   "control panel",
+   "door",
+   "drum",
+   "duct",
+   "electrical outlet",
+   "exit sign",
+   "first aid kit",
+   "floor drain",
+   "floor marking",
+   "label",
+   "locker",
+   "metal sheet",
+   "pallet",
+   "paper",
+   "pipe",
+   "rack",
+   "refrigerator",
+   "safety sign",
+   "shelf",
+   "sign",
+   "spill",
+   "stacked boxes",
+   "switch",
+   "trash can",
+   "vent",
+   "wall panel",
+   "whiteboard",
+   "window",
+   "wooden board"
+  ],
+  "fixed_shape_complex": {
+   "families": [
+    "furniture",
+    "handling",
+    "machine",
+    "ppe",
+    "tool"
+   ],
+   "classes": [
+    "cable",
+    "cup",
+    "emergency stop button",
+    "eyewash station",
+    "fan",
+    "fire alarm",
+    "fire extinguisher",
+    "guard",
+    "hose",
+    "keyboard",
+    "ladder",
+    "mannequin",
+    "phone",
+    "printer",
+    "rag",
+    "railing",
+    "safety cone",
+    "stairs",
+    "step stool",
+    "work platform",
+    "wrap"
+   ]
+  },
+  "to_jev": "every other class and cards with no class",
+  "question": {
+   "state": "This image is cropped from a video walk-through of a workplace (a workshop, warehouse or store). A white outline with a black edge, tagged 1, marks one region.",
+   "question": "Which shape best represents the outlined object in a 3D model of the place?",
+   "options": [
+    "a flat panel, board, sign, wall or door",
+    "a plain box, carton, block or stack of boxes",
+    "a cylinder: a pipe, pole, drum or roll",
+    "an open frame: a shelf or rack",
+    "none of these simple shapes: a machine, cart, tool, equipment, furniture or an irregular object"
+   ]
+  },
+  "caveats": [
+   "Labels are the agent's (Claude), by looking at blind sheets (the outlined view and a wider one, a code only), not ground truth. 27 of 340 were unclear (a region across objects, a sliver, a floor line) and are left out; 23 of them on ME340, whose cards are often parts or fragments of machines and benches.",
+   "Load-bearing labelling calls: full pet-food bags and shrink-wrapped packs are boxes (SIMPLE); shelf boards / lips and signs are planes; workbenches are furniture (COMPLEX, the user's list). If the 23 labelled bags were COMPLEX instead, Jev Q5 alone would drop 0.875 -> 0.834 (Walmart 0.885 -> 0.760), the pre-registered cascade (bag -> complex) would rise 0.815 -> 0.888 and the recommended one fall 0.904 -> 0.863: bags are a policy decision, so put 'bag' in the class list whichever way it goes.",
+   "The recommended class list is POST HOC: the pre-registered list (commit 1b61ed1, before any label) minus 5 entries the labels showed to be shape-ambiguous (bag, tool box, tool tray, crate, display rack). Its 0.904 is optimistic; the held-out numbers are 0.815 for the pre-registered list and 0.875 for Jev alone. On the cards the post-hoc list decides, the class is right 0.975 vs Jev 0.920 (ME340 0.948 vs 0.793: Jev calls workbenches, hand tools and machine parts simple). Only 15 of the list's classes had labelled cards here (box, stacked boxes, pallet, shelf, rack, sign, spill, pipe, metal sheet, wooden board; machine, hand tool, power tool, cable, workbench); the other entries are the user's definition, untested.",
+   "Per video n is 102-107 labelled; a difference under ~5 points is under ~5 cards; the bootstrap intervals are above.",
+   "Jev-Omni's raw Q2 answers lean hard to 'a detailed 3D model' and move with the option order (raw 0.744 vs 0.591 by order): Q2 needs its two-number Platt calibration, whose intercept moved from -2.6 to -4.2 with the training videos' mix. Q5's raw probabilities need none (ECE 0.075), hence Q5 in the rule. The yes / no form ('a simple geometric shape?') is unusable (Jev says no to almost all).",
+   "RecGen load is dominated by Walmart's wall of shoes: ~300 COMPLEX cards, ~100 of them well-observed -> ~100 generations per video (~15 min of one GPU at X7's 8.2 s median). A per-video cap or reuse of one generated model across same-type cards (X9) is needed whatever the router.",
+   "The rule routes only well-observed cards (display_model.well_observed, the generators' own view gate): 352 of 1598 cards. If a single-view generator (SAM 3D from one image, TRELLIS) is adopted, drop the gate: Jev then answers every non-class card (~0.1 s each batched).",
+   "Which primitive is a separate, weaker spot: the cards' display model agrees with the SIMPLE label 0.71 (planes drawn as boxes, boxes as cylinders), PE-Core-L zero-shot's shape group 0.82, Jev's Q5 argmax 0.63. Many plane / box disagreements are thin boards and lips, where a thin box and a slab look alike.",
+   "Data: the r4-models-bench-001 warm calls (the only r4 runs with primitive fits); no r4b-* run existed; r4-physical-results has no fits.",
+   "The VLM tier was measured, not assumed: the core's own Qwen3-VL-8B (same image and questions, letter log-probs) is worse than Jev alone (0.802-0.837) and deciding Jev's uncertain band (P 0.3-0.7, 13 % of cards) with it changes nothing (0.872 vs 0.875).",
+   "Jev's one-question round trip (0.49 s) is mostly the hop: batch each cards version's questions (0.10 s a question in 64-question requests)."
+  ]
+ }
+}

@@ -1,0 +1,1888 @@
+{
+ "schema": "fx-x8-jev-results-v1",
+ "branch": "fx/x8-jev",
+ "run": "fx-x8-jev-001",
+ "scale": "estimated (no metric quantity is measured here; all numbers are decisions, times and memory)",
+ "model_card": {
+  "jev_omni": {
+   "repo": "akhilaaa3/Jev-Omni",
+   "licence": "Apache-2.0 (card metadata and text)",
+   "base": "google/gemma-4-12B-it: HF metadata licence apache-2.0 (license_link ai.google.dev/gemma/docs/gemma_4_license), so no Gemma Terms-of-Use restrictions ride along; dataset rights separate (card)",
+   "weights": "one bf16 checkpoint (11.96 B params, model.safetensors) + head.pt (Linear 3840 -> 256 option slots, masked to the option count)",
+   "input_format": "prompt = state + '---' + 'QUESTION: q' + numbered options 1..n + 'Reply with only the number...'; the decision is the head's softmax over n slots on the last position's hidden state; 2-256 options, <= 20 recommended",
+   "several_images": "predict() takes one media file (image) or a video (sampled to 16 frames, sent as 16 image blocks); several images per question work by the same content path (used here for set a 'two images'); no batched API (added here: right padding + per-row last-token gather)",
+   "loaded_as_documented": true,
+   "environment": "transformers 5.17.0, torch 2.14.0 (the fast core's image, unchanged) + soundfile/librosa/ffmpeg",
+   "card_verification_cases": {
+    "published_worst_abs_diff": 0.01936584711074829,
+    "ours": [
+     {
+      "Yes": 0.00010554686741670594,
+      "No": 0.9998944997787476
+     },
+     {
+      "Yes": 0.941439151763916,
+      "No": 0.058560825884342194
+     },
+     {
+      "1": 0.2354956716299057,
+      "2": 0.09552125632762909,
+      "3": 0.04255319759249687,
+      "4": 0.08562469482421875,
+      "5": 0.08331511914730072,
+      "6": 0.4574899971485138
+     },
+     {
+      "Blue": 0.4305742681026459,
+      "Yellow": 0.12802547216415405,
+      "Red": 0.07526227831840515,
+      "Green": 0.3661380410194397
+     }
+    ],
+    "worst_abs_diff_vs_reference": 0.01761
+   },
+   "card_inconsistencies_observed": [
+    "card says FP32 weights ~50 GB; the repo checkpoint is bf16 ~24 GB and loads resident at 25.3 GiB",
+    "card says the loader downloads the original Gemma 4 components; the loader downloads only this repo (all modalities are in it)",
+    "card's own verification: a fair die gets P(6)=0.46 and P(3)=0.04, reproduced here: uniform uncertainty is not what the head reports"
+   ]
+  },
+  "laya": {
+   "repo": "convaiinnovations/laya (root = English ModernBERT-large, 421 M)",
+   "licence": "Apache-2.0",
+   "package": "laya 0.3.21 (pip), laya.load(repo)",
+   "runtime_warning": "checkpoint ships an invalid temperature for choice:11+ (0.10 -> clamped 0.5); the runtime itself says confidence for those entries is uncalibrated: our 20-rule question is one",
+   "own_card_limit": "base checkpoints near chance zero-shot on typed decisions; accuracy comes from fine-tuning on the domain"
+  }
+ },
+ "sets": {
+  "a_same_object": {
+   "n": 300,
+   "kinds": {
+    "neg-lookalike": 96,
+    "neg-other-class": 54,
+    "pos-cross-object": 75,
+    "pos-same-object": 75
+   },
+   "truth": "reference = delivered object-map identity (mask IoU >= 0.5 with our segmented outlines); audited = agent looked at all 300 pairs: 19 flipped to 'different', 28 excluded as unsure (sets/a-audit.json, sheets/a-*.jpg)",
+   "audited_n": {
+    "neg-lookalike": 91,
+    "neg-other-class": 51,
+    "pos-cross-object": 56,
+    "pos-same-object": 74
+   }
+  },
+  "b_which_label": {
+   "n_all_views": 428,
+   "n_audited_best_view": 233,
+   "truth": "delivered report name, name rule of FAST-BUILD-SPEC 10; audited = 258 best views looked at, 43 renamed, 25 dropped (sets/b-audit.json, sheets/b0-*.jpg)",
+   "options": "short = SigLIP 2's top 19 of the video vocabulary + 'none of these'; full = the whole vocabulary (56/21/17 words) + 'none of these'",
+   "vocabulary_recall_audited": 0.7768,
+   "shortlist_recall_audited": 0.7725
+  },
+  "c_object_part_background_group": {
+   "n": 263,
+   "source": "X2 run 002 contact-sheet tiles (me340 amg + expansion, vlm-ground, sam3-generic; samsclub amg16 + expansion; walmart amg16 + expansion)",
+   "labels": {
+    "A": 98,
+    "B": 116,
+    "C": 12,
+    "D": 37
+   },
+   "labeller": "agent-labelled (sets/c-labels.json, sheets/c-*.jpg); X2's per-sheet counts differ by a few tiles (letters B/D on printed labels and pallet bands)"
+  },
+  "d_ehs_yes_no": {
+   "n": 154,
+   "questions": {
+    "q1": "Is there a cable or hose lying across the floor where people walk?",
+    "q2": "Are boxes or goods stacked unstably, so that they could fall?",
+    "q3": "Is a person standing on a shelf, rack or pallet?",
+    "q4": "Is the aisle or exit route blocked or narrowed by an object standing in it?",
+    "q5": "Is a person standing on a raised platform, step or box instead of the floor?"
+   },
+   "per_question": {
+    "q1": {
+     "n": 38,
+     "yes": 9
+    },
+    "q2": {
+     "n": 19,
+     "yes": 0
+    },
+    "q3": {
+     "n": 13,
+     "yes": 0
+    },
+    "q4": {
+     "n": 69,
+     "yes": 28
+    },
+    "q5": {
+     "n": 15,
+     "yes": 6
+    }
+   },
+   "labeller": "agent-labelled (sets/d.json, sheets/d-positives-and-aisles.jpg); 104 clear, 50 judgement calls",
+   "sources": "3 test clips + lightning-3585 + 3 local public clips (tank museum, NASA clean room, AGV depot) + TUM fr1 room frames",
+   "not_balanced": "43 yes of 154: no footage available here shows unstable stacks (q2) or a person on a shelf/pallet (q3), so those two measure false alarms only; q5 (person on a raised platform) was added because the NASA clip has positives"
+  },
+  "e_fact_routing_text": {
+   "n": 106,
+   "rules": 20,
+   "severity_items": 96,
+   "labeller": "agent-written facts, rule ids from ehs_spatial/video.py R1-R3, panoptes-serving starter.md / workcell_v2 (compiled p01-p03 severities) / osha1910.md; severities for the rest agent-assigned"
+  }
+ },
+ "results": {
+  "a_reference": {
+   "jev-two-images": {
+    "n": 300,
+    "accuracy": 0.7633,
+    "balanced_accuracy": 0.7633,
+    "auroc_p_yes": 0.8424,
+    "auroc_confidence_vs_correct": 0.6316,
+    "ece_10": 0.0948,
+    "mean_confidence": 0.8453,
+    "said_yes_share": 0.4033,
+    "in_sample": {
+     "threshold": 0.9979,
+     "decided_share": 0.08,
+     "accuracy_decided": 0.9167
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.1133,
+     "accuracy_decided": 0.8824
+    },
+    "escalation_rate_cross_fitted": 0.8867
+   },
+   "jev-side-by-side": {
+    "n": 300,
+    "accuracy": 0.77,
+    "balanced_accuracy": 0.77,
+    "auroc_p_yes": 0.8532,
+    "auroc_confidence_vs_correct": 0.6918,
+    "ece_10": 0.0877,
+    "mean_confidence": 0.8254,
+    "said_yes_share": 0.5233,
+    "in_sample": {
+     "threshold": 0.9875,
+     "decided_share": 0.12,
+     "accuracy_decided": 0.9167
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.3133,
+     "accuracy_decided": 0.8404
+    },
+    "escalation_rate_cross_fitted": 0.6867
+   },
+   "jev-two-images-batched": {
+    "n": 300,
+    "accuracy": 0.77,
+    "balanced_accuracy": 0.77,
+    "auroc_p_yes": 0.843,
+    "auroc_confidence_vs_correct": 0.6164,
+    "ece_10": 0.0878,
+    "mean_confidence": 0.8438,
+    "said_yes_share": 0.41,
+    "in_sample": {
+     "threshold": 0.9979,
+     "decided_share": 0.0833,
+     "accuracy_decided": 0.92
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.11,
+     "accuracy_decided": 0.8788
+    },
+    "escalation_rate_cross_fitted": 0.89
+   },
+   "jev-side-by-side-batched": {
+    "n": 300,
+    "accuracy": 0.7867,
+    "balanced_accuracy": 0.7867,
+    "auroc_p_yes": 0.867,
+    "auroc_confidence_vs_correct": 0.7039,
+    "ece_10": 0.0555,
+    "mean_confidence": 0.8336,
+    "said_yes_share": 0.5333,
+    "in_sample": {
+     "threshold": 0.9686,
+     "decided_share": 0.2033,
+     "accuracy_decided": 0.9016
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.3567,
+     "accuracy_decided": 0.8131
+    },
+    "escalation_rate_cross_fitted": 0.6433
+   },
+   "qwen3-vl": {
+    "n": 300,
+    "accuracy": 0.8167,
+    "balanced_accuracy": 0.8167,
+    "auroc_p_yes": 0.9133,
+    "auroc_confidence_vs_correct": 0.7132,
+    "ece_10": 0.1666,
+    "mean_confidence": 0.9803,
+    "said_yes_share": 0.39,
+    "in_sample": {
+     "threshold": 1.0,
+     "decided_share": 0.38,
+     "accuracy_decided": 0.9035
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.6233,
+     "accuracy_decided": 0.861
+    },
+    "escalation_rate_cross_fitted": 0.3767
+   },
+   "siglip-cos (platt, cross-fitted on our labels)": {
+    "n": 300,
+    "accuracy": 0.69,
+    "balanced_accuracy": 0.69,
+    "auroc_p_yes": 0.7656,
+    "auroc_confidence_vs_correct": 0.6731,
+    "ece_10": 0.035,
+    "mean_confidence": 0.697,
+    "said_yes_share": 0.5033,
+    "in_sample": {
+     "threshold": 0.9409,
+     "decided_share": 0.0167,
+     "accuracy_decided": 1.0
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.2267,
+     "accuracy_decided": 0.7647
+    },
+    "escalation_rate_cross_fitted": 0.7733
+   },
+   "siglip_raw": {
+    "auroc_cos": 0.7684,
+    "accuracy_at_core_threshold_0.9858": 0.5,
+    "same_share_at_core_threshold": 0.0
+   },
+   "accuracy_by_kind": {
+    "jev-two-images": {
+     "neg-lookalike": 0.8333,
+     "neg-other-class": 0.9074,
+     "pos-cross-object": 0.4533,
+     "pos-same-object": 0.88
+    },
+    "qwen3-vl": {
+     "neg-lookalike": 0.9167,
+     "neg-other-class": 0.9444,
+     "pos-cross-object": 0.44,
+     "pos-same-object": 0.9733
+    }
+   }
+  },
+  "a_audited": {
+   "jev-two-images": {
+    "n": 272,
+    "accuracy": 0.8897,
+    "balanced_accuracy": 0.8831,
+    "auroc_p_yes": 0.9545,
+    "auroc_confidence_vs_correct": 0.8239,
+    "ece_10": 0.0538,
+    "mean_confidence": 0.8528,
+    "said_yes_share": 0.3934,
+    "in_sample": {
+     "threshold": 0.5273,
+     "decided_share": 0.9779,
+     "accuracy_decided": 0.9023
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.9559,
+     "accuracy_decided": 0.9038
+    },
+    "escalation_rate_cross_fitted": 0.0441
+   },
+   "jev-side-by-side": {
+    "n": 272,
+    "accuracy": 0.8456,
+    "balanced_accuracy": 0.8598,
+    "auroc_p_yes": 0.9527,
+    "auroc_confidence_vs_correct": 0.8411,
+    "ece_10": 0.0523,
+    "mean_confidence": 0.8342,
+    "said_yes_share": 0.511,
+    "in_sample": {
+     "threshold": 0.6732,
+     "decided_share": 0.8272,
+     "accuracy_decided": 0.9022
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.8199,
+     "accuracy_decided": 0.9103
+    },
+    "escalation_rate_cross_fitted": 0.1801
+   },
+   "jev-two-images-batched": {
+    "n": 272,
+    "accuracy": 0.9007,
+    "balanced_accuracy": 0.8966,
+    "auroc_p_yes": 0.9556,
+    "auroc_confidence_vs_correct": 0.8011,
+    "ece_10": 0.0493,
+    "mean_confidence": 0.8515,
+    "said_yes_share": 0.4044,
+    "in_sample": {
+     "threshold": 0.5137,
+     "decided_share": 1.0,
+     "accuracy_decided": 0.9007
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.9412,
+     "accuracy_decided": 0.9141
+    },
+    "escalation_rate_cross_fitted": 0.0588
+   },
+   "jev-side-by-side-batched": {
+    "n": 272,
+    "accuracy": 0.8419,
+    "balanced_accuracy": 0.8567,
+    "auroc_p_yes": 0.9545,
+    "auroc_confidence_vs_correct": 0.8634,
+    "ece_10": 0.0497,
+    "mean_confidence": 0.8438,
+    "said_yes_share": 0.5147,
+    "in_sample": {
+     "threshold": 0.6663,
+     "decided_share": 0.8603,
+     "accuracy_decided": 0.9017
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.8787,
+     "accuracy_decided": 0.8912
+    },
+    "escalation_rate_cross_fitted": 0.1213
+   },
+   "qwen3-vl": {
+    "n": 272,
+    "accuracy": 0.9338,
+    "balanced_accuracy": 0.9315,
+    "auroc_p_yes": 0.9813,
+    "auroc_confidence_vs_correct": 0.8799,
+    "ece_10": 0.0535,
+    "mean_confidence": 0.9841,
+    "said_yes_share": 0.4081,
+    "in_sample": {
+     "threshold": 0.5622,
+     "decided_share": 1.0,
+     "accuracy_decided": 0.9338
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.9963,
+     "accuracy_decided": 0.9336
+    },
+    "escalation_rate_cross_fitted": 0.0037
+   },
+   "siglip-cos (platt, cross-fitted on our labels)": {
+    "n": 272,
+    "accuracy": 0.8088,
+    "balanced_accuracy": 0.7979,
+    "auroc_p_yes": 0.8533,
+    "auroc_confidence_vs_correct": 0.6803,
+    "ece_10": 0.0679,
+    "mean_confidence": 0.7781,
+    "said_yes_share": 0.386,
+    "in_sample": {
+     "threshold": 0.7582,
+     "decided_share": 0.5882,
+     "accuracy_decided": 0.9
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.5735,
+     "accuracy_decided": 0.8974
+    },
+    "escalation_rate_cross_fitted": 0.4265
+   },
+   "siglip_raw": {
+    "auroc_cos": 0.8598,
+    "accuracy_at_core_threshold_0.9858": 0.5919,
+    "same_share_at_core_threshold": 0.0
+   },
+   "accuracy_by_kind": {
+    "jev-two-images": {
+     "neg-lookalike": 0.8791,
+     "neg-other-class": 0.9608,
+     "pos-cross-object": 0.8393,
+     "pos-same-object": 0.8919
+    },
+    "qwen3-vl": {
+     "neg-lookalike": 0.9451,
+     "neg-other-class": 0.9608,
+     "pos-cross-object": 0.8214,
+     "pos-same-object": 0.9865
+    }
+   },
+   "jev_and_qwen_agree": {
+    "agree_share": 0.9044,
+    "accuracy_when_agree": 0.9553
+   }
+  },
+  "b_audited_best_view": {
+   "jev-shortlist": {
+    "n": 233,
+    "accuracy": 0.5193,
+    "auroc_confidence_vs_correct": 0.7116,
+    "ece_10": 0.2033,
+    "mean_confidence": 0.7105,
+    "in_sample": {
+     "threshold": 0.9942,
+     "decided_share": 0.0043,
+     "accuracy_decided": 1.0
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0773,
+     "accuracy_decided": 0.5556
+    },
+    "escalation_rate_cross_fitted": 0.9227
+   },
+   "jev-full-vocabulary": {
+    "n": 233,
+    "accuracy": 0.4163,
+    "auroc_confidence_vs_correct": 0.8769,
+    "ece_10": 0.1664,
+    "mean_confidence": 0.5828,
+    "in_sample": {
+     "threshold": 0.9542,
+     "decided_share": 0.2017,
+     "accuracy_decided": 0.9149
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.2146,
+     "accuracy_decided": 0.88
+    },
+    "escalation_rate_cross_fitted": 0.7854
+   },
+   "qwen3-vl-shortlist": {
+    "n": 233,
+    "accuracy": 0.4979,
+    "auroc_confidence_vs_correct": 0.6488,
+    "ece_10": 0.4161,
+    "mean_confidence": 0.9139,
+    "in_sample": {
+     "threshold": 1.0,
+     "decided_share": 0.0086,
+     "accuracy_decided": 1.0
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0944,
+     "accuracy_decided": 0.4091
+    },
+    "escalation_rate_cross_fitted": 0.9056
+   },
+   "jev-shortlist-batched": {
+    "n": 233,
+    "accuracy": 0.515,
+    "auroc_confidence_vs_correct": 0.7072,
+    "ece_10": 0.2016,
+    "mean_confidence": 0.7063,
+    "in_sample": {
+     "threshold": 0.9954,
+     "decided_share": 0.0043,
+     "accuracy_decided": 1.0
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0773,
+     "accuracy_decided": 0.5556
+    },
+    "escalation_rate_cross_fitted": 0.9227
+   },
+   "jev-full-vocabulary-batched": {
+    "n": 233,
+    "accuracy": 0.4292,
+    "auroc_confidence_vs_correct": 0.8474,
+    "ece_10": 0.1553,
+    "mean_confidence": 0.5844,
+    "in_sample": {
+     "threshold": 0.9531,
+     "decided_share": 0.2146,
+     "accuracy_decided": 0.9
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.2361,
+     "accuracy_decided": 0.8545
+    },
+    "escalation_rate_cross_fitted": 0.7639
+   },
+   "siglip-zero-shot-full-vocabulary": {
+    "n": 233,
+    "accuracy": 0.3219,
+    "auroc_confidence_vs_correct": 0.8384,
+    "ece_10": 0.1689,
+    "mean_confidence": 0.4853,
+    "in_sample": {
+     "threshold": 0.8406,
+     "decided_share": 0.1288,
+     "accuracy_decided": 0.9
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.1202,
+     "accuracy_decided": 0.8929
+    },
+    "escalation_rate_cross_fitted": 0.8798
+   },
+   "by_truth_kind": {
+    "jev-shortlist": {
+     "correct_word_exists": "121/180",
+     "only_none_correct": "0/53"
+    },
+    "jev-full-vocabulary": {
+     "correct_word_exists": "97/181",
+     "only_none_correct": "0/52"
+    },
+    "qwen3-vl-shortlist": {
+     "correct_word_exists": "115/180",
+     "only_none_correct": "1/53"
+    },
+    "jev-shortlist-batched": {
+     "correct_word_exists": "120/180",
+     "only_none_correct": "0/53"
+    },
+    "jev-full-vocabulary-batched": {
+     "correct_word_exists": "100/181",
+     "only_none_correct": "0/52"
+    }
+   },
+   "core_cascade_label_accuracy": 0.3648,
+   "sam3_word_accuracy": 0.3047,
+   "siglip_core_rule_p0.5_margin0.25": {
+    "decided_share": 0.3777,
+    "accuracy_decided": 0.6023
+   },
+   "jev_and_qwen_agree": {
+    "agree_share": 0.5579,
+    "accuracy_when_agree": 0.6923
+   }
+  },
+  "b_reference_all_views": {
+   "jev-shortlist": {
+    "n": 428,
+    "accuracy": 0.3902,
+    "auroc_confidence_vs_correct": 0.6922,
+    "ece_10": 0.2954,
+    "mean_confidence": 0.6856,
+    "in_sample": {
+     "threshold": 0.9874,
+     "decided_share": 0.0234,
+     "accuracy_decided": 0.9
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.007,
+     "accuracy_decided": 0.6667
+    },
+    "escalation_rate_cross_fitted": 0.993
+   },
+   "jev-full-vocabulary": {
+    "n": 428,
+    "accuracy": 0.3458,
+    "auroc_confidence_vs_correct": 0.8325,
+    "ece_10": 0.2349,
+    "mean_confidence": 0.5807,
+    "in_sample": {
+     "threshold": 0.9933,
+     "decided_share": 0.028,
+     "accuracy_decided": 0.9167
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0234,
+     "accuracy_decided": 1.0
+    },
+    "escalation_rate_cross_fitted": 0.9766
+   },
+   "qwen3-vl-shortlist": {
+    "n": 428,
+    "accuracy": 0.3505,
+    "auroc_confidence_vs_correct": 0.6132,
+    "ece_10": 0.5382,
+    "mean_confidence": 0.8886,
+    "in_sample": {
+     "threshold": 1.0,
+     "decided_share": 0.0047,
+     "accuracy_decided": 1.0
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0164,
+     "accuracy_decided": 0.5714
+    },
+    "escalation_rate_cross_fitted": 0.9836
+   },
+   "jev-shortlist-batched": {
+    "n": 428,
+    "accuracy": 0.3902,
+    "auroc_confidence_vs_correct": 0.6862,
+    "ece_10": 0.2976,
+    "mean_confidence": 0.6877,
+    "in_sample": {
+     "threshold": 0.9954,
+     "decided_share": 0.0023,
+     "accuracy_decided": 1.0
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0117,
+     "accuracy_decided": 0.6
+    },
+    "escalation_rate_cross_fitted": 0.9883
+   },
+   "jev-full-vocabulary-batched": {
+    "n": 428,
+    "accuracy": 0.3435,
+    "auroc_confidence_vs_correct": 0.8285,
+    "ece_10": 0.2428,
+    "mean_confidence": 0.5862,
+    "in_sample": {
+     "threshold": 0.9933,
+     "decided_share": 0.028,
+     "accuracy_decided": 0.9167
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0234,
+     "accuracy_decided": 1.0
+    },
+    "escalation_rate_cross_fitted": 0.9766
+   },
+   "siglip-zero-shot-full-vocabulary": {
+    "n": 428,
+    "accuracy": 0.2757,
+    "auroc_confidence_vs_correct": 0.7889,
+    "ece_10": 0.2021,
+    "mean_confidence": 0.4778,
+    "in_sample": {
+     "threshold": 0.9796,
+     "decided_share": 0.0093,
+     "accuracy_decided": 1.0
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0397,
+     "accuracy_decided": 0.5882
+    },
+    "escalation_rate_cross_fitted": 0.9603
+   }
+  },
+  "c": {
+   "jev": {
+    "n": 263,
+    "accuracy": 0.6616,
+    "auroc_confidence_vs_correct": 0.6355,
+    "ece_10": 0.1236,
+    "mean_confidence": 0.7843,
+    "in_sample": {
+     "threshold": 0.9857,
+     "decided_share": 0.0875,
+     "accuracy_decided": 0.913
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.1673,
+     "accuracy_decided": 0.7727
+    },
+    "escalation_rate_cross_fitted": 0.8327
+   },
+   "qwen3-vl": {
+    "n": 263,
+    "accuracy": 0.5475,
+    "auroc_confidence_vs_correct": 0.5976,
+    "ece_10": 0.3807,
+    "mean_confidence": 0.9283,
+    "in_sample": {
+     "threshold": 1.0,
+     "decided_share": 0.0266,
+     "accuracy_decided": 1.0
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0228,
+     "accuracy_decided": 1.0
+    },
+    "escalation_rate_cross_fitted": 0.9772
+   },
+   "jev-batched": {
+    "n": 263,
+    "accuracy": 0.6654,
+    "auroc_confidence_vs_correct": 0.6406,
+    "ece_10": 0.1319,
+    "mean_confidence": 0.7799,
+    "in_sample": {
+     "threshold": 0.9849,
+     "decided_share": 0.0798,
+     "accuracy_decided": 0.9048
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.1065,
+     "accuracy_decided": 0.8571
+    },
+    "escalation_rate_cross_fitted": 0.8935
+   },
+   "whole_object_vs_rest": {
+    "jev": {
+     "accuracy": 0.7376,
+     "balanced_accuracy": 0.6998,
+     "auroc_p_yes": 0.766,
+     "ece_10": 0.1222,
+     "in_sample": {
+      "threshold": 0.9939,
+      "decided_share": 0.1217,
+      "accuracy_decided": 0.9062
+     },
+     "cross_fitted_2fold": {
+      "decided_share": 0.2243,
+      "accuracy_decided": 0.7797
+     }
+    },
+    "qwen3-vl": {
+     "accuracy": 0.6806,
+     "balanced_accuracy": 0.5859,
+     "auroc_p_yes": 0.7,
+     "ece_10": 0.2734,
+     "in_sample": {
+      "threshold": 1.0,
+      "decided_share": 0.0875,
+      "accuracy_decided": 0.913
+     },
+     "cross_fitted_2fold": {
+      "decided_share": 0.1103,
+      "accuracy_decided": 0.7586
+     }
+    }
+   },
+   "x2_generative_qwen_judge_accuracy": 0.5817,
+   "jev_and_qwen_agree": {
+    "agree_share": 0.6274,
+    "accuracy_when_agree": 0.7212
+   }
+  },
+  "d_all": {
+   "jev": {
+    "n": 154,
+    "accuracy": 0.7792,
+    "balanced_accuracy": 0.626,
+    "auroc_p_yes": 0.7384,
+    "auroc_confidence_vs_correct": 0.6727,
+    "ece_10": 0.1276,
+    "mean_confidence": 0.8934,
+    "said_yes_share": 0.0974,
+    "in_sample": {
+     "threshold": 0.9887,
+     "decided_share": 0.2078,
+     "accuracy_decided": 0.9062
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.1818,
+     "accuracy_decided": 0.8571
+    },
+    "escalation_rate_cross_fitted": 0.8182
+   },
+   "qwen3-vl": {
+    "n": 154,
+    "accuracy": 0.7857,
+    "balanced_accuracy": 0.6305,
+    "auroc_p_yes": 0.8706,
+    "auroc_confidence_vs_correct": 0.8143,
+    "ece_10": 0.2117,
+    "mean_confidence": 0.9883,
+    "said_yes_share": 0.0909,
+    "in_sample": {
+     "threshold": 0.9997,
+     "decided_share": 0.6753,
+     "accuracy_decided": 0.9038
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.7143,
+     "accuracy_decided": 0.9
+    },
+    "escalation_rate_cross_fitted": 0.2857
+   },
+   "gemini-stated-p": {
+    "n": 154,
+    "accuracy": 0.8442,
+    "balanced_accuracy": 0.8349,
+    "auroc_p_yes": 0.8462,
+    "auroc_confidence_vs_correct": 0.4966,
+    "ece_10": 0.0836,
+    "mean_confidence": 0.8979,
+    "said_yes_share": 0.3312,
+    "in_sample": {
+     "threshold": null,
+     "decided_share": 0.0,
+     "accuracy_decided": null
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0325,
+     "accuracy_decided": 0.8
+    },
+    "escalation_rate_cross_fitted": 0.9675
+   },
+   "jev-batched": {
+    "n": 154,
+    "accuracy": 0.7857,
+    "balanced_accuracy": 0.6305,
+    "auroc_p_yes": 0.7315,
+    "auroc_confidence_vs_correct": 0.6495,
+    "ece_10": 0.1129,
+    "mean_confidence": 0.891,
+    "said_yes_share": 0.0909,
+    "in_sample": {
+     "threshold": 0.9868,
+     "decided_share": 0.2208,
+     "accuracy_decided": 0.9118
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.1364,
+     "accuracy_decided": 0.8095
+    },
+    "escalation_rate_cross_fitted": 0.8636
+   },
+   "per_question": {
+    "q1": {
+     "n": 38,
+     "yes": 9,
+     "jev": {
+      "accuracy": 0.9211,
+      "auroc_p_yes": 0.9885,
+      "mean_p_yes_on_no": 0.2386
+     },
+     "qwen3-vl": {
+      "accuracy": 0.9211,
+      "auroc_p_yes": 0.9693,
+      "mean_p_yes_on_no": 0.0438
+     },
+     "gemini-stated-p": {
+      "accuracy": 0.7105,
+      "auroc_p_yes": 0.749,
+      "mean_p_yes_on_no": 0.2862
+     }
+    },
+    "q2": {
+     "n": 19,
+     "yes": 0,
+     "jev": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.0403
+     },
+     "qwen3-vl": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.0001
+     },
+     "gemini-stated-p": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.1237
+     }
+    },
+    "q3": {
+     "n": 13,
+     "yes": 0,
+     "jev": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.0288
+     },
+     "qwen3-vl": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.0001
+     },
+     "gemini-stated-p": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.0592
+     }
+    },
+    "q4": {
+     "n": 69,
+     "yes": 28,
+     "jev": {
+      "accuracy": 0.5942,
+      "auroc_p_yes": 0.642,
+      "mean_p_yes_on_no": 0.0647
+     },
+     "qwen3-vl": {
+      "accuracy": 0.6232,
+      "auroc_p_yes": 0.7783,
+      "mean_p_yes_on_no": 0.001
+     },
+     "gemini-stated-p": {
+      "accuracy": 0.8696,
+      "auroc_p_yes": 0.8789,
+      "mean_p_yes_on_no": 0.1988
+     }
+    },
+    "q5": {
+     "n": 15,
+     "yes": 6,
+     "jev": {
+      "accuracy": 0.8,
+      "auroc_p_yes": 1.0,
+      "mean_p_yes_on_no": 0.0329
+     },
+     "qwen3-vl": {
+      "accuracy": 0.7333,
+      "auroc_p_yes": 0.9444,
+      "mean_p_yes_on_no": 0.0724
+     },
+     "gemini-stated-p": {
+      "accuracy": 0.7333,
+      "auroc_p_yes": 0.8056,
+      "mean_p_yes_on_no": 0.4611
+     }
+    }
+   },
+   "screening": {
+    "jev": {
+     "p_yes_threshold_for_recall_0.8": {
+      "threshold": 0.04707,
+      "false_alarm_rate": 0.4955
+     },
+     "recall_at_false_alarm_0.1": {
+      "threshold": 0.33047,
+      "recall": 0.3488
+     }
+    },
+    "qwen3-vl": {
+     "p_yes_threshold_for_recall_0.8": {
+      "threshold": 5e-05,
+      "false_alarm_rate": 0.3153
+     },
+     "recall_at_false_alarm_0.1": {
+      "threshold": 0.00407,
+      "recall": 0.6279
+     }
+    },
+    "gemini-stated-p": {
+     "p_yes_threshold_for_recall_0.8": {
+      "threshold": 0.6,
+      "false_alarm_rate": 0.1441
+     },
+     "recall_at_false_alarm_0.1": {
+      "threshold": 0.95,
+      "recall": 0.2791
+     }
+    }
+   },
+   "agree": {
+    "_agree_jev+qwen3-vl": {
+     "agree_share": 0.9286,
+     "accuracy_when_agree": 0.8042
+    },
+    "_agree_jev+gemini-stated-p": {
+     "agree_share": 0.6883,
+     "accuracy_when_agree": 0.9528
+    }
+   }
+  },
+  "d_clear_labels": {
+   "jev": {
+    "n": 104,
+    "accuracy": 0.8654,
+    "balanced_accuracy": 0.6119,
+    "auroc_p_yes": 0.835,
+    "auroc_confidence_vs_correct": 0.8048,
+    "ece_10": 0.0535,
+    "mean_confidence": 0.905,
+    "said_yes_share": 0.0481,
+    "in_sample": {
+     "threshold": 0.7506,
+     "decided_share": 0.8942,
+     "accuracy_decided": 0.9032
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.8365,
+     "accuracy_decided": 0.908
+    },
+    "escalation_rate_cross_fitted": 0.1635
+   },
+   "qwen3-vl": {
+    "n": 104,
+    "accuracy": 0.8558,
+    "balanced_accuracy": 0.6062,
+    "auroc_p_yes": 0.955,
+    "auroc_confidence_vs_correct": 0.9487,
+    "ece_10": 0.1362,
+    "mean_confidence": 0.9891,
+    "said_yes_share": 0.0577,
+    "in_sample": {
+     "threshold": 0.9627,
+     "decided_share": 0.9135,
+     "accuracy_decided": 0.9053
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.8942,
+     "accuracy_decided": 0.9247
+    },
+    "escalation_rate_cross_fitted": 0.1058
+   },
+   "gemini-stated-p": {
+    "n": 104,
+    "accuracy": 0.9327,
+    "balanced_accuracy": 0.9598,
+    "auroc_p_yes": 0.9523,
+    "auroc_confidence_vs_correct": 0.3122,
+    "ece_10": 0.0815,
+    "mean_confidence": 0.9123,
+    "said_yes_share": 0.2308,
+    "in_sample": {
+     "threshold": 0.75,
+     "decided_share": 1.0,
+     "accuracy_decided": 0.9327
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.9808,
+     "accuracy_decided": 0.9314
+    },
+    "escalation_rate_cross_fitted": 0.0192
+   },
+   "jev-batched": {
+    "n": 104,
+    "accuracy": 0.875,
+    "balanced_accuracy": 0.6413,
+    "auroc_p_yes": 0.8242,
+    "auroc_confidence_vs_correct": 0.7658,
+    "ece_10": 0.0483,
+    "mean_confidence": 0.8984,
+    "said_yes_share": 0.0577,
+    "in_sample": {
+     "threshold": 0.6762,
+     "decided_share": 0.9135,
+     "accuracy_decided": 0.9053
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.8654,
+     "accuracy_decided": 0.8889
+    },
+    "escalation_rate_cross_fitted": 0.1346
+   },
+   "per_question": {
+    "q1": {
+     "n": 23,
+     "yes": 1,
+     "jev": {
+      "accuracy": 0.9565,
+      "auroc_p_yes": 1.0,
+      "mean_p_yes_on_no": 0.1808
+     },
+     "qwen3-vl": {
+      "accuracy": 0.9565,
+      "auroc_p_yes": 1.0,
+      "mean_p_yes_on_no": 0.0514
+     },
+     "gemini-stated-p": {
+      "accuracy": 0.8696,
+      "auroc_p_yes": 0.9545,
+      "mean_p_yes_on_no": 0.1886
+     }
+    },
+    "q2": {
+     "n": 14,
+     "yes": 0,
+     "jev": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.0424
+     },
+     "qwen3-vl": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.0
+     },
+     "gemini-stated-p": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.1214
+     }
+    },
+    "q3": {
+     "n": 11,
+     "yes": 0,
+     "jev": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.0283
+     },
+     "qwen3-vl": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.0
+     },
+     "gemini-stated-p": {
+      "accuracy": 1.0,
+      "auroc_p_yes": null,
+      "mean_p_yes_on_no": 0.0427
+     }
+    },
+    "q4": {
+     "n": 41,
+     "yes": 10,
+     "jev": {
+      "accuracy": 0.7561,
+      "auroc_p_yes": 0.7581,
+      "mean_p_yes_on_no": 0.0638
+     },
+     "qwen3-vl": {
+      "accuracy": 0.7561,
+      "auroc_p_yes": 0.9694,
+      "mean_p_yes_on_no": 0.0012
+     },
+     "gemini-stated-p": {
+      "accuracy": 1.0,
+      "auroc_p_yes": 1.0,
+      "mean_p_yes_on_no": 0.1177
+     }
+    },
+    "q5": {
+     "n": 15,
+     "yes": 6,
+     "jev": {
+      "accuracy": 0.8,
+      "auroc_p_yes": 1.0,
+      "mean_p_yes_on_no": 0.0329
+     },
+     "qwen3-vl": {
+      "accuracy": 0.7333,
+      "auroc_p_yes": 0.9444,
+      "mean_p_yes_on_no": 0.0724
+     },
+     "gemini-stated-p": {
+      "accuracy": 0.7333,
+      "auroc_p_yes": 0.8056,
+      "mean_p_yes_on_no": 0.4611
+     }
+    }
+   },
+   "screening": {
+    "jev": {
+     "p_yes_threshold_for_recall_0.8": {
+      "threshold": 0.06609,
+      "false_alarm_rate": 0.3678
+     },
+     "recall_at_false_alarm_0.1": {
+      "threshold": 0.28677,
+      "recall": 0.4706
+     }
+    },
+    "qwen3-vl": {
+     "p_yes_threshold_for_recall_0.8": {
+      "threshold": 0.01099,
+      "false_alarm_rate": 0.0575
+     },
+     "recall_at_false_alarm_0.1": {
+      "threshold": 0.01099,
+      "recall": 0.8235
+     }
+    },
+    "gemini-stated-p": {
+     "p_yes_threshold_for_recall_0.8": {
+      "threshold": 0.85,
+      "false_alarm_rate": 0.0805
+     },
+     "recall_at_false_alarm_0.1": {
+      "threshold": 0.8,
+      "recall": 1.0
+     }
+    }
+   }
+  },
+  "e_rule": {
+   "laya": {
+    "n": 106,
+    "accuracy": 0.4151,
+    "auroc_confidence_vs_correct": 0.8691,
+    "ece_10": 0.0701,
+    "mean_confidence": 0.4238,
+    "in_sample": {
+     "threshold": 0.4424,
+     "decided_share": 0.3019,
+     "accuracy_decided": 0.9062
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.283,
+     "accuracy_decided": 0.9333
+    },
+    "escalation_rate_cross_fitted": 0.717
+   },
+   "jev-text": {
+    "n": 106,
+    "accuracy": 0.9906,
+    "auroc_confidence_vs_correct": 0.9619,
+    "ece_10": 0.0103,
+    "mean_confidence": 0.9843,
+    "in_sample": {
+     "threshold": 0.3536,
+     "decided_share": 1.0,
+     "accuracy_decided": 0.9906
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.9906,
+     "accuracy_decided": 0.9905
+    },
+    "escalation_rate_cross_fitted": 0.0094
+   },
+   "qwen3-vl-text": {
+    "n": 106,
+    "accuracy": 0.9623,
+    "auroc_confidence_vs_correct": 0.9338,
+    "ece_10": 0.0459,
+    "mean_confidence": 0.9897,
+    "in_sample": {
+     "threshold": 0.5622,
+     "decided_share": 1.0,
+     "accuracy_decided": 0.9623
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.9717,
+     "accuracy_decided": 0.9612
+    },
+    "escalation_rate_cross_fitted": 0.0283
+   },
+   "jev_and_qwen_agree": {
+    "agree_share": 0.9528,
+    "accuracy_when_agree": 1.0
+   }
+  },
+  "e_severity": {
+   "laya": {
+    "n": 96,
+    "accuracy": 0.4792,
+    "auroc_confidence_vs_correct": 0.6396,
+    "ece_10": 0.0601,
+    "mean_confidence": 0.5017,
+    "in_sample": {
+     "threshold": 0.6984,
+     "decided_share": 0.0208,
+     "accuracy_decided": 1.0
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.0417,
+     "accuracy_decided": 0.75
+    },
+    "escalation_rate_cross_fitted": 0.9583
+   },
+   "jev-text": {
+    "n": 96,
+    "accuracy": 0.7708,
+    "auroc_confidence_vs_correct": 0.8753,
+    "ece_10": 0.1033,
+    "mean_confidence": 0.8741,
+    "in_sample": {
+     "threshold": 0.7865,
+     "decided_share": 0.75,
+     "accuracy_decided": 0.9028
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.7812,
+     "accuracy_decided": 0.88
+    },
+    "escalation_rate_cross_fitted": 0.2188
+   },
+   "qwen3-vl-text": {
+    "n": 96,
+    "accuracy": 0.6979,
+    "auroc_confidence_vs_correct": 0.8374,
+    "ece_10": 0.2358,
+    "mean_confidence": 0.9271,
+    "in_sample": {
+     "threshold": 0.9933,
+     "decided_share": 0.5729,
+     "accuracy_decided": 0.9091
+    },
+    "cross_fitted_2fold": {
+     "decided_share": 0.5833,
+     "accuracy_decided": 0.8929
+    },
+    "escalation_rate_cross_fitted": 0.4167
+   }
+  },
+  "jev_batched_vs_unbatched": {
+   "median": 0.02291,
+   "max": 0.6332,
+   "n": 1873,
+   "argmax_flips": {
+    "a two images": "4/300",
+    "a side by side": "13/300",
+    "b shortlist": "29/428",
+    "b full": "45/428",
+    "c": "19/263",
+    "d (run 1)": "2/123"
+   },
+   "note": "bf16 with right padding: the batch composition moves probabilities (median 0.01-0.03); accuracy unchanged within 1-2 points"
+  }
+ },
+ "speed_memory": {
+  "latency_s": {
+   "jev_unbatched": {
+    "a:multi": {
+     "n": 300,
+     "median_s": 0.1401,
+     "p90_s": 0.1574
+    },
+    "a:pair": {
+     "n": 300,
+     "median_s": 0.1102,
+     "p90_s": 0.124
+    },
+    "b:full": {
+     "n": 428,
+     "median_s": 0.1313,
+     "p90_s": 0.1483
+    },
+    "b:short": {
+     "n": 428,
+     "median_s": 0.1253,
+     "p90_s": 0.1394
+    },
+    "c:abcd": {
+     "n": 263,
+     "median_s": 0.1243,
+     "p90_s": 0.1381
+    },
+    "d:yn": {
+     "n": 123,
+     "median_s": 0.1228,
+     "p90_s": 0.1426
+    }
+   },
+   "jev_batched_a_multi": {
+    "n": 300,
+    "total_s": 39.432,
+    "per_question_s": 0.1314
+   },
+   "jev_batched_a_pair": {
+    "n": 300,
+    "total_s": 22.274,
+    "per_question_s": 0.0742
+   },
+   "jev_batched_b_short": {
+    "n": 428,
+    "total_s": 33.861,
+    "per_question_s": 0.0791
+   },
+   "jev_batched_b_full": {
+    "n": 428,
+    "total_s": 39.08,
+    "per_question_s": 0.0913
+   },
+   "jev_batched_c_abcd": {
+    "n": 263,
+    "total_s": 21.53,
+    "per_question_s": 0.0819
+   },
+   "jev_batched_d_yn": {
+    "n": 123,
+    "total_s": 9.72,
+    "per_question_s": 0.079
+   },
+   "qwen_unbatched": {
+    "a": {
+     "n": 40,
+     "median_s": 0.1646
+    },
+    "b": {
+     "n": 40,
+     "median_s": 0.1293
+    },
+    "c": {
+     "n": 40,
+     "median_s": 0.1244
+    },
+    "d": {
+     "n": 40,
+     "median_s": 0.0734
+    }
+   },
+   "qwen_parallel_a": {
+    "n": 300,
+    "total_s": 14.036,
+    "per_question_s": 0.0468
+   },
+   "qwen_parallel_b": {
+    "n": 428,
+    "total_s": 16.332,
+    "per_question_s": 0.0382
+   },
+   "qwen_parallel_c": {
+    "n": 263,
+    "total_s": 10.013,
+    "per_question_s": 0.0381
+   },
+   "qwen_parallel_d": {
+    "n": 123,
+    "total_s": 5.864,
+    "per_question_s": 0.0477
+   },
+   "laya_per_fact_two_questions": {
+    "n": 106,
+    "median_s": 0.0295
+   },
+   "laya_rule_only_per_fact": {
+    "per_fact_s": 0.0282
+   },
+   "jev_text_per_fact_two_questions": {
+    "median_s": 0.209
+   },
+   "qwen_text_per_fact_two_questions_unbatched": {
+    "median_s": 0.1424
+   },
+   "pass2_jev_unbatched": {
+    "d:yn": {
+     "n": 154,
+     "median_s": 0.1054,
+     "p90_s": 0.1099
+    }
+   },
+   "pass2_qwen_unbatched": {
+    "d": {
+     "n": 40,
+     "median_s": 0.0819
+    }
+   },
+   "pass2_qwen_parallel_d": {
+    "n": 154,
+    "total_s": 8.261,
+    "per_question_s": 0.0536
+   }
+  },
+  "video_16_frames_one_question_s": {
+   "me340": {
+    "s": 1.909,
+    "probabilities": {
+     "Yes": 0.04603390023112297,
+     "No": 0.9539660811424255
+    }
+   },
+   "samsclub": {
+    "s": 1.951,
+    "probabilities": {
+     "Yes": 0.0991208553314209,
+     "No": 0.9008791446685791
+    }
+   },
+   "walmart": {
+    "s": 1.952,
+    "probabilities": {
+     "Yes": 0.0541987270116806,
+     "No": 0.9458011984825134
+    }
+   },
+   "lightning": {
+    "s": 1.571,
+    "probabilities": {
+     "Yes": 0.15102781355381012,
+     "No": 0.8489722013473511
+    }
+   }
+  },
+  "throughput_one_a100_questions_per_s": {
+   "jev_image_batch8": 12.7,
+   "jev_image_unbatched": 8.1,
+   "jev_two_images_batch8": 7.6,
+   "qwen3vl_8b_vllm_16_in_flight_35pct_of_gpu": 23.8,
+   "jev_text": 9.6,
+   "laya_text_two_questions_per_fact": 33.9
+  },
+  "cold_start_s": {
+   "vllm_spawned_s": 0.13,
+   "jev_loaded_s": 27.34,
+   "siglip_loaded_s": 31.71,
+   "laya_budget_raised": true,
+   "laya_loaded_s": 34.03,
+   "vllm_ready_s": 83.64,
+   "warm_s": 94.35,
+   "resident_gb_torch": [
+    25.26,
+    0.0
+   ],
+   "gpus": [
+    "GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-31ec3860-c945-a565-0af8-e6b4ae1e6dfd)",
+    "GPU 1: NVIDIA A100-SXM4-80GB (UUID: GPU-392ef980-a295-892b-e46f-0bd3925c31cd)"
+   ]
+  },
+  "gpu_peak_gib": [
+   {
+    "gpu": 0,
+    "total_gb": 80.0,
+    "peak_gb": 25.97,
+    "at_s": 480.276,
+    "stages_active": [
+     "laya.e.batched",
+     "jev.text.e"
+    ]
+   },
+   {
+    "gpu": 1,
+    "total_gb": 80.0,
+    "peak_gb": 26.07,
+    "at_s": 458.446,
+    "stages_active": [
+     "qwen.parallel.c"
+    ]
+   }
+  ],
+  "flags_over_90pct": [],
+  "resident_gib_gpu0_jev_siglip_laya": 25.26,
+  "per_stage": [
+   {
+    "stage": "siglip.a",
+    "s": 2.289,
+    "peak_gb": [
+     25.77,
+     24.75
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "pairs": 300
+    }
+   },
+   {
+    "stage": "siglip.b",
+    "s": 0.421,
+    "peak_gb": [
+     25.85,
+     24.75
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "crops": 428
+    }
+   },
+   {
+    "stage": "jev.unbatched",
+    "s": 236.487,
+    "peak_gb": [
+     25.85,
+     24.75
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 1842
+    }
+   },
+   {
+    "stage": "jev.batched.a.multi",
+    "s": 39.432,
+    "peak_gb": [
+     25.97,
+     24.75
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 300,
+     "batch": 8
+    }
+   },
+   {
+    "stage": "jev.batched.a.pair",
+    "s": 22.274,
+    "peak_gb": [
+     25.97,
+     24.75
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 300,
+     "batch": 8
+    }
+   },
+   {
+    "stage": "jev.batched.b.short",
+    "s": 33.861,
+    "peak_gb": [
+     25.97,
+     24.75
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 428,
+     "batch": 8
+    }
+   },
+   {
+    "stage": "jev.batched.b.full",
+    "s": 39.08,
+    "peak_gb": [
+     25.97,
+     24.75
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 428,
+     "batch": 8
+    }
+   },
+   {
+    "stage": "jev.batched.c.abcd",
+    "s": 21.531,
+    "peak_gb": [
+     25.97,
+     24.75
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 263,
+     "batch": 8
+    }
+   },
+   {
+    "stage": "jev.batched.d.yn",
+    "s": 9.72,
+    "peak_gb": [
+     25.97,
+     24.75
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 123,
+     "batch": 8
+    }
+   },
+   {
+    "stage": "qwen.unbatched",
+    "s": 21.01,
+    "peak_gb": [
+     25.97,
+     25.44
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 200
+    }
+   },
+   {
+    "stage": "qwen.parallel.a",
+    "s": 14.036,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 300,
+     "in_flight": 16
+    }
+   },
+   {
+    "stage": "qwen.parallel.b",
+    "s": 16.332,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 428,
+     "in_flight": 16
+    }
+   },
+   {
+    "stage": "qwen.parallel.c",
+    "s": 10.014,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 263,
+     "in_flight": 16
+    }
+   },
+   {
+    "stage": "qwen.parallel.d",
+    "s": 5.863,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "requests": 123,
+     "in_flight": 16
+    }
+   },
+   {
+    "stage": "laya.e",
+    "s": 3.469,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "facts": 106
+    }
+   },
+   {
+    "stage": "laya.e.batched",
+    "s": 2.993,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "facts": 106
+    }
+   },
+   {
+    "stage": "jev.text.e",
+    "s": 22.226,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "facts": 106
+    }
+   },
+   {
+    "stage": "qwen.text.e",
+    "s": 9.326,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {
+     "facts": 106
+    }
+   },
+   {
+    "stage": "jev.video.me340",
+    "s": 1.909,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {}
+   },
+   {
+    "stage": "jev.video.samsclub",
+    "s": 1.95,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {}
+   },
+   {
+    "stage": "jev.video.walmart",
+    "s": 1.952,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {}
+   },
+   {
+    "stage": "jev.video.lightning",
+    "s": 1.571,
+    "peak_gb": [
+     25.97,
+     26.07
+    ],
+    "over_90": [
+     false,
+     false
+    ],
+    "n": {}
+   }
+  ],
+  "analysis_elapsed_s_run1_all_sets_all_deciders": 519.2,
+  "card_comparison": "card: 26 ms image / 504 ms 16-frame video on a warm H200 with an 'optimized backend'; here, the card's own loader on an A100-80GB: 105-140 ms image, 1.57-1.95 s video"
+ },
+ "spend_usd": {
+  "setup_cpu_container_estimated": 0.05,
+  "smoke_run_limit24_189s": 0.329,
+  "main_run_632s": 1.1,
+  "set_d_pass2_twice_158s_each": 0.55,
+  "gemini_11_requests_123k_in_5.6k_out_estimated": 0.1,
+  "total_usd_estimated": 2.13
+ },
+ "observed_vs_inferred": {
+  "observed": "every probability, time and memory figure above (Modal runs ap-k4xEMz90TkP45eG1MhHwZj, ap-fBCbIjYrFWegnER6sDu1HX; Gemini requests gemini-d/request-00..10)",
+  "inferred": "the ladder recommendations and the projected per-video costs",
+  "truth": "a/b 'reference' = delivered maps; a/b 'audited', c, d, e = agent-labelled"
+ },
+ "recommendation": {
+  "status": "inferred from the measurements above; thresholds are in-sample or 2-fold cross-fitted on these sets only (a few hundred items, agent-labelled where no reference exists)",
+  "same_object_merge (a)": "Keep Qwen3-VL-8B (already resident): 93.4% audited, AUROC 0.98, 0.047 s/pair at 16 in flight. Jev-Omni is 89.0% (AUROC 0.95) and adds 25 GiB. Useful only as a second vote: when both agree (90% of pairs) they are 95.5% right; disagreement -> keep apart and escalate. SigLIP cosine alone: AUROC 0.86, and the core's 0.9858 threshold calls none of these 300 pairs 'same'.",
+  "naming (b)": "No closed-set chooser should name objects alone: the per-video vocabulary lacks the right word for 23% of best views and neither Jev-Omni nor Qwen ever picked 'none of these' (0/53, 1/53). Jev-Omni over the full vocabulary has the most useful confidence (AUROC 0.88): accept its pick at p >= 0.95 (about 20% of objects, 88% right cross-fitted) and send the rest to free-text VLM naming. That beats the core's SigLIP rule (38% accepted at 60% right).",
+  "discovery gate (c)": "Jev-Omni judges object/part/background/group better than Qwen (66% vs 55%, whole-object-vs-rest AUROC 0.77 vs 0.70, ECE 0.12 vs 0.38; X2's generative Qwen judge 58%). Nothing reaches 90% precision cross-fitted (Jev: 78% on the 22% it is surest of). Use it as a ranking score, not a gate.",
+  "EHS yes/no on frames (d)": "Neither local model is a detector at p=0.5: both say yes to under 10% of questions when 28% are yes. Their ranking works: Qwen AUROC 0.87 (0.955 on clear labels), Jev 0.74. Screening threshold for Qwen p_yes: 0.004 gives 63% recall at 10% false alarms (all items); 0.011 gives 82% recall at 6% false alarms (clear labels). Gemini's stated probability is the best balanced (83%) and best on blocked aisles (AUROC 0.88 vs Qwen 0.78 vs Jev 0.64), but it takes 10-40 s a request and is a cloud call. Jev is best on cables across the floor (AUROC 0.99) and people on platforms (1.0), with 9 and 6 positives only.",
+  "fact -> rule / severity routing (e, text)": "Jev-Omni text: 99% rule, 77% severity, ECE 0.010 on rules, 0.1 s a question. Qwen text: 96% / 70%, overconfident on severity (ECE 0.24). Laya zero-shot: 42% / 48% at 30 ms per fact (two questions): not usable without fine-tuning on our rules (its card says the same). Where Jev-Omni belongs in the ladder: the text step that routes each fact to its rule and severity, accepted at p >= 0.35 for rules (99% decided, 99% right) and p >= 0.79 for severity (75% decided, 90% right in-sample, 78% / 88% cross-fitted), with the rest going to review.",
+  "placement": "Jev-Omni needs 25.3 GiB resident. On the core's GPU 0 (peak 45 GiB) that makes about 70 GiB, just under the 72 GiB flag, so it is safer on the third A100 next to LingBot, or loaded only for the text-routing step. It is not a replacement for Qwen3-VL on images.",
+  "projected_per_video_seconds (inferred)": {
+   "judge 50 discovery proposals, Jev batch 8": 4.0,
+   "name 204 crops, Jev full vocabulary batch 8": 18.6,
+   "check 100 merge pairs, Qwen 16 in flight": 4.7,
+   "route 50 facts, Jev text": 5.2,
+   "route 50 facts, Laya": 1.5
+  }
+ }
+}

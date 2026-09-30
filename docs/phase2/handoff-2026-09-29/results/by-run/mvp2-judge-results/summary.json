@@ -1,0 +1,3412 @@
+{
+ "schema": "mvp2-judge-results-v1",
+ "branch": "mvp2/judge",
+ "worktree": "/Users/adam/.codex/worktrees/panoptes-phase2-video-mvp2-judge",
+ "bench": "runs/mvp2-judge-bench-004 (final code except two later changes that do not touch its verdicts)",
+ "timing": [
+  {
+   "site": "me340",
+   "kind": "first",
+   "first_call_after_boot": true,
+   "objects_v1_s": 39.068,
+   "cards_v1_s": 45.12,
+   "cards_last_s": 80.972,
+   "judgements_first_s": 46.831,
+   "judgements_first_vlm_s": 64.209,
+   "judgements_final_s": 93.12,
+   "gpu_peak_gib": [
+    62.84,
+    56.38
+   ],
+   "stage_peaks_over_72": [],
+   "elapsed_s": 233.151
+  },
+  {
+   "site": "me340",
+   "kind": "warm",
+   "first_call_after_boot": false,
+   "objects_v1_s": 36.327,
+   "cards_v1_s": 42.213,
+   "cards_last_s": 77.633,
+   "judgements_first_s": 42.213,
+   "judgements_first_vlm_s": 60.4,
+   "judgements_final_s": 93.308,
+   "gpu_peak_gib": [
+    61.65,
+    56.36
+   ],
+   "stage_peaks_over_72": [],
+   "elapsed_s": 229.141
+  },
+  {
+   "site": "samsclub-a2",
+   "kind": "first",
+   "first_call_after_boot": false,
+   "objects_v1_s": 26.792,
+   "cards_v1_s": 33.278,
+   "cards_last_s": 87.669,
+   "judgements_first_s": 35.284,
+   "judgements_first_vlm_s": 84.836,
+   "judgements_final_s": 102.647,
+   "gpu_peak_gib": [
+    65.31,
+    54.98
+   ],
+   "stage_peaks_over_72": [],
+   "elapsed_s": 211.554
+  },
+  {
+   "site": "samsclub-a2",
+   "kind": "warm",
+   "first_call_after_boot": false,
+   "objects_v1_s": 23.949,
+   "cards_v1_s": 31.702,
+   "cards_last_s": 83.115,
+   "judgements_first_s": 33.829,
+   "judgements_first_vlm_s": 78.08,
+   "judgements_final_s": 104.038,
+   "gpu_peak_gib": [
+    67.95,
+    54.92
+   ],
+   "stage_peaks_over_72": [],
+   "elapsed_s": 209.022
+  },
+  {
+   "site": "walmart",
+   "kind": "first",
+   "first_call_after_boot": false,
+   "objects_v1_s": 21.879,
+   "cards_v1_s": 25.867,
+   "cards_last_s": 65.627,
+   "judgements_first_s": 27.409,
+   "judgements_first_vlm_s": 51.613,
+   "judgements_final_s": 74.285,
+   "gpu_peak_gib": [
+    61.97,
+    56.54
+   ],
+   "stage_peaks_over_72": [],
+   "elapsed_s": 193.181
+  },
+  {
+   "site": "walmart",
+   "kind": "warm",
+   "first_call_after_boot": false,
+   "objects_v1_s": 21.489,
+   "cards_v1_s": 27.11,
+   "cards_last_s": 64.308,
+   "judgements_first_s": 27.11,
+   "judgements_first_vlm_s": 51.923,
+   "judgements_final_s": 74.467,
+   "gpu_peak_gib": [
+    61.84,
+    56.81
+   ],
+   "stage_peaks_over_72": [],
+   "elapsed_s": 193.56
+  }
+ ],
+ "fallback_timing_qwen_only": [
+  {
+   "site": "me340",
+   "kind": "first",
+   "judgements_first_s": 41.295,
+   "judgements_first_vlm_s": 54.068,
+   "judgements_final_s": 76.459,
+   "gpu_peak_gib": [
+    65.89,
+    56.46
+   ]
+  },
+  {
+   "site": "me340",
+   "kind": "warm",
+   "judgements_first_s": 37.903,
+   "judgements_first_vlm_s": 46.744,
+   "judgements_final_s": 72.551,
+   "gpu_peak_gib": [
+    66.12,
+    56.45
+   ]
+  },
+  {
+   "site": "samsclub-a2",
+   "kind": "first",
+   "judgements_first_s": 34.707,
+   "judgements_first_vlm_s": 79.619,
+   "judgements_final_s": 137.49,
+   "gpu_peak_gib": [
+    63.56,
+    55.38
+   ]
+  },
+  {
+   "site": "samsclub-a2",
+   "kind": "warm",
+   "judgements_first_s": 33.553,
+   "judgements_first_vlm_s": 74.239,
+   "judgements_final_s": 120.938,
+   "gpu_peak_gib": [
+    65.35,
+    55.04
+   ]
+  },
+  {
+   "site": "walmart",
+   "kind": "first",
+   "judgements_first_s": 24.641,
+   "judgements_first_vlm_s": 29.128,
+   "judgements_final_s": 74.437,
+   "gpu_peak_gib": [
+    61.84,
+    56.7
+   ]
+  },
+  {
+   "site": "walmart",
+   "kind": "warm",
+   "judgements_first_s": 24.405,
+   "judgements_first_vlm_s": 26.991,
+   "judgements_final_s": 66.193,
+   "gpu_peak_gib": [
+    62.39,
+    56.6
+   ]
+  }
+ ],
+ "audit_bench": {
+  "me340 first": {
+   "objects": 260,
+   "objects_with_a_check": 25,
+   "coverage": 0.096,
+   "objects_by_summary": {
+    "NO_DATA": 6,
+    "PASS": 7,
+    "NEEDS_REVIEW": 10,
+    "FAIL": 2
+   },
+   "objects_decided": 9,
+   "counts": {
+    "NO_DATA": 16,
+    "PASS": 7,
+    "NEEDS_REVIEW": 13,
+    "FAIL": 2
+   },
+   "by_check": {
+    "J4": {
+     "rows": 19,
+     "verdicts": {
+      "NO_DATA": 6,
+      "NEEDS_REVIEW": 6,
+      "FAIL": 2,
+      "PASS": 5
+     },
+     "pass": [
+      5,
+      5,
+      0
+     ],
+     "fail": [
+      1,
+      1,
+      1
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J5": {
+     "rows": 5,
+     "verdicts": {
+      "PASS": 2,
+      "NEEDS_REVIEW": 3
+     },
+     "pass": [
+      2,
+      2,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J3b": {
+     "rows": 1,
+     "verdicts": {
+      "NEEDS_REVIEW": 1
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J3a": {
+     "rows": 7,
+     "verdicts": {
+      "NO_DATA": 6,
+      "NEEDS_REVIEW": 1
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J8": {
+     "rows": 6,
+     "verdicts": {
+      "NO_DATA": 4,
+      "NEEDS_REVIEW": 2
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    }
+   }
+  },
+  "me340 warm": {
+   "objects": 261,
+   "objects_with_a_check": 25,
+   "coverage": 0.096,
+   "objects_by_summary": {
+    "NO_DATA": 5,
+    "NEEDS_REVIEW": 13,
+    "PASS": 6,
+    "FAIL": 1
+   },
+   "objects_decided": 7,
+   "counts": {
+    "NO_DATA": 15,
+    "NEEDS_REVIEW": 16,
+    "PASS": 6,
+    "FAIL": 1
+   },
+   "by_check": {
+    "J4": {
+     "rows": 19,
+     "verdicts": {
+      "NO_DATA": 5,
+      "NEEDS_REVIEW": 8,
+      "FAIL": 1,
+      "PASS": 5
+     },
+     "pass": [
+      5,
+      5,
+      0
+     ],
+     "fail": [
+      1,
+      1,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J5": {
+     "rows": 5,
+     "verdicts": {
+      "NEEDS_REVIEW": 4,
+      "PASS": 1
+     },
+     "pass": [
+      1,
+      1,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J3b": {
+     "rows": 1,
+     "verdicts": {
+      "NEEDS_REVIEW": 1
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J3a": {
+     "rows": 7,
+     "verdicts": {
+      "NO_DATA": 6,
+      "NEEDS_REVIEW": 1
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J8": {
+     "rows": 6,
+     "verdicts": {
+      "NO_DATA": 4,
+      "NEEDS_REVIEW": 2
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    }
+   }
+  },
+  "samsclub first": {
+   "objects": 623,
+   "objects_with_a_check": 217,
+   "coverage": 0.348,
+   "objects_by_summary": {
+    "NEEDS_REVIEW": 116,
+    "PASS": 21,
+    "NO_DATA": 80
+   },
+   "objects_decided": 21,
+   "counts": {
+    "NEEDS_REVIEW": 185,
+    "PASS": 153,
+    "NO_DATA": 128
+   },
+   "by_check": {
+    "J1": {
+     "rows": 161,
+     "verdicts": {
+      "NEEDS_REVIEW": 60,
+      "PASS": 101
+     },
+     "pass": [
+      85,
+      85,
+      16
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J2": {
+     "rows": 161,
+     "verdicts": {
+      "NEEDS_REVIEW": 87,
+      "NO_DATA": 74
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J5": {
+     "rows": 57,
+     "verdicts": {
+      "PASS": 52,
+      "NEEDS_REVIEW": 5
+     },
+     "pass": [
+      52,
+      52,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J7": {
+     "rows": 1,
+     "verdicts": {
+      "NO_DATA": 1
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J4": {
+     "rows": 3,
+     "verdicts": {
+      "NEEDS_REVIEW": 3
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J6": {
+     "rows": 41,
+     "verdicts": {
+      "NO_DATA": 41
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J3a": {
+     "rows": 22,
+     "verdicts": {
+      "NEEDS_REVIEW": 12,
+      "NO_DATA": 10
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J8": {
+     "rows": 20,
+     "verdicts": {
+      "NO_DATA": 2,
+      "NEEDS_REVIEW": 18
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    }
+   }
+  },
+  "samsclub warm": {
+   "objects": 622,
+   "objects_with_a_check": 215,
+   "coverage": 0.346,
+   "objects_by_summary": {
+    "NEEDS_REVIEW": 112,
+    "PASS": 22,
+    "NO_DATA": 81
+   },
+   "objects_decided": 22,
+   "counts": {
+    "NEEDS_REVIEW": 182,
+    "PASS": 150,
+    "NO_DATA": 127
+   },
+   "by_check": {
+    "J1": {
+     "rows": 158,
+     "verdicts": {
+      "NEEDS_REVIEW": 59,
+      "PASS": 99
+     },
+     "pass": [
+      83,
+      83,
+      16
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J2": {
+     "rows": 158,
+     "verdicts": {
+      "NEEDS_REVIEW": 85,
+      "NO_DATA": 73
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J5": {
+     "rows": 56,
+     "verdicts": {
+      "PASS": 51,
+      "NEEDS_REVIEW": 5
+     },
+     "pass": [
+      51,
+      51,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J7": {
+     "rows": 1,
+     "verdicts": {
+      "NO_DATA": 1
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J4": {
+     "rows": 3,
+     "verdicts": {
+      "NEEDS_REVIEW": 3
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J6": {
+     "rows": 41,
+     "verdicts": {
+      "NO_DATA": 41
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J3a": {
+     "rows": 22,
+     "verdicts": {
+      "NEEDS_REVIEW": 12,
+      "NO_DATA": 10
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J8": {
+     "rows": 20,
+     "verdicts": {
+      "NO_DATA": 2,
+      "NEEDS_REVIEW": 18
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    }
+   }
+  },
+  "walmart first": {
+   "objects": 720,
+   "objects_with_a_check": 46,
+   "coverage": 0.064,
+   "objects_by_summary": {
+    "PASS": 38,
+    "NEEDS_REVIEW": 8
+   },
+   "objects_decided": 38,
+   "counts": {
+    "PASS": 38,
+    "NEEDS_REVIEW": 12,
+    "NO_DATA": 11
+   },
+   "by_check": {
+    "J5": {
+     "rows": 45,
+     "verdicts": {
+      "PASS": 38,
+      "NEEDS_REVIEW": 7
+     },
+     "pass": [
+      38,
+      38,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J1": {
+     "rows": 1,
+     "verdicts": {
+      "NEEDS_REVIEW": 1
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J2": {
+     "rows": 1,
+     "verdicts": {
+      "NO_DATA": 1
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J3a": {
+     "rows": 10,
+     "verdicts": {
+      "NO_DATA": 10
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J8": {
+     "rows": 4,
+     "verdicts": {
+      "NEEDS_REVIEW": 4
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    }
+   }
+  },
+  "walmart warm": {
+   "objects": 719,
+   "objects_with_a_check": 47,
+   "coverage": 0.065,
+   "objects_by_summary": {
+    "PASS": 39,
+    "NEEDS_REVIEW": 8
+   },
+   "objects_decided": 39,
+   "counts": {
+    "PASS": 39,
+    "NEEDS_REVIEW": 12,
+    "NO_DATA": 11
+   },
+   "by_check": {
+    "J5": {
+     "rows": 46,
+     "verdicts": {
+      "PASS": 39,
+      "NEEDS_REVIEW": 7
+     },
+     "pass": [
+      39,
+      39,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J1": {
+     "rows": 1,
+     "verdicts": {
+      "NEEDS_REVIEW": 1
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J2": {
+     "rows": 1,
+     "verdicts": {
+      "NO_DATA": 1
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J3a": {
+     "rows": 10,
+     "verdicts": {
+      "NO_DATA": 10
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    },
+    "J8": {
+     "rows": 4,
+     "verdicts": {
+      "NEEDS_REVIEW": 4
+     },
+     "pass": [
+      0,
+      0,
+      0
+     ],
+     "fail": [
+      0,
+      0,
+      0
+     ],
+     "false_pass": [],
+     "false_fail": []
+    }
+   }
+  }
+ },
+ "offline_heldout": {
+  "gemini-heldout": {
+   "me340": {
+    "coverage": 0.095,
+    "counts": {
+     "NO_DATA": 15,
+     "NEEDS_REVIEW": 17,
+     "PASS": 6
+    },
+    "by_check": {
+     "J4": {
+      "verdicts": {
+       "NO_DATA": 5,
+       "NEEDS_REVIEW": 9,
+       "PASS": 5
+      },
+      "pass": [
+       5,
+       5,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4,
+       "PASS": 1
+      },
+      "pass": [
+       1,
+       1,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3b": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 6,
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 4,
+       "NEEDS_REVIEW": 2
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J4": {
+      "verdicts": {
+       "NO_DATA": 5,
+       "NEEDS_REVIEW": 7,
+       "PASS": 7
+      },
+      "pass": [
+       5,
+       7,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 5
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3b": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 6,
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 4,
+       "NEEDS_REVIEW": 2
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   },
+   "samsclub": {
+    "coverage": 0.343,
+    "counts": {
+     "NEEDS_REVIEW": 179,
+     "PASS": 152,
+     "NO_DATA": 126,
+     "FAIL": 1
+    },
+    "by_check": {
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 59,
+       "PASS": 99
+      },
+      "pass": [
+       82,
+       82,
+       17
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NEEDS_REVIEW": 86,
+       "NO_DATA": 72
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "PASS": 53,
+       "NEEDS_REVIEW": 2
+      },
+      "pass": [
+       53,
+       53,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J7": {
+      "verdicts": {
+       "NO_DATA": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J4": {
+      "verdicts": {
+       "NEEDS_REVIEW": 2,
+       "FAIL": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       1,
+       1,
+       0
+      ]
+     },
+     "J6": {
+      "verdicts": {
+       "NO_DATA": 41
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NEEDS_REVIEW": 12,
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 2,
+       "NEEDS_REVIEW": 18
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 50,
+       "PASS": 107
+      },
+      "pass": [
+       83,
+       83,
+       24
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NO_DATA": 157
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 54
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J4": {
+      "verdicts": {
+       "NEEDS_REVIEW": 3
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NEEDS_REVIEW": 12,
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 2,
+       "NEEDS_REVIEW": 18
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   },
+   "walmart": {
+    "coverage": 0.065,
+    "counts": {
+     "PASS": 39,
+     "NEEDS_REVIEW": 12,
+     "NO_DATA": 11
+    },
+    "by_check": {
+     "J5": {
+      "verdicts": {
+       "PASS": 39,
+       "NEEDS_REVIEW": 7
+      },
+      "pass": [
+       39,
+       39,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NO_DATA": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 45
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   }
+  },
+  "gemini-all": {
+   "me340": {
+    "coverage": 0.095,
+    "counts": {
+     "NO_DATA": 15,
+     "NEEDS_REVIEW": 15,
+     "PASS": 6,
+     "FAIL": 2
+    },
+    "by_check": {
+     "J4": {
+      "verdicts": {
+       "NO_DATA": 5,
+       "NEEDS_REVIEW": 7,
+       "FAIL": 2,
+       "PASS": 5
+      },
+      "pass": [
+       5,
+       5,
+       0
+      ],
+      "fail": [
+       2,
+       2,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4,
+       "PASS": 1
+      },
+      "pass": [
+       1,
+       1,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3b": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 6,
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 4,
+       "NEEDS_REVIEW": 2
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J4": {
+      "verdicts": {
+       "NO_DATA": 5,
+       "NEEDS_REVIEW": 7,
+       "PASS": 7
+      },
+      "pass": [
+       5,
+       7,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 5
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3b": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 6,
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 4,
+       "NEEDS_REVIEW": 2
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   },
+   "samsclub": {
+    "coverage": 0.343,
+    "counts": {
+     "NEEDS_REVIEW": 179,
+     "PASS": 152,
+     "NO_DATA": 126,
+     "FAIL": 1
+    },
+    "by_check": {
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 59,
+       "PASS": 99
+      },
+      "pass": [
+       82,
+       82,
+       17
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NEEDS_REVIEW": 86,
+       "NO_DATA": 72
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "PASS": 53,
+       "NEEDS_REVIEW": 2
+      },
+      "pass": [
+       53,
+       53,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J7": {
+      "verdicts": {
+       "NO_DATA": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J4": {
+      "verdicts": {
+       "NEEDS_REVIEW": 2,
+       "FAIL": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       1,
+       1,
+       0
+      ]
+     },
+     "J6": {
+      "verdicts": {
+       "NO_DATA": 41
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NEEDS_REVIEW": 12,
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 2,
+       "NEEDS_REVIEW": 18
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 50,
+       "PASS": 107
+      },
+      "pass": [
+       83,
+       83,
+       24
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NO_DATA": 157
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 54
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J4": {
+      "verdicts": {
+       "NEEDS_REVIEW": 3
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NEEDS_REVIEW": 12,
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 2,
+       "NEEDS_REVIEW": 18
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   },
+   "walmart": {
+    "coverage": 0.065,
+    "counts": {
+     "PASS": 39,
+     "NEEDS_REVIEW": 12,
+     "NO_DATA": 11
+    },
+    "by_check": {
+     "J5": {
+      "verdicts": {
+       "PASS": 39,
+       "NEEDS_REVIEW": 7
+      },
+      "pass": [
+       39,
+       39,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NO_DATA": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 45
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   }
+  },
+  "qwen-heldout": {
+   "me340": {
+    "coverage": 0.095,
+    "counts": {
+     "NO_DATA": 15,
+     "NEEDS_REVIEW": 17,
+     "PASS": 6
+    },
+    "by_check": {
+     "J4": {
+      "verdicts": {
+       "NO_DATA": 5,
+       "NEEDS_REVIEW": 9,
+       "PASS": 5
+      },
+      "pass": [
+       5,
+       5,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4,
+       "PASS": 1
+      },
+      "pass": [
+       1,
+       1,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3b": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 6,
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 4,
+       "NEEDS_REVIEW": 2
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J4": {
+      "verdicts": {
+       "NO_DATA": 5,
+       "NEEDS_REVIEW": 7,
+       "PASS": 7
+      },
+      "pass": [
+       5,
+       7,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 5
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3b": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 6,
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 4,
+       "NEEDS_REVIEW": 2
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   },
+   "samsclub": {
+    "coverage": 0.343,
+    "counts": {
+     "NEEDS_REVIEW": 186,
+     "PASS": 147,
+     "NO_DATA": 125
+    },
+    "by_check": {
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 60,
+       "PASS": 98
+      },
+      "pass": [
+       80,
+       80,
+       18
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NEEDS_REVIEW": 85,
+       "NO_DATA": 71,
+       "PASS": 2
+      },
+      "pass": [
+       2,
+       2,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "PASS": 47,
+       "NEEDS_REVIEW": 8
+      },
+      "pass": [
+       47,
+       47,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J7": {
+      "verdicts": {
+       "NO_DATA": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J4": {
+      "verdicts": {
+       "NEEDS_REVIEW": 3
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J6": {
+      "verdicts": {
+       "NO_DATA": 41
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NEEDS_REVIEW": 12,
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 2,
+       "NEEDS_REVIEW": 18
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 50,
+       "PASS": 107
+      },
+      "pass": [
+       83,
+       83,
+       24
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NO_DATA": 157
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 54
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J4": {
+      "verdicts": {
+       "NEEDS_REVIEW": 3
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NEEDS_REVIEW": 12,
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 2,
+       "NEEDS_REVIEW": 18
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   },
+   "walmart": {
+    "coverage": 0.065,
+    "counts": {
+     "PASS": 27,
+     "NEEDS_REVIEW": 24,
+     "NO_DATA": 11
+    },
+    "by_check": {
+     "J5": {
+      "verdicts": {
+       "PASS": 27,
+       "NEEDS_REVIEW": 19
+      },
+      "pass": [
+       27,
+       27,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NO_DATA": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 45
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   }
+  },
+  "qwen-all": {
+   "me340": {
+    "coverage": 0.095,
+    "counts": {
+     "NO_DATA": 15,
+     "NEEDS_REVIEW": 17,
+     "PASS": 6
+    },
+    "by_check": {
+     "J4": {
+      "verdicts": {
+       "NO_DATA": 5,
+       "NEEDS_REVIEW": 9,
+       "PASS": 5
+      },
+      "pass": [
+       5,
+       5,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4,
+       "PASS": 1
+      },
+      "pass": [
+       1,
+       1,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3b": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 6,
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 4,
+       "NEEDS_REVIEW": 2
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J4": {
+      "verdicts": {
+       "NO_DATA": 5,
+       "NEEDS_REVIEW": 7,
+       "PASS": 7
+      },
+      "pass": [
+       5,
+       7,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 5
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3b": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 6,
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 4,
+       "NEEDS_REVIEW": 2
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   },
+   "samsclub": {
+    "coverage": 0.343,
+    "counts": {
+     "NEEDS_REVIEW": 186,
+     "PASS": 147,
+     "NO_DATA": 125
+    },
+    "by_check": {
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 60,
+       "PASS": 98
+      },
+      "pass": [
+       80,
+       80,
+       18
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NEEDS_REVIEW": 85,
+       "NO_DATA": 71,
+       "PASS": 2
+      },
+      "pass": [
+       2,
+       2,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "PASS": 47,
+       "NEEDS_REVIEW": 8
+      },
+      "pass": [
+       47,
+       47,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J7": {
+      "verdicts": {
+       "NO_DATA": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J4": {
+      "verdicts": {
+       "NEEDS_REVIEW": 3
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J6": {
+      "verdicts": {
+       "NO_DATA": 41
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NEEDS_REVIEW": 12,
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 2,
+       "NEEDS_REVIEW": 18
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 50,
+       "PASS": 107
+      },
+      "pass": [
+       83,
+       83,
+       24
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NO_DATA": 157
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 54
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J4": {
+      "verdicts": {
+       "NEEDS_REVIEW": 3
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NEEDS_REVIEW": 12,
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NO_DATA": 2,
+       "NEEDS_REVIEW": 18
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   },
+   "walmart": {
+    "coverage": 0.065,
+    "counts": {
+     "PASS": 27,
+     "NEEDS_REVIEW": 24,
+     "NO_DATA": 11
+    },
+    "by_check": {
+     "J5": {
+      "verdicts": {
+       "PASS": 27,
+       "NEEDS_REVIEW": 19
+      },
+      "pass": [
+       27,
+       27,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J1": {
+      "verdicts": {
+       "NEEDS_REVIEW": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J2": {
+      "verdicts": {
+       "NO_DATA": 1
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ],
+      "fail": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    "round1_same_rows": {
+     "J5": {
+      "verdicts": {
+       "NEEDS_REVIEW": 45
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J3a": {
+      "verdicts": {
+       "NO_DATA": 10
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     },
+     "J8": {
+      "verdicts": {
+       "NEEDS_REVIEW": 4
+      },
+      "pass": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   }
+  }
+ },
+ "calibration": {
+  "gemini": {
+   "q1": {
+    "n": 60,
+    "positives": 16,
+    "hazard": {
+     "t": 0.5,
+     "n": 18,
+     "hits": 11
+    },
+    "clear": null,
+    "veto": {
+     "t": 0.5,
+     "calibrated": true
+    },
+    "rule": "stated cuts 0.5 / 0.1, validated",
+    "held_out": {
+     "n": 60,
+     "positives": 16,
+     "hazard_calls": 13,
+     "hazard_right": 6,
+     "hazard_precision": 0.462,
+     "hazard_recall": 0.375,
+     "clear_calls": 0,
+     "clear_right": 0,
+     "clear_npv": null
+    }
+   },
+   "q2": {
+    "n": 169,
+    "positives": 0,
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "rule": "stated cuts 0.5 / 0.1, validated",
+    "held_out": {
+     "n": 169,
+     "positives": 0,
+     "hazard_calls": 0,
+     "hazard_right": 0,
+     "hazard_precision": null,
+     "hazard_recall": null,
+     "clear_calls": 0,
+     "clear_right": 0,
+     "clear_npv": null
+    }
+   },
+   "q3": {
+    "n": 13,
+    "positives": 0,
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "rule": "stated cuts 0.5 / 0.1, validated",
+    "held_out": {
+     "n": 13,
+     "positives": 0,
+     "hazard_calls": 0,
+     "hazard_right": 0,
+     "hazard_precision": null,
+     "hazard_recall": null,
+     "clear_calls": 0,
+     "clear_right": 0,
+     "clear_npv": null
+    }
+   },
+   "q4": {
+    "n": 175,
+    "positives": 28,
+    "hazard": {
+     "t": 0.5,
+     "n": 29,
+     "hits": 24
+    },
+    "clear": {
+     "t": 0.1,
+     "n": 122,
+     "hits": 120
+    },
+    "veto": {
+     "t": 0.5,
+     "calibrated": true
+    },
+    "rule": "stated cuts 0.5 / 0.1, validated",
+    "held_out": {
+     "n": 175,
+     "positives": 28,
+     "hazard_calls": 29,
+     "hazard_right": 24,
+     "hazard_precision": 0.828,
+     "hazard_recall": 0.857,
+     "clear_calls": 122,
+     "clear_right": 120,
+     "clear_npv": 0.984
+    }
+   },
+   "q5": {
+    "n": 15,
+    "positives": 6,
+    "hazard": {
+     "t": 0.5,
+     "n": 10,
+     "hits": 6
+    },
+    "clear": null,
+    "veto": {
+     "t": 0.5,
+     "calibrated": true
+    },
+    "rule": "stated cuts 0.5 / 0.1, validated",
+    "held_out": {
+     "n": 15,
+     "positives": 6,
+     "hazard_calls": 0,
+     "hazard_right": 0,
+     "hazard_precision": null,
+     "hazard_recall": 0.0,
+     "clear_calls": 0,
+     "clear_right": 0,
+     "clear_npv": null
+    }
+   },
+   "q6": {
+    "n": 40,
+    "positives": 0,
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "rule": "stated cuts 0.5 / 0.1, validated",
+    "held_out": {
+     "n": 40,
+     "positives": 0,
+     "hazard_calls": 0,
+     "hazard_right": 0,
+     "hazard_precision": null,
+     "hazard_recall": null,
+     "clear_calls": 0,
+     "clear_right": 0,
+     "clear_npv": null
+    }
+   },
+   "q7": {
+    "n": 1,
+    "positives": 0,
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "rule": "stated cuts 0.5 / 0.1, validated",
+    "held_out": {
+     "n": 1,
+     "positives": 0,
+     "hazard_calls": 0,
+     "hazard_right": 0,
+     "hazard_precision": null,
+     "hazard_recall": null,
+     "clear_calls": 0,
+     "clear_right": 0,
+     "clear_npv": null
+    }
+   }
+  },
+  "qwen": {
+   "q1": {
+    "n": 55,
+    "positives": 14,
+    "hazard": {
+     "t": 0.772714,
+     "n": 12,
+     "hits": 10
+    },
+    "clear": {
+     "t": 0.039659,
+     "n": 37,
+     "hits": 36
+    },
+    "veto": {
+     "t": 0.772714,
+     "calibrated": true
+    },
+    "rule": "fitted: precision >= 0.8, NPV >= 0.97",
+    "held_out": {
+     "n": 55,
+     "positives": 14,
+     "hazard_calls": 2,
+     "hazard_right": 2,
+     "hazard_precision": 1.0,
+     "hazard_recall": 0.143,
+     "clear_calls": 34,
+     "clear_right": 33,
+     "clear_npv": 0.971
+    }
+   },
+   "q2": {
+    "n": 158,
+    "positives": 0,
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "rule": "fitted: precision >= 0.8, NPV >= 0.97",
+    "held_out": {
+     "n": 158,
+     "positives": 0,
+     "hazard_calls": 0,
+     "hazard_right": 0,
+     "hazard_precision": null,
+     "hazard_recall": null,
+     "clear_calls": 0,
+     "clear_right": 0,
+     "clear_npv": null
+    }
+   },
+   "q3": {
+    "n": 13,
+    "positives": 0,
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "rule": "fitted: precision >= 0.8, NPV >= 0.97",
+    "held_out": {
+     "n": 13,
+     "positives": 0,
+     "hazard_calls": 0,
+     "hazard_right": 0,
+     "hazard_precision": null,
+     "hazard_recall": null,
+     "clear_calls": 0,
+     "clear_right": 0,
+     "clear_npv": null
+    }
+   },
+   "q4": {
+    "n": 167,
+    "positives": 28,
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "rule": "fitted: precision >= 0.8, NPV >= 0.97",
+    "held_out": {
+     "n": 167,
+     "positives": 28,
+     "hazard_calls": 0,
+     "hazard_right": 0,
+     "hazard_precision": null,
+     "hazard_recall": 0.0,
+     "clear_calls": 4,
+     "clear_right": 2,
+     "clear_npv": 0.5
+    }
+   },
+   "q5": {
+    "n": 15,
+    "positives": 6,
+    "hazard": {
+     "t": 0.00217,
+     "n": 7,
+     "hits": 6
+    },
+    "clear": null,
+    "veto": {
+     "t": 0.00217,
+     "calibrated": true
+    },
+    "rule": "fitted: precision >= 0.8, NPV >= 0.97",
+    "held_out": {
+     "n": 15,
+     "positives": 6,
+     "hazard_calls": 0,
+     "hazard_right": 0,
+     "hazard_precision": null,
+     "hazard_recall": 0.0,
+     "clear_calls": 0,
+     "clear_right": 0,
+     "clear_npv": null
+    }
+   }
+  }
+ },
+ "calibration_by_video": {
+  "gemini": {
+   "q1": {
+    "hazard_calls": 1,
+    "hazard_right": 1,
+    "clear_calls": 0,
+    "clear_right": 0,
+    "n": 22,
+    "positives": 7,
+    "by": {
+     "me340": {
+      "n": 19,
+      "positives": 6,
+      "thresholds": [
+       null,
+       null
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 0,
+      "clear_right": 0
+     },
+     "samsclub": {
+      "n": 3,
+      "positives": 1,
+      "thresholds": [
+       0.5,
+       null
+      ],
+      "hazard_calls": 1,
+      "hazard_right": 1,
+      "clear_calls": 0,
+      "clear_right": 0
+     }
+    }
+   },
+   "q2": {
+    "hazard_calls": 0,
+    "hazard_right": 0,
+    "clear_calls": 0,
+    "clear_right": 0,
+    "n": 150,
+    "positives": 0,
+    "by": {
+     "samsclub": {
+      "n": 149,
+      "positives": 0,
+      "thresholds": [
+       null,
+       null
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 0,
+      "clear_right": 0
+     },
+     "walmart": {
+      "n": 1,
+      "positives": 0,
+      "thresholds": [
+       null,
+       null
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 0,
+      "clear_right": 0
+     }
+    }
+   },
+   "q4": {
+    "hazard_calls": 0,
+    "hazard_right": 0,
+    "clear_calls": 102,
+    "clear_right": 102,
+    "n": 106,
+    "positives": 0,
+    "by": {
+     "me340": {
+      "n": 5,
+      "positives": 0,
+      "thresholds": [
+       0.5,
+       0.1
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 4,
+      "clear_right": 4
+     },
+     "samsclub": {
+      "n": 55,
+      "positives": 0,
+      "thresholds": [
+       0.5,
+       0.1
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 54,
+      "clear_right": 54
+     },
+     "walmart": {
+      "n": 46,
+      "positives": 0,
+      "thresholds": [
+       0.5,
+       0.1
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 44,
+      "clear_right": 44
+     }
+    }
+   },
+   "q6": {
+    "hazard_calls": 0,
+    "hazard_right": 0,
+    "clear_calls": 0,
+    "clear_right": 0,
+    "n": 40,
+    "positives": 0,
+    "by": {
+     "samsclub": {
+      "n": 40,
+      "positives": 0,
+      "thresholds": [
+       null,
+       null
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 0,
+      "clear_right": 0
+     }
+    }
+   },
+   "q7": {
+    "hazard_calls": 0,
+    "hazard_right": 0,
+    "clear_calls": 0,
+    "clear_right": 0,
+    "n": 1,
+    "positives": 0,
+    "by": {
+     "samsclub": {
+      "n": 1,
+      "positives": 0,
+      "thresholds": [
+       null,
+       null
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 0,
+      "clear_right": 0
+     }
+    }
+   }
+  },
+  "qwen": {
+   "q1": {
+    "hazard_calls": 2,
+    "hazard_right": 2,
+    "clear_calls": 10,
+    "clear_right": 10,
+    "n": 18,
+    "positives": 5,
+    "by": {
+     "me340": {
+      "n": 16,
+      "positives": 5,
+      "thresholds": [
+       0.947892,
+       0.004261
+      ],
+      "hazard_calls": 2,
+      "hazard_right": 2,
+      "clear_calls": 8,
+      "clear_right": 8
+     },
+     "samsclub": {
+      "n": 2,
+      "positives": 0,
+      "thresholds": [
+       0.772714,
+       0.039659
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 2,
+      "clear_right": 2
+     }
+    }
+   },
+   "q2": {
+    "hazard_calls": 0,
+    "hazard_right": 0,
+    "clear_calls": 0,
+    "clear_right": 0,
+    "n": 139,
+    "positives": 0,
+    "by": {
+     "samsclub": {
+      "n": 138,
+      "positives": 0,
+      "thresholds": [
+       null,
+       null
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 0,
+      "clear_right": 0
+     },
+     "walmart": {
+      "n": 1,
+      "positives": 0,
+      "thresholds": [
+       null,
+       null
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 0,
+      "clear_right": 0
+     }
+    }
+   },
+   "q4": {
+    "hazard_calls": 0,
+    "hazard_right": 0,
+    "clear_calls": 0,
+    "clear_right": 0,
+    "n": 98,
+    "positives": 0,
+    "by": {
+     "me340": {
+      "n": 5,
+      "positives": 0,
+      "thresholds": [
+       null,
+       null
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 0,
+      "clear_right": 0
+     },
+     "samsclub": {
+      "n": 51,
+      "positives": 0,
+      "thresholds": [
+       null,
+       null
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 0,
+      "clear_right": 0
+     },
+     "walmart": {
+      "n": 42,
+      "positives": 0,
+      "thresholds": [
+       null,
+       null
+      ],
+      "hazard_calls": 0,
+      "hazard_right": 0,
+      "clear_calls": 0,
+      "clear_right": 0
+     }
+    }
+   }
+  }
+ }
+}

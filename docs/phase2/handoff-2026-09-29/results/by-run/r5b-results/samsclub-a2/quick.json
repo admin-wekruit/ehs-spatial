@@ -1,0 +1,342 @@
+{
+ "site": "samsclub-a2",
+ "report": "mvp-samsclub-a2-d5e0c855-1790741753",
+ "bench": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/r5b-int-samsclub-a2-002",
+ "rule": "times: analysis s from the MP4 bytes in the container to the Volume commit (written_s); tiers: the final layers; alignment: scripts/r5b_align.py (every object card's shown model from its best keyframe's camera vs its SAM 3 outline)",
+ "times_warm": {
+  "first 3D": 17.6,
+  "objects v1": 27.8,
+  "cards v1": 36.8,
+  "types (first pass)": 73.3,
+  "objects v3": 76.3,
+  "cards v3": 94.3,
+  "types (densify pass)": 106.4,
+  "splat preview": null,
+  "call end": 161.9,
+  "vocab known (mark)": 4.2,
+  "decode end": 3.9,
+  "sam3 done (mark)": 19.2,
+  "tier 0 surfaces v1": 40.076,
+  "tier 1 generating (mark)": 122.418,
+  "all generated models in (models final)": 161.6,
+  "first generated model": 132.8
+ },
+ "times_first": {
+  "first 3D": 15.8,
+  "objects v1": 25.9,
+  "cards v1": 34.1,
+  "types (first pass)": 71.2,
+  "objects v3": 74.3,
+  "cards v3": 93.4,
+  "types (densify pass)": 108.9,
+  "splat preview": null,
+  "call end": 158.0,
+  "vocab known (mark)": 5.5,
+  "decode end": 5.5,
+  "sam3 done (mark)": 17.5,
+  "tier 0 surfaces v1": 41.205,
+  "tier 1 generating (mark)": 118.71,
+  "all generated models in (models final)": 157.7,
+  "first generated model": 128.1
+ },
+ "models": {
+  "object_cards": 935,
+  "all_cards_by_tier": {
+   "observed surface": 713,
+   "primitive": 210,
+   "generated": 12
+  },
+  "non_simple": 32,
+  "non_simple_shown": {
+   "observed surface": 20,
+   "generated (own)": 12
+  },
+  "non_simple_generated_share": 0.375,
+  "generated_models": 12,
+  "copies": 0,
+  "passed_view_check": 6,
+  "held_out_view": 6,
+  "plan": {
+   "cards": 935,
+   "soft_goods": 6,
+   "candidates": 595,
+   "groups": 275,
+   "jev_asked": 259,
+   "jev_s": 17.509,
+   "generated_groups": 30,
+   "kept": 30,
+   "members": 2,
+   "by_route": {
+    "primitive": 903,
+    "generated": 32,
+    "ask jev": 0
+   },
+   "plan_s": 18.525
+  },
+  "reuse": {
+   "kept": 0,
+   "rejected": 2
+  },
+  "display_rule": {
+   "shown": 12,
+   "not_lined_up": 20,
+   "own_after_copy": 1
+  },
+  "final": true
+ },
+ "vlm_requests": {
+  "scene vocabulary": {
+   "requests": 1,
+   "spans_s": [
+    [
+     1.6,
+     4.2
+    ]
+   ],
+   "before_cards_v1": 1
+  },
+  "event captions": {
+   "requests": 0,
+   "spans_s": [],
+   "before_cards_v1": 0
+  },
+  "naming (cluster medoids)": {
+   "requests": 36,
+   "spans_s": [
+    [
+     65.0,
+     66.3
+    ],
+    [
+     98.7,
+     99.8
+    ]
+   ],
+   "before_cards_v1": 0
+  },
+  "hazard / judge": {
+   "requests": 0,
+   "spans_s": [],
+   "before_cards_v1": 0
+  },
+  "qwen identity decider": {
+   "requests": 0,
+   "spans_s": [],
+   "before_cards_v1": 0
+  },
+  "naming escalated": 0,
+  "question log (by priority)": {
+   "identity": {
+    "n": 36,
+    "failed": 0,
+    "wait_p50_s": 0.004,
+    "wait_p90_s": 0.371,
+    "request_p50_s": 0.447,
+    "request_p90_s": 1.042,
+    "per_s": 1.04,
+    "prompt_tokens_mean": 375.3
+   }
+  },
+  "before cards v1 (all)": 1
+ },
+ "gpu": {
+  "peak_gib": [
+   54.2,
+   70.91
+  ],
+  "stages_over_72": [],
+  "recgen": {
+   "recgen.select": {
+    "n": 96,
+    "gpu_s": 28.04,
+    "span": [
+     122.61,
+     154.09
+    ]
+   },
+   "recgen.generate": {
+    "n": 32,
+    "gpu_s": 115.88,
+    "span": [
+     122.95,
+     157.4
+    ]
+   },
+   "recgen.gate": {
+    "n": 32,
+    "gpu_s": 40.77,
+    "span": [
+     125.71,
+     159.05
+    ]
+   },
+   "tier1.jev": {
+    "n": 2,
+    "gpu_s": 37.82,
+    "span": [
+     70.95,
+     121.57
+    ]
+   }
+  }
+ },
+ "vocab": {
+  "qwen": {
+   "words": [
+    "shopping cart",
+    "trolley",
+    "shelf",
+    "pallet",
+    "box",
+    "toilet paper",
+    "paper towel",
+    "tissue",
+    "plastic wrap",
+    "plastic container",
+    "crate",
+    "forklift",
+    "pipe",
+    "light fixture"
+   ],
+   "s": 2.516,
+   "first_output_s": 0.141,
+   "stream_chunks": 78,
+   "stopped_at_max_types": false,
+   "kept": 14,
+   "text": "{\n  \"objects\": [\n    \"shopping cart\",\n    \"trolley\",\n    \"shelf\",\n    \"pallet\",\n    \"box\",\n    \"toilet paper\",\n    \"paper towel\",\n    \"tissue\",\n    \"plastic wrap\",\n    \"plastic container\",\n    \"crate\",\n    \"forklift\",\n    \"pipe\",\n    \"light fixture\"\n  ]\n}"
+  },
+  "source": "qwen+ram",
+  "words": [
+   "shelf",
+   "product",
+   "toilet paper",
+   "cart",
+   "shopping cart",
+   "package",
+   "box",
+   "can",
+   "palette",
+   "crate",
+   "bin",
+   "pillar",
+   "container",
+   "shampoo",
+   "soap",
+   "toiletry",
+   "trolley",
+   "pallet",
+   "paper towel",
+   "tissue",
+   "plastic wrap",
+   "plastic container",
+   "pipe",
+   "light fixture"
+  ],
+  "s": 4.179
+ },
+ "tier1_summary": {
+  "eligible": 30,
+  "attempted": 32,
+  "accepted": 12,
+  "reused": {
+   "kept": 0,
+   "rejected": 2
+  },
+  "prepare_rejected": 0,
+  "errors": [],
+  "display": {
+   "shown": 12,
+   "not_lined_up": 20,
+   "own_after_copy": 1
+  }
+ },
+ "usd_estimate_call": 0.3501,
+ "alignment": {
+  "summary": {
+   "all": {
+    "n": 930,
+    "iou_median": 0.669,
+    "iou_p10": 0.212,
+    "iou_ge_0.5": 0.752,
+    "offset_px_median": 7.2,
+    "offset_px_p90": 44.36,
+    "offset_cm_median": 3.7,
+    "offset_cm_p90": 31.42
+   },
+   "generated": {
+    "n": 12,
+    "iou_median": 0.631,
+    "iou_p10": 0.419,
+    "iou_ge_0.5": 0.667,
+    "offset_px_median": 8.45,
+    "offset_px_p90": 41.93,
+    "offset_cm_median": 4.5,
+    "offset_cm_p90": 17.45
+   },
+   "none": {
+    "n": 6,
+    "iou_median": 0.22,
+    "iou_p10": 0.151,
+    "iou_ge_0.5": 0.0,
+    "offset_px_median": 18.95,
+    "offset_px_p90": 34.5,
+    "offset_cm_median": 53.05,
+    "offset_cm_p90": 81.4
+   },
+   "observed surface": {
+    "n": 702,
+    "iou_median": 0.652,
+    "iou_p10": 0.169,
+    "iou_ge_0.5": 0.726,
+    "offset_px_median": 7.8,
+    "offset_px_p90": 52.5,
+    "offset_cm_median": 4.0,
+    "offset_cm_p90": 32.3
+   },
+   "primitive": {
+    "n": 210,
+    "iou_median": 0.718,
+    "iou_p10": 0.444,
+    "iou_ge_0.5": 0.862,
+    "offset_px_median": 4.6,
+    "offset_px_p90": 26.55,
+    "offset_cm_median": 2.65,
+    "offset_cm_p90": 16.79
+   }
+  },
+  "worst_generated": [
+   "obj-0-799",
+   "obj-0-927",
+   "obj-0-149",
+   "obj-1-616",
+   "obj-1-1742",
+   "obj-0-1278",
+   "obj-0-72",
+   "obj-0-77",
+   "obj-1-514",
+   "obj-1-1406",
+   "obj-0-872",
+   "obj-1-509"
+  ],
+  "overlays": [
+   "overlay-shot0-frame65.jpg",
+   "overlay-shot1-frame580.jpg"
+  ]
+ },
+ "screenshots": {
+  "3d_before_r4b": "viewer/samsclub-a2/3d-before-r4b.jpg (r4b warm mvp-samsclub-a2-d5e0c855-1790721476, r4b's viewer, follow mode at 15 s)",
+  "3d_after": "viewer/samsclub-a2/3d-after.jpg (follow mode at 15 s)",
+  "overlay": [
+   "viewer/samsclub-a2/overlay-2.6.jpg",
+   "viewer/samsclub-a2/overlay-23.2.jpg"
+  ],
+  "overlay_rendered_on_modal": [
+   "modal-overlay-shot0-frame65.jpg",
+   "modal-overlay-shot1-frame580.jpg"
+  ],
+  "clicked_cards": [
+   "viewer/samsclub-a2/click-cart.jpg (RecGen shopping cart)",
+   "viewer/samsclub-a2/click-box-angles.jpg"
+  ]
+ }
+}

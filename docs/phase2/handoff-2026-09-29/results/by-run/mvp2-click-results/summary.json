@@ -1,0 +1,1165 @@
+{
+ "schema": "mvp2-click-results-v1",
+ "branch": "mvp2/click",
+ "worktree": "/Users/adam/.codex/worktrees/panoptes-phase2-video-mvp2-click",
+ "labels": "agent-labelled from contact sheets (not ground truth)",
+ "click_audit": {
+  "round1_seed1_diagnosis": {
+   "me340 s1": {
+    "n": 60,
+    "correct": 31,
+    "wrong": 0,
+    "miss": 5,
+    "background": 22,
+    "background-hit": 2,
+    "click_correct_share": 0.883,
+    "on_object_correct": 0.861,
+    "picked_precision": 0.939,
+    "coarse": 7,
+    "unclear": 0
+   },
+   "samsclub-a2 s1": {
+    "n": 60,
+    "correct": 19,
+    "wrong": 0,
+    "miss": 25,
+    "background": 16,
+    "background-hit": 0,
+    "click_correct_share": 0.583,
+    "on_object_correct": 0.432,
+    "picked_precision": 1.0,
+    "coarse": 1,
+    "unclear": 0
+   },
+   "walmart s1": {
+    "n": 60,
+    "correct": 17,
+    "wrong": 0,
+    "miss": 18,
+    "background": 25,
+    "background-hit": 0,
+    "click_correct_share": 0.7,
+    "on_object_correct": 0.486,
+    "picked_precision": 1.0,
+    "coarse": 1,
+    "unclear": 0
+   }
+  },
+  "held_out_seed2_round1": {
+   "me340 s2": {
+    "n": 60,
+    "correct": 22,
+    "wrong": 0,
+    "miss": 8,
+    "background": 26,
+    "background-hit": 4,
+    "click_correct_share": 0.8,
+    "on_object_correct": 0.733,
+    "picked_precision": 0.846,
+    "coarse": 3,
+    "unclear": 0
+   },
+   "samsclub-a2 s2": {
+    "n": 60,
+    "correct": 27,
+    "wrong": 0,
+    "miss": 20,
+    "background": 13,
+    "background-hit": 0,
+    "click_correct_share": 0.667,
+    "on_object_correct": 0.574,
+    "picked_precision": 1.0,
+    "coarse": 4,
+    "unclear": 0
+   },
+   "walmart s2": {
+    "n": 60,
+    "correct": 23,
+    "wrong": 0,
+    "miss": 21,
+    "background": 16,
+    "background-hit": 0,
+    "click_correct_share": 0.65,
+    "on_object_correct": 0.523,
+    "picked_precision": 1.0,
+    "coarse": 1,
+    "unclear": 0
+   }
+  },
+  "held_out_seed2_final": {
+   "me340 s2": {
+    "n": 60,
+    "correct": 21,
+    "wrong": 0,
+    "miss": 9,
+    "background": 27,
+    "background-hit": 3,
+    "click_correct_share": 0.8,
+    "on_object_correct": 0.7,
+    "picked_precision": 0.875,
+    "coarse": 3,
+    "unclear": 0
+   },
+   "samsclub-a2 s2": {
+    "n": 60,
+    "correct": 28,
+    "wrong": 0,
+    "miss": 19,
+    "background": 13,
+    "background-hit": 0,
+    "click_correct_share": 0.683,
+    "on_object_correct": 0.596,
+    "picked_precision": 1.0,
+    "coarse": 5,
+    "unclear": 0
+   },
+   "walmart s2": {
+    "n": 60,
+    "correct": 22,
+    "wrong": 1,
+    "miss": 21,
+    "background": 16,
+    "background-hit": 0,
+    "click_correct_share": 0.633,
+    "on_object_correct": 0.5,
+    "picked_precision": 0.957,
+    "coarse": 1,
+    "unclear": 0
+   }
+  },
+  "person_refs_round1": {
+   "me340 s11": {
+    "n": 61,
+    "correct": 58,
+    "wrong": 0,
+    "miss": 2,
+    "background": 0,
+    "background-hit": 0,
+    "click_correct_share": 0.951,
+    "on_object_correct": 0.967,
+    "picked_precision": 1.0,
+    "coarse": 0,
+    "real_people": 60,
+    "real_person_correct": 0.967,
+    "pictures": 1,
+    "pictures_as_person": 0,
+    "unclear": 0
+   },
+   "samsclub-a2 s11": {
+    "n": 91,
+    "correct": 38,
+    "wrong": 0,
+    "miss": 15,
+    "background": 0,
+    "background-hit": 0,
+    "click_correct_share": 0.418,
+    "on_object_correct": 0.717,
+    "picked_precision": 0.514,
+    "coarse": 0,
+    "real_people": 53,
+    "real_person_correct": 0.717,
+    "pictures": 37,
+    "pictures_as_person": 11,
+    "unclear": 1
+   },
+   "walmart s11": {
+    "n": 21,
+    "correct": 1,
+    "wrong": 0,
+    "miss": 2,
+    "background": 0,
+    "background-hit": 0,
+    "click_correct_share": 0.048,
+    "on_object_correct": 0.333,
+    "picked_precision": 0.083,
+    "coarse": 0,
+    "real_people": 3,
+    "real_person_correct": 0.333,
+    "pictures": 13,
+    "pictures_as_person": 5,
+    "unclear": 5
+   }
+  },
+  "person_refs_final": {
+   "me340 s11": {
+    "n": 61,
+    "correct": 59,
+    "wrong": 0,
+    "miss": 1,
+    "background": 0,
+    "background-hit": 0,
+    "click_correct_share": 0.967,
+    "on_object_correct": 0.983,
+    "picked_precision": 1.0,
+    "coarse": 0,
+    "real_people": 60,
+    "real_person_correct": 0.983,
+    "pictures": 1,
+    "pictures_as_person": 0,
+    "unclear": 0
+   },
+   "samsclub-a2 s11": {
+    "n": 91,
+    "correct": 47,
+    "wrong": 0,
+    "miss": 6,
+    "background": 0,
+    "background-hit": 0,
+    "click_correct_share": 0.516,
+    "on_object_correct": 0.887,
+    "picked_precision": 0.553,
+    "coarse": 0,
+    "real_people": 53,
+    "real_person_correct": 0.887,
+    "pictures": 37,
+    "pictures_as_person": 4,
+    "unclear": 1
+   },
+   "walmart s11": {
+    "n": 21,
+    "correct": 2,
+    "wrong": 0,
+    "miss": 1,
+    "background": 0,
+    "background-hit": 0,
+    "click_correct_share": 0.095,
+    "on_object_correct": 0.667,
+    "picked_precision": 0.182,
+    "coarse": 0,
+    "real_people": 3,
+    "real_person_correct": 0.667,
+    "pictures": 13,
+    "pictures_as_person": 0,
+    "unclear": 5
+   }
+  },
+  "dirs": {
+   "round1": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp2-click-audit-r1",
+   "mvp2-click-001": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp2-click-audit-r2",
+   "mvp2-click-002": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp2-click-audit-r3",
+   "final mvp2-click-003": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/mvp2-click-audit-r4"
+  }
+ },
+ "viewer": {
+  "round1": {
+   "me340": {
+    "click_p95_ms": 26.100000023841858,
+    "pick_decode_ms": [
+     107,
+     702
+    ]
+   },
+   "samsclub-a2": {
+    "click_p95_ms": 29.600000023841858,
+    "pick_decode_ms": [
+     89,
+     1939
+    ]
+   },
+   "walmart": {
+    "click_p95_ms": 32.5,
+    "pick_decode_ms": [
+     104,
+     2554
+    ]
+   }
+  },
+  "final_live": {
+   "me340": {
+    "click_p50_ms": 5.5,
+    "click_p95_ms": 26.3,
+    "pick_versions": [
+     {
+      "seq": 15,
+      "first_chunk_ms": 46,
+      "all_chunks_ms": 124,
+      "chunks": 15,
+      "reused_chunks": 0
+     },
+     {
+      "seq": 28,
+      "first_chunk_ms": 88,
+      "all_chunks_ms": 131,
+      "chunks": 15,
+      "reused_chunks": 15
+     }
+    ],
+    "errors": 0
+   },
+   "samsclub-a2": {
+    "click_p50_ms": 6.6,
+    "click_p95_ms": 29.1,
+    "pick_versions": [
+     {
+      "seq": 15,
+      "first_chunk_ms": 75,
+      "all_chunks_ms": 162,
+      "chunks": 13,
+      "reused_chunks": 0
+     },
+     {
+      "seq": 23,
+      "first_chunk_ms": 155,
+      "all_chunks_ms": 251,
+      "chunks": 13,
+      "reused_chunks": 13
+     }
+    ],
+    "errors": 0
+   },
+   "walmart": {
+    "click_p50_ms": 6,
+    "click_p95_ms": 28.6,
+    "pick_versions": [
+     {
+      "seq": 15,
+      "first_chunk_ms": 70,
+      "all_chunks_ms": 158,
+      "chunks": 13,
+      "reused_chunks": 0
+     },
+     {
+      "seq": 25,
+      "first_chunk_ms": 128,
+      "all_chunks_ms": 164,
+      "chunks": 13,
+      "reused_chunks": 13
+     }
+    ],
+    "errors": 0
+   }
+  },
+  "mvp2-002_live": {
+   "me340": {
+    "click_p50_ms": 5.5,
+    "click_p95_ms": 26.1,
+    "pick_versions": [
+     {
+      "seq": 15,
+      "first_chunk_ms": 67,
+      "all_chunks_ms": 152,
+      "chunks": 15,
+      "reused_chunks": 0
+     },
+     {
+      "seq": 27,
+      "first_chunk_ms": 108,
+      "all_chunks_ms": 213,
+      "chunks": 15,
+      "reused_chunks": 0
+     }
+    ],
+    "errors": 0
+   },
+   "samsclub-a2": {
+    "click_p50_ms": 6.1,
+    "click_p95_ms": 29.3,
+    "pick_versions": [
+     {
+      "seq": 14,
+      "first_chunk_ms": 69,
+      "all_chunks_ms": 152,
+      "chunks": 13,
+      "reused_chunks": 0
+     },
+     {
+      "seq": 22,
+      "first_chunk_ms": 114,
+      "all_chunks_ms": 174,
+      "chunks": 13,
+      "reused_chunks": 0
+     }
+    ],
+    "errors": 0
+   },
+   "walmart": {
+    "click_p50_ms": 6.2,
+    "click_p95_ms": 29.8,
+    "pick_versions": [
+     {
+      "seq": 15,
+      "first_chunk_ms": 58,
+      "all_chunks_ms": 114,
+      "chunks": 13,
+      "reused_chunks": 0
+     },
+     {
+      "seq": 25,
+      "first_chunk_ms": 132,
+      "all_chunks_ms": 190,
+      "chunks": 13,
+      "reused_chunks": 0
+     }
+    ],
+    "errors": 0
+   }
+  },
+  "mvp2-001_live": {
+   "me340": {
+    "click_p50_ms": 5.5,
+    "click_p95_ms": 26.6,
+    "pick_versions": [
+     {
+      "seq": 14,
+      "first_chunk_ms": 72,
+      "all_chunks_ms": 156,
+      "chunks": 15,
+      "reused_chunks": 0
+     },
+     {
+      "seq": 27,
+      "first_chunk_ms": 116,
+      "all_chunks_ms": 221,
+      "chunks": 15,
+      "reused_chunks": 0
+     }
+    ],
+    "errors": 0
+   },
+   "samsclub-a2": {
+    "click_p50_ms": 6.3,
+    "click_p95_ms": 28.9,
+    "pick_versions": [
+     {
+      "seq": 15,
+      "first_chunk_ms": 62,
+      "all_chunks_ms": 145,
+      "chunks": 13,
+      "reused_chunks": 0
+     },
+     {
+      "seq": 23,
+      "first_chunk_ms": 147,
+      "all_chunks_ms": 255,
+      "chunks": 13,
+      "reused_chunks": 0
+     }
+    ],
+    "errors": 0
+   },
+   "walmart": {
+    "click_p50_ms": 6.8,
+    "click_p95_ms": 32.4,
+    "pick_versions": [
+     {
+      "seq": 15,
+      "first_chunk_ms": 66,
+      "all_chunks_ms": 152,
+      "chunks": 13,
+      "reused_chunks": 0
+     },
+     {
+      "seq": 25,
+      "first_chunk_ms": 153,
+      "all_chunks_ms": 284,
+      "chunks": 13,
+      "reused_chunks": 0
+     }
+    ],
+    "errors": 0
+   }
+  }
+ },
+ "times": {
+  "round1": [
+   {
+    "run": "mvp-integrate-me340-005",
+    "site": "me340",
+    "kind": "shifted",
+    "report": "mvp-me340-990486a3-1790666918",
+    "first 3D": 19.7,
+    "objects v1": 36.6,
+    "pick v1": 40.4,
+    "cards v1": 42.2,
+    "pick v2": 72.4,
+    "identity complete": 58.4,
+    "cards v3": 74.2,
+    "final judgements": 80.4,
+    "first SAM 3D model": 167.9,
+    "splat preview": 218.7,
+    "splat start": 68.1,
+    "gpu_peak_gib": [
+     61.22,
+     56.47
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp-integrate-me340-005",
+    "site": "me340",
+    "kind": "first",
+    "report": "mvp-me340-e84efffd-1790666448",
+    "first 3D": 22.6,
+    "objects v1": 37.8,
+    "pick v1": 42.1,
+    "cards v1": 44.1,
+    "pick v2": 76.7,
+    "identity complete": 68.0,
+    "cards v3": 78.6,
+    "final judgements": 86.2,
+    "first SAM 3D model": 173.2,
+    "splat preview": 222.8,
+    "splat start": 72.3,
+    "gpu_peak_gib": [
+     61.67,
+     56.38
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp-integrate-me340-005",
+    "site": "me340",
+    "kind": "warm",
+    "report": "mvp-me340-e84efffd-1790666683",
+    "first 3D": 17.7,
+    "objects v1": 36.3,
+    "pick v1": 39.9,
+    "cards v1": 42.0,
+    "pick v2": 73.8,
+    "identity complete": 60.3,
+    "cards v3": 75.5,
+    "final judgements": 82.2,
+    "first SAM 3D model": 165.8,
+    "splat preview": 220.1,
+    "splat start": 69.6,
+    "gpu_peak_gib": [
+     62.31,
+     56.69
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp-integrate-samsclub-004",
+    "site": "samsclub-a2",
+    "kind": "first",
+    "report": "mvp-samsclub-a2-d5e0c855-1790666469",
+    "first 3D": 18.6,
+    "objects v1": 28.6,
+    "pick v1": 30.5,
+    "cards v1": 35.1,
+    "pick v2": 60.7,
+    "identity complete": 113.3,
+    "cards v3": 63.9,
+    "final judgements": 160.1,
+    "first SAM 3D model": 171.2,
+    "splat preview": 204.9,
+    "splat start": 54.2,
+    "gpu_peak_gib": [
+     64.21,
+     54.98
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp-integrate-samsclub-004",
+    "site": "samsclub-a2",
+    "kind": "warm",
+    "report": "mvp-samsclub-a2-d5e0c855-1790666685",
+    "first 3D": 15.2,
+    "objects v1": 27.2,
+    "pick v1": 27.2,
+    "cards v1": 33.8,
+    "pick v2": 56.1,
+    "identity complete": 88.3,
+    "cards v3": 60.1,
+    "final judgements": 117.3,
+    "first SAM 3D model": 157.9,
+    "splat preview": 202.2,
+    "splat start": 51.6,
+    "gpu_peak_gib": [
+     65.16,
+     55.0
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp-integrate-samsclub-004",
+    "site": "samsclub-a2",
+    "kind": "shifted",
+    "report": "mvp-samsclub-a2-f27afc15-1790666901",
+    "first 3D": 14.9,
+    "objects v1": 31.1,
+    "pick v1": 35.7,
+    "cards v1": 42.0,
+    "pick v2": 82.2,
+    "identity complete": 79.9,
+    "cards v3": 86.7,
+    "final judgements": 113.8,
+    "first SAM 3D model": 123.2,
+    "splat preview": 228.6,
+    "splat start": 78.1,
+    "gpu_peak_gib": [
+     68.18,
+     56.78
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp-integrate-walmart-004",
+    "site": "walmart",
+    "kind": "shifted",
+    "report": "mvp-walmart-2eeeb1a3-1790666852",
+    "first 3D": 15.0,
+    "objects v1": 32.3,
+    "pick v1": 35.3,
+    "cards v1": 37.6,
+    "pick v2": 72.7,
+    "identity complete": 80.1,
+    "cards v3": 77.9,
+    "final judgements": 89.6,
+    "first SAM 3D model": 104.7,
+    "splat preview": 219.7,
+    "splat start": 69.1,
+    "gpu_peak_gib": [
+     60.75,
+     56.55
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp-integrate-walmart-004",
+    "site": "walmart",
+    "kind": "first",
+    "report": "mvp-walmart-c0761a2a-1790666452",
+    "first 3D": 18.3,
+    "objects v1": 29.3,
+    "pick v1": 37.9,
+    "cards v1": 37.9,
+    "pick v2": 46.8,
+    "identity complete": 83.1,
+    "cards v3": 50.5,
+    "final judgements": 73.0,
+    "first SAM 3D model": 90.3,
+    "splat preview": 193.0,
+    "splat start": 42.4,
+    "gpu_peak_gib": [
+     62.6,
+     56.25
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp-integrate-walmart-004",
+    "site": "walmart",
+    "kind": "warm",
+    "report": "mvp-walmart-c0761a2a-1790666653",
+    "first 3D": 15.1,
+    "objects v1": 20.2,
+    "pick v1": 22.4,
+    "cards v1": 25.4,
+    "pick v2": 43.0,
+    "identity complete": 69.5,
+    "cards v3": 45.6,
+    "final judgements": 55.9,
+    "first SAM 3D model": 69.2,
+    "splat preview": 187.5,
+    "splat start": 36.9,
+    "gpu_peak_gib": [
+     62.07,
+     56.4
+    ],
+    "over_72": []
+   }
+  ],
+  "mvp2_002": [
+   {
+    "run": "mvp2-click-me340-002",
+    "site": "me340",
+    "kind": "shifted",
+    "report": "mvp-me340-990486a3-1790674100",
+    "first 3D": 21.3,
+    "objects v1": 35.0,
+    "pick v1": 39.9,
+    "cards v1": 41.2,
+    "pick v2": 63.5,
+    "identity complete": 55.9,
+    "cards v3": 65.3,
+    "final judgements": 67.6,
+    "first SAM 3D model": 167.4,
+    "splat preview": 216.2,
+    "splat start": 65.6,
+    "gpu_peak_gib": [
+     69.47,
+     63.38
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-me340-002",
+    "site": "me340",
+    "kind": "first",
+    "report": "mvp-me340-e84efffd-1790673631",
+    "first 3D": 21.0,
+    "objects v1": 38.0,
+    "pick v1": 41.9,
+    "cards v1": 43.6,
+    "pick v2": 71.2,
+    "identity complete": 59.8,
+    "cards v3": 72.9,
+    "final judgements": 75.4,
+    "first SAM 3D model": 178.9,
+    "splat preview": 222.4,
+    "splat start": 72.0,
+    "gpu_peak_gib": [
+     61.44,
+     52.87
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-me340-002",
+    "site": "me340",
+    "kind": "warm",
+    "report": "mvp-me340-e84efffd-1790673868",
+    "first 3D": 17.9,
+    "objects v1": 33.9,
+    "pick v1": 37.7,
+    "cards v1": 39.3,
+    "pick v2": 66.2,
+    "identity complete": 55.9,
+    "cards v3": 67.9,
+    "final judgements": 70.9,
+    "first SAM 3D model": 169.5,
+    "splat preview": 219.0,
+    "splat start": 68.6,
+    "gpu_peak_gib": [
+     63.44,
+     52.62
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-samsclub-a2-002",
+    "site": "samsclub-a2",
+    "kind": "first",
+    "report": "mvp-samsclub-a2-d5e0c855-1790674336",
+    "first 3D": 17.5,
+    "objects v1": 26.9,
+    "pick v1": 28.6,
+    "cards v1": 36.5,
+    "pick v2": 51.9,
+    "identity complete": 96.1,
+    "cards v3": 54.4,
+    "final judgements": 83.2,
+    "first SAM 3D model": 149.7,
+    "splat preview": 222.7,
+    "splat start": 72.0,
+    "gpu_peak_gib": [
+     67.65,
+     58.93
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-samsclub-a2-002",
+    "site": "samsclub-a2",
+    "kind": "warm",
+    "report": "mvp-samsclub-a2-d5e0c855-1790674585",
+    "first 3D": 16.6,
+    "objects v1": 24.1,
+    "pick v1": 25.7,
+    "cards v1": 32.3,
+    "pick v2": 45.2,
+    "identity complete": 76.8,
+    "cards v3": 49.1,
+    "final judgements": 69.5,
+    "first SAM 3D model": 133.8,
+    "splat preview": 222.7,
+    "splat start": 72.0,
+    "gpu_peak_gib": [
+     67.65,
+     59.14
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-samsclub-a2-002",
+    "site": "samsclub-a2",
+    "kind": "shifted",
+    "report": "mvp-samsclub-a2-f27afc15-1790674822",
+    "first 3D": 14.7,
+    "objects v1": 29.4,
+    "pick v1": 32.4,
+    "cards v1": 40.8,
+    "pick v2": 60.9,
+    "identity complete": 82.7,
+    "cards v3": 63.2,
+    "final judgements": 74.3,
+    "first SAM 3D model": 86.7,
+    "splat preview": 222.7,
+    "splat start": 72.1,
+    "gpu_peak_gib": [
+     66.89,
+     59.21
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-walmart-002",
+    "site": "walmart",
+    "kind": "shifted",
+    "report": "mvp-walmart-2eeeb1a3-1790674774",
+    "first 3D": 14.7,
+    "objects v1": 32.5,
+    "pick v1": 35.5,
+    "cards v1": 38.1,
+    "pick v2": 58.5,
+    "identity complete": 76.4,
+    "cards v3": 63.4,
+    "final judgements": 73.1,
+    "first SAM 3D model": 92.0,
+    "splat preview": 222.4,
+    "splat start": 72.0,
+    "gpu_peak_gib": [
+     63.98,
+     58.9
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-walmart-002",
+    "site": "walmart",
+    "kind": "first",
+    "report": "mvp-walmart-c0761a2a-1790674335",
+    "first 3D": 16.8,
+    "objects v1": 24.5,
+    "pick v1": 28.8,
+    "cards v1": 30.4,
+    "pick v2": 47.2,
+    "identity complete": 66.0,
+    "cards v3": 51.3,
+    "final judgements": 54.7,
+    "first SAM 3D model": 91.3,
+    "splat preview": 214.1,
+    "splat start": 63.6,
+    "gpu_peak_gib": [
+     61.58,
+     56.23
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-walmart-002",
+    "site": "walmart",
+    "kind": "warm",
+    "report": "mvp-walmart-c0761a2a-1790674557",
+    "first 3D": 13.7,
+    "objects v1": 21.2,
+    "pick v1": 23.9,
+    "cards v1": 25.4,
+    "pick v2": 40.6,
+    "identity complete": 57.0,
+    "cards v3": 45.9,
+    "final judgements": 50.1,
+    "first SAM 3D model": 72.7,
+    "splat preview": 205.8,
+    "splat start": 55.1,
+    "gpu_peak_gib": [
+     61.53,
+     56.31
+    ],
+    "over_72": []
+   }
+  ],
+  "final_mvp2_003": [
+   {
+    "run": "mvp2-click-me340-003",
+    "site": "me340",
+    "kind": "shifted",
+    "report": "mvp-me340-990486a3-1790677226",
+    "first 3D": 19.2,
+    "objects v1": 38.8,
+    "pick v1": 47.0,
+    "cards v1": 49.1,
+    "pick v2": 68.9,
+    "identity complete": 60.4,
+    "cards v3": 70.4,
+    "final judgements": 75.9,
+    "first SAM 3D model": 166.2,
+    "splat preview": 221.7,
+    "splat start": 71.1,
+    "gpu_peak_gib": [
+     68.82,
+     63.46
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-me340-003",
+    "site": "me340",
+    "kind": "first",
+    "report": "mvp-me340-e84efffd-1790676753",
+    "first 3D": 23.9,
+    "objects v1": 39.2,
+    "pick v1": 44.9,
+    "cards v1": 46.6,
+    "pick v2": 78.5,
+    "identity complete": 62.4,
+    "cards v3": 80.2,
+    "final judgements": 80.2,
+    "first SAM 3D model": 171.7,
+    "splat preview": 222.6,
+    "splat start": 72.1,
+    "gpu_peak_gib": [
+     60.46,
+     53.0
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-me340-003",
+    "site": "me340",
+    "kind": "warm",
+    "report": "mvp-me340-e84efffd-1790676989",
+    "first 3D": 19.4,
+    "objects v1": 35.1,
+    "pick v1": 39.7,
+    "cards v1": 41.9,
+    "pick v2": 71.3,
+    "identity complete": 57.7,
+    "cards v3": 73.8,
+    "final judgements": 77.5,
+    "first SAM 3D model": 166.4,
+    "splat preview": 222.6,
+    "splat start": 72.1,
+    "gpu_peak_gib": [
+     61.16,
+     52.75
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-samsclub-a2-003",
+    "site": "samsclub-a2",
+    "kind": "first",
+    "report": "mvp-samsclub-a2-d5e0c855-1790676668",
+    "first 3D": 18.8,
+    "objects v1": 28.2,
+    "pick v1": 30.1,
+    "cards v1": 36.0,
+    "pick v2": 52.9,
+    "identity complete": 64.3,
+    "cards v3": 59.8,
+    "final judgements": 80.6,
+    "first SAM 3D model": 148.2,
+    "splat preview": 222.8,
+    "splat start": 72.1,
+    "gpu_peak_gib": [
+     66.32,
+     59.04
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-samsclub-a2-003",
+    "site": "samsclub-a2",
+    "kind": "warm",
+    "report": "mvp-samsclub-a2-d5e0c855-1790676901",
+    "first 3D": 14.8,
+    "objects v1": 23.6,
+    "pick v1": 26.4,
+    "cards v1": 32.2,
+    "pick v2": 49.3,
+    "identity complete": 59.9,
+    "cards v3": 54.3,
+    "final judgements": 70.6,
+    "first SAM 3D model": 139.9,
+    "splat preview": 218.8,
+    "splat start": 68.3,
+    "gpu_peak_gib": [
+     65.69,
+     59.03
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-samsclub-a2-003",
+    "site": "samsclub-a2",
+    "kind": "shifted",
+    "report": "mvp-samsclub-a2-f27afc15-1790677134",
+    "first 3D": 16.7,
+    "objects v1": 31.6,
+    "pick v1": 35.0,
+    "cards v1": 40.6,
+    "pick v2": 67.3,
+    "identity complete": 73.1,
+    "cards v3": 70.2,
+    "final judgements": 82.3,
+    "first SAM 3D model": 92.1,
+    "splat preview": 222.5,
+    "splat start": 72.0,
+    "gpu_peak_gib": [
+     67.05,
+     59.26
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-walmart-003",
+    "site": "walmart",
+    "kind": "shifted",
+    "report": "mvp-walmart-2eeeb1a3-1790677246",
+    "first 3D": 13.3,
+    "objects v1": 31.0,
+    "pick v1": 35.8,
+    "cards v1": 37.3,
+    "pick v2": 57.7,
+    "identity complete": 75.1,
+    "cards v3": 66.4,
+    "final judgements": 73.5,
+    "first SAM 3D model": 95.4,
+    "splat preview": 222.7,
+    "splat start": 72.1,
+    "gpu_peak_gib": [
+     65.59,
+     58.83
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-walmart-003",
+    "site": "walmart",
+    "kind": "first",
+    "report": "mvp-walmart-c0761a2a-1790676824",
+    "first 3D": 16.6,
+    "objects v1": 21.3,
+    "pick v1": 30.4,
+    "cards v1": 31.4,
+    "pick v2": 47.3,
+    "identity complete": 58.9,
+    "cards v3": 50.4,
+    "final judgements": 54.7,
+    "first SAM 3D model": 86.8,
+    "splat preview": 208.4,
+    "splat start": 57.9,
+    "gpu_peak_gib": [
+     61.49,
+     56.33
+    ],
+    "over_72": []
+   },
+   {
+    "run": "mvp2-click-walmart-003",
+    "site": "walmart",
+    "kind": "warm",
+    "report": "mvp-walmart-c0761a2a-1790677037",
+    "first 3D": 12.9,
+    "objects v1": 17.5,
+    "pick v1": 19.6,
+    "cards v1": 23.6,
+    "pick v2": 38.7,
+    "identity complete": 51.2,
+    "cards v3": 43.9,
+    "final judgements": 47.8,
+    "first SAM 3D model": 70.6,
+    "splat preview": 200.7,
+    "splat start": 50.2,
+    "gpu_peak_gib": [
+     62.1,
+     56.38
+    ],
+    "over_72": []
+   }
+  ]
+ },
+ "vllm_probe": {
+  "001": [
+   {
+    "config": "base: eager, 16 seqs",
+    "per_s": 31.96,
+    "request_p50_s": 0.4732,
+    "startup_s": 103.1,
+    "max_prob_delta_vs_first": null
+   },
+   {
+    "config": "eager, 32 seqs",
+    "per_s": 33.08,
+    "request_p50_s": 0.9278,
+    "startup_s": 67.5,
+    "max_prob_delta_vs_first": null
+   },
+   {
+    "config": "compiled (no --enforce-eager), 16 seqs",
+    "per_s": 34.66,
+    "request_p50_s": 0.4426,
+    "startup_s": 208.5,
+    "max_prob_delta_vs_first": null
+   },
+   {
+    "config": "eager, 2 API servers",
+    "per_s": 51.57,
+    "request_p50_s": 0.2831,
+    "startup_s": 67.7,
+    "max_prob_delta_vs_first": null
+   },
+   {
+    "config": "compiled, 32 seqs, 2 API servers",
+    "per_s": 54.63,
+    "request_p50_s": 0.5057,
+    "startup_s": 101.8,
+    "max_prob_delta_vs_first": null
+   }
+  ],
+  "002": [
+   {
+    "config": "base: eager, 16 seqs",
+    "per_s": 37.92,
+    "request_p50_s": 0.3942,
+    "startup_s": 78.2,
+    "max_prob_delta_vs_first": 0.0
+   },
+   {
+    "config": "eager, 3 API servers",
+    "per_s": 70.67,
+    "request_p50_s": 0.187,
+    "startup_s": 58.1,
+    "max_prob_delta_vs_first": 0.119838
+   },
+   {
+    "config": "eager, 4 API servers",
+    "per_s": 62.75,
+    "request_p50_s": 0.1924,
+    "startup_s": 58.8,
+    "max_prob_delta_vs_first": 0.119838
+   },
+   {
+    "config": "eager, 4 API servers, 24 seqs",
+    "per_s": 81.5,
+    "request_p50_s": 0.2266,
+    "startup_s": 59.1,
+    "max_prob_delta_vs_first": 0.15970100000000004
+   }
+  ],
+  "003": [
+   {
+    "config": "base: eager, 16 seqs",
+    "per_s": 42.52,
+    "request_p50_s": 0.3415,
+    "startup_s": 57.3,
+    "max_prob_delta_vs_first": 0.0
+   },
+   {
+    "config": "eager, 3 API servers",
+    "per_s": 73.23,
+    "request_p50_s": 0.1633,
+    "startup_s": 43.7,
+    "max_prob_delta_vs_first": 0.10631000000000002
+   },
+   {
+    "config": "base again",
+    "per_s": 44.4,
+    "request_p50_s": 0.3465,
+    "startup_s": 36.7,
+    "max_prob_delta_vs_first": 0.10257200000000005
+   }
+  ]
+ },
+ "spend_usd_list_upper": {
+  "bench mvp2-click-*-001": 5.21,
+  "bench mvp2-click-*-002": 8.42,
+  "bench mvp2-click-*-003": 6.04,
+  "vllm probes": 1.36,
+  "total": 21.03,
+  "note": "list-price upper bounds over each container life (submit to finish; the 002 Sam's/Walmart containers queued ~12 min for GPUs); the cost ledger was not edited"
+ }
+}

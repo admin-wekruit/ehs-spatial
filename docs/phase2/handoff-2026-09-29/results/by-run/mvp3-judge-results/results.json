@@ -1,0 +1,2814 @@
+{
+ "times": {
+  "me340": {
+   "first": {
+    "first 3D": 22.8,
+    "objects v1": 39.1,
+    "pick v1": 43.0,
+    "cards v1": 45.4,
+    "pick v2": 73.7,
+    "identity complete": 79.3,
+    "densify names": 88.2,
+    "cards v3": 74.9,
+    "final judgements": 98.1,
+    "first SAM 3D model": 168.1,
+    "splat preview": 222.7,
+    "splat start": 72.0,
+    "gpu_peak_gib": [
+     61.96,
+     52.77
+    ],
+    "over_72": [],
+    "stage_peaks_gib": {
+     "write.video": [
+      41.67,
+      29.35
+     ],
+     "decode": [
+      50.49,
+      36.27
+     ],
+     "vlm.vocab.frames": [
+      39.36,
+      28.79
+     ],
+     "sam3.person@gpu0": [
+      50.5,
+      36.68
+     ],
+     "vlm.vocab": [
+      51.3,
+      36.76
+     ],
+     "sam3.person@gpu1": [
+      50.5,
+      36.76
+     ],
+     "sam3.vocab.wave1@gpu0": [
+      51.3,
+      36.76
+     ],
+     "frames.shared": [
+      51.31,
+      40.04
+     ],
+     "cuts": [
+      51.3,
+      36.76
+     ],
+     "sam3.vocab.wave1@gpu1": [
+      54.68,
+      40.91
+     ],
+     "da3.shot0": [
+      51.31,
+      37.19
+     ],
+     "vlm.events.frames": [
+      51.31,
+      36.76
+     ],
+     "vlm.events": [
+      57.48,
+      52.05
+     ],
+     "da3.shot1": [
+      54.69,
+      40.91
+     ],
+     "sam3.vocab.wave2@gpu1": [
+      60.72,
+      52.17
+     ],
+     "gather.person_floor": [
+      54.69,
+      40.91
+     ],
+     "scale.shot0": [
+      54.7,
+      48.63
+     ],
+     "scale.shot1": [
+      54.7,
+      48.63
+     ],
+     "tsdf.shot0": [
+      54.83,
+      48.63
+     ],
+     "pack.room.shot0": [
+      54.83,
+      48.63
+     ],
+     "tsdf.shot1": [
+      55.23,
+      48.63
+     ],
+     "pack.room.shot1": [
+      55.23,
+      48.63
+     ],
+     "write.cameras": [
+      55.58,
+      48.63
+     ],
+     "write.room": [
+      57.48,
+      52.05
+     ],
+     "people.shot0": [
+      55.58,
+      48.63
+     ],
+     "sam3.vocab.wave2@gpu0": [
+      60.72,
+      52.17
+     ],
+     "splat.setup": [
+      58.24,
+      52.05
+     ],
+     "people.shot1": [
+      57.48,
+      52.05
+     ],
+     "write.people": [
+      57.48,
+      52.05
+     ],
+     "write.events": [
+      57.48,
+      52.05
+     ],
+     "dedupe": [
+      60.72,
+      52.17
+     ],
+     "lift": [
+      61.93,
+      52.17
+     ],
+     "objects.boxes": [
+      61.93,
+      52.17
+     ],
+     "write.objects": [
+      61.96,
+      52.77
+     ],
+     "cards.inputs": [
+      61.95,
+      52.18
+     ],
+     "sam3d.inputs": [
+      61.93,
+      52.18
+     ],
+     "densify.sam3@gpu1": [
+      61.96,
+      52.77
+     ],
+     "outlines.segmented": [
+      61.94,
+      52.18
+     ],
+     "outlines.projected": [
+      61.95,
+      52.18
+     ],
+     "cascade.embed": [
+      61.95,
+      52.18
+     ],
+     "pick.maps": [
+      61.96,
+      52.77
+     ],
+     "outlines.polygons": [
+      61.95,
+      52.18
+     ],
+     "pick.encode": [
+      61.96,
+      52.77
+     ],
+     "cards.v1": [
+      61.96,
+      52.18
+     ],
+     "write.outlines": [
+      61.96,
+      52.77
+     ],
+     "write.pick": [
+      61.96,
+      52.77
+     ],
+     "identity.gemini.sheets": [
+      55.83,
+      52.77
+     ],
+     "cascade.decide": [
+      61.96,
+      52.18
+     ],
+     "densify.sam3@gpu0": [
+      61.96,
+      52.77
+     ],
+     "identity.gemini": [
+      47.86,
+      52.77
+     ],
+     "write.object_cards": [
+      46.36,
+      32.97
+     ],
+     "judge.rules": [
+      46.36,
+      32.95
+     ],
+     "judge.evidence": [
+      46.36,
+      32.95
+     ],
+     "write.judgements": [
+      54.92,
+      33.03
+     ],
+     "judge.gemini_send": [
+      46.36,
+      32.95
+     ],
+     "judge.gemini": [
+      54.92,
+      33.07
+     ],
+     "judge.qwen": [
+      54.92,
+      33.03
+     ],
+     "densify.lift": [
+      61.96,
+      52.77
+     ],
+     "outlines.polygons.v2": [
+      61.96,
+      52.77
+     ],
+     "cards.v3": [
+      61.96,
+      52.77
+     ],
+     "sam3d.prepare": [
+      46.36,
+      32.95
+     ],
+     "splat.preview": [
+      56.63,
+      33.1
+     ],
+     "sam3d.generate": [
+      56.63,
+      33.1
+     ],
+     "sam3d.assess": [
+      56.63,
+      33.1
+     ],
+     "sam3d.decimate": [
+      35.08,
+      33.1
+     ],
+     "write.models": [
+      35.08,
+      33.09
+     ],
+     "write.splat": [
+      35.08,
+      33.12
+     ],
+     "splat.score": [
+      35.08,
+      33.12
+     ],
+     "da3.restore": [
+      35.08,
+      32.52
+     ]
+    },
+    "error": null,
+    "report": "mvp-me340-e84efffd-1790696590"
+   },
+   "warm": {
+    "first 3D": 17.6,
+    "objects v1": 32.1,
+    "pick v1": 34.8,
+    "cards v1": 37.6,
+    "pick v2": 60.6,
+    "identity complete": 59.2,
+    "densify names": 82.4,
+    "cards v3": 63.3,
+    "final judgements": 99.0,
+    "first SAM 3D model": null,
+    "splat preview": 222.6,
+    "splat start": 72.0,
+    "gpu_peak_gib": [
+     62.98,
+     52.54
+    ],
+    "over_72": [],
+    "stage_peaks_gib": {
+     "decode": [
+      49.2,
+      40.5
+     ],
+     "write.video": [
+      49.17,
+      37.11
+     ],
+     "vlm.vocab.frames": [
+      40.06,
+      33.35
+     ],
+     "sam3.person@gpu0": [
+      49.2,
+      40.82
+     ],
+     "sam3.person@gpu1": [
+      52.34,
+      40.82
+     ],
+     "vlm.vocab": [
+      52.34,
+      44.18
+     ],
+     "sam3.vocab.wave1@gpu0": [
+      52.34,
+      40.82
+     ],
+     "frames.shared": [
+      52.34,
+      44.18
+     ],
+     "cuts": [
+      49.2,
+      40.82
+     ],
+     "da3.shot0": [
+      52.34,
+      44.18
+     ],
+     "sam3.vocab.wave1@gpu1": [
+      54.34,
+      44.18
+     ],
+     "da3.shot1": [
+      54.34,
+      52.21
+     ],
+     "vlm.events.frames": [
+      52.34,
+      44.18
+     ],
+     "vlm.events": [
+      57.79,
+      52.53
+     ],
+     "sam3.vocab.wave2@gpu1": [
+      61.9,
+      52.53
+     ],
+     "gather.person_floor": [
+      54.34,
+      52.21
+     ],
+     "scale.shot0": [
+      54.34,
+      52.21
+     ],
+     "scale.shot1": [
+      54.34,
+      52.21
+     ],
+     "tsdf.shot0": [
+      54.34,
+      52.21
+     ],
+     "pack.room.shot0": [
+      54.34,
+      52.21
+     ],
+     "tsdf.shot1": [
+      54.34,
+      52.21
+     ],
+     "pack.room.shot1": [
+      54.34,
+      52.33
+     ],
+     "write.cameras": [
+      56.82,
+      52.45
+     ],
+     "write.room": [
+      58.75,
+      52.53
+     ],
+     "people.shot0": [
+      54.34,
+      52.45
+     ],
+     "sam3.vocab.wave2@gpu0": [
+      61.9,
+      52.53
+     ],
+     "splat.setup": [
+      59.24,
+      52.53
+     ],
+     "people.shot1": [
+      57.31,
+      52.45
+     ],
+     "write.people": [
+      57.79,
+      52.53
+     ],
+     "write.events": [
+      58.75,
+      52.53
+     ],
+     "dedupe": [
+      61.9,
+      52.53
+     ],
+     "lift": [
+      62.38,
+      52.53
+     ],
+     "objects.boxes": [
+      62.38,
+      52.53
+     ],
+     "write.objects": [
+      62.98,
+      52.54
+     ],
+     "cards.inputs": [
+      62.38,
+      52.54
+     ],
+     "sam3d.inputs": [
+      62.38,
+      52.54
+     ],
+     "densify.sam3@gpu1": [
+      62.98,
+      52.54
+     ],
+     "outlines.segmented": [
+      62.38,
+      52.54
+     ],
+     "outlines.projected": [
+      62.38,
+      52.54
+     ],
+     "cascade.embed": [
+      62.39,
+      52.54
+     ],
+     "pick.maps": [
+      62.98,
+      52.54
+     ],
+     "outlines.polygons": [
+      62.38,
+      52.54
+     ],
+     "pick.encode": [
+      62.98,
+      52.54
+     ],
+     "cards.v1": [
+      62.98,
+      52.54
+     ],
+     "write.outlines": [
+      62.98,
+      52.54
+     ],
+     "write.pick": [
+      62.98,
+      52.54
+     ],
+     "identity.gemini.sheets": [
+      47.82,
+      52.54
+     ],
+     "cascade.decide": [
+      62.39,
+      52.54
+     ],
+     "densify.sam3@gpu0": [
+      62.98,
+      52.54
+     ],
+     "identity.gemini": [
+      46.4,
+      49.83
+     ],
+     "write.object_cards": [
+      46.41,
+      33.0
+     ],
+     "judge.rules": [
+      46.4,
+      32.99
+     ],
+     "judge.evidence": [
+      46.4,
+      32.99
+     ],
+     "write.judgements": [
+      56.7,
+      33.11
+     ],
+     "judge.gemini_send": [
+      46.4,
+      32.98
+     ],
+     "judge.gemini": [
+      56.7,
+      33.12
+     ],
+     "judge.qwen": [
+      56.7,
+      33.06
+     ],
+     "densify.lift": [
+      62.98,
+      52.54
+     ],
+     "outlines.polygons.v2": [
+      62.98,
+      52.54
+     ],
+     "cards.v3": [
+      62.98,
+      52.54
+     ],
+     "sam3d.prepare": [
+      46.4,
+      32.65
+     ],
+     "sam3d.generate": [
+      58.42,
+      33.13
+     ],
+     "sam3d.assess": [
+      58.42,
+      33.14
+     ],
+     "splat.preview": [
+      58.42,
+      33.14
+     ],
+     "write.models": [
+      35.12,
+      33.14
+     ],
+     "write.splat": [
+      35.12,
+      33.21
+     ],
+     "splat.score": [
+      35.12,
+      33.21
+     ],
+     "da3.restore": [
+      35.12,
+      32.56
+     ]
+    },
+    "error": null,
+    "report": "mvp-me340-e84efffd-1790696844"
+   }
+  },
+  "samsclub-a2": {
+   "first": {
+    "first 3D": 17.6,
+    "objects v1": 25.1,
+    "pick v1": 30.6,
+    "cards v1": 40.2,
+    "pick v2": 49.9,
+    "identity complete": 69.4,
+    "densify names": 78.0,
+    "cards v3": 60.2,
+    "final judgements": 106.9,
+    "first SAM 3D model": 144.7,
+    "splat preview": 222.5,
+    "splat start": 72.0,
+    "gpu_peak_gib": [
+     65.89,
+     59.01
+    ],
+    "over_72": [],
+    "stage_peaks_gib": {
+     "write.video": [
+      41.45,
+      29.82
+     ],
+     "decode": [
+      46.49,
+      35.58
+     ],
+     "vlm.vocab.frames": [
+      39.5,
+      29.82
+     ],
+     "sam3.person@gpu0": [
+      47.86,
+      36.58
+     ],
+     "sam3.person@gpu1": [
+      47.04,
+      36.32
+     ],
+     "vlm.vocab": [
+      46.0,
+      35.24
+     ],
+     "frames.shared": [
+      47.05,
+      36.58
+     ],
+     "cuts": [
+      47.04,
+      36.58
+     ],
+     "vlm.events.frames": [
+      46.49,
+      35.58
+     ],
+     "vlm.events": [
+      50.05,
+      43.39
+     ],
+     "sam3.vocab.wave1@gpu1": [
+      50.05,
+      40.48
+     ],
+     "da3.shot0": [
+      49.66,
+      40.42
+     ],
+     "da3.shot1": [
+      49.67,
+      40.48
+     ],
+     "gather.person_floor": [
+      49.67,
+      40.48
+     ],
+     "scale.shot0": [
+      49.67,
+      40.48
+     ],
+     "scale.shot1": [
+      49.67,
+      40.48
+     ],
+     "tsdf.shot0": [
+      50.05,
+      40.48
+     ],
+     "pack.room.shot0": [
+      50.05,
+      40.48
+     ],
+     "sam3.vocab.wave2@gpu1": [
+      50.05,
+      43.39
+     ],
+     "tsdf.shot1": [
+      50.05,
+      40.48
+     ],
+     "pack.room.shot1": [
+      50.05,
+      40.48
+     ],
+     "write.cameras": [
+      50.05,
+      43.39
+     ],
+     "write.room": [
+      50.05,
+      43.39
+     ],
+     "people.shot0": [
+      50.05,
+      40.48
+     ],
+     "sam3.vocab.wave2@gpu0": [
+      50.05,
+      43.39
+     ],
+     "splat.setup": [
+      50.05,
+      43.39
+     ],
+     "people.shot1": [
+      50.05,
+      43.39
+     ],
+     "write.people": [
+      50.05,
+      43.39
+     ],
+     "write.events": [
+      50.05,
+      43.39
+     ],
+     "dedupe": [
+      50.05,
+      43.39
+     ],
+     "lift": [
+      50.05,
+      43.39
+     ],
+     "objects.boxes": [
+      50.05,
+      43.39
+     ],
+     "write.objects": [
+      65.89,
+      59.01
+     ],
+     "cards.inputs": [
+      50.07,
+      59.01
+     ],
+     "sam3d.inputs": [
+      50.05,
+      43.4
+     ],
+     "densify.sam3@gpu1": [
+      65.89,
+      59.01
+     ],
+     "outlines.segmented": [
+      50.05,
+      43.4
+     ],
+     "outlines.projected": [
+      50.07,
+      58.64
+     ],
+     "cascade.embed": [
+      50.07,
+      59.01
+     ],
+     "pick.maps": [
+      65.89,
+      59.01
+     ],
+     "outlines.polygons": [
+      50.07,
+      58.64
+     ],
+     "pick.encode": [
+      65.89,
+      59.01
+     ],
+     "write.outlines": [
+      65.89,
+      59.01
+     ],
+     "write.pick": [
+      65.89,
+      59.01
+     ],
+     "identity.gemini.sheets": [
+      36.87,
+      59.01
+     ],
+     "cards.v1": [
+      65.89,
+      59.01
+     ],
+     "cascade.decide": [
+      50.07,
+      59.01
+     ],
+     "densify.sam3@gpu0": [
+      65.89,
+      59.01
+     ],
+     "identity.gemini": [
+      54.5,
+      32.36
+     ],
+     "write.object_cards": [
+      54.5,
+      32.42
+     ],
+     "judge.rules": [
+      54.5,
+      32.44
+     ],
+     "write.judgements": [
+      54.51,
+      32.57
+     ],
+     "judge.evidence": [
+      54.5,
+      32.44
+     ],
+     "judge.gemini_send": [
+      54.5,
+      32.44
+     ],
+     "judge.gemini": [
+      54.51,
+      32.52
+     ],
+     "densify.lift": [
+      65.89,
+      59.01
+     ],
+     "outlines.polygons.v2": [
+      65.89,
+      59.01
+     ],
+     "cards.v3": [
+      65.89,
+      59.01
+     ],
+     "sam3d.prepare": [
+      49.56,
+      32.18
+     ],
+     "sam3d.generate": [
+      61.85,
+      32.55
+     ],
+     "sam3d.assess": [
+      61.85,
+      32.59
+     ],
+     "splat.preview": [
+      61.85,
+      32.59
+     ],
+     "judge.qwen": [
+      54.51,
+      32.52
+     ],
+     "sam3d.decimate": [
+      34.67,
+      32.59
+     ],
+     "write.models": [
+      34.67,
+      32.56
+     ],
+     "write.splat": [
+      34.67,
+      32.62
+     ],
+     "splat.score": [
+      34.67,
+      32.62
+     ],
+     "da3.restore": [
+      34.67,
+      29.45
+     ]
+    },
+    "error": null,
+    "report": "mvp-samsclub-a2-d5e0c855-1790697362"
+   },
+   "warm": {
+    "first 3D": 15.5,
+    "objects v1": 24.3,
+    "pick v1": 26.8,
+    "cards v1": 34.5,
+    "pick v2": 46.5,
+    "identity complete": 68.2,
+    "densify names": 75.8,
+    "cards v3": 51.1,
+    "final judgements": 86.8,
+    "first SAM 3D model": 137.6,
+    "splat preview": 222.5,
+    "splat start": 72.0,
+    "gpu_peak_gib": [
+     66.68,
+     59.34
+    ],
+    "over_72": [],
+    "stage_peaks_gib": {
+     "decode": [
+      46.83,
+      36.82
+     ],
+     "write.video": [
+      39.79,
+      31.66
+     ],
+     "vlm.vocab.frames": [
+      42.02,
+      32.4
+     ],
+     "sam3.person@gpu1": [
+      48.27,
+      37.16
+     ],
+     "sam3.person@gpu0": [
+      48.27,
+      37.16
+     ],
+     "vlm.vocab": [
+      47.15,
+      36.82
+     ],
+     "frames.shared": [
+      48.27,
+      37.16
+     ],
+     "cuts": [
+      48.26,
+      37.16
+     ],
+     "vlm.events.frames": [
+      47.15,
+      36.82
+     ],
+     "vlm.events": [
+      50.42,
+      40.41
+     ],
+     "sam3.vocab.wave1@gpu1": [
+      50.42,
+      40.41
+     ],
+     "da3.shot0": [
+      50.42,
+      40.41
+     ],
+     "da3.shot1": [
+      50.42,
+      40.41
+     ],
+     "gather.person_floor": [
+      50.42,
+      40.41
+     ],
+     "scale.shot0": [
+      50.42,
+      40.41
+     ],
+     "scale.shot1": [
+      50.42,
+      40.41
+     ],
+     "tsdf.shot0": [
+      50.42,
+      40.41
+     ],
+     "pack.room.shot0": [
+      50.42,
+      40.41
+     ],
+     "tsdf.shot1": [
+      50.42,
+      40.41
+     ],
+     "pack.room.shot1": [
+      50.42,
+      40.41
+     ],
+     "sam3.vocab.wave2@gpu1": [
+      50.42,
+      43.16
+     ],
+     "people.shot0": [
+      50.42,
+      40.41
+     ],
+     "write.cameras": [
+      50.42,
+      40.41
+     ],
+     "write.room": [
+      50.44,
+      58.58
+     ],
+     "sam3.vocab.wave2@gpu0": [
+      50.42,
+      43.16
+     ],
+     "splat.setup": [
+      50.42,
+      43.16
+     ],
+     "write.events": [
+      50.42,
+      43.15
+     ],
+     "people.shot1": [
+      50.42,
+      43.15
+     ],
+     "write.people": [
+      50.42,
+      43.16
+     ],
+     "dedupe": [
+      50.42,
+      43.16
+     ],
+     "lift": [
+      50.42,
+      43.16
+     ],
+     "objects.boxes": [
+      50.42,
+      43.16
+     ],
+     "write.objects": [
+      66.68,
+      59.34
+     ],
+     "cards.inputs": [
+      50.44,
+      58.97
+     ],
+     "sam3d.inputs": [
+      50.42,
+      43.17
+     ],
+     "densify.sam3@gpu1": [
+      66.68,
+      59.34
+     ],
+     "outlines.segmented": [
+      50.44,
+      43.17
+     ],
+     "outlines.projected": [
+      50.44,
+      58.58
+     ],
+     "cascade.embed": [
+      50.44,
+      58.97
+     ],
+     "pick.maps": [
+      66.68,
+      59.34
+     ],
+     "outlines.polygons": [
+      50.44,
+      58.58
+     ],
+     "pick.encode": [
+      66.68,
+      59.34
+     ],
+     "write.outlines": [
+      66.68,
+      59.34
+     ],
+     "write.pick": [
+      66.68,
+      59.34
+     ],
+     "identity.gemini.sheets": [
+      49.7,
+      32.14
+     ],
+     "cards.v1": [
+      66.68,
+      58.97
+     ],
+     "cascade.decide": [
+      53.14,
+      58.97
+     ],
+     "densify.sam3@gpu0": [
+      66.68,
+      59.34
+     ],
+     "identity.gemini": [
+      54.65,
+      32.32
+     ],
+     "write.object_cards": [
+      54.65,
+      32.32
+     ],
+     "judge.rules": [
+      54.65,
+      32.32
+     ],
+     "judge.evidence": [
+      54.65,
+      32.32
+     ],
+     "write.judgements": [
+      54.65,
+      32.4
+     ],
+     "judge.gemini_send": [
+      54.65,
+      32.32
+     ],
+     "judge.gemini": [
+      54.65,
+      32.39
+     ],
+     "densify.lift": [
+      66.68,
+      59.34
+     ],
+     "outlines.polygons.v2": [
+      66.68,
+      59.34
+     ],
+     "cards.v3": [
+      66.68,
+      59.34
+     ],
+     "sam3d.prepare": [
+      36.91,
+      32.14
+     ],
+     "sam3d.generate": [
+      62.0,
+      32.54
+     ],
+     "judge.qwen": [
+      54.65,
+      32.39
+     ],
+     "sam3d.assess": [
+      62.0,
+      32.56
+     ],
+     "splat.preview": [
+      62.0,
+      32.56
+     ],
+     "sam3d.decimate": [
+      34.81,
+      32.54
+     ],
+     "write.models": [
+      34.81,
+      32.55
+     ],
+     "write.splat": [
+      34.81,
+      32.57
+     ],
+     "splat.score": [
+      34.81,
+      32.57
+     ],
+     "da3.restore": [
+      null,
+      null
+     ]
+    },
+    "error": null,
+    "report": "mvp-samsclub-a2-d5e0c855-1790697607"
+   }
+  },
+  "walmart": {
+   "first": {
+    "first 3D": 16.7,
+    "objects v1": 24.0,
+    "pick v1": 29.9,
+    "cards v1": 33.7,
+    "pick v2": 45.5,
+    "identity complete": 58.5,
+    "densify names": 73.4,
+    "cards v3": 53.0,
+    "final judgements": 83.4,
+    "first SAM 3D model": 93.4,
+    "splat preview": 222.8,
+    "splat start": 72.1,
+    "gpu_peak_gib": [
+     59.87,
+     56.12
+    ],
+    "over_72": [],
+    "stage_peaks_gib": {
+     "write.video": [
+      39.5,
+      34.28
+     ],
+     "decode": [
+      46.06,
+      35.68
+     ],
+     "vlm.vocab.frames": [
+      37.86,
+      29.82
+     ],
+     "sam3.person@gpu1": [
+      47.35,
+      37.75
+     ],
+     "vlm.vocab": [
+      45.58,
+      35.2
+     ],
+     "sam3.person@gpu0": [
+      47.35,
+      37.25
+     ],
+     "frames.shared": [
+      47.35,
+      37.75
+     ],
+     "cuts": [
+      47.0,
+      37.25
+     ],
+     "vlm.events.frames": [
+      46.06,
+      35.68
+     ],
+     "vlm.events": [
+      48.01,
+      40.81
+     ],
+     "da3.shot0": [
+      48.01,
+      40.81
+     ],
+     "sam3.vocab.wave1@gpu1": [
+      48.43,
+      40.81
+     ],
+     "da3.shot1": [
+      48.01,
+      40.81
+     ],
+     "write.events": [
+      48.03,
+      40.81
+     ],
+     "gather.person_floor": [
+      48.01,
+      40.81
+     ],
+     "scale.shot0": [
+      48.03,
+      40.81
+     ],
+     "scale.shot1": [
+      48.03,
+      40.81
+     ],
+     "tsdf.shot0": [
+      48.21,
+      40.81
+     ],
+     "pack.room.shot0": [
+      48.21,
+      40.81
+     ],
+     "tsdf.shot1": [
+      48.43,
+      40.81
+     ],
+     "pack.room.shot1": [
+      48.43,
+      40.82
+     ],
+     "sam3.vocab.wave2@gpu1": [
+      48.44,
+      43.73
+     ],
+     "write.cameras": [
+      48.44,
+      43.73
+     ],
+     "write.room": [
+      48.44,
+      43.73
+     ],
+     "people.shot0": [
+      48.44,
+      40.82
+     ],
+     "sam3.vocab.wave2@gpu0": [
+      48.44,
+      43.73
+     ],
+     "splat.setup": [
+      48.44,
+      43.73
+     ],
+     "people.shot1": [
+      48.44,
+      42.92
+     ],
+     "write.people": [
+      48.44,
+      43.73
+     ],
+     "dedupe": [
+      48.44,
+      43.73
+     ],
+     "lift": [
+      48.44,
+      43.73
+     ],
+     "objects.boxes": [
+      48.44,
+      43.73
+     ],
+     "write.objects": [
+      59.39,
+      56.12
+     ],
+     "cards.inputs": [
+      48.46,
+      50.39
+     ],
+     "sam3d.inputs": [
+      48.44,
+      43.73
+     ],
+     "densify.sam3@gpu1": [
+      59.39,
+      56.12
+     ],
+     "outlines.segmented": [
+      48.45,
+      43.73
+     ],
+     "outlines.projected": [
+      48.46,
+      55.78
+     ],
+     "cards.v1": [
+      48.47,
+      55.94
+     ],
+     "cascade.embed": [
+      48.46,
+      55.94
+     ],
+     "pick.maps": [
+      59.39,
+      56.12
+     ],
+     "outlines.polygons": [
+      48.46,
+      55.78
+     ],
+     "pick.encode": [
+      59.39,
+      56.12
+     ],
+     "cascade.decide": [
+      48.47,
+      55.94
+     ],
+     "densify.sam3@gpu0": [
+      59.39,
+      56.12
+     ],
+     "write.outlines": [
+      59.39,
+      56.12
+     ],
+     "write.pick": [
+      59.39,
+      56.12
+     ],
+     "identity.gemini.sheets": [
+      48.28,
+      56.12
+     ],
+     "write.object_cards": [
+      54.38,
+      32.32
+     ],
+     "judge.rules": [
+      54.38,
+      32.32
+     ],
+     "judge.evidence": [
+      54.38,
+      32.32
+     ],
+     "write.judgements": [
+      59.0,
+      32.37
+     ],
+     "judge.gemini_send": [
+      54.38,
+      32.32
+     ],
+     "identity.gemini": [
+      54.38,
+      32.01
+     ],
+     "judge.gemini": [
+      59.0,
+      32.37
+     ],
+     "densify.lift": [
+      59.39,
+      56.12
+     ],
+     "outlines.polygons.v2": [
+      59.39,
+      56.12
+     ],
+     "cards.v3": [
+      59.39,
+      56.12
+     ],
+     "sam3d.prepare": [
+      52.13,
+      32.01
+     ],
+     "sam3d.generate": [
+      59.87,
+      32.57
+     ],
+     "sam3d.assess": [
+      59.87,
+      32.53
+     ],
+     "splat.preview": [
+      59.87,
+      32.6
+     ],
+     "judge.qwen": [
+      59.0,
+      32.37
+     ],
+     "sam3d.decimate": [
+      59.87,
+      32.57
+     ],
+     "write.models": [
+      34.67,
+      32.53
+     ],
+     "write.splat": [
+      34.67,
+      32.53
+     ],
+     "da3.restore": [
+      null,
+      null
+     ]
+    },
+    "error": null,
+    "report": "mvp-walmart-c0761a2a-1790699062"
+   },
+   "warm": {
+    "first 3D": 12.5,
+    "objects v1": 20.3,
+    "pick v1": 23.7,
+    "cards v1": 27.4,
+    "pick v2": 39.3,
+    "identity complete": 60.4,
+    "densify names": 79.2,
+    "cards v3": 44.9,
+    "final judgements": 87.0,
+    "first SAM 3D model": 71.1,
+    "splat preview": 215.1,
+    "splat start": 64.4,
+    "gpu_peak_gib": [
+     64.2,
+     56.46
+    ],
+    "over_72": [],
+    "stage_peaks_gib": {
+     "write.video": [
+      45.48,
+      35.62
+     ],
+     "decode": [
+      46.11,
+      36.1
+     ],
+     "vlm.vocab.frames": [
+      40.21,
+      30.5
+     ],
+     "sam3.person@gpu1": [
+      48.29,
+      38.51
+     ],
+     "sam3.person@gpu0": [
+      47.08,
+      36.57
+     ],
+     "vlm.vocab": [
+      46.11,
+      36.1
+     ],
+     "frames.shared": [
+      47.08,
+      36.91
+     ],
+     "cuts": [
+      46.76,
+      36.57
+     ],
+     "vlm.events.frames": [
+      46.12,
+      36.1
+     ],
+     "vlm.events": [
+      47.08,
+      36.91
+     ],
+     "da3.shot0": [
+      48.29,
+      37.54
+     ],
+     "write.events": [
+      48.29,
+      37.54
+     ],
+     "da3.shot1": [
+      48.29,
+      41.79
+     ],
+     "sam3.vocab.wave1@gpu1": [
+      48.3,
+      41.79
+     ],
+     "gather.person_floor": [
+      48.29,
+      41.79
+     ],
+     "scale.shot0": [
+      48.29,
+      41.79
+     ],
+     "scale.shot1": [
+      48.29,
+      41.79
+     ],
+     "tsdf.shot0": [
+      48.29,
+      41.79
+     ],
+     "pack.room.shot0": [
+      48.29,
+      41.79
+     ],
+     "tsdf.shot1": [
+      48.29,
+      41.79
+     ],
+     "pack.room.shot1": [
+      48.29,
+      41.79
+     ],
+     "write.cameras": [
+      48.3,
+      44.37
+     ],
+     "write.room": [
+      48.31,
+      48.04
+     ],
+     "people.shot0": [
+      48.29,
+      41.79
+     ],
+     "sam3.vocab.wave1@gpu0": [
+      48.29,
+      41.79
+     ],
+     "splat.setup": [
+      48.3,
+      44.38
+     ],
+     "people.shot1": [
+      48.29,
+      41.79
+     ],
+     "sam3.vocab.wave2@gpu0": [
+      48.3,
+      44.38
+     ],
+     "write.people": [
+      48.3,
+      44.38
+     ],
+     "sam3.vocab.wave2@gpu1": [
+      48.3,
+      44.38
+     ],
+     "dedupe": [
+      48.3,
+      44.38
+     ],
+     "lift": [
+      48.3,
+      44.38
+     ],
+     "objects.boxes": [
+      48.3,
+      44.38
+     ],
+     "write.objects": [
+      59.35,
+      56.46
+     ],
+     "cards.inputs": [
+      48.31,
+      56.11
+     ],
+     "sam3d.inputs": [
+      48.3,
+      44.39
+     ],
+     "densify.sam3@gpu1": [
+      59.35,
+      56.46
+     ],
+     "outlines.segmented": [
+      48.31,
+      44.39
+     ],
+     "outlines.projected": [
+      48.31,
+      56.11
+     ],
+     "cards.v1": [
+      48.31,
+      56.12
+     ],
+     "cascade.embed": [
+      48.31,
+      56.12
+     ],
+     "pick.maps": [
+      59.35,
+      56.46
+     ],
+     "outlines.polygons": [
+      48.31,
+      56.11
+     ],
+     "pick.encode": [
+      59.35,
+      56.46
+     ],
+     "write.outlines": [
+      59.35,
+      56.46
+     ],
+     "write.pick": [
+      59.35,
+      56.46
+     ],
+     "cascade.decide": [
+      48.31,
+      56.12
+     ],
+     "densify.sam3@gpu0": [
+      59.35,
+      56.46
+     ],
+     "identity.gemini.sheets": [
+      48.14,
+      56.46
+     ],
+     "write.object_cards": [
+      60.63,
+      32.43
+     ],
+     "judge.rules": [
+      60.63,
+      32.43
+     ],
+     "judge.evidence": [
+      60.63,
+      32.43
+     ],
+     "write.judgements": [
+      60.63,
+      32.46
+     ],
+     "judge.gemini_send": [
+      60.63,
+      32.43
+     ],
+     "identity.gemini": [
+      60.63,
+      49.21
+     ],
+     "judge.gemini": [
+      60.63,
+      32.46
+     ],
+     "densify.lift": [
+      59.35,
+      56.46
+     ],
+     "outlines.polygons.v2": [
+      59.35,
+      56.46
+     ],
+     "cards.v3": [
+      59.35,
+      56.46
+     ],
+     "sam3d.prepare": [
+      51.99,
+      32.08
+     ],
+     "sam3d.generate": [
+      64.2,
+      32.66
+     ],
+     "sam3d.assess": [
+      64.2,
+      32.57
+     ],
+     "judge.qwen": [
+      60.63,
+      32.46
+     ],
+     "splat.preview": [
+      64.2,
+      32.66
+     ],
+     "sam3d.decimate": [
+      64.2,
+      32.66
+     ],
+     "write.models": [
+      34.7,
+      32.63
+     ],
+     "write.splat": [
+      34.7,
+      32.57
+     ],
+     "da3.restore": [
+      34.7,
+      29.5
+     ]
+    },
+    "error": null,
+    "report": "mvp-walmart-c0761a2a-1790699304"
+   }
+  }
+ },
+ "checks": {
+  "me340": {
+   "first": {
+    "final_rows_on_a_check_the_final_class_does_not_apply": 0,
+    "final_cards_not_derived_from_their_name": 0,
+    "cards_versions": 4,
+    "cards_checked": 995,
+    "contract_violations": 0
+   },
+   "warm": {
+    "final_rows_on_a_check_the_final_class_does_not_apply": 0,
+    "final_cards_not_derived_from_their_name": 0,
+    "cards_versions": 4,
+    "cards_checked": 916,
+    "contract_violations": 0
+   }
+  },
+  "samsclub-a2": {
+   "first": {
+    "final_rows_on_a_check_the_final_class_does_not_apply": 0,
+    "final_cards_not_derived_from_their_name": 0,
+    "cards_versions": 4,
+    "cards_checked": 2392,
+    "contract_violations": 0
+   },
+   "warm": {
+    "final_rows_on_a_check_the_final_class_does_not_apply": 0,
+    "final_cards_not_derived_from_their_name": 0,
+    "cards_versions": 5,
+    "cards_checked": 3033,
+    "contract_violations": 0
+   }
+  },
+  "walmart": {
+   "first": {
+    "final_rows_on_a_check_the_final_class_does_not_apply": 0,
+    "final_cards_not_derived_from_their_name": 0,
+    "cards_versions": 4,
+    "cards_checked": 2636,
+    "contract_violations": 0
+   },
+   "warm": {
+    "final_rows_on_a_check_the_final_class_does_not_apply": 0,
+    "final_cards_not_derived_from_their_name": 0,
+    "cards_versions": 4,
+    "cards_checked": 2645,
+    "contract_violations": 0
+   }
+  }
+ },
+ "calls": {
+  "me340 first": {
+   "objects": 261,
+   "objects_with_a_check": 27,
+   "objects_overall": {
+    "NO_DATA": 2,
+    "PASS": 12,
+    "NEEDS_REVIEW": 13
+   },
+   "objects_pass_or_fail": 12,
+   "objects_with_any_pass_or_fail": 13,
+   "rows": 41,
+   "counts": {
+    "NO_DATA": 11,
+    "PASS": 13,
+    "NEEDS_REVIEW": 17
+   },
+   "by_check": {
+    "J1": {
+     "PASS": 5
+    },
+    "J3a": {
+     "NO_DATA": 5,
+     "NEEDS_REVIEW": 1
+    },
+    "J4": {
+     "NO_DATA": 2,
+     "NEEDS_REVIEW": 8,
+     "PASS": 3
+    },
+    "J5": {
+     "NEEDS_REVIEW": 4,
+     "PASS": 5
+    },
+    "J8": {
+     "NO_DATA": 4,
+     "NEEDS_REVIEW": 2
+    },
+    "J9": {
+     "NEEDS_REVIEW": 2
+    }
+   },
+   "no_check": {
+    "off the floor, no walked path near": 100,
+    "on the floor, no walked path near": 17,
+    "not an object": 3,
+    "off the floor, at a walked path": 114
+   },
+   "priority": 3,
+   "fails": [],
+   "needs_review_u0": 0,
+   "person_distance_u_over_value": 0,
+   "walked": {
+    "0": [],
+    "1": [
+     "camera",
+     "person:1-person-0"
+    ]
+   },
+   "person_walked": {
+    "person:0-person-0": false,
+    "person:1-person-0": true,
+    "person:1-person-1": false,
+    "person:1-person-2": false,
+    "person:1-person-3": false
+   },
+   "report": "mvp-me340-e84efffd-1790696590"
+  },
+  "me340 warm": {
+   "objects": 254,
+   "objects_with_a_check": 33,
+   "objects_overall": {
+    "NO_DATA": 3,
+    "PASS": 16,
+    "NEEDS_REVIEW": 14
+   },
+   "objects_pass_or_fail": 16,
+   "objects_with_any_pass_or_fail": 17,
+   "rows": 47,
+   "counts": {
+    "NO_DATA": 12,
+    "PASS": 17,
+    "NEEDS_REVIEW": 18
+   },
+   "by_check": {
+    "J1": {
+     "PASS": 5
+    },
+    "J3a": {
+     "NO_DATA": 5,
+     "NEEDS_REVIEW": 1
+    },
+    "J4": {
+     "NO_DATA": 3,
+     "NEEDS_REVIEW": 9,
+     "PASS": 4
+    },
+    "J5": {
+     "PASS": 8,
+     "NEEDS_REVIEW": 4
+    },
+    "J8": {
+     "NO_DATA": 4,
+     "NEEDS_REVIEW": 2
+    },
+    "J9": {
+     "NEEDS_REVIEW": 2
+    }
+   },
+   "no_check": {
+    "off the floor, no walked path near": 96,
+    "on the floor, no walked path near": 15,
+    "not an object": 1,
+    "off the floor, at a walked path": 109
+   },
+   "priority": 3,
+   "fails": [],
+   "needs_review_u0": 0,
+   "person_distance_u_over_value": 0,
+   "walked": {
+    "0": [],
+    "1": [
+     "camera",
+     "person:1-person-0"
+    ]
+   },
+   "person_walked": {
+    "person:0-person-0": false,
+    "person:1-person-0": true,
+    "person:1-person-1": false,
+    "person:1-person-2": false,
+    "person:1-person-3": false
+   },
+   "report": "mvp-me340-e84efffd-1790696844"
+  },
+  "samsclub-a2 first": {
+   "objects": 620,
+   "objects_with_a_check": 386,
+   "objects_overall": {
+    "NEEDS_REVIEW": 336,
+    "PASS": 42,
+    "NO_DATA": 8
+   },
+   "objects_pass_or_fail": 42,
+   "objects_with_any_pass_or_fail": 105,
+   "rows": 580,
+   "counts": {
+    "NEEDS_REVIEW": 412,
+    "PASS": 111,
+    "NO_DATA": 57
+   },
+   "by_check": {
+    "J1": {
+     "NEEDS_REVIEW": 313,
+     "PASS": 63,
+     "NO_DATA": 3
+    },
+    "J2": {
+     "NEEDS_REVIEW": 67,
+     "NO_DATA": 33,
+     "PASS": 1
+    },
+    "J3a": {
+     "NEEDS_REVIEW": 4,
+     "NO_DATA": 12
+    },
+    "J4": {
+     "PASS": 1,
+     "NEEDS_REVIEW": 1
+    },
+    "J5": {
+     "NEEDS_REVIEW": 10,
+     "PASS": 46,
+     "NO_DATA": 7
+    },
+    "J8": {
+     "NO_DATA": 2,
+     "NEEDS_REVIEW": 13
+    },
+    "J9": {
+     "NEEDS_REVIEW": 4
+    }
+   },
+   "no_check": {
+    "off the floor, at a walked path": 72,
+    "off the floor, no walked path near": 143,
+    "on the floor, no walked path near": 17,
+    "not an object": 2
+   },
+   "priority": 5,
+   "fails": [],
+   "needs_review_u0": 0,
+   "person_distance_u_over_value": 0,
+   "walked": {
+    "0": [
+     "camera",
+     "person:0-person-0"
+    ],
+    "1": [
+     "camera"
+    ]
+   },
+   "person_walked": {
+    "person:0-person-0": true,
+    "person:0-person-1": false,
+    "person:0-person-2": false,
+    "person:0-person-3": false,
+    "person:0-person-4": false,
+    "person:0-person-5": false,
+    "person:0-person-6": false,
+    "person:0-person-7": false,
+    "person:0-person-8": false,
+    "person:1-person-0": false,
+    "person:1-person-1": false,
+    "person:1-person-2": false,
+    "person:1-person-3": false,
+    "person:1-person-4": false,
+    "person:1-person-5": false
+   },
+   "report": "mvp-samsclub-a2-d5e0c855-1790697362"
+  },
+  "samsclub-a2 warm": {
+   "objects": 621,
+   "objects_with_a_check": 380,
+   "objects_overall": {
+    "NEEDS_REVIEW": 328,
+    "PASS": 43,
+    "NO_DATA": 9
+   },
+   "objects_pass_or_fail": 43,
+   "objects_with_any_pass_or_fail": 103,
+   "rows": 572,
+   "counts": {
+    "NEEDS_REVIEW": 402,
+    "PASS": 109,
+    "NO_DATA": 61
+   },
+   "by_check": {
+    "J1": {
+     "NEEDS_REVIEW": 306,
+     "PASS": 60,
+     "NO_DATA": 3
+    },
+    "J2": {
+     "NEEDS_REVIEW": 68,
+     "NO_DATA": 35
+    },
+    "J3a": {
+     "NEEDS_REVIEW": 4,
+     "NO_DATA": 12
+    },
+    "J4": {
+     "NEEDS_REVIEW": 1
+    },
+    "J5": {
+     "NEEDS_REVIEW": 6,
+     "PASS": 49,
+     "NO_DATA": 9
+    },
+    "J8": {
+     "NO_DATA": 2,
+     "NEEDS_REVIEW": 13
+    },
+    "J9": {
+     "NEEDS_REVIEW": 4
+    }
+   },
+   "no_check": {
+    "off the floor, at a walked path": 74,
+    "off the floor, no walked path near": 147,
+    "on the floor, no walked path near": 19,
+    "not an object": 1
+   },
+   "priority": 3,
+   "fails": [],
+   "needs_review_u0": 0,
+   "person_distance_u_over_value": 0,
+   "walked": {
+    "0": [
+     "camera",
+     "person:0-person-0"
+    ],
+    "1": [
+     "camera"
+    ]
+   },
+   "person_walked": {
+    "person:0-person-0": true,
+    "person:0-person-1": false,
+    "person:0-person-2": false,
+    "person:0-person-3": false,
+    "person:0-person-4": false,
+    "person:0-person-5": false,
+    "person:0-person-6": false,
+    "person:0-person-7": false,
+    "person:0-person-8": false,
+    "person:1-person-0": false,
+    "person:1-person-1": false,
+    "person:1-person-2": false,
+    "person:1-person-3": false,
+    "person:1-person-4": false,
+    "person:1-person-5": false
+   },
+   "report": "mvp-samsclub-a2-d5e0c855-1790697607"
+  },
+  "walmart first": {
+   "objects": 719,
+   "objects_with_a_check": 97,
+   "objects_overall": {
+    "PASS": 46,
+    "NEEDS_REVIEW": 46,
+    "NO_DATA": 5
+   },
+   "objects_pass_or_fail": 46,
+   "objects_with_any_pass_or_fail": 57,
+   "rows": 134,
+   "counts": {
+    "PASS": 61,
+    "NEEDS_REVIEW": 58,
+    "NO_DATA": 15
+   },
+   "by_check": {
+    "J1": {
+     "NEEDS_REVIEW": 42,
+     "PASS": 11
+    },
+    "J2": {
+     "NO_DATA": 2
+    },
+    "J3a": {
+     "NO_DATA": 7
+    },
+    "J5": {
+     "PASS": 50,
+     "NEEDS_REVIEW": 12,
+     "NO_DATA": 6
+    },
+    "J8": {
+     "NEEDS_REVIEW": 3
+    },
+    "J9": {
+     "NEEDS_REVIEW": 1
+    }
+   },
+   "no_check": {
+    "off the floor, at a walked path": 471,
+    "off the floor, no walked path near": 114,
+    "not an object": 5,
+    "on the floor, no walked path near": 32
+   },
+   "priority": 4,
+   "fails": [],
+   "needs_review_u0": 0,
+   "person_distance_u_over_value": 0,
+   "walked": {
+    "0": [
+     "camera"
+    ],
+    "1": [
+     "camera",
+     "person:1-person-5"
+    ]
+   },
+   "person_walked": {
+    "person:1-person-0": false,
+    "person:1-person-1": false,
+    "person:1-person-2": false,
+    "person:1-person-3": false,
+    "person:1-person-4": false,
+    "person:1-person-5": true
+   },
+   "report": "mvp-walmart-c0761a2a-1790699062"
+  },
+  "walmart warm": {
+   "objects": 722,
+   "objects_with_a_check": 100,
+   "objects_overall": {
+    "PASS": 49,
+    "NEEDS_REVIEW": 45,
+    "NO_DATA": 6
+   },
+   "objects_pass_or_fail": 49,
+   "objects_with_any_pass_or_fail": 63,
+   "rows": 136,
+   "counts": {
+    "PASS": 66,
+    "NEEDS_REVIEW": 54,
+    "NO_DATA": 16
+   },
+   "by_check": {
+    "J1": {
+     "NEEDS_REVIEW": 44,
+     "PASS": 10
+    },
+    "J2": {
+     "NO_DATA": 3
+    },
+    "J3a": {
+     "NO_DATA": 7
+    },
+    "J5": {
+     "PASS": 56,
+     "NEEDS_REVIEW": 6,
+     "NO_DATA": 6
+    },
+    "J8": {
+     "NEEDS_REVIEW": 3
+    },
+    "J9": {
+     "NEEDS_REVIEW": 1
+    }
+   },
+   "no_check": {
+    "off the floor, at a walked path": 468,
+    "off the floor, no walked path near": 118,
+    "on the floor, no walked path near": 32,
+    "not an object": 4
+   },
+   "priority": 0,
+   "fails": [],
+   "needs_review_u0": 0,
+   "person_distance_u_over_value": 0,
+   "walked": {
+    "0": [
+     "camera"
+    ],
+    "1": [
+     "camera",
+     "person:1-person-5"
+    ]
+   },
+   "person_walked": {
+    "person:1-person-0": false,
+    "person:1-person-1": false,
+    "person:1-person-2": false,
+    "person:1-person-3": false,
+    "person:1-person-4": false,
+    "person:1-person-5": true
+   },
+   "report": "mvp-walmart-c0761a2a-1790699304"
+  }
+ },
+ "spend": {
+  "me340": 1.78,
+  "samsclub-a2": 1.49,
+  "walmart": 1.37
+ },
+ "boot": {
+  "me340": 146.74,
+  "samsclub-a2": 115.05,
+  "walmart": 144.83
+ },
+ "replay_007": {
+  "me340 first": {
+   "objects": 260,
+   "objects_with_a_check": 32,
+   "objects_overall": {
+    "NO_DATA": 3,
+    "PASS": 14,
+    "NEEDS_REVIEW": 15
+   },
+   "objects_pass_or_fail": 14,
+   "objects_with_any_pass_or_fail": 16,
+   "rows": 47,
+   "counts": {
+    "NO_DATA": 12,
+    "PASS": 16,
+    "NEEDS_REVIEW": 19
+   },
+   "by_check": {
+    "J1": {
+     "PASS": 5
+    },
+    "J2": {
+     "NO_DATA": 1
+    },
+    "J3a": {
+     "NO_DATA": 5,
+     "NEEDS_REVIEW": 1
+    },
+    "J3b": {
+     "NEEDS_REVIEW": 1
+    },
+    "J4": {
+     "NO_DATA": 2,
+     "NEEDS_REVIEW": 9,
+     "PASS": 6
+    },
+    "J5": {
+     "PASS": 5,
+     "NEEDS_REVIEW": 4
+    },
+    "J8": {
+     "NO_DATA": 4,
+     "NEEDS_REVIEW": 2
+    },
+    "J9": {
+     "NEEDS_REVIEW": 2
+    }
+   },
+   "no_check": {
+    "off the floor, no walked path near": 98,
+    "on the floor, no walked path near": 17,
+    "not an object": 3,
+    "off the floor, at a walked path": 110
+   },
+   "priority": 3,
+   "fails": [],
+   "changed": {
+    "new -> PASS (J1)": 4,
+    "new -> PASS (J5)": 1,
+    "new -> NEEDS_REVIEW (J5)": 1,
+    "new -> NEEDS_REVIEW (J9)": 2,
+    "FAIL -> NEEDS_REVIEW (J4)": 1
+   },
+   "dropped": {
+    "NEEDS_REVIEW (J5)": 5,
+    "PASS (J5)": 2
+   },
+   "report": "mvp-me340-e84efffd-1790690525"
+  },
+  "me340 warm": {
+   "objects": 254,
+   "objects_with_a_check": 28,
+   "objects_overall": {
+    "NO_DATA": 2,
+    "PASS": 14,
+    "NEEDS_REVIEW": 12
+   },
+   "objects_pass_or_fail": 14,
+   "objects_with_any_pass_or_fail": 15,
+   "rows": 42,
+   "counts": {
+    "NO_DATA": 11,
+    "PASS": 15,
+    "NEEDS_REVIEW": 16
+   },
+   "by_check": {
+    "J1": {
+     "PASS": 5
+    },
+    "J3a": {
+     "NO_DATA": 5,
+     "NEEDS_REVIEW": 1
+    },
+    "J4": {
+     "NO_DATA": 2,
+     "NEEDS_REVIEW": 7,
+     "PASS": 2
+    },
+    "J5": {
+     "PASS": 8,
+     "NEEDS_REVIEW": 4
+    },
+    "J8": {
+     "NO_DATA": 4,
+     "NEEDS_REVIEW": 2
+    },
+    "J9": {
+     "NEEDS_REVIEW": 2
+    }
+   },
+   "no_check": {
+    "off the floor, no walked path near": 97,
+    "on the floor, no walked path near": 17,
+    "not an object": 2,
+    "off the floor, at a walked path": 110
+   },
+   "priority": 4,
+   "fails": [],
+   "changed": {
+    "new -> PASS (J1)": 5,
+    "NEEDS_REVIEW -> PASS (J5)": 2,
+    "new -> PASS (J5)": 2,
+    "new -> NEEDS_REVIEW (J9)": 2,
+    "FAIL -> NEEDS_REVIEW (J4)": 2
+   },
+   "dropped": {
+    "NEEDS_REVIEW (J5)": 2,
+    "PASS (J5)": 2
+   },
+   "report": "mvp-me340-e84efffd-1790690775"
+  },
+  "samsclub-a2 first": {
+   "objects": 622,
+   "objects_with_a_check": 396,
+   "objects_overall": {
+    "NEEDS_REVIEW": 337,
+    "PASS": 50,
+    "NO_DATA": 9
+   },
+   "objects_pass_or_fail": 50,
+   "objects_with_any_pass_or_fail": 112,
+   "rows": 594,
+   "counts": {
+    "NEEDS_REVIEW": 416,
+    "PASS": 118,
+    "NO_DATA": 60
+   },
+   "by_check": {
+    "J1": {
+     "NEEDS_REVIEW": 313,
+     "PASS": 71,
+     "NO_DATA": 3
+    },
+    "J2": {
+     "NEEDS_REVIEW": 68,
+     "NO_DATA": 36
+    },
+    "J3a": {
+     "NEEDS_REVIEW": 4,
+     "NO_DATA": 12
+    },
+    "J4": {
+     "NEEDS_REVIEW": 2,
+     "PASS": 1
+    },
+    "J5": {
+     "NEEDS_REVIEW": 12,
+     "PASS": 46,
+     "NO_DATA": 7
+    },
+    "J8": {
+     "NO_DATA": 2,
+     "NEEDS_REVIEW": 13
+    },
+    "J9": {
+     "NEEDS_REVIEW": 4
+    }
+   },
+   "no_check": {
+    "off the floor, at a walked path": 64,
+    "on the floor, no walked path near": 17,
+    "off the floor, no walked path near": 144,
+    "not an object": 1
+   },
+   "priority": 4,
+   "fails": [],
+   "changed": {
+    "new -> NEEDS_REVIEW (J1)": 237,
+    "PASS -> NEEDS_REVIEW (J1)": 23,
+    "new -> PASS (J1)": 46,
+    "FAIL -> NEEDS_REVIEW (J2)": 1,
+    "new -> PASS (J5)": 6,
+    "new -> NEEDS_REVIEW (J9)": 4,
+    "NEEDS_REVIEW -> PASS (J1)": 2,
+    "new -> NO_DATA (J5)": 1,
+    "NEEDS_REVIEW -> NO_DATA (J5)": 2,
+    "new -> NEEDS_REVIEW (J5)": 1
+   },
+   "dropped": {
+    "PASS (J1)": 32,
+    "NO_DATA (J2)": 39,
+    "NEEDS_REVIEW (J1)": 8,
+    "PASS (J5)": 22,
+    "NEEDS_REVIEW (J5)": 2,
+    "NEEDS_REVIEW (J2)": 1
+   },
+   "report": "mvp-samsclub-a2-d5e0c855-1790691480"
+  },
+  "samsclub-a2 warm": {
+   "objects": 622,
+   "objects_with_a_check": 384,
+   "objects_overall": {
+    "NEEDS_REVIEW": 331,
+    "PASS": 45,
+    "NO_DATA": 8
+   },
+   "objects_pass_or_fail": 45,
+   "objects_with_any_pass_or_fail": 105,
+   "rows": 571,
+   "counts": {
+    "NEEDS_REVIEW": 402,
+    "PASS": 111,
+    "NO_DATA": 58
+   },
+   "by_check": {
+    "J1": {
+     "NEEDS_REVIEW": 305,
+     "PASS": 62,
+     "NO_DATA": 3
+    },
+    "J2": {
+     "NEEDS_REVIEW": 64,
+     "NO_DATA": 33
+    },
+    "J3a": {
+     "NEEDS_REVIEW": 4,
+     "NO_DATA": 12
+    },
+    "J4": {
+     "NEEDS_REVIEW": 1,
+     "PASS": 2
+    },
+    "J5": {
+     "NEEDS_REVIEW": 11,
+     "PASS": 47,
+     "NO_DATA": 8
+    },
+    "J8": {
+     "NO_DATA": 2,
+     "NEEDS_REVIEW": 13
+    },
+    "J9": {
+     "NEEDS_REVIEW": 4
+    }
+   },
+   "no_check": {
+    "off the floor, at a walked path": 70,
+    "off the floor, no walked path near": 150,
+    "on the floor, no walked path near": 16,
+    "not an object": 2
+   },
+   "priority": 2,
+   "fails": [],
+   "changed": {
+    "new -> NEEDS_REVIEW (J1)": 234,
+    "PASS -> NEEDS_REVIEW (J1)": 26,
+    "new -> PASS (J1)": 39,
+    "new -> PASS (J5)": 5,
+    "new -> NEEDS_REVIEW (J9)": 4,
+    "new -> NO_DATA (J5)": 1,
+    "NEEDS_REVIEW -> NO_DATA (J5)": 2,
+    "new -> NEEDS_REVIEW (J5)": 2,
+    "NEEDS_REVIEW -> PASS (J1)": 1
+   },
+   "dropped": {
+    "PASS (J1)": 30,
+    "NO_DATA (J2)": 40,
+    "NEEDS_REVIEW (J1)": 10,
+    "PASS (J5)": 20,
+    "NEEDS_REVIEW (J5)": 4
+   },
+   "report": "mvp-samsclub-a2-d5e0c855-1790691934"
+  },
+  "walmart first": {
+   "objects": 717,
+   "objects_with_a_check": 80,
+   "objects_overall": {
+    "PASS": 42,
+    "NEEDS_REVIEW": 34,
+    "NO_DATA": 4
+   },
+   "objects_pass_or_fail": 42,
+   "objects_with_any_pass_or_fail": 54,
+   "rows": 115,
+   "counts": {
+    "PASS": 57,
+    "NEEDS_REVIEW": 43,
+    "NO_DATA": 15
+   },
+   "by_check": {
+    "J1": {
+     "NEEDS_REVIEW": 31,
+     "PASS": 7
+    },
+    "J2": {
+     "NO_DATA": 2
+    },
+    "J3a": {
+     "NO_DATA": 7
+    },
+    "J5": {
+     "PASS": 50,
+     "NEEDS_REVIEW": 8,
+     "NO_DATA": 6
+    },
+    "J8": {
+     "NEEDS_REVIEW": 3
+    },
+    "J9": {
+     "NEEDS_REVIEW": 1
+    }
+   },
+   "no_check": {
+    "off the floor, at a walked path": 477,
+    "off the floor, no walked path near": 117,
+    "on the floor, no walked path near": 37,
+    "not an object": 6
+   },
+   "priority": 0,
+   "fails": [],
+   "changed": {
+    "new -> NEEDS_REVIEW (J1)": 29,
+    "new -> NO_DATA (J5)": 3,
+    "new -> PASS (J5)": 5,
+    "new -> PASS (J1)": 7,
+    "NEEDS_REVIEW -> PASS (J5)": 1,
+    "PASS -> NO_DATA (J5)": 1,
+    "new -> NEEDS_REVIEW (J9)": 1
+   },
+   "dropped": {
+    "PASS (J5)": 4,
+    "NEEDS_REVIEW (J5)": 3
+   },
+   "report": "mvp-walmart-c0761a2a-1790692313"
+  },
+  "walmart warm": {
+   "objects": 720,
+   "objects_with_a_check": 83,
+   "objects_overall": {
+    "PASS": 50,
+    "NO_DATA": 7,
+    "NEEDS_REVIEW": 26
+   },
+   "objects_pass_or_fail": 50,
+   "objects_with_any_pass_or_fail": 60,
+   "rows": 112,
+   "counts": {
+    "PASS": 62,
+    "NO_DATA": 15,
+    "NEEDS_REVIEW": 35
+   },
+   "by_check": {
+    "J1": {
+     "NEEDS_REVIEW": 23,
+     "PASS": 8
+    },
+    "J2": {
+     "NEEDS_REVIEW": 1,
+     "NO_DATA": 2
+    },
+    "J3a": {
+     "NO_DATA": 7
+    },
+    "J5": {
+     "PASS": 54,
+     "NO_DATA": 6,
+     "NEEDS_REVIEW": 7
+    },
+    "J8": {
+     "NEEDS_REVIEW": 3
+    },
+    "J9": {
+     "NEEDS_REVIEW": 1
+    }
+   },
+   "no_check": {
+    "off the floor, at a walked path": 482,
+    "off the floor, no walked path near": 118,
+    "on the floor, no walked path near": 33,
+    "not an object": 4
+   },
+   "priority": 0,
+   "fails": [],
+   "changed": {
+    "new -> NO_DATA (J5)": 3,
+    "new -> NEEDS_REVIEW (J1)": 21,
+    "new -> PASS (J5)": 5,
+    "new -> PASS (J1)": 7,
+    "PASS -> NO_DATA (J5)": 1,
+    "PASS -> NEEDS_REVIEW (J1)": 1,
+    "new -> NEEDS_REVIEW (J9)": 1,
+    "NEEDS_REVIEW -> PASS (J1)": 1
+   },
+   "dropped": {
+    "NEEDS_REVIEW (J5)": 5,
+    "PASS (J5)": 6
+   },
+   "report": "mvp-walmart-c0761a2a-1790692552"
+  }
+ },
+ "audit": {
+  "me340 first": {
+   "of_pass": 13,
+   "of_fail": 0,
+   "checks": {
+    "J4": {
+     "pass_audited": 3,
+     "pass_right": 3
+    },
+    "J1": {
+     "pass_audited": 5,
+     "pass_right": 5
+    },
+    "J5": {
+     "pass_audited": 5,
+     "pass_right": 5
+    }
+   },
+   "all": {
+    "pass_audited": 13,
+    "pass_right": 13
+   }
+  },
+  "me340 warm": {
+   "of_pass": 16,
+   "of_fail": 0,
+   "checks": {
+    "J5": {
+     "pass_audited": 8,
+     "pass_right": 8
+    },
+    "J4": {
+     "pass_audited": 4,
+     "pass_right": 4
+    },
+    "J1": {
+     "pass_audited": 4,
+     "pass_right": 4
+    }
+   },
+   "all": {
+    "pass_audited": 16,
+    "pass_right": 16
+   }
+  },
+  "samsclub first": {
+   "of_pass": 78,
+   "of_fail": 0,
+   "checks": {
+    "J5": {
+     "pass_audited": 17,
+     "pass_right": 17
+    },
+    "J1": {
+     "pass_audited": 11,
+     "pass_right": 11
+    },
+    "J2": {
+     "pass_audited": 1,
+     "pass_right": 1
+    }
+   },
+   "all": {
+    "pass_audited": 29,
+    "pass_right": 29
+   }
+  },
+  "samsclub warm": {
+   "of_pass": 76,
+   "of_fail": 0,
+   "checks": {
+    "J5": {
+     "pass_audited": 20,
+     "pass_right": 20
+    },
+    "J1": {
+     "pass_audited": 10,
+     "pass_right": 10
+    }
+   },
+   "all": {
+    "pass_audited": 30,
+    "pass_right": 30
+   }
+  },
+  "walmart first": {
+   "of_pass": 58,
+   "of_fail": 0,
+   "checks": {
+    "J1": {
+     "pass_audited": 6,
+     "pass_right": 6
+    },
+    "J5": {
+     "pass_audited": 24,
+     "pass_right": 24
+    }
+   },
+   "all": {
+    "pass_audited": 30,
+    "pass_right": 30
+   }
+  },
+  "walmart warm": {
+   "of_pass": 62,
+   "of_fail": 0,
+   "checks": {
+    "J5": {
+     "pass_audited": 26,
+     "pass_right": 26
+    },
+    "J1": {
+     "pass_audited": 4,
+     "pass_right": 4
+    }
+   },
+   "all": {
+    "pass_audited": 30,
+    "pass_right": 30
+   }
+  }
+ }
+}

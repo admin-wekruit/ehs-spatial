@@ -1,0 +1,1940 @@
+{
+ "gpu": {
+  "me340": {
+   "before": [
+    {
+     "report": "mvp-me340-e84efffd-1790707886",
+     "kind": "first",
+     "first_call_after_boot": true,
+     "eval": {
+      "models": {
+       "delivered": 22,
+       "covered": 19,
+       "missed": 3,
+       "in_pieces": 6,
+       "pieces_per_covered_mean": 1.421,
+       "wrong_merge_cards": 2,
+       "delivered_in_wrong_merges": 6,
+       "wholes_over_several": 0
+      },
+      "all": {
+       "delivered": 161,
+       "covered": 87,
+       "missed": 74,
+       "in_pieces": 12,
+       "pieces_per_covered_mean": 1.207,
+       "wrong_merge_cards": 11,
+       "delivered_in_wrong_merges": 31,
+       "wholes_over_several": 7
+      },
+      "clean": {
+       "delivered": 105,
+       "covered": 53,
+       "missed": 52,
+       "in_pieces": 1,
+       "pieces_per_covered_mean": 1.019,
+       "wrong_merge_cards": 3,
+       "delivered_in_wrong_merges": 9,
+       "wholes_over_several": 4
+      }
+     },
+     "frames_shared": 143,
+     "cards": 261,
+     "parts": 0,
+     "contents": 0,
+     "cards_stats": {
+      "objects_in": 517,
+      "cards": 261,
+      "people_cards": 7,
+      "merged_away": 256,
+      "implausible": 35,
+      "s": {
+       "merge": 0.416,
+       "shots": 0.599,
+       "wait_counts": 0.004,
+       "cards": 1.484,
+       "people": 0.044
+      }
+     },
+     "marks_s": {
+      "objects_lifted": 34.699,
+      "objects_v1_put": 35.571,
+      "cards_v1_put": 41.597,
+      "pick_v2_put": 62.859,
+      "cards_v3_put": 66.032
+     },
+     "stages": {
+      "dedupe": {
+       "s": 0.761,
+       "peak_gib": [
+        61.16,
+        48.21
+       ]
+      },
+      "lift": {
+       "s": 0.876,
+       "peak_gib": [
+        63.95,
+        48.21
+       ]
+      },
+      "cards.v1": {
+       "s": 4.14,
+       "peak_gib": [
+        63.97,
+        49.02
+       ]
+      },
+      "densify.lift": {
+       "s": 1.252,
+       "peak_gib": [
+        63.97,
+        49.26
+       ]
+      },
+      "cards.v3": {
+       "s": 2.589,
+       "peak_gib": [
+        63.97,
+        49.26
+       ]
+      }
+     },
+     "gpu_peaks": [
+      {
+       "gpu": 0,
+       "peak_gib": 63.97,
+       "at_s": 39.981,
+       "over_72": false
+      },
+      {
+       "gpu": 1,
+       "peak_gib": 49.26,
+       "at_s": 42.774,
+       "over_72": false
+      }
+     ],
+     "stages_over_72_gib": {},
+     "lift_seams": [
+      null,
+      null
+     ],
+     "lift_reproject": [
+      [
+       null,
+       null
+      ],
+      [
+       null,
+       null
+      ]
+     ],
+     "usd_estimate": 0.1632
+    }
+   ],
+   "after": [
+    {
+     "report": "mvp-me340-e84efffd-1790712202",
+     "kind": "first",
+     "first_call_after_boot": true,
+     "eval": {
+      "models": {
+       "delivered": 22,
+       "covered": 21,
+       "missed": 1,
+       "in_pieces": 4,
+       "pieces_per_covered_mean": 1.286,
+       "wrong_merge_cards": 1,
+       "delivered_in_wrong_merges": 4,
+       "wholes_over_several": 0
+      },
+      "all": {
+       "delivered": 161,
+       "covered": 123,
+       "missed": 38,
+       "in_pieces": 11,
+       "pieces_per_covered_mean": 1.154,
+       "wrong_merge_cards": 9,
+       "delivered_in_wrong_merges": 25,
+       "wholes_over_several": 7
+      },
+      "clean": {
+       "delivered": 105,
+       "covered": 77,
+       "missed": 28,
+       "in_pieces": 3,
+       "pieces_per_covered_mean": 1.039,
+       "wrong_merge_cards": 3,
+       "delivered_in_wrong_merges": 10,
+       "wholes_over_several": 6
+      }
+     },
+     "frames_shared": 143,
+     "cards": 358,
+     "parts": 33,
+     "contents": 6,
+     "cards_stats": {
+      "objects_in": 961,
+      "cards": 358,
+      "people_cards": 7,
+      "merged_away": 603,
+      "parts": 33,
+      "contents": 6,
+      "implausible": 58,
+      "s": {
+       "merge": 2.583,
+       "shots": 0.583,
+       "wait_counts": 0.007,
+       "cards": 2.032,
+       "people": 0.047
+      }
+     },
+     "marks_s": {
+      "objects_lifted": 36.1,
+      "objects_v1_put": 36.855,
+      "cards_v1_put": 46.015,
+      "pick_v2_put": 69.312,
+      "cards_v3_put": 75.476
+     },
+     "stages": {
+      "dedupe": {
+       "s": 0.761,
+       "peak_gib": [
+        60.33,
+        48.82
+       ]
+      },
+      "lift": {
+       "s": 1.216,
+       "peak_gib": [
+        61.93,
+        48.82
+       ]
+      },
+      "cards.v1": {
+       "s": 7.214,
+       "peak_gib": [
+        61.95,
+        50.14
+       ]
+      },
+      "densify.lift": {
+       "s": 2.444,
+       "peak_gib": [
+        61.97,
+        50.41
+       ]
+      },
+      "cards.v3": {
+       "s": 5.335,
+       "peak_gib": [
+        61.97,
+        50.41
+       ]
+      }
+     },
+     "gpu_peaks": [
+      {
+       "gpu": 0,
+       "peak_gib": 61.97,
+       "at_s": 65.902,
+       "over_72": false
+      },
+      {
+       "gpu": 1,
+       "peak_gib": 50.41,
+       "at_s": 56.754,
+       "over_72": false
+      }
+     ],
+     "stages_over_72_gib": {},
+     "lift_seams": [
+      null,
+      null
+     ],
+     "lift_reproject": [
+      [
+       1606,
+       0.272
+      ],
+      [
+       4326,
+       0.263
+      ]
+     ],
+     "usd_estimate": 0.1676
+    },
+    {
+     "report": "mvp-me340-e84efffd-1790712284",
+     "kind": "warm",
+     "first_call_after_boot": false,
+     "eval": {
+      "models": {
+       "delivered": 22,
+       "covered": 21,
+       "missed": 1,
+       "in_pieces": 5,
+       "pieces_per_covered_mean": 1.286,
+       "wrong_merge_cards": 1,
+       "delivered_in_wrong_merges": 4,
+       "wholes_over_several": 0
+      },
+      "all": {
+       "delivered": 161,
+       "covered": 117,
+       "missed": 44,
+       "in_pieces": 17,
+       "pieces_per_covered_mean": 1.188,
+       "wrong_merge_cards": 11,
+       "delivered_in_wrong_merges": 24,
+       "wholes_over_several": 6
+      },
+      "clean": {
+       "delivered": 105,
+       "covered": 74,
+       "missed": 31,
+       "in_pieces": 4,
+       "pieces_per_covered_mean": 1.068,
+       "wrong_merge_cards": 4,
+       "delivered_in_wrong_merges": 8,
+       "wholes_over_several": 4
+      }
+     },
+     "frames_shared": 143,
+     "cards": 362,
+     "parts": 38,
+     "contents": 10,
+     "cards_stats": {
+      "objects_in": 959,
+      "cards": 362,
+      "people_cards": 7,
+      "merged_away": 597,
+      "parts": 38,
+      "contents": 10,
+      "implausible": 38,
+      "s": {
+       "merge": 2.413,
+       "shots": 0.587,
+       "wait_counts": 0.007,
+       "cards": 1.774,
+       "people": 0.047
+      }
+     },
+     "marks_s": {
+      "objects_lifted": 30.749,
+      "objects_v1_put": 31.498,
+      "cards_v1_put": 42.005,
+      "pick_v2_put": 63.538,
+      "cards_v3_put": 69.997
+     },
+     "stages": {
+      "dedupe": {
+       "s": 0.903,
+       "peak_gib": [
+        61.11,
+        49.79
+       ]
+      },
+      "lift": {
+       "s": 0.643,
+       "peak_gib": [
+        61.11,
+        49.79
+       ]
+      },
+      "cards.v1": {
+       "s": 7.937,
+       "peak_gib": [
+        63.59,
+        49.79
+       ]
+      },
+      "densify.lift": {
+       "s": 2.447,
+       "peak_gib": [
+        63.6,
+        49.79
+       ]
+      },
+      "cards.v3": {
+       "s": 4.91,
+       "peak_gib": [
+        63.6,
+        49.79
+       ]
+      }
+     },
+     "gpu_peaks": [
+      {
+       "gpu": 0,
+       "peak_gib": 63.6,
+       "at_s": 60.313,
+       "over_72": false
+      },
+      {
+       "gpu": 1,
+       "peak_gib": 49.79,
+       "at_s": 21.102,
+       "over_72": false
+      }
+     ],
+     "stages_over_72_gib": {},
+     "lift_seams": [
+      null,
+      null
+     ],
+     "lift_reproject": [
+      [
+       1632,
+       0.088
+      ],
+      [
+       4258,
+       0.271
+      ]
+     ],
+     "usd_estimate": 0.1582
+    }
+   ]
+  },
+  "samsclub-a2": {
+   "before": [
+    {
+     "report": "mvp-samsclub-a2-d5e0c855-1790707970",
+     "kind": "first",
+     "first_call_after_boot": false,
+     "eval": {
+      "models": {
+       "delivered": 67,
+       "covered": 54,
+       "missed": 13,
+       "in_pieces": 22,
+       "pieces_per_covered_mean": 1.5,
+       "wrong_merge_cards": 3,
+       "delivered_in_wrong_merges": 6,
+       "wholes_over_several": 1
+      },
+      "all": {
+       "delivered": 152,
+       "covered": 77,
+       "missed": 75,
+       "in_pieces": 26,
+       "pieces_per_covered_mean": 1.442,
+       "wrong_merge_cards": 6,
+       "delivered_in_wrong_merges": 13,
+       "wholes_over_several": 3
+      },
+      "clean": {
+       "delivered": 91,
+       "covered": 41,
+       "missed": 50,
+       "in_pieces": 6,
+       "pieces_per_covered_mean": 1.146,
+       "wrong_merge_cards": 0,
+       "delivered_in_wrong_merges": 0,
+       "wholes_over_several": 2
+      }
+     },
+     "frames_shared": 64,
+     "cards": 623,
+     "parts": 0,
+     "contents": 0,
+     "cards_stats": {
+      "objects_in": 1077,
+      "cards": 623,
+      "people_cards": 17,
+      "merged_away": 454,
+      "implausible": 15,
+      "s": {
+       "merge": 1.727,
+       "shots": 0.52,
+       "wait_counts": 0.008,
+       "cards": 2.725,
+       "people": 0.166
+      }
+     },
+     "marks_s": {
+      "objects_lifted": 18.62,
+      "objects_v1_put": 19.249,
+      "cards_v1_put": 28.26,
+      "pick_v2_put": 37.067,
+      "cards_v3_put": 43.549
+     },
+     "stages": {
+      "dedupe": {
+       "s": 0.59,
+       "peak_gib": [
+        48.81,
+        41.27
+       ]
+      },
+      "lift": {
+       "s": 0.256,
+       "peak_gib": [
+        48.81,
+        41.27
+       ]
+      },
+      "cards.v1": {
+       "s": 5.61,
+       "peak_gib": [
+        67.6,
+        56.12
+       ]
+      },
+      "densify.lift": {
+       "s": 1.448,
+       "peak_gib": [
+        67.6,
+        56.5
+       ]
+      },
+      "cards.v3": {
+       "s": 5.231,
+       "peak_gib": [
+        67.6,
+        56.5
+       ]
+      }
+     },
+     "gpu_peaks": [
+      {
+       "gpu": 0,
+       "peak_gib": 67.6,
+       "at_s": 26.337,
+       "over_72": false
+      },
+      {
+       "gpu": 1,
+       "peak_gib": 56.5,
+       "at_s": 32.927,
+       "over_72": false
+      }
+     ],
+     "stages_over_72_gib": {},
+     "lift_seams": [
+      null,
+      null
+     ],
+     "lift_reproject": [
+      [
+       null,
+       null
+      ],
+      [
+       null,
+       null
+      ]
+     ],
+     "usd_estimate": 0.1122
+    }
+   ],
+   "after": [
+    {
+     "report": "mvp-samsclub-a2-d5e0c855-1790712363",
+     "kind": "first",
+     "first_call_after_boot": false,
+     "eval": {
+      "models": {
+       "delivered": 67,
+       "covered": 64,
+       "missed": 3,
+       "in_pieces": 19,
+       "pieces_per_covered_mean": 1.328,
+       "wrong_merge_cards": 6,
+       "delivered_in_wrong_merges": 12,
+       "wholes_over_several": 3
+      },
+      "all": {
+       "delivered": 152,
+       "covered": 118,
+       "missed": 34,
+       "in_pieces": 28,
+       "pieces_per_covered_mean": 1.288,
+       "wrong_merge_cards": 10,
+       "delivered_in_wrong_merges": 21,
+       "wholes_over_several": 7
+      },
+      "clean": {
+       "delivered": 91,
+       "covered": 71,
+       "missed": 20,
+       "in_pieces": 10,
+       "pieces_per_covered_mean": 1.155,
+       "wrong_merge_cards": 3,
+       "delivered_in_wrong_merges": 6,
+       "wholes_over_several": 5
+      }
+     },
+     "frames_shared": 64,
+     "cards": 855,
+     "parts": 25,
+     "contents": 216,
+     "cards_stats": {
+      "objects_in": 1483,
+      "cards": 855,
+      "people_cards": 17,
+      "merged_away": 628,
+      "parts": 25,
+      "contents": 216,
+      "implausible": 54,
+      "s": {
+       "merge": 4.881,
+       "shots": 0.539,
+       "wait_counts": 0.01,
+       "cards": 3.541,
+       "people": 0.209
+      }
+     },
+     "marks_s": {
+      "objects_lifted": 19.274,
+      "objects_v1_put": 20.171,
+      "cards_v1_put": 34.986,
+      "pick_v2_put": 43.94,
+      "cards_v3_put": 54.865
+     },
+     "stages": {
+      "dedupe": {
+       "s": 0.523,
+       "peak_gib": [
+        49.57,
+        41.0
+       ]
+      },
+      "lift": {
+       "s": 0.645,
+       "peak_gib": [
+        50.09,
+        41.0
+       ]
+      },
+      "cards.v1": {
+       "s": 11.75,
+       "peak_gib": [
+        68.78,
+        57.38
+       ]
+      },
+      "densify.lift": {
+       "s": 2.478,
+       "peak_gib": [
+        68.79,
+        57.6
+       ]
+      },
+      "cards.v3": {
+       "s": 9.312,
+       "peak_gib": [
+        68.79,
+        57.6
+       ]
+      }
+     },
+     "gpu_peaks": [
+      {
+       "gpu": 0,
+       "peak_gib": 68.79,
+       "at_s": 38.514,
+       "over_72": false
+      },
+      {
+       "gpu": 1,
+       "peak_gib": 57.6,
+       "at_s": 37.03,
+       "over_72": false
+      }
+     ],
+     "stages_over_72_gib": {},
+     "lift_seams": [
+      null,
+      null
+     ],
+     "lift_reproject": [
+      [
+       2482,
+       0.172
+      ],
+      [
+       3084,
+       0.137
+      ]
+     ],
+     "usd_estimate": 0.1238
+    },
+    {
+     "report": "mvp-samsclub-a2-d5e0c855-1790712426",
+     "kind": "warm",
+     "first_call_after_boot": false,
+     "eval": {
+      "models": {
+       "delivered": 67,
+       "covered": 64,
+       "missed": 3,
+       "in_pieces": 19,
+       "pieces_per_covered_mean": 1.344,
+       "wrong_merge_cards": 6,
+       "delivered_in_wrong_merges": 13,
+       "wholes_over_several": 4
+      },
+      "all": {
+       "delivered": 152,
+       "covered": 118,
+       "missed": 34,
+       "in_pieces": 28,
+       "pieces_per_covered_mean": 1.297,
+       "wrong_merge_cards": 10,
+       "delivered_in_wrong_merges": 22,
+       "wholes_over_several": 8
+      },
+      "clean": {
+       "delivered": 91,
+       "covered": 71,
+       "missed": 20,
+       "in_pieces": 10,
+       "pieces_per_covered_mean": 1.169,
+       "wrong_merge_cards": 3,
+       "delivered_in_wrong_merges": 6,
+       "wholes_over_several": 5
+      }
+     },
+     "frames_shared": 64,
+     "cards": 858,
+     "parts": 26,
+     "contents": 211,
+     "cards_stats": {
+      "objects_in": 1485,
+      "cards": 858,
+      "people_cards": 17,
+      "merged_away": 627,
+      "parts": 26,
+      "contents": 211,
+      "implausible": 53,
+      "s": {
+       "merge": 4.841,
+       "shots": 0.518,
+       "wait_counts": 0.011,
+       "cards": 3.663,
+       "people": 0.21
+      }
+     },
+     "marks_s": {
+      "objects_lifted": 18.154,
+      "objects_v1_put": 19.043,
+      "cards_v1_put": 35.308,
+      "pick_v2_put": 42.006,
+      "cards_v3_put": 52.982
+     },
+     "stages": {
+      "dedupe": {
+       "s": 0.52,
+       "peak_gib": [
+        48.87,
+        41.3
+       ]
+      },
+      "lift": {
+       "s": 0.633,
+       "peak_gib": [
+        50.31,
+        41.3
+       ]
+      },
+      "cards.v1": {
+       "s": 11.751,
+       "peak_gib": [
+        68.96,
+        57.33
+       ]
+      },
+      "densify.lift": {
+       "s": 2.244,
+       "peak_gib": [
+        68.96,
+        57.72
+       ]
+      },
+      "cards.v3": {
+       "s": 9.366,
+       "peak_gib": [
+        68.96,
+        57.72
+       ]
+      }
+     },
+     "gpu_peaks": [
+      {
+       "gpu": 0,
+       "peak_gib": 68.96,
+       "at_s": 27.787,
+       "over_72": false
+      },
+      {
+       "gpu": 1,
+       "peak_gib": 57.72,
+       "at_s": 36.587,
+       "over_72": false
+      }
+     ],
+     "stages_over_72_gib": {},
+     "lift_seams": [
+      null,
+      null
+     ],
+     "lift_reproject": [
+      [
+       2482,
+       0.182
+      ],
+      [
+       3084,
+       0.146
+      ]
+     ],
+     "usd_estimate": 0.1197
+    }
+   ]
+  },
+  "walmart": {
+   "before": [
+    {
+     "report": "mvp-walmart-c0761a2a-1790708032",
+     "kind": "first",
+     "first_call_after_boot": false,
+     "eval": {
+      "models": {
+       "delivered": 40,
+       "covered": 32,
+       "missed": 8,
+       "in_pieces": 7,
+       "pieces_per_covered_mean": 1.312,
+       "wrong_merge_cards": 0,
+       "delivered_in_wrong_merges": 0,
+       "wholes_over_several": 0
+      },
+      "all": {
+       "delivered": 157,
+       "covered": 94,
+       "missed": 63,
+       "in_pieces": 21,
+       "pieces_per_covered_mean": 1.298,
+       "wrong_merge_cards": 4,
+       "delivered_in_wrong_merges": 15,
+       "wholes_over_several": 2
+      },
+      "clean": {
+       "delivered": 74,
+       "covered": 38,
+       "missed": 36,
+       "in_pieces": 3,
+       "pieces_per_covered_mean": 1.105,
+       "wrong_merge_cards": 0,
+       "delivered_in_wrong_merges": 0,
+       "wholes_over_several": 1
+      }
+     },
+     "frames_shared": 62,
+     "cards": 719,
+     "parts": 0,
+     "contents": 0,
+     "cards_stats": {
+      "objects_in": 1071,
+      "cards": 719,
+      "people_cards": 8,
+      "merged_away": 352,
+      "implausible": 6,
+      "s": {
+       "merge": 0.869,
+       "shots": 0.506,
+       "wait_counts": 0.008,
+       "cards": 2.693,
+       "people": 0.122
+      }
+     },
+     "marks_s": {
+      "objects_lifted": 17.642,
+      "objects_v1_put": 18.111,
+      "cards_v1_put": 24.051,
+      "pick_v2_put": 32.722,
+      "cards_v3_put": 38.145
+     },
+     "stages": {
+      "dedupe": {
+       "s": 0.311,
+       "peak_gib": [
+        48.42,
+        41.35
+       ]
+      },
+      "lift": {
+       "s": 0.226,
+       "peak_gib": [
+        48.42,
+        41.35
+       ]
+      },
+      "cards.v1": {
+       "s": 4.648,
+       "peak_gib": [
+        53.41,
+        53.47
+       ]
+      },
+      "densify.lift": {
+       "s": 1.156,
+       "peak_gib": [
+        61.47,
+        53.47
+       ]
+      },
+      "cards.v3": {
+       "s": 4.279,
+       "peak_gib": [
+        61.47,
+        53.47
+       ]
+      }
+     },
+     "gpu_peaks": [
+      {
+       "gpu": 0,
+       "peak_gib": 61.47,
+       "at_s": 24.172,
+       "over_72": false
+      },
+      {
+       "gpu": 1,
+       "peak_gib": 53.47,
+       "at_s": 21.666,
+       "over_72": false
+      }
+     ],
+     "stages_over_72_gib": {},
+     "lift_seams": [
+      null,
+      null
+     ],
+     "lift_reproject": [
+      [
+       null,
+       null
+      ],
+      [
+       null,
+       null
+      ]
+     ],
+     "usd_estimate": 0.0968
+    }
+   ],
+   "after": [
+    {
+     "report": "mvp-walmart-c0761a2a-1790712488",
+     "kind": "first",
+     "first_call_after_boot": false,
+     "eval": {
+      "models": {
+       "delivered": 40,
+       "covered": 35,
+       "missed": 5,
+       "in_pieces": 11,
+       "pieces_per_covered_mean": 1.429,
+       "wrong_merge_cards": 0,
+       "delivered_in_wrong_merges": 0,
+       "wholes_over_several": 1
+      },
+      "all": {
+       "delivered": 157,
+       "covered": 115,
+       "missed": 42,
+       "in_pieces": 30,
+       "pieces_per_covered_mean": 1.383,
+       "wrong_merge_cards": 6,
+       "delivered_in_wrong_merges": 18,
+       "wholes_over_several": 5
+      },
+      "clean": {
+       "delivered": 74,
+       "covered": 51,
+       "missed": 23,
+       "in_pieces": 2,
+       "pieces_per_covered_mean": 1.059,
+       "wrong_merge_cards": 0,
+       "delivered_in_wrong_merges": 0,
+       "wholes_over_several": 2
+      }
+     },
+     "frames_shared": 62,
+     "cards": 822,
+     "parts": 1,
+     "contents": 23,
+     "cards_stats": {
+      "objects_in": 1193,
+      "cards": 822,
+      "people_cards": 8,
+      "merged_away": 371,
+      "parts": 1,
+      "contents": 23,
+      "implausible": 15,
+      "s": {
+       "merge": 2.569,
+       "shots": 0.498,
+       "wait_counts": 0.009,
+       "cards": 4.024,
+       "people": 0.142
+      }
+     },
+     "marks_s": {
+      "objects_lifted": 17.874,
+      "objects_v1_put": 18.46,
+      "cards_v1_put": 29.295,
+      "pick_v2_put": 36.926,
+      "cards_v3_put": 45.626
+     },
+     "stages": {
+      "dedupe": {
+       "s": 0.336,
+       "peak_gib": [
+        48.48,
+        41.37
+       ]
+      },
+      "lift": {
+       "s": 0.473,
+       "peak_gib": [
+        48.48,
+        41.37
+       ]
+      },
+      "cards.v1": {
+       "s": 9.399,
+       "peak_gib": [
+        62.31,
+        53.42
+       ]
+      },
+      "densify.lift": {
+       "s": 1.837,
+       "peak_gib": [
+        62.31,
+        53.42
+       ]
+      },
+      "cards.v3": {
+       "s": 7.344,
+       "peak_gib": [
+        62.31,
+        53.42
+       ]
+      }
+     },
+     "gpu_peaks": [
+      {
+       "gpu": 0,
+       "peak_gib": 62.31,
+       "at_s": 25.862,
+       "over_72": false
+      },
+      {
+       "gpu": 1,
+       "peak_gib": 53.42,
+       "at_s": 26.539,
+       "over_72": false
+      }
+     ],
+     "stages_over_72_gib": {},
+     "lift_seams": [
+      null,
+      null
+     ],
+     "lift_reproject": [
+      [
+       2137,
+       0.179
+      ],
+      [
+       748,
+       0.13
+      ]
+     ],
+     "usd_estimate": 0.1037
+    },
+    {
+     "report": "mvp-walmart-c0761a2a-1790712542",
+     "kind": "warm",
+     "first_call_after_boot": false,
+     "eval": {
+      "models": {
+       "delivered": 40,
+       "covered": 36,
+       "missed": 4,
+       "in_pieces": 11,
+       "pieces_per_covered_mean": 1.417,
+       "wrong_merge_cards": 0,
+       "delivered_in_wrong_merges": 0,
+       "wholes_over_several": 0
+      },
+      "all": {
+       "delivered": 157,
+       "covered": 115,
+       "missed": 42,
+       "in_pieces": 30,
+       "pieces_per_covered_mean": 1.383,
+       "wrong_merge_cards": 6,
+       "delivered_in_wrong_merges": 18,
+       "wholes_over_several": 5
+      },
+      "clean": {
+       "delivered": 74,
+       "covered": 51,
+       "missed": 23,
+       "in_pieces": 2,
+       "pieces_per_covered_mean": 1.059,
+       "wrong_merge_cards": 0,
+       "delivered_in_wrong_merges": 0,
+       "wholes_over_several": 3
+      }
+     },
+     "frames_shared": 62,
+     "cards": 824,
+     "parts": 1,
+     "contents": 24,
+     "cards_stats": {
+      "objects_in": 1196,
+      "cards": 824,
+      "people_cards": 8,
+      "merged_away": 372,
+      "parts": 1,
+      "contents": 24,
+      "implausible": 15,
+      "s": {
+       "merge": 2.725,
+       "shots": 0.502,
+       "wait_counts": 0.008,
+       "cards": 3.366,
+       "people": 0.139
+      }
+     },
+     "marks_s": {
+      "objects_lifted": 15.284,
+      "objects_v1_put": 15.882,
+      "cards_v1_put": 26.39,
+      "pick_v2_put": 34.001,
+      "cards_v3_put": 42.229
+     },
+     "stages": {
+      "dedupe": {
+       "s": 0.258,
+       "peak_gib": [
+        48.69,
+        41.54
+       ]
+      },
+      "lift": {
+       "s": 0.483,
+       "peak_gib": [
+        48.69,
+        41.54
+       ]
+      },
+      "cards.v1": {
+       "s": 9.328,
+       "peak_gib": [
+        62.22,
+        53.32
+       ]
+      },
+      "densify.lift": {
+       "s": 1.841,
+       "peak_gib": [
+        62.23,
+        53.32
+       ]
+      },
+      "cards.v3": {
+       "s": 6.844,
+       "peak_gib": [
+        62.23,
+        53.32
+       ]
+      }
+     },
+     "gpu_peaks": [
+      {
+       "gpu": 0,
+       "peak_gib": 62.23,
+       "at_s": 30.315,
+       "over_72": false
+      },
+      {
+       "gpu": 1,
+       "peak_gib": 53.32,
+       "at_s": 25.662,
+       "over_72": false
+      }
+     ],
+     "stages_over_72_gib": {},
+     "lift_seams": [
+      null,
+      null
+     ],
+     "lift_reproject": [
+      [
+       2137,
+       0.15
+      ],
+      [
+       748,
+       0.148
+      ]
+     ],
+     "usd_estimate": 0.0994
+    }
+   ]
+  }
+ },
+ "matrix": {
+  "me340": {
+   "L0C0": {
+    "models": {
+     "delivered": 22,
+     "covered": 19,
+     "missed": 3,
+     "in_pieces": 6,
+     "wrong_merge_cards": 2,
+     "delivered_in_wrong_merges": 6,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 161,
+     "covered": 79,
+     "missed": 82,
+     "in_pieces": 13,
+     "wrong_merge_cards": 10,
+     "delivered_in_wrong_merges": 25,
+     "wholes_over_several": 7
+    },
+    "clean": {
+     "delivered": 105,
+     "covered": 49,
+     "missed": 56,
+     "in_pieces": 1,
+     "wrong_merge_cards": 3,
+     "delivered_in_wrong_merges": 7,
+     "wholes_over_several": 4
+    },
+    "cards": 270,
+    "parts": 0,
+    "build_s": 3.93
+   },
+   "L0C1": {
+    "models": {
+     "delivered": 22,
+     "covered": 20,
+     "missed": 2,
+     "in_pieces": 4,
+     "wrong_merge_cards": 2,
+     "delivered_in_wrong_merges": 6,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 161,
+     "covered": 82,
+     "missed": 79,
+     "in_pieces": 7,
+     "wrong_merge_cards": 9,
+     "delivered_in_wrong_merges": 24,
+     "wholes_over_several": 8
+    },
+    "clean": {
+     "delivered": 105,
+     "covered": 52,
+     "missed": 53,
+     "in_pieces": 0,
+     "wrong_merge_cards": 1,
+     "delivered_in_wrong_merges": 2,
+     "wholes_over_several": 7
+    },
+    "cards": 239,
+    "parts": 30,
+    "build_s": 4.25
+   },
+   "L1C1": {
+    "models": {
+     "delivered": 22,
+     "covered": 20,
+     "missed": 2,
+     "in_pieces": 8,
+     "wrong_merge_cards": 1,
+     "delivered_in_wrong_merges": 2,
+     "wholes_over_several": 1
+    },
+    "all": {
+     "delivered": 161,
+     "covered": 82,
+     "missed": 79,
+     "in_pieces": 12,
+     "wrong_merge_cards": 10,
+     "delivered_in_wrong_merges": 25,
+     "wholes_over_several": 2
+    },
+    "clean": {
+     "delivered": 105,
+     "covered": 52,
+     "missed": 53,
+     "in_pieces": 2,
+     "wrong_merge_cards": 3,
+     "delivered_in_wrong_merges": 7,
+     "wholes_over_several": 1
+    },
+    "cards": 300,
+    "parts": 52,
+    "build_s": 5.38
+   },
+   "L2C1": {
+    "models": {
+     "delivered": 22,
+     "covered": 22,
+     "missed": 0,
+     "in_pieces": 4,
+     "wrong_merge_cards": 2,
+     "delivered_in_wrong_merges": 6,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 161,
+     "covered": 119,
+     "missed": 42,
+     "in_pieces": 10,
+     "wrong_merge_cards": 9,
+     "delivered_in_wrong_merges": 26,
+     "wholes_over_several": 7
+    },
+    "clean": {
+     "delivered": 105,
+     "covered": 74,
+     "missed": 31,
+     "in_pieces": 2,
+     "wrong_merge_cards": 3,
+     "delivered_in_wrong_merges": 9,
+     "wholes_over_several": 6
+    },
+    "cards": 331,
+    "parts": 33,
+    "build_s": 5.93
+   },
+   "L3s0C0": {
+    "models": {
+     "delivered": 22,
+     "covered": 22,
+     "missed": 0,
+     "in_pieces": 4,
+     "wrong_merge_cards": 1,
+     "delivered_in_wrong_merges": 3,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 161,
+     "covered": 116,
+     "missed": 45,
+     "in_pieces": 22,
+     "wrong_merge_cards": 10,
+     "delivered_in_wrong_merges": 23,
+     "wholes_over_several": 7
+    },
+    "clean": {
+     "delivered": 105,
+     "covered": 72,
+     "missed": 33,
+     "in_pieces": 8,
+     "wrong_merge_cards": 4,
+     "delivered_in_wrong_merges": 11,
+     "wholes_over_several": 4
+    },
+    "cards": 384,
+    "parts": 0,
+    "build_s": 5.18
+   },
+   "L3s0C1np": {
+    "models": {
+     "delivered": 22,
+     "covered": 22,
+     "missed": 0,
+     "in_pieces": 4,
+     "wrong_merge_cards": 1,
+     "delivered_in_wrong_merges": 3,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 161,
+     "covered": 119,
+     "missed": 42,
+     "in_pieces": 14,
+     "wrong_merge_cards": 10,
+     "delivered_in_wrong_merges": 23,
+     "wholes_over_several": 7
+    },
+    "clean": {
+     "delivered": 105,
+     "covered": 74,
+     "missed": 31,
+     "in_pieces": 5,
+     "wrong_merge_cards": 4,
+     "delivered_in_wrong_merges": 11,
+     "wholes_over_several": 4
+    },
+    "cards": 361,
+    "parts": 39,
+    "build_s": 5.86
+   },
+   "L3s0C1": {
+    "models": {
+     "delivered": 22,
+     "covered": 22,
+     "missed": 0,
+     "in_pieces": 4,
+     "wrong_merge_cards": 1,
+     "delivered_in_wrong_merges": 3,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 161,
+     "covered": 119,
+     "missed": 42,
+     "in_pieces": 9,
+     "wrong_merge_cards": 10,
+     "delivered_in_wrong_merges": 23,
+     "wholes_over_several": 7
+    },
+    "clean": {
+     "delivered": 105,
+     "covered": 74,
+     "missed": 31,
+     "in_pieces": 2,
+     "wrong_merge_cards": 4,
+     "delivered_in_wrong_merges": 11,
+     "wholes_over_several": 4
+    },
+    "cards": 347,
+    "parts": 40,
+    "build_s": 5.86
+   }
+  },
+  "samsclub-a2": {
+   "L0C0": {
+    "models": {
+     "delivered": 67,
+     "covered": 57,
+     "missed": 10,
+     "in_pieces": 25,
+     "wrong_merge_cards": 3,
+     "delivered_in_wrong_merges": 6,
+     "wholes_over_several": 1
+    },
+    "all": {
+     "delivered": 152,
+     "covered": 79,
+     "missed": 73,
+     "in_pieces": 30,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 11,
+     "wholes_over_several": 2
+    },
+    "clean": {
+     "delivered": 91,
+     "covered": 43,
+     "missed": 48,
+     "in_pieces": 10,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 1
+    },
+    "cards": 626,
+    "parts": 0,
+    "build_s": 6.58
+   },
+   "L0C1": {
+    "models": {
+     "delivered": 67,
+     "covered": 57,
+     "missed": 10,
+     "in_pieces": 23,
+     "wrong_merge_cards": 3,
+     "delivered_in_wrong_merges": 6,
+     "wholes_over_several": 1
+    },
+    "all": {
+     "delivered": 152,
+     "covered": 79,
+     "missed": 73,
+     "in_pieces": 26,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 11,
+     "wholes_over_several": 2
+    },
+    "clean": {
+     "delivered": 91,
+     "covered": 43,
+     "missed": 48,
+     "in_pieces": 7,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 1
+    },
+    "cards": 641,
+    "parts": 220,
+    "build_s": 8.3
+   },
+   "L1C1": {
+    "models": {
+     "delivered": 67,
+     "covered": 56,
+     "missed": 11,
+     "in_pieces": 23,
+     "wrong_merge_cards": 3,
+     "delivered_in_wrong_merges": 7,
+     "wholes_over_several": 1
+    },
+    "all": {
+     "delivered": 152,
+     "covered": 78,
+     "missed": 74,
+     "in_pieces": 27,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 12,
+     "wholes_over_several": 3
+    },
+    "clean": {
+     "delivered": 91,
+     "covered": 42,
+     "missed": 49,
+     "in_pieces": 8,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 2
+    },
+    "cards": 663,
+    "parts": 260,
+    "build_s": 8.45
+   },
+   "L2C1": {
+    "models": {
+     "delivered": 67,
+     "covered": 64,
+     "missed": 3,
+     "in_pieces": 21,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 10,
+     "wholes_over_several": 4
+    },
+    "all": {
+     "delivered": 152,
+     "covered": 115,
+     "missed": 37,
+     "in_pieces": 30,
+     "wrong_merge_cards": 9,
+     "delivered_in_wrong_merges": 19,
+     "wholes_over_several": 7
+    },
+    "clean": {
+     "delivered": 91,
+     "covered": 69,
+     "missed": 22,
+     "in_pieces": 10,
+     "wrong_merge_cards": 3,
+     "delivered_in_wrong_merges": 6,
+     "wholes_over_several": 5
+    },
+    "cards": 831,
+    "parts": 236,
+    "build_s": 11.17
+   },
+   "L3s0C0": {
+    "models": {
+     "delivered": 67,
+     "covered": 64,
+     "missed": 3,
+     "in_pieces": 23,
+     "wrong_merge_cards": 4,
+     "delivered_in_wrong_merges": 8,
+     "wholes_over_several": 4
+    },
+    "all": {
+     "delivered": 152,
+     "covered": 114,
+     "missed": 38,
+     "in_pieces": 34,
+     "wrong_merge_cards": 9,
+     "delivered_in_wrong_merges": 19,
+     "wholes_over_several": 7
+    },
+    "clean": {
+     "delivered": 91,
+     "covered": 68,
+     "missed": 23,
+     "in_pieces": 13,
+     "wrong_merge_cards": 3,
+     "delivered_in_wrong_merges": 6,
+     "wholes_over_several": 6
+    },
+    "cards": 878,
+    "parts": 0,
+    "build_s": 9.04
+   },
+   "L3s0C1np": {
+    "models": {
+     "delivered": 67,
+     "covered": 63,
+     "missed": 4,
+     "in_pieces": 19,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 10,
+     "wholes_over_several": 3
+    },
+    "all": {
+     "delivered": 152,
+     "covered": 113,
+     "missed": 39,
+     "in_pieces": 28,
+     "wrong_merge_cards": 9,
+     "delivered_in_wrong_merges": 19,
+     "wholes_over_several": 6
+    },
+    "clean": {
+     "delivered": 91,
+     "covered": 68,
+     "missed": 23,
+     "in_pieces": 10,
+     "wrong_merge_cards": 3,
+     "delivered_in_wrong_merges": 6,
+     "wholes_over_several": 5
+    },
+    "cards": 856,
+    "parts": 221,
+    "build_s": 10.93
+   },
+   "L3s0C1": {
+    "models": {
+     "delivered": 67,
+     "covered": 64,
+     "missed": 3,
+     "in_pieces": 20,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 10,
+     "wholes_over_several": 4
+    },
+    "all": {
+     "delivered": 152,
+     "covered": 115,
+     "missed": 37,
+     "in_pieces": 29,
+     "wrong_merge_cards": 9,
+     "delivered_in_wrong_merges": 19,
+     "wholes_over_several": 7
+    },
+    "clean": {
+     "delivered": 91,
+     "covered": 69,
+     "missed": 22,
+     "in_pieces": 10,
+     "wrong_merge_cards": 3,
+     "delivered_in_wrong_merges": 6,
+     "wholes_over_several": 5
+    },
+    "cards": 846,
+    "parts": 237,
+    "build_s": 11.54
+   }
+  },
+  "walmart": {
+   "L0C0": {
+    "models": {
+     "delivered": 40,
+     "covered": 33,
+     "missed": 7,
+     "in_pieces": 8,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 157,
+     "covered": 97,
+     "missed": 60,
+     "in_pieces": 23,
+     "wrong_merge_cards": 4,
+     "delivered_in_wrong_merges": 15,
+     "wholes_over_several": 2
+    },
+    "clean": {
+     "delivered": 74,
+     "covered": 39,
+     "missed": 35,
+     "in_pieces": 3,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 1
+    },
+    "cards": 722,
+    "parts": 0,
+    "build_s": 6.38
+   },
+   "L0C1": {
+    "models": {
+     "delivered": 40,
+     "covered": 33,
+     "missed": 7,
+     "in_pieces": 8,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 157,
+     "covered": 97,
+     "missed": 60,
+     "in_pieces": 20,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 17,
+     "wholes_over_several": 2
+    },
+    "clean": {
+     "delivered": 74,
+     "covered": 39,
+     "missed": 35,
+     "in_pieces": 2,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 1
+    },
+    "cards": 752,
+    "parts": 46,
+    "build_s": 6.89
+   },
+   "L1C1": {
+    "models": {
+     "delivered": 40,
+     "covered": 33,
+     "missed": 7,
+     "in_pieces": 8,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 157,
+     "covered": 97,
+     "missed": 60,
+     "in_pieces": 21,
+     "wrong_merge_cards": 6,
+     "delivered_in_wrong_merges": 19,
+     "wholes_over_several": 1
+    },
+    "clean": {
+     "delivered": 74,
+     "covered": 39,
+     "missed": 35,
+     "in_pieces": 2,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 1
+    },
+    "cards": 761,
+    "parts": 53,
+    "build_s": 7.22
+   },
+   "L2C1": {
+    "models": {
+     "delivered": 40,
+     "covered": 36,
+     "missed": 4,
+     "in_pieces": 11,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 157,
+     "covered": 116,
+     "missed": 41,
+     "in_pieces": 26,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 17,
+     "wholes_over_several": 5
+    },
+    "clean": {
+     "delivered": 74,
+     "covered": 52,
+     "missed": 22,
+     "in_pieces": 2,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 2
+    },
+    "cards": 808,
+    "parts": 17,
+    "build_s": 8.42
+   },
+   "L3s0C0": {
+    "models": {
+     "delivered": 40,
+     "covered": 36,
+     "missed": 4,
+     "in_pieces": 11,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 157,
+     "covered": 117,
+     "missed": 40,
+     "in_pieces": 31,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 17,
+     "wholes_over_several": 4
+    },
+    "clean": {
+     "delivered": 74,
+     "covered": 52,
+     "missed": 22,
+     "in_pieces": 3,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 1
+    },
+    "cards": 820,
+    "parts": 0,
+    "build_s": 7.22
+   },
+   "L3s0C1np": {
+    "models": {
+     "delivered": 40,
+     "covered": 36,
+     "missed": 4,
+     "in_pieces": 11,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 157,
+     "covered": 117,
+     "missed": 40,
+     "in_pieces": 30,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 17,
+     "wholes_over_several": 5
+    },
+    "clean": {
+     "delivered": 74,
+     "covered": 52,
+     "missed": 22,
+     "in_pieces": 4,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 1
+    },
+    "cards": 820,
+    "parts": 25,
+    "build_s": 7.77
+   },
+   "L3s0C1": {
+    "models": {
+     "delivered": 40,
+     "covered": 36,
+     "missed": 4,
+     "in_pieces": 11,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 0
+    },
+    "all": {
+     "delivered": 157,
+     "covered": 117,
+     "missed": 40,
+     "in_pieces": 28,
+     "wrong_merge_cards": 5,
+     "delivered_in_wrong_merges": 17,
+     "wholes_over_several": 5
+    },
+    "clean": {
+     "delivered": 74,
+     "covered": 52,
+     "missed": 22,
+     "in_pieces": 2,
+     "wrong_merge_cards": 0,
+     "delivered_in_wrong_merges": 0,
+     "wholes_over_several": 1
+    },
+    "cards": 814,
+    "parts": 24,
+    "build_s": 8.35
+   }
+  }
+ },
+ "audit": {
+  "me340": {
+   "base": {
+    "n": 30,
+    "counts": {
+     "O": 20,
+     "U": 1,
+     "P": 1,
+     "M": 7,
+     "N": 1
+    }
+   },
+   "final": {
+    "n": 30,
+    "counts": {
+     "O": 28,
+     "M": 1,
+     "P": 1
+    }
+   }
+  },
+  "samsclub-a2": {
+   "base": {
+    "n": 30,
+    "counts": {
+     "N": 2,
+     "O": 22,
+     "M": 3,
+     "U": 2,
+     "P": 1
+    }
+   },
+   "final": {
+    "n": 30,
+    "counts": {
+     "O": 24,
+     "M": 4,
+     "U": 2
+    }
+   }
+  },
+  "walmart": {
+   "base": {
+    "n": 30,
+    "counts": {
+     "O": 23,
+     "M": 5,
+     "D": 1,
+     "P": 1
+    }
+   },
+   "final": {
+    "n": 30,
+    "counts": {
+     "O": 25,
+     "U": 3,
+     "P": 2
+    }
+   }
+  }
+ },
+ "spend_usd_upper": {
+  "before": 0.78,
+  "after": 1.2
+ }
+}

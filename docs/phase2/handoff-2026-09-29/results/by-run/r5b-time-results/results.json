@@ -1,0 +1,2160 @@
+{
+ "branch": "r5b/time",
+ "base": "r4b/integrate 40a153e",
+ "runs": [
+  "r5b-time-gt-001",
+  "r5b-time-retail-001",
+  "r5b-time-retail-002"
+ ],
+ "width_gt": {
+  "arkit42": {
+   "cards": 57,
+   "new": {
+    "at least": {
+     "n": 9,
+     "hold_a": 8,
+     "hold_b": 8
+    },
+    "value": {
+     "n": 38,
+     "hold_a": 35,
+     "hold_b": 33
+    },
+    "not measurable": {
+     "n": 3,
+     "hold_a": 0,
+     "hold_b": 0
+    },
+    "not observed": {
+     "n": 7,
+     "hold_a": 0,
+     "hold_b": 0
+    }
+   },
+   "old": {
+    "at least": {
+     "n": 5,
+     "hold_a": 5,
+     "hold_b": 5
+    },
+    "value": {
+     "n": 38,
+     "hold_a": 35,
+     "hold_b": 33
+    },
+    "at most": {
+     "n": 11,
+     "hold_a": 11,
+     "hold_b": 11
+    },
+    "not measurable": {
+     "n": 3,
+     "hold_a": 0,
+     "hold_b": 0
+    }
+   }
+  },
+  "arkit47": {
+   "cards": 199,
+   "new": {
+    "value": {
+     "n": 125,
+     "hold_a": 116,
+     "hold_b": 112
+    },
+    "at least": {
+     "n": 49,
+     "hold_a": 49,
+     "hold_b": 46
+    },
+    "not measurable": {
+     "n": 12,
+     "hold_a": 0,
+     "hold_b": 0
+    },
+    "not observed": {
+     "n": 13,
+     "hold_a": 0,
+     "hold_b": 0
+    }
+   },
+   "old": {
+    "value": {
+     "n": 125,
+     "hold_a": 116,
+     "hold_b": 112
+    },
+    "at most": {
+     "n": 42,
+     "hold_a": 41,
+     "hold_b": 41
+    },
+    "not measurable": {
+     "n": 12,
+     "hold_a": 0,
+     "hold_b": 0
+    },
+    "at least": {
+     "n": 20,
+     "hold_a": 20,
+     "hold_b": 17
+    }
+   }
+  },
+  "tum": {
+   "cards": 354,
+   "new": {
+    "value": {
+     "n": 212,
+     "hold_a": 200,
+     "hold_b": 193
+    },
+    "at least": {
+     "n": 66,
+     "hold_a": 65,
+     "hold_b": 65
+    },
+    "not measurable": {
+     "n": 25,
+     "hold_a": 0,
+     "hold_b": 0
+    },
+    "at most": {
+     "n": 1,
+     "hold_a": 1,
+     "hold_b": 1
+    },
+    "not observed": {
+     "n": 50,
+     "hold_a": 0,
+     "hold_b": 0
+    }
+   },
+   "old": {
+    "value": {
+     "n": 212,
+     "hold_a": 200,
+     "hold_b": 193
+    },
+    "at most": {
+     "n": 105,
+     "hold_a": 98,
+     "hold_b": 97
+    },
+    "not measurable": {
+     "n": 25,
+     "hold_a": 0,
+     "hold_b": 0
+    },
+    "at least": {
+     "n": 12,
+     "hold_a": 11,
+     "hold_b": 11
+    }
+   }
+  }
+ },
+ "width_gt_note": "both rules on the same cards; (a) assumed 1.6 m camera height, (b) true camera height; warm calls, GT cover >= 0.5",
+ "gt_static": {
+  "acc-gt-arkit42-w0-shot-b6557275-1790731733.pkl.gz": {
+   "cards": 85,
+   "claims": 0,
+   "places_judged": {
+    "before": {
+     "out-of-view": 490,
+     "occupied": 15,
+     "occluded": 5
+    },
+    "after": {
+     "out-of-view": 216,
+     "occupied": 30,
+     "occluded": 19
+    }
+   }
+  },
+  "acc-gt-arkit42-w0-shot-b6557275-1790731766.pkl.gz": {
+   "cards": 83,
+   "claims": 0,
+   "places_judged": {
+    "before": {
+     "out-of-view": 471,
+     "occupied": 13,
+     "occluded": 5
+    },
+    "after": {
+     "out-of-view": 216,
+     "occupied": 30,
+     "occluded": 19
+    }
+   }
+  },
+  "acc-gt-arkit47-w0-shot-3a3b61c6-1790731795.pkl.gz": {
+   "cards": 115,
+   "claims": 0,
+   "places_judged": {
+    "before": {
+     "out-of-view": 2307,
+     "occluded": 11,
+     "occupied": 15
+    },
+    "after": {
+     "out-of-view": 929,
+     "occupied": 190,
+     "occluded": 19
+    }
+   }
+  },
+  "acc-gt-arkit47-w1-shot-b0c722eb-1790731859.pkl.gz": {
+   "cards": 110,
+   "claims": 0,
+   "places_judged": {
+    "before": {
+     "out-of-view": 661,
+     "occluded": 14,
+     "occupied": 16
+    },
+    "after": {
+     "out-of-view": 854,
+     "occupied": 361,
+     "occluded": 24,
+     "unjudged": 9
+    }
+   }
+  },
+  "acc-gt-tum-w0-shot-7cf1e116-1790731911.pkl.gz": {
+   "cards": 303,
+   "claims": 0,
+   "places_judged": {
+    "before": {
+     "out-of-view": 2685,
+     "occluded": 41,
+     "occupied": 53,
+     "unjudged": 9
+    },
+    "after": {
+     "out-of-view": 1353,
+     "occluded": 225,
+     "occupied": 727,
+     "unjudged": 6
+    }
+   }
+  },
+  "acc-gt-tum-w1-shot-63b6043f-1790731994.pkl.gz": {
+   "cards": 103,
+   "claims": 0,
+   "places_judged": {
+    "before": {
+     "out-of-view": 156,
+     "occluded": 17,
+     "occupied": 17
+    },
+    "after": {
+     "out-of-view": 210,
+     "occluded": 92,
+     "occupied": 164
+    }
+   }
+  }
+ },
+ "retail_002": {
+  "reports": [
+   {
+    "report": "acc-me340-on-e84efffd-1790734837",
+    "site": "me340",
+    "label": "on",
+    "first_call": true,
+    "cards_version": 4,
+    "objects": 275,
+    "with_timeline": 275,
+    "claims": 0,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 0,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 275,
+     "with_timeline": 275,
+     "changes": {},
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.9523063695430756
+    },
+    "places_judged": {
+     "before": {
+      "occluded": 47,
+      "unjudged": 152,
+      "occupied": 79,
+      "out-of-view": 28
+     },
+     "after": {
+      "out-of-view": 377,
+      "occupied": 109,
+      "occluded": 13,
+      "unjudged": 89
+     }
+    },
+    "width": {
+     "needs review": 23,
+     "at least": 14,
+     "value": 114,
+     "not observed": 109,
+     "not measurable": 15
+    },
+    "windows": [
+     {
+      "windows": 1,
+      "keys": [
+       34
+      ],
+      "reasons": [
+       "end"
+      ],
+      "s": 0.821
+     },
+     {
+      "windows": 8,
+      "keys": [
+       34,
+       11,
+       10,
+       10,
+       21,
+       13,
+       22,
+       6
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 3.054
+     }
+    ],
+    "sheet": null
+   },
+   {
+    "report": "acc-me340-on-e84efffd-1790735346",
+    "site": "me340",
+    "label": "on",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 276,
+    "with_timeline": 276,
+    "claims": 0,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 0,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 276,
+     "with_timeline": 276,
+     "changes": {},
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.952290244102478
+    },
+    "places_judged": {
+     "before": {
+      "occluded": 47,
+      "unjudged": 152,
+      "occupied": 82,
+      "out-of-view": 28
+     },
+     "after": {
+      "out-of-view": 377,
+      "occupied": 116,
+      "occluded": 13,
+      "unjudged": 89
+     }
+    },
+    "width": {
+     "needs review": 24,
+     "at least": 13,
+     "value": 114,
+     "not observed": 110,
+     "not measurable": 15
+    },
+    "windows": [
+     {
+      "windows": 1,
+      "keys": [
+       34
+      ],
+      "reasons": [
+       "end"
+      ],
+      "s": 0.831
+     },
+     {
+      "windows": 8,
+      "keys": [
+       34,
+       11,
+       10,
+       10,
+       21,
+       13,
+       22,
+       6
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 3.057
+     }
+    ],
+    "sheet": null
+   },
+   {
+    "report": "acc-samsclub-a2-on-d5e0c855-1790735510",
+    "site": "samsclub-a2",
+    "label": "on",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 1052,
+    "with_timeline": 1052,
+    "claims": 0,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 0,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 1052,
+     "with_timeline": 1052,
+     "changes": {},
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.9610973286628722
+    },
+    "places_judged": {
+     "before": {
+      "unjudged": 688,
+      "out-of-view": 929,
+      "free": 4,
+      "occupied": 31,
+      "occluded": 2
+     },
+     "after": {
+      "out-of-view": 1902,
+      "unjudged": 124,
+      "occupied": 127
+     }
+    },
+    "width": {
+     "not measurable": 112,
+     "needs review": 36,
+     "value": 261,
+     "at least": 36,
+     "not observed": 607
+    },
+    "windows": [
+     {
+      "windows": 7,
+      "keys": [
+       12,
+       12,
+       10,
+       10,
+       18,
+       12,
+       8
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 2.1
+     },
+     {
+      "windows": 4,
+      "keys": [
+       23,
+       16,
+       11,
+       11
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.645
+     }
+    ],
+    "sheet": null
+   },
+   {
+    "report": "acc-samsclub-a2-planted-193bf472-1790735012",
+    "site": "samsclub-a2",
+    "label": "planted",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 1097,
+    "with_timeline": 1097,
+    "claims": 1,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 1,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 1097,
+     "with_timeline": 1097,
+     "changes": {
+      "disappeared": 1
+     },
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.9641091656684876
+    },
+    "places_judged": {
+     "before": {
+      "out-of-view": 976,
+      "unjudged": 746,
+      "occupied": 31,
+      "free": 3,
+      "occluded": 1
+     },
+     "after": {
+      "out-of-view": 2289,
+      "occupied": 158,
+      "free": 1,
+      "unjudged": 159,
+      "occluded": 11
+     }
+    },
+    "width": {
+     "needs review": 27,
+     "not measurable": 102,
+     "value": 273,
+     "at least": 55,
+     "not observed": 638,
+     "at most": 2
+    },
+    "windows": [
+     {
+      "windows": 8,
+      "keys": [
+       12,
+       11,
+       10,
+       10,
+       12,
+       13,
+       10,
+       6
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 2.107
+     },
+     {
+      "windows": 4,
+      "keys": [
+       25,
+       17,
+       11,
+       8
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.658
+     }
+    ],
+    "sheet": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/r5b/eval-002/claims-acc-samsclub-a2-planted-193bf472-1790735012.jpg"
+   },
+   {
+    "report": "acc-samsclub-a2-planted-x6-2c9b8563-1790735244",
+    "site": "samsclub-a2",
+    "label": "planted-x6",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 927,
+    "with_timeline": 927,
+    "claims": 2,
+    "by_kind": {
+     "appeared": 2,
+     "disappeared": 0,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 927,
+     "with_timeline": 927,
+     "changes": {
+      "appeared": 2
+     },
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.9697380721569061
+    },
+    "places_judged": {
+     "before": {
+      "out-of-view": 672,
+      "unjudged": 583,
+      "free": 5,
+      "occupied": 30,
+      "occluded": 3
+     },
+     "after": {
+      "out-of-view": 1893,
+      "occupied": 104,
+      "unjudged": 54,
+      "occluded": 1
+     }
+    },
+    "width": {
+     "value": 229,
+     "at least": 37,
+     "needs review": 15,
+     "not measurable": 71,
+     "not observed": 575
+    },
+    "windows": [
+     {
+      "windows": 7,
+      "keys": [
+       12,
+       12,
+       10,
+       10,
+       16,
+       13,
+       9
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 2.094
+     },
+     {
+      "windows": 4,
+      "keys": [
+       25,
+       17,
+       11,
+       8
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.655
+     }
+    ],
+    "sheet": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/r5b/eval-002/claims-acc-samsclub-a2-planted-x6-2c9b8563-1790735244.jpg"
+   },
+   {
+    "report": "acc-walmart-on-c0761a2a-1790735745",
+    "site": "walmart",
+    "label": "on",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 975,
+    "with_timeline": 975,
+    "claims": 0,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 0,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 975,
+     "with_timeline": 975,
+     "changes": {},
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.9325714063644409
+    },
+    "places_judged": {
+     "before": {
+      "unjudged": 1624,
+      "occupied": 225,
+      "occluded": 31,
+      "out-of-view": 476
+     },
+     "after": {
+      "out-of-view": 2904,
+      "occupied": 179,
+      "unjudged": 71
+     }
+    },
+    "width": {
+     "at least": 42,
+     "needs review": 21,
+     "value": 404,
+     "not measurable": 35,
+     "not observed": 473
+    },
+    "windows": [
+     {
+      "windows": 8,
+      "keys": [
+       10,
+       10,
+       10,
+       10,
+       10,
+       12,
+       10,
+       6
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.979
+     },
+     {
+      "windows": 8,
+      "keys": [
+       8,
+       10,
+       11,
+       10,
+       8,
+       6,
+       8,
+       10
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "collapse",
+       "content",
+       "collapse",
+       "content",
+       "end"
+      ],
+      "s": 1.272
+     }
+    ],
+    "sheet": null
+   },
+   {
+    "report": "acc-walmart-planted-9cec4ac2-1790734915",
+    "site": "walmart",
+    "label": "planted",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 985,
+    "with_timeline": 985,
+    "claims": 6,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 4,
+     "moved": 2
+    },
+    "stats": {
+     "cards": 985,
+     "with_timeline": 985,
+     "changes": {
+      "moved": 2,
+      "disappeared": 4
+     },
+     "intervals_median": 2.0,
+     "moves_linked": 1,
+     "appearance_threshold": 0.9341862368583679
+    },
+    "places_judged": {
+     "before": {
+      "unjudged": 1617,
+      "occupied": 223,
+      "occluded": 33,
+      "out-of-view": 510,
+      "free": 1
+     },
+     "after": {
+      "out-of-view": 3135,
+      "occupied": 253,
+      "unjudged": 139,
+      "occluded": 7,
+      "free": 9
+     }
+    },
+    "width": {
+     "needs review": 17,
+     "value": 450,
+     "at least": 49,
+     "not measurable": 41,
+     "not observed": 426,
+     "at most": 2
+    },
+    "windows": [
+     {
+      "windows": 8,
+      "keys": [
+       10,
+       10,
+       10,
+       10,
+       10,
+       11,
+       10,
+       7
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.973
+     },
+     {
+      "windows": 9,
+      "keys": [
+       8,
+       10,
+       10,
+       10,
+       8,
+       4,
+       8,
+       10,
+       5
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "collapse",
+       "collapse",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.315
+     }
+    ],
+    "sheet": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/r5b/eval-002/claims-acc-walmart-planted-9cec4ac2-1790734915.jpg"
+   },
+   {
+    "report": "acc-walmart-planted-x6-8caeb50a-1790735141",
+    "site": "walmart",
+    "label": "planted-x6",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 990,
+    "with_timeline": 990,
+    "claims": 1,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 1,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 990,
+     "with_timeline": 990,
+     "changes": {
+      "disappeared": 1
+     },
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.9364189326763154
+    },
+    "places_judged": {
+     "before": {
+      "unjudged": 1642,
+      "occupied": 238,
+      "occluded": 43,
+      "out-of-view": 531
+     },
+     "after": {
+      "out-of-view": 3184,
+      "unjudged": 105,
+      "occupied": 173,
+      "occluded": 9,
+      "free": 1
+     }
+    },
+    "width": {
+     "needs review": 17,
+     "not measurable": 39,
+     "value": 400,
+     "at least": 44,
+     "not observed": 490
+    },
+    "windows": [
+     {
+      "windows": 8,
+      "keys": [
+       10,
+       10,
+       10,
+       10,
+       10,
+       11,
+       10,
+       7
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.964
+     },
+     {
+      "windows": 9,
+      "keys": [
+       8,
+       10,
+       10,
+       10,
+       5,
+       8,
+       9,
+       8,
+       5
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "collapse",
+       "content",
+       "collapse",
+       "content",
+       "end"
+      ],
+      "s": 1.272
+     }
+    ],
+    "sheet": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/r5b/eval-002/claims-acc-walmart-planted-x6-8caeb50a-1790735141.jpg"
+   }
+  ],
+  "planted": [
+   {
+    "report": "acc-samsclub-a2-planted-193bf472-1790735012",
+    "site": "samsclub-a2",
+    "label": "planted",
+    "events": [
+     {
+      "kind": "moved",
+      "placed": false
+     },
+     {
+      "kind": "appeared",
+      "placed": false
+     },
+     {
+      "kind": "disappeared",
+      "placed": true,
+      "change_s": 2.72,
+      "found": true,
+      "claim": {
+       "card": "obj-0-24",
+       "shot": 0,
+       "name": "cardboard box",
+       "views": 10,
+       "kind": "disappeared",
+       "window": 1,
+       "t_before": 2.64,
+       "t_after": 3.84,
+       "before_key": 66,
+       "after_key": 96,
+       "new_place_key": null,
+       "free_views": 4,
+       "distance_m": null,
+       "distance_u_m": null,
+       "to": null,
+       "from": null,
+       "planted_match": true
+      },
+      "iou": 0.984,
+      "box_cards": [
+       "obj-0-1127",
+       "obj-0-24"
+      ]
+     }
+    ]
+   },
+   {
+    "report": "acc-samsclub-a2-planted-x6-2c9b8563-1790735244",
+    "site": "samsclub-a2",
+    "label": "planted-x6",
+    "events": [
+     {
+      "kind": "disappeared",
+      "placed": true,
+      "change_s": 2.72,
+      "found": false,
+      "claim": null,
+      "iou": null,
+      "box_cards": [
+       "obj-0-774",
+       "obj-0-9"
+      ]
+     },
+     {
+      "kind": "appeared",
+      "placed": true,
+      "change_s": 9.56,
+      "found": true,
+      "claim": {
+       "card": "obj-0-994",
+       "shot": 0,
+       "name": "box",
+       "views": 4,
+       "kind": "appeared",
+       "window": 4,
+       "t_before": 7.8,
+       "t_after": 9.8,
+       "before_key": 195,
+       "after_key": 245,
+       "new_place_key": null,
+       "free_views": 5,
+       "distance_m": null,
+       "distance_u_m": null,
+       "to": null,
+       "from": null,
+       "planted_match": true
+      },
+      "iou": 0.518,
+      "box_cards": [
+       "obj-0-1014",
+       "obj-0-1020",
+       "obj-0-994"
+      ]
+     },
+     {
+      "kind": "moved",
+      "placed": true,
+      "change_s": 14.24,
+      "found": false,
+      "claim": null,
+      "iou": null,
+      "box_cards": [
+       "obj-0-1014",
+       "obj-0-1049",
+       "obj-0-1054",
+       "obj-0-1089",
+       "obj-0-1111",
+       "obj-0-1134"
+      ]
+     }
+    ]
+   },
+   {
+    "report": "acc-walmart-planted-9cec4ac2-1790734915",
+    "site": "walmart",
+    "label": "planted",
+    "events": [
+     {
+      "kind": "moved",
+      "placed": true,
+      "change_s": 23.92,
+      "found": true,
+      "claim": {
+       "card": "obj-1-1493",
+       "shot": 1,
+       "name": "box",
+       "views": 6,
+       "kind": "moved",
+       "window": 5,
+       "t_before": 21.56,
+       "t_after": 24.68,
+       "before_key": 539,
+       "after_key": 617,
+       "new_place_key": null,
+       "free_views": 5,
+       "distance_m": null,
+       "distance_u_m": null,
+       "to": null,
+       "from": "obj-1-1496",
+       "planted_match": true
+      },
+      "iou": 0.994,
+      "box_cards": [
+       "obj-1-1378",
+       "obj-1-1474",
+       "obj-1-1491",
+       "obj-1-1493",
+       "obj-1-1496",
+       "obj-1-1604",
+       "obj-1-669"
+      ]
+     },
+     {
+      "kind": "appeared",
+      "placed": true,
+      "change_s": 15.8,
+      "found": false,
+      "claim": null,
+      "iou": null,
+      "box_cards": [
+       "obj-1-1213",
+       "obj-1-1266"
+      ]
+     },
+     {
+      "kind": "disappeared",
+      "placed": true,
+      "change_s": 19.56,
+      "found": true,
+      "claim": {
+       "card": "obj-1-1360",
+       "shot": 1,
+       "name": "box",
+       "views": 9,
+       "kind": "disappeared",
+       "window": 3,
+       "t_before": 19.28,
+       "t_after": 19.6,
+       "before_key": 482,
+       "after_key": 490,
+       "new_place_key": null,
+       "free_views": 3,
+       "distance_m": null,
+       "distance_u_m": null,
+       "to": null,
+       "from": null,
+       "planted_match": true
+      },
+      "iou": 0.975,
+      "box_cards": [
+       "obj-1-1167",
+       "obj-1-1312",
+       "obj-1-1360",
+       "obj-1-550"
+      ]
+     }
+    ]
+   },
+   {
+    "report": "acc-walmart-planted-x6-8caeb50a-1790735141",
+    "site": "walmart",
+    "label": "planted-x6",
+    "events": [
+     {
+      "kind": "disappeared",
+      "placed": true,
+      "change_s": 29.16,
+      "found": true,
+      "claim": {
+       "card": "obj-1-1476",
+       "shot": 1,
+       "name": "box",
+       "views": 9,
+       "kind": "disappeared",
+       "window": 8,
+       "t_before": 28.8,
+       "t_after": 29.4,
+       "before_key": 720,
+       "after_key": 735,
+       "new_place_key": null,
+       "free_views": 3,
+       "distance_m": null,
+       "distance_u_m": null,
+       "to": null,
+       "from": null,
+       "planted_match": true
+      },
+      "iou": 0.992,
+      "box_cards": [
+       "obj-1-1476"
+      ]
+     },
+     {
+      "kind": "appeared",
+      "placed": true,
+      "change_s": 29.2,
+      "found": false,
+      "claim": null,
+      "iou": null,
+      "box_cards": [
+       "obj-1-1517"
+      ]
+     },
+     {
+      "kind": "moved",
+      "placed": false
+     }
+    ]
+   }
+  ],
+  "recall_planted": {
+   "planted": {
+    "disappeared": {
+     "events": 2,
+     "found": 2,
+     "box_got_a_card": 2
+    },
+    "appeared": {
+     "events": 1,
+     "found": 0,
+     "box_got_a_card": 1
+    },
+    "moved": {
+     "events": 1,
+     "found": 1,
+     "box_got_a_card": 1
+    }
+   },
+   "planted-x6": {
+    "disappeared": {
+     "events": 2,
+     "found": 1,
+     "box_got_a_card": 2
+    },
+    "appeared": {
+     "events": 2,
+     "found": 1,
+     "box_got_a_card": 2
+    },
+    "moved": {
+     "events": 1,
+     "found": 0,
+     "box_got_a_card": 1
+    }
+   }
+  },
+  "precision": {
+   "disappeared": {
+    "claims": 6,
+    "true": 4,
+    "false": 2,
+    "unlabelled": 0
+   },
+   "appeared": {
+    "claims": 2,
+    "true": 2,
+    "false": 0,
+    "unlabelled": 0
+   },
+   "moved": {
+    "claims": 2,
+    "true": 1,
+    "false": 1,
+    "unlabelled": 0
+   }
+  },
+  "timing": {
+   "me340": {
+    "off": {
+     "cards_v1": 32.409,
+     "cards_v3": 75.485,
+     "objects_v3": 70.089,
+     "stages": {
+      "cards.inputs": 1.901,
+      "cards.v1": 2.604,
+      "cards.v3": 5.381
+     },
+     "report": "acc-me340-off-e84efffd-1790735420"
+    },
+    "on": {
+     "cards_v1": 27.708,
+     "cards_v3": 58.059,
+     "objects_v3": 52.625,
+     "stages": {
+      "cards.inputs": 2.11,
+      "cards.v1": 2.54,
+      "cards.v3": 4.401
+     },
+     "report": "acc-me340-on-e84efffd-1790735346"
+    },
+    "added_s": {
+     "cards_v1": -4.7,
+     "cards_v3": -17.43
+    },
+    "added_stage_s": {
+     "cards.inputs": 0.21,
+     "cards.v1": -0.06,
+     "cards.v3": -0.98
+    }
+   },
+   "samsclub-a2": {
+    "off": {
+     "cards_v1": 31.163,
+     "cards_v3": 86.549,
+     "objects_v3": 67.757,
+     "stages": {
+      "cards.inputs": 2.221,
+      "cards.v1": 6.414,
+      "cards.v3": 15.645
+     },
+     "report": "acc-samsclub-a2-off-d5e0c855-1790735638"
+    },
+    "on": {
+     "cards_v1": 35.735,
+     "cards_v3": 100.606,
+     "objects_v3": 83.119,
+     "stages": {
+      "cards.inputs": 2.699,
+      "cards.v1": 9.069,
+      "cards.v3": 13.873
+     },
+     "report": "acc-samsclub-a2-on-d5e0c855-1790735510"
+    },
+    "added_s": {
+     "cards_v1": 4.57,
+     "cards_v3": 14.06
+    },
+    "added_stage_s": {
+     "cards.inputs": 0.48,
+     "cards.v1": 2.66,
+     "cards.v3": -1.77
+    }
+   },
+   "walmart": {
+    "off": {
+     "cards_v1": 30.178,
+     "cards_v3": 79.288,
+     "objects_v3": 67.853,
+     "stages": {
+      "cards.inputs": 0.802,
+      "cards.v1": 7.313,
+      "cards.v3": 9.134
+     },
+     "report": "acc-walmart-off-c0761a2a-1790735850"
+    },
+    "on": {
+     "cards_v1": 28.398,
+     "cards_v3": 80.942,
+     "objects_v3": 68.482,
+     "stages": {
+      "cards.inputs": 0.802,
+      "cards.v1": 6.124,
+      "cards.v3": 9.575
+     },
+     "report": "acc-walmart-on-c0761a2a-1790735745"
+    },
+    "added_s": {
+     "cards_v1": -1.78,
+     "cards_v3": 1.65
+    },
+    "added_stage_s": {
+     "cards.inputs": 0.0,
+     "cards.v1": -1.19,
+     "cards.v3": 0.44
+    }
+   }
+  }
+ },
+ "retail_001": {
+  "reports": [
+   {
+    "report": "acc-me340-on-e84efffd-1790733193",
+    "site": "me340",
+    "label": "on",
+    "first_call": true,
+    "cards_version": 4,
+    "objects": 276,
+    "with_timeline": 276,
+    "claims": 0,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 0,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 276,
+     "with_timeline": 276,
+     "changes": {},
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.952290244102478
+    },
+    "places_judged": {
+     "before": {
+      "occluded": 47,
+      "unjudged": 152,
+      "occupied": 82,
+      "out-of-view": 28
+     },
+     "after": {
+      "out-of-view": 377,
+      "occupied": 116,
+      "occluded": 13,
+      "unjudged": 89
+     }
+    },
+    "windows": [
+     {
+      "windows": 1,
+      "keys": [
+       34
+      ],
+      "reasons": [
+       "end"
+      ],
+      "s": 0.822
+     },
+     {
+      "windows": 8,
+      "keys": [
+       34,
+       11,
+       10,
+       10,
+       21,
+       13,
+       22,
+       6
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 3.096
+     }
+    ],
+    "sheet": null
+   },
+   {
+    "report": "acc-me340-on-e84efffd-1790733273",
+    "site": "me340",
+    "label": "on",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 366,
+    "with_timeline": 366,
+    "claims": 0,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 0,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 366,
+     "with_timeline": 366,
+     "changes": {},
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.9312112545967103
+    },
+    "places_judged": {
+     "before": {
+      "occluded": 55,
+      "occupied": 72,
+      "unjudged": 184,
+      "out-of-view": 61
+     },
+     "after": {
+      "out-of-view": 500,
+      "occluded": 21,
+      "occupied": 108,
+      "unjudged": 169
+     }
+    },
+    "windows": [
+     {
+      "windows": 1,
+      "keys": [
+       34
+      ],
+      "reasons": [
+       "end"
+      ],
+      "s": 0.822
+     },
+     {
+      "windows": 8,
+      "keys": [
+       34,
+       11,
+       10,
+       10,
+       21,
+       13,
+       22,
+       6
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 3.065
+     }
+    ],
+    "sheet": null
+   },
+   {
+    "report": "acc-samsclub-a2-on-d5e0c855-1790733462",
+    "site": "samsclub-a2",
+    "label": "on",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 1048,
+    "with_timeline": 1048,
+    "claims": 0,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 0,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 1048,
+     "with_timeline": 1048,
+     "changes": {},
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.9572211980819706
+    },
+    "places_judged": {
+     "before": {
+      "unjudged": 693,
+      "out-of-view": 939,
+      "occupied": 31,
+      "free": 4,
+      "occluded": 2
+     },
+     "after": {
+      "out-of-view": 1883,
+      "occupied": 120,
+      "unjudged": 126
+     }
+    },
+    "windows": [
+     {
+      "windows": 7,
+      "keys": [
+       12,
+       12,
+       10,
+       10,
+       18,
+       12,
+       8
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 2.125
+     },
+     {
+      "windows": 4,
+      "keys": [
+       23,
+       16,
+       11,
+       11
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.678
+     }
+    ],
+    "sheet": null
+   },
+   {
+    "report": "acc-samsclub-a2-planted-193bf472-1790733999",
+    "site": "samsclub-a2",
+    "label": "planted",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 1097,
+    "with_timeline": 1097,
+    "claims": 1,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 1,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 1097,
+     "with_timeline": 1097,
+     "changes": {
+      "disappeared": 1
+     },
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.9630861955881118
+    },
+    "places_judged": {
+     "before": {
+      "out-of-view": 975,
+      "unjudged": 739,
+      "occupied": 29,
+      "free": 3,
+      "occluded": 1
+     },
+     "after": {
+      "out-of-view": 2299,
+      "unjudged": 156,
+      "occupied": 156,
+      "free": 1,
+      "occluded": 11
+     }
+    },
+    "windows": [
+     {
+      "windows": 8,
+      "keys": [
+       12,
+       11,
+       10,
+       10,
+       12,
+       13,
+       10,
+       6
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 2.113
+     },
+     {
+      "windows": 4,
+      "keys": [
+       25,
+       17,
+       11,
+       8
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.684
+     }
+    ],
+    "sheet": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/r5b/eval-001/claims-acc-samsclub-a2-planted-193bf472-1790733999.jpg"
+   },
+   {
+    "report": "acc-walmart-on-c0761a2a-1790733700",
+    "site": "walmart",
+    "label": "on",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 971,
+    "with_timeline": 971,
+    "claims": 0,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 0,
+     "moved": 0
+    },
+    "stats": {
+     "cards": 971,
+     "with_timeline": 971,
+     "changes": {},
+     "intervals_median": 2.0,
+     "moves_linked": 0,
+     "appearance_threshold": 0.9328378504514695
+    },
+    "places_judged": {
+     "before": {
+      "unjudged": 1619,
+      "occupied": 220,
+      "occluded": 31,
+      "out-of-view": 478
+     },
+     "after": {
+      "out-of-view": 2890,
+      "occupied": 178,
+      "unjudged": 71
+     }
+    },
+    "windows": [
+     {
+      "windows": 8,
+      "keys": [
+       10,
+       10,
+       10,
+       10,
+       10,
+       12,
+       10,
+       6
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 2.0
+     },
+     {
+      "windows": 8,
+      "keys": [
+       8,
+       10,
+       11,
+       10,
+       8,
+       6,
+       8,
+       10
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "collapse",
+       "content",
+       "collapse",
+       "content",
+       "end"
+      ],
+      "s": 1.285
+     }
+    ],
+    "sheet": null
+   },
+   {
+    "report": "acc-walmart-planted-9cec4ac2-1790733900",
+    "site": "walmart",
+    "label": "planted",
+    "first_call": false,
+    "cards_version": 4,
+    "objects": 987,
+    "with_timeline": 987,
+    "claims": 7,
+    "by_kind": {
+     "appeared": 0,
+     "disappeared": 5,
+     "moved": 2
+    },
+    "stats": {
+     "cards": 987,
+     "with_timeline": 987,
+     "changes": {
+      "disappeared": 5,
+      "moved": 2
+     },
+     "intervals_median": 2.0,
+     "moves_linked": 1,
+     "appearance_threshold": 0.9346028000116348
+    },
+    "places_judged": {
+     "before": {
+      "unjudged": 1620,
+      "occupied": 227,
+      "occluded": 33,
+      "out-of-view": 509,
+      "free": 1
+     },
+     "after": {
+      "out-of-view": 3132,
+      "occupied": 259,
+      "unjudged": 139,
+      "occluded": 7,
+      "free": 6
+     }
+    },
+    "windows": [
+     {
+      "windows": 8,
+      "keys": [
+       10,
+       10,
+       10,
+       10,
+       10,
+       11,
+       10,
+       7
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.969
+     },
+     {
+      "windows": 9,
+      "keys": [
+       8,
+       10,
+       10,
+       10,
+       8,
+       4,
+       8,
+       10,
+       5
+      ],
+      "reasons": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "collapse",
+       "collapse",
+       "content",
+       "content",
+       "end"
+      ],
+      "s": 1.315
+     }
+    ],
+    "sheet": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/r5b/eval-001/claims-acc-walmart-planted-9cec4ac2-1790733900.jpg"
+   }
+  ],
+  "planted": [
+   {
+    "report": "acc-samsclub-a2-planted-193bf472-1790733999",
+    "site": "samsclub-a2",
+    "events": [
+     {
+      "kind": "moved",
+      "placed": false
+     },
+     {
+      "kind": "appeared",
+      "placed": false
+     },
+     {
+      "kind": "disappeared",
+      "placed": true,
+      "change_s": 2.72,
+      "found": true,
+      "claim": {
+       "card": "obj-0-24",
+       "shot": 0,
+       "name": "cardboard box",
+       "views": 10,
+       "kind": "disappeared",
+       "window": 1,
+       "t_before": 2.64,
+       "t_after": 3.84,
+       "before_key": 66,
+       "after_key": 96,
+       "new_place_key": null,
+       "free_views": 4,
+       "distance_m": null,
+       "distance_u_m": null,
+       "to": null,
+       "from": null,
+       "report": "acc-samsclub-a2-planted-193bf472-1790733999",
+       "site": "samsclub-a2",
+       "label": "planted",
+       "planted_match": true
+      },
+      "iou": 0.984,
+      "box_cards": []
+     }
+    ]
+   },
+   {
+    "report": "acc-walmart-planted-9cec4ac2-1790733900",
+    "site": "walmart",
+    "events": [
+     {
+      "kind": "moved",
+      "placed": true,
+      "change_s": 23.92,
+      "found": true,
+      "claim": {
+       "card": "obj-1-1494",
+       "shot": 1,
+       "name": "box",
+       "views": 6,
+       "kind": "moved",
+       "window": 5,
+       "t_before": 21.56,
+       "t_after": 24.68,
+       "before_key": 539,
+       "after_key": 617,
+       "new_place_key": null,
+       "free_views": 5,
+       "distance_m": null,
+       "distance_u_m": null,
+       "to": null,
+       "from": "obj-1-1360",
+       "report": "acc-walmart-planted-9cec4ac2-1790733900",
+       "site": "walmart",
+       "label": "planted",
+       "planted_match": true
+      },
+      "iou": 0.996,
+      "box_cards": [
+       "obj-1-1491",
+       "obj-1-1493"
+      ]
+     },
+     {
+      "kind": "appeared",
+      "placed": true,
+      "change_s": 15.8,
+      "found": false,
+      "claim": null,
+      "iou": null,
+      "box_cards": [
+       "obj-1-1213",
+       "obj-1-1266"
+      ]
+     },
+     {
+      "kind": "disappeared",
+      "placed": true,
+      "change_s": 19.56,
+      "found": true,
+      "claim": {
+       "card": "obj-1-1360",
+       "shot": 1,
+       "name": "box",
+       "views": 9,
+       "kind": "moved",
+       "window": 3,
+       "t_before": 19.28,
+       "t_after": 19.6,
+       "before_key": 482,
+       "after_key": 490,
+       "new_place_key": null,
+       "free_views": 3,
+       "distance_m": null,
+       "distance_u_m": null,
+       "to": "obj-1-1494",
+       "from": null,
+       "report": "acc-walmart-planted-9cec4ac2-1790733900",
+       "site": "walmart",
+       "label": "planted",
+       "planted_match": true
+      },
+      "iou": 0.975,
+      "box_cards": [
+       "obj-1-1167",
+       "obj-1-1360"
+      ]
+     }
+    ]
+   }
+  ],
+  "timing": {
+   "me340": {
+    "off": {
+     "cards_v1": 33.44,
+     "cards_v3": 75.34,
+     "objects_v3": 69.603,
+     "stages": {
+      "cards.inputs": 1.869,
+      "cards.v1": 3.545,
+      "cards.v3": 5.847
+     },
+     "report": "acc-me340-off-e84efffd-1790733372"
+    },
+    "on": {
+     "cards_v1": 33.966,
+     "cards_v3": 79.266,
+     "objects_v3": 71.622,
+     "stages": {
+      "cards.inputs": 1.953,
+      "cards.v1": 4.072,
+      "cards.v3": 6.228
+     },
+     "report": "acc-me340-on-e84efffd-1790733273"
+    },
+    "added_s": {
+     "cards_v1": 0.53,
+     "cards_v3": 3.93
+    },
+    "added_stage_s": {
+     "cards.inputs": 0.08,
+     "cards.v1": 0.53,
+     "cards.v3": 0.38
+    }
+   },
+   "samsclub-a2": {
+    "off": {
+     "cards_v1": 32.531,
+     "cards_v3": 87.149,
+     "objects_v3": 72.124,
+     "stages": {
+      "cards.inputs": 2.13,
+      "cards.v1": 7.809,
+      "cards.v3": 13.607
+     },
+     "report": "acc-samsclub-a2-off-d5e0c855-1790733593"
+    },
+    "on": {
+     "cards_v1": 38.06,
+     "cards_v3": 103.431,
+     "objects_v3": 86.839,
+     "stages": {
+      "cards.inputs": 2.631,
+      "cards.v1": 9.521,
+      "cards.v3": 14.374
+     },
+     "report": "acc-samsclub-a2-on-d5e0c855-1790733462"
+    },
+    "added_s": {
+     "cards_v1": 5.53,
+     "cards_v3": 16.28
+    },
+    "added_stage_s": {
+     "cards.inputs": 0.5,
+     "cards.v1": 1.71,
+     "cards.v3": 0.77
+    }
+   },
+   "walmart": {
+    "off": {
+     "cards_v1": 29.738,
+     "cards_v3": 79.381,
+     "objects_v3": 67.998,
+     "stages": {
+      "cards.inputs": 0.889,
+      "cards.v1": 6.863,
+      "cards.v3": 8.931
+     },
+     "report": "acc-walmart-off-c0761a2a-1790733804"
+    },
+    "on": {
+     "cards_v1": 29.881,
+     "cards_v3": 82.921,
+     "objects_v3": 70.495,
+     "stages": {
+      "cards.inputs": 0.786,
+      "cards.v1": 7.182,
+      "cards.v3": 9.529
+     },
+     "report": "acc-walmart-on-c0761a2a-1790733700"
+    },
+    "added_s": {
+     "cards_v1": 0.14,
+     "cards_v3": 3.54
+    },
+    "added_stage_s": {
+     "cards.inputs": -0.1,
+     "cards.v1": 0.32,
+     "cards.v3": 0.6
+    }
+   }
+  }
+ },
+ "real_events": [
+  {
+   "site": "walmart",
+   "kind": "moved",
+   "t0": 26.0,
+   "t1": 27.2,
+   "frames": [
+    650,
+    680
+   ],
+   "what": "a shopping cart pushed by a shopper crosses the view from right to left (about 2 m) while the camera turns; seen for about 1.2 s (6 keyframes), its old place never seen empty again",
+   "evidence_frames": [
+    650,
+    655,
+    663,
+    670,
+    680
+   ]
+  },
+  {
+   "site": "samsclub-a2",
+   "kind": "moved",
+   "t0": 0.0,
+   "t1": 1.5,
+   "frames": [
+    0,
+    38
+   ],
+   "what": "a shopper at the shelf handles a small orange item (in his hand at 0.48-1.0 s, gone from it at 1.52 s); where it ends up is not visible; the flatbed cart beside him stays put",
+   "evidence_frames": [
+    0,
+    12,
+    25,
+    38
+   ]
+  }
+ ],
+ "usd_upper": 6.14,
+ "usd_note": "list-price upper bound from the three GPU containers' lives; plus ~0.05 USD of CPU containers"
+}

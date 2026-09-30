@@ -1,0 +1,385 @@
+{
+ "site": "me340",
+ "report": "mvp-me340-e84efffd-1790740524",
+ "bench": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/r5b-int-me340-001",
+ "rule": "times: analysis s from the MP4 bytes in the container to the Volume commit (written_s); tiers: the final layers; alignment: scripts/r5b_align.py (every object card's shown model from its best keyframe's camera vs its SAM 3 outline)",
+ "times_warm": {
+  "first 3D": 18.2,
+  "objects v1": 30.2,
+  "cards v1": 39.9,
+  "types (first pass)": 59.9,
+  "objects v3": 82.2,
+  "cards v3": 91.1,
+  "types (densify pass)": 98.0,
+  "splat preview": null,
+  "call end": 299.3,
+  "vocab known (mark)": 11.5,
+  "decode end": 6.3,
+  "sam3 done (mark)": 27.1,
+  "tier 0 surfaces v1": 42.119,
+  "tier 1 generating (mark)": 121.359,
+  "all generated models in (models final)": 298.7,
+  "first generated model": 130.5
+ },
+ "times_first": {
+  "first 3D": 24.1,
+  "objects v1": 36.0,
+  "cards v1": 45.4,
+  "types (first pass)": 69.1,
+  "objects v3": 87.6,
+  "cards v3": 95.7,
+  "types (densify pass)": 103.9,
+  "splat preview": null,
+  "call end": 333.4,
+  "vocab known (mark)": 17.2,
+  "decode end": 12.1,
+  "sam3 done (mark)": 32.5,
+  "tier 0 surfaces v1": 47.45,
+  "tier 1 generating (mark)": 178.275,
+  "all generated models in (models final)": 332.8,
+  "first generated model": 187.3
+ },
+ "models": {
+  "object_cards": 275,
+  "all_cards_by_tier": {
+   "generated": 130,
+   "observed surface": 139,
+   "primitive": 6
+  },
+  "non_simple": 158,
+  "non_simple_shown": {
+   "generated (own)": 129,
+   "observed surface": 28,
+   "generated (look-alike copy)": 1
+  },
+  "non_simple_generated_share": 0.823,
+  "generated_models": 129,
+  "copies": 1,
+  "passed_view_check": 16,
+  "held_out_view": 88,
+  "plan": {
+   "cards": 275,
+   "soft_goods": 0,
+   "candidates": 265,
+   "groups": 237,
+   "jev_asked": 188,
+   "jev_s": 22.841,
+   "generated_groups": 130,
+   "kept": 130,
+   "members": 16,
+   "by_route": {
+    "primitive": 129,
+    "generated": 146,
+    "ask jev": 0
+   },
+   "plan_s": 23.332
+  },
+  "reuse": {
+   "kept": 1,
+   "rejected": 15
+  },
+  "display_rule": null,
+  "final": true
+ },
+ "vlm_requests": {
+  "scene vocabulary": {
+   "requests": 1,
+   "spans_s": [
+    [
+     1.4,
+     11.5
+    ]
+   ],
+   "before_cards_v1": 1
+  },
+  "event captions": {
+   "requests": 0,
+   "spans_s": [],
+   "before_cards_v1": 0
+  },
+  "naming (cluster medoids)": {
+   "requests": 50,
+   "spans_s": [
+    [
+     54.7,
+     57.7
+    ],
+    [
+     93.8,
+     95.7
+    ]
+   ],
+   "before_cards_v1": 0
+  },
+  "hazard / judge": {
+   "requests": 0,
+   "spans_s": [],
+   "before_cards_v1": 0
+  },
+  "qwen identity decider": {
+   "requests": 0,
+   "spans_s": [],
+   "before_cards_v1": 0
+  },
+  "naming escalated": 0,
+  "question log (by priority)": {
+   "identity": {
+    "n": 50,
+    "failed": 0,
+    "wait_p50_s": 0.007,
+    "wait_p90_s": 1.314,
+    "request_p50_s": 1.195,
+    "request_p90_s": 1.69,
+    "per_s": 1.23,
+    "prompt_tokens_mean": 377.2
+   }
+  },
+  "before cards v1 (all)": 1
+ },
+ "gpu": {
+  "peak_gib": [
+   56.69,
+   69.3
+  ],
+  "stages_over_72": [],
+  "recgen": {
+   "recgen.select": {
+    "n": 341,
+    "gpu_s": 658.19,
+    "span": [
+     123.34,
+     176.12
+    ]
+   },
+   "recgen.generate": {
+    "n": 129,
+    "gpu_s": 666.21,
+    "span": [
+     124.0,
+     294.68
+    ]
+   },
+   "recgen.gate": {
+    "n": 129,
+    "gpu_s": 519.49,
+    "span": [
+     127.22,
+     296.38
+    ]
+   },
+   "tier1.jev": {
+    "n": 1,
+    "gpu_s": 22.84,
+    "span": [
+     97.39,
+     120.23
+    ]
+   }
+  }
+ },
+ "vocab": {
+  "qwen": {
+   "words": [
+    "workbench",
+    "machine tool",
+    "tool",
+    "drill",
+    "power tool",
+    "wrench",
+    "screwdriver",
+    "clamp",
+    "fixture",
+    "part",
+    "metal part",
+    "cable",
+    "fan",
+    "control panel",
+    "tool tray",
+    "tool box",
+    "tool holder",
+    "tool rack",
+    "tool set",
+    "tool kit",
+    "tool chest",
+    "tool cabinet",
+    "tool drawer",
+    "tool bin",
+    "tool organizer",
+    "tool cart",
+    "tool stand",
+    "tool mount",
+    "tool bracket",
+    "tool block",
+    "tool plate",
+    "tool board",
+    "tool mat",
+    "tool pad",
+    "tool surface",
+    "tool table",
+    "tool bench",
+    "tool station",
+    "tool display",
+    "tool collection",
+    "tool assortment",
+    "tool group",
+    "tool array",
+    "tool setup",
+    "tool arrangement",
+    "tool layout",
+    "tool configuration",
+    "tool assembly",
+    "tool system",
+    "tool network"
+   ],
+   "s": 10.029,
+   "first_output_s": 0.729,
+   "stream_chunks": 262,
+   "stopped_at_max_types": true,
+   "kept": 50,
+   "text": "{\n  \"objects\": [\n    \"workbench\",\n    \"machine tool\",\n    \"tool\",\n    \"drill\",\n    \"power tool\",\n    \"wrench\",\n    \"screwdriver\",\n    \"clamp\",\n    \"fixture\",\n    \"part\",\n    \"metal part\",\n    \"cable\",\n    \"fan\",\n    \"control panel\",\n    \"tool tray\",\n    \"tool box\",\n    \"tool holder\",\n    \"tool rack\",\n    \"tool set\",\n    \"tool kit\",\n    \"tool chest\",\n    \"tool cabinet\",\n    \"tool drawer\",\n    \"tool bin\",\n    \"tool tray\",\n    \"tool organizer\",\n    \"tool cart\",\n    \"tool stand\",\n    \"tool mount\",\n    \"tool bracket\",\n    \"tool holder\",\n    \"tool block\",\n    \"tool plate\",\n    \"tool board\",\n    \"tool mat\",\n    \"tool pad\",\n    \"tool surface\",\n    \"tool table\",\n    \"tool bench\",\n    \"tool station\",\n    \"tool display\",\n    \"tool collection\",\n    \"tool assortment\",\n    \"tool group\",\n    \"tool array\",\n    \"tool setup\",\n    \"tool arrangement\",\n    \"tool layout\",\n    \"tool configuration\",\n    \"tool assembly\",\n    \"tool system\",\n    \"tool network\",\n"
+  },
+  "source": "qwen+ram",
+  "words": [
+   "tool",
+   "machine",
+   "equipment",
+   "workbench",
+   "hammer",
+   "stool",
+   "locker",
+   "bin",
+   "toolbox",
+   "machine tool",
+   "drill",
+   "power tool",
+   "wrench",
+   "screwdriver",
+   "clamp",
+   "fixture",
+   "part",
+   "metal part",
+   "fan",
+   "control panel",
+   "tool tray",
+   "tool box",
+   "tool holder",
+   "tool rack",
+   "tool set",
+   "tool kit",
+   "tool chest",
+   "tool cabinet",
+   "tool drawer",
+   "tool bin",
+   "tool organizer",
+   "tool cart",
+   "tool stand",
+   "tool mount",
+   "tool bracket",
+   "tool block",
+   "tool plate",
+   "tool board",
+   "tool mat",
+   "tool pad",
+   "tool surface",
+   "tool table",
+   "tool bench",
+   "tool station",
+   "tool display",
+   "tool collection",
+   "tool assortment",
+   "tool group",
+   "tool array",
+   "tool setup",
+   "tool arrangement",
+   "tool layout",
+   "tool configuration",
+   "tool assembly",
+   "tool system",
+   "tool network"
+  ],
+  "s": 11.499
+ },
+ "tier1_summary": {
+  "eligible": 130,
+  "attempted": 129,
+  "accepted": 129,
+  "reused": {
+   "kept": 1,
+   "rejected": 15
+  },
+  "prepare_rejected": 0,
+  "errors": []
+ },
+ "usd_estimate_call": 0.6471,
+ "alignment": {
+  "summary": {
+   "all": {
+    "n": 270,
+    "iou_median": 0.452,
+    "iou_p10": 0.063,
+    "iou_ge_0.5": 0.422,
+    "offset_px_median": 14.2,
+    "offset_px_p90": 75.98,
+    "offset_cm_median": 7.6,
+    "offset_cm_p90": 58.9
+   },
+   "generated": {
+    "n": 130,
+    "iou_median": 0.402,
+    "iou_p10": 0.009,
+    "iou_ge_0.5": 0.3,
+    "offset_px_median": 19.6,
+    "offset_px_p90": 87.98,
+    "offset_cm_median": 10.9,
+    "offset_cm_p90": 80.08
+   },
+   "observed surface": {
+    "n": 134,
+    "iou_median": 0.506,
+    "iou_p10": 0.152,
+    "iou_ge_0.5": 0.515,
+    "offset_px_median": 8.85,
+    "offset_px_p90": 60.37,
+    "offset_cm_median": 4.6,
+    "offset_cm_p90": 51.13
+   },
+   "primitive": {
+    "n": 6,
+    "iou_median": 0.774,
+    "iou_p10": 0.715,
+    "iou_ge_0.5": 1.0,
+    "offset_px_median": 3.3,
+    "offset_px_p90": 6.3,
+    "offset_cm_median": 1.4,
+    "offset_cm_p90": 5.25
+   }
+  },
+  "worst_generated": [
+   "obj-0-323",
+   "obj-0-308",
+   "obj-0-336",
+   "obj-1-162",
+   "obj-1-421",
+   "obj-1-549",
+   "obj-1-799",
+   "obj-1-117",
+   "obj-1-637",
+   "obj-1-574",
+   "obj-1-212",
+   "obj-0-45"
+  ],
+  "overlays": [
+   "overlay-shot0-frame53.jpg",
+   "overlay-shot1-frame864.jpg"
+  ]
+ },
+ "status": "INTERIM (run 001, commit cfd7ab5): every generated RecGen model is drawn, also the 21 of 118 that are empty, tiny or beside their object; the router's 188-207 Jev questions held generation 23-74 s. Fixed in 6e2919d / 61c5492 (display rule: size, centre, IoU >= 0.5 in its own best view; router questions asked early and cached; group members without a fitting copy get their own model); run 002 (r5b-int-me340-002) replaces this file as quick.json when it lands.",
+ "alignment_display_rule_replayed_on_run001": {
+  "rule": "size 0.25-3 x card box, centre within 0.5 x box diagonal + 0.1 m, best-view IoU >= 0.5",
+  "generated_models_kept": 42,
+  "of": 118,
+  "kept_best_view_iou_median": 0.631,
+  "kept_p10": 0.508,
+  "others_fall_back_to": "their observed surface"
+ }
+}

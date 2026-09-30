@@ -1,0 +1,4580 @@
+{
+ "bench": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/r5b-vocab-final-002",
+ "r4b": {
+  "me340": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/r4b-me340-002",
+  "samsclub-a2": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/r4b-samsclub-001",
+  "walmart": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/r4b-walmart-001"
+ },
+ "now": {
+  "me340": {
+   "warm": {
+    "site": "me340",
+    "report": "mvp-me340-e84efffd-1790735786",
+    "kind": "warm",
+    "source": "ram",
+    "error": null,
+    "first_call_after_boot": true,
+    "words": {
+     "wave2": 9,
+     "all": 17,
+     "list": [
+      "tool",
+      "machine",
+      "equipment",
+      "workbench",
+      "hammer",
+      "stool",
+      "locker",
+      "bin",
+      "toolbox"
+     ],
+     "vocab_s": 2.354
+    },
+    "objects_raw": 686,
+    "shares": {
+     "object_cards": 265,
+     "typed": 0.928,
+     "specific_name": 0.132,
+     "unidentified": 0.072,
+     "top_names": [
+      [
+       "tool (type only)",
+       65
+      ],
+      [
+       "machine (type only)",
+       57
+      ],
+      [
+       "cable / hose / pipe (type only)",
+       38
+      ],
+      [
+       "container / box / goods (type only)",
+       23
+      ],
+      [
+       "furniture (type only)",
+       14
+      ],
+      [
+       "unidentified (long thin object)",
+       9
+      ],
+      [
+       "equipment",
+       8
+      ],
+      [
+       "electrical equipment (type only)",
+       8
+      ]
+     ]
+    },
+    "instances": {
+     "frames_shared": 143,
+     "cards_on_shared_frames": 242,
+     "models": {
+      "delivered": 22,
+      "covered": 22,
+      "missed": 0,
+      "miss_rate": 0.0,
+      "in_pieces": 3,
+      "in_pieces_share": 0.136,
+      "pieces_per_covered_mean": 1.136,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 0,
+      "delivered_in_wrong_merges": 0,
+      "wholes_over_several": 1
+     },
+     "all": {
+      "delivered": 161,
+      "covered": 114,
+      "missed": 47,
+      "miss_rate": 0.292,
+      "in_pieces": 6,
+      "in_pieces_share": 0.053,
+      "pieces_per_covered_mean": 1.053,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 16,
+      "delivered_in_wrong_merges": 48,
+      "wholes_over_several": 6
+     },
+     "clean": {
+      "delivered": 105,
+      "covered": 73,
+      "missed": 32,
+      "miss_rate": 0.305,
+      "in_pieces": 2,
+      "in_pieces_share": 0.027,
+      "pieces_per_covered_mean": 1.027,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 5,
+      "delivered_in_wrong_merges": 12,
+      "wholes_over_several": 7
+     },
+     "missed_ids": {
+      "models": [],
+      "all": [
+       "object-004",
+       "object-005",
+       "object-010",
+       "object-011",
+       "object-013",
+       "object-018",
+       "object-020",
+       "object-021",
+       "object-023",
+       "object-025",
+       "object-028",
+       "object-029",
+       "object-030",
+       "object-031",
+       "object-032",
+       "object-034",
+       "object-037",
+       "object-042",
+       "object-044",
+       "object-046",
+       "object-049",
+       "object-057",
+       "object-063",
+       "object-066",
+       "object-067",
+       "object-068",
+       "object-078",
+       "object-080",
+       "object-088",
+       "object-095",
+       "object-096",
+       "object-097",
+       "object-098",
+       "object-115",
+       "object-117",
+       "object-124",
+       "object-128",
+       "object-134",
+       "object-135",
+       "object-143",
+       "object-155",
+       "object-160",
+       "object-163",
+       "object-178",
+       "object-180",
+       "object-183",
+       "object-188"
+      ],
+      "clean": [
+       "object-004",
+       "object-005",
+       "object-011",
+       "object-013",
+       "object-020",
+       "object-021",
+       "object-025",
+       "object-029",
+       "object-030",
+       "object-032",
+       "object-057",
+       "object-063",
+       "object-066",
+       "object-067",
+       "object-068",
+       "object-078",
+       "object-080",
+       "object-088",
+       "object-095",
+       "object-096",
+       "object-097",
+       "object-098",
+       "object-117",
+       "object-134",
+       "object-135",
+       "object-143",
+       "object-155",
+       "object-163",
+       "object-178",
+       "object-180",
+       "object-183",
+       "object-188"
+      ]
+     }
+    },
+    "heldout": {
+     "as shown": {
+      "n": 40,
+      "unmatched": 22,
+      "typed": 40,
+      "right_r4b": 19,
+      "right_ext": 24,
+      "n_ext": 0,
+      "acc_r4b": 0.475,
+      "acc_ext": 0.6,
+      "precision_ext": 0.6
+     }
+    },
+    "dev": {
+     "as shown": {
+      "n": 68,
+      "unmatched": 19,
+      "typed": 67,
+      "right_r4b": 32,
+      "right_ext": 44,
+      "n_ext": 0,
+      "acc_r4b": 0.471,
+      "acc_ext": 0.647,
+      "precision_ext": 0.657
+     }
+    },
+    "times": {
+     "first 3D": 19.7,
+     "objects v1": 27.3,
+     "cards v1": 33.9,
+     "types (first pass)": 48.6,
+     "objects v3": 56.4,
+     "cards v3": 60.6,
+     "types (densify pass)": 66.9,
+     "first SAM 3D model": null,
+     "models final": null,
+     "splat preview": null,
+     "call end": 67.2,
+     "vocab known (mark)": 6.4,
+     "decode end": 6.4,
+     "sam3 done (mark)": 21.5
+    },
+    "sam3": {
+     "sam3.person": {
+      "n": 19,
+      "gpu_s": 13.09,
+      "span": [
+       0.36,
+       7.21
+      ]
+     },
+     "sam3.vocab.wave1": {
+      "n": 19,
+      "gpu_s": 6.59,
+      "span": [
+       7.04,
+       12.79
+      ]
+     },
+     "sam3.vocab.wave2": {
+      "n": 50,
+      "gpu_s": 10.91,
+      "span": [
+       12.79,
+       19.82
+      ]
+     },
+     "densify.sam3": {
+      "n": 25,
+      "gpu_s": 26.54,
+      "span": [
+       25.96,
+       47.3
+      ]
+     },
+     "vocab.pe": null,
+     "vlm.vocab": null
+    },
+    "vlm": {
+     "scene vocabulary": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "event captions": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming (cluster medoids)": {
+      "requests": 31,
+      "spans_s": [
+       [
+        44.7,
+        46.1
+       ],
+       [
+        62.9,
+        63.7
+       ]
+      ],
+      "before_cards_v1": 0
+     },
+     "hazard / judge": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "qwen identity decider": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming escalated": 0,
+     "question log (by priority)": {
+      "identity": {
+       "n": 31,
+       "failed": 0,
+       "wait_p50_s": 0.002,
+       "wait_p90_s": 0.004,
+       "request_p50_s": 0.718,
+       "request_p90_s": 1.226,
+       "per_s": 1.63,
+       "prompt_tokens_mean": 383.3
+      }
+     },
+     "before cards v1 (all)": 0
+    },
+    "naming": {
+     "on": true,
+     "error": null,
+     "family": "shop floor",
+     "bank_rows_at_load": 2393,
+     "bank": {
+      "path": "/v/layers/label-bank/frozen/r5b-B.npz",
+      "sha256": "cc5745c4db068bb0c3969f5ea659b8d92f7c6296ed787e2f06cd032efa1606e0",
+      "rows": 2393,
+      "zero_shot_classes": 105,
+      "exclude_sites": [
+       "me340"
+      ],
+      "read_only": true
+     }
+    },
+    "gpu_peak_gib": [
+     62.91,
+     58.44
+    ],
+    "over_72": [],
+    "usd_estimate_call": 0.1452,
+    "clicks": [
+     {
+      "k": 3,
+      "frame": 550,
+      "x": 829,
+      "y": 359,
+      "pick_frame": 549,
+      "r4b_label": "miss",
+      "truth_note": "dark machine body behind the height gauge",
+      "status": "card",
+      "entity": null,
+      "name": "container / box / goods (type only)",
+      "decided_by": "cascade on demand: family",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "bin",
+        0.224
+       ],
+       "zero_shot": [
+        "bottle",
+        0.587
+       ],
+       "zero_shot_family": [
+        "goods",
+        0.833
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "family"
+      },
+      "vlm_requests": 0,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.147,
+       "segment_s": 0.092,
+       "lift_s": 0.004,
+       "name_s": 0.067,
+       "total_s": 0.324,
+       "container_s": 1.682
+      },
+      "round_trip_s": 1.839
+     },
+     {
+      "k": 7,
+      "frame": 381,
+      "x": 889,
+      "y": 206,
+      "pick_frame": 382,
+      "r4b_label": "miss",
+      "truth_note": "CNC machine enclosure behind the man",
+      "status": "card",
+      "entity": null,
+      "name": "building element (type only)",
+      "decided_by": "cascade on demand: family",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "wall panel",
+        0.368
+       ],
+       "zero_shot": [
+        "door",
+        0.565
+       ],
+       "zero_shot_family": [
+        "building",
+        0.699
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "family"
+      },
+      "vlm_requests": 0,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.056,
+       "segment_s": 0.112,
+       "lift_s": 0.005,
+       "name_s": 0.051,
+       "total_s": 0.253,
+       "container_s": 0.254
+      },
+      "round_trip_s": 0.411
+     },
+     {
+      "k": 13,
+      "frame": 44,
+      "x": 226,
+      "y": 569,
+      "pick_frame": 47,
+      "r4b_label": "miss",
+      "truth_note": "tool-holder tray on the table",
+      "status": "entity",
+      "entity": "obj-0-261",
+      "name": null,
+      "decided_by": null,
+      "naming": null,
+      "vlm_requests": null,
+      "kind": null,
+      "surface": null,
+      "timing": {
+       "load_s": 0.057,
+       "segment_s": 0.103,
+       "total_s": 0.163,
+       "container_s": 0.164
+      },
+      "round_trip_s": 0.319
+     },
+     {
+      "k": 31,
+      "frame": 536,
+      "x": 826,
+      "y": 532,
+      "pick_frame": 536,
+      "r4b_label": "miss",
+      "truth_note": "blue bin cover",
+      "status": "card",
+      "entity": null,
+      "name": "blue plastic bin",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "tool tray",
+        0.218
+       ],
+       "zero_shot": [
+        "hard hat",
+        0.164
+       ],
+       "zero_shot_family": [
+        "ppe",
+        0.212
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.086,
+       "lift_s": 0.006,
+       "name_s": 0.523,
+       "total_s": 0.645,
+       "container_s": 0.646
+      },
+      "round_trip_s": 0.806
+     },
+     {
+      "k": 1,
+      "frame": 759,
+      "x": 275,
+      "y": 22,
+      "pick_frame": 761,
+      "r4b_label": "background",
+      "truth_note": "ceiling",
+      "status": "card",
+      "entity": null,
+      "name": "saw blade",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "duct",
+        0.307
+       ],
+       "zero_shot": [
+        "hand tool",
+        0.511
+       ],
+       "zero_shot_family": [
+        "tool",
+        0.622
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.019,
+       "segment_s": 0.074,
+       "lift_s": 0.005,
+       "name_s": 0.51,
+       "total_s": 0.622,
+       "container_s": 0.623
+      },
+      "round_trip_s": 0.78
+     },
+     {
+      "k": 2,
+      "frame": 713,
+      "x": 845,
+      "y": 716,
+      "pick_frame": 717,
+      "r4b_label": "background",
+      "truth_note": "floor",
+      "status": "surface",
+      "entity": null,
+      "name": "workbench",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "table",
+        0.288
+       ],
+       "zero_shot": [
+        "floor marking",
+        0.249
+       ],
+       "zero_shot_family": [
+        "signage",
+        0.254
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.034,
+       "segment_s": 0.075,
+       "lift_s": 0.028,
+       "name_s": 0.536,
+       "total_s": 0.708,
+       "container_s": 0.709
+      },
+      "round_trip_s": 0.869
+     },
+     {
+      "k": 4,
+      "frame": 584,
+      "x": 458,
+      "y": 687,
+      "pick_frame": 585,
+      "r4b_label": "background",
+      "truth_note": "burned-in subtitle over a blue bin",
+      "status": "card",
+      "entity": null,
+      "name": "yellow power drill",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "tool tray",
+        0.361
+       ],
+       "zero_shot": [
+        "power tool",
+        0.088
+       ],
+       "zero_shot_family": [
+        "goods",
+        0.137
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.215,
+       "segment_s": 0.082,
+       "lift_s": 0.006,
+       "name_s": 0.518,
+       "total_s": 0.845,
+       "container_s": 0.846
+      },
+      "round_trip_s": 1.004
+     },
+     {
+      "k": 5,
+      "frame": 670,
+      "x": 962,
+      "y": 85,
+      "pick_frame": 673,
+      "r4b_label": "background",
+      "truth_note": "roller door",
+      "status": "card",
+      "entity": null,
+      "name": "building element (type only)",
+      "decided_by": "cascade on demand: family",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "wall panel",
+        0.761
+       ],
+       "zero_shot": [
+        "door",
+        0.43
+       ],
+       "zero_shot_family": [
+        "building",
+        0.592
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "family"
+      },
+      "vlm_requests": 0,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.057,
+       "segment_s": 0.1,
+       "lift_s": 0.005,
+       "name_s": 0.05,
+       "total_s": 0.244,
+       "container_s": 0.245
+      },
+      "round_trip_s": 0.449
+     },
+     {
+      "k": 6,
+      "frame": 271,
+      "x": 1229,
+      "y": 575,
+      "pick_frame": 275,
+      "r4b_label": "background",
+      "truth_note": "floor",
+      "status": "surface",
+      "entity": null,
+      "name": "workbench",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "machine",
+        0.436
+       ],
+       "zero_shot": [
+        "hand truck",
+        0.108
+       ],
+       "zero_shot_family": [
+        "handling",
+        0.239
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.067,
+       "segment_s": 0.071,
+       "lift_s": 0.011,
+       "name_s": 0.516,
+       "total_s": 0.697,
+       "container_s": 0.698
+      },
+      "round_trip_s": 0.855
+     }
+    ]
+   }
+  },
+  "samsclub-a2": {
+   "warm": {
+    "site": "samsclub-a2",
+    "report": "mvp-samsclub-a2-d5e0c855-1790735866",
+    "kind": "warm",
+    "source": "ram",
+    "error": null,
+    "first_call_after_boot": false,
+    "words": {
+     "wave2": 16,
+     "all": 24,
+     "list": [
+      "shelf",
+      "product",
+      "toilet paper",
+      "cart",
+      "shopping cart",
+      "package",
+      "box",
+      "can",
+      "palette",
+      "crate",
+      "bin",
+      "pillar",
+      "container",
+      "shampoo",
+      "soap",
+      "toiletry"
+     ],
+     "vocab_s": 2.524
+    },
+    "objects_raw": 1490,
+    "shares": {
+     "object_cards": 822,
+     "typed": 0.985,
+     "specific_name": 0.773,
+     "unidentified": 0.015,
+     "top_names": [
+      [
+       "package",
+       234
+      ],
+      [
+       "box",
+       161
+      ],
+      [
+       "container / box / goods (type only)",
+       154
+      ],
+      [
+       "toilet paper",
+       124
+      ],
+      [
+       "shelf",
+       49
+      ],
+      [
+       "product",
+       39
+      ],
+      [
+       "shelf / rack / storage (type only)",
+       10
+      ],
+      [
+       "unidentified (long thin object)",
+       6
+      ]
+     ]
+    },
+    "instances": {
+     "frames_shared": 64,
+     "cards_on_shared_frames": 403,
+     "models": {
+      "delivered": 67,
+      "covered": 66,
+      "missed": 1,
+      "miss_rate": 0.015,
+      "in_pieces": 21,
+      "in_pieces_share": 0.318,
+      "pieces_per_covered_mean": 1.379,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 3,
+      "delivered_in_wrong_merges": 6,
+      "wholes_over_several": 1
+     },
+     "all": {
+      "delivered": 152,
+      "covered": 127,
+      "missed": 25,
+      "miss_rate": 0.164,
+      "in_pieces": 28,
+      "in_pieces_share": 0.22,
+      "pieces_per_covered_mean": 1.291,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 8,
+      "delivered_in_wrong_merges": 18,
+      "wholes_over_several": 5
+     },
+     "clean": {
+      "delivered": 91,
+      "covered": 79,
+      "missed": 12,
+      "miss_rate": 0.132,
+      "in_pieces": 7,
+      "in_pieces_share": 0.089,
+      "pieces_per_covered_mean": 1.089,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 3,
+      "delivered_in_wrong_merges": 6,
+      "wholes_over_several": 3
+     },
+     "missed_ids": {
+      "models": [
+       "object-175"
+      ],
+      "all": [
+       "object-025",
+       "object-031",
+       "object-033",
+       "object-034",
+       "object-037",
+       "object-040",
+       "object-044",
+       "object-058",
+       "object-066",
+       "object-067",
+       "object-075",
+       "object-082",
+       "object-087",
+       "object-088",
+       "object-103",
+       "object-118",
+       "object-119",
+       "object-120",
+       "object-124",
+       "object-125",
+       "object-130",
+       "object-133",
+       "object-175",
+       "object-191",
+       "object-194"
+      ],
+      "clean": [
+       "object-025",
+       "object-058",
+       "object-067",
+       "object-075",
+       "object-087",
+       "object-088",
+       "object-124",
+       "object-125",
+       "object-133",
+       "object-175",
+       "object-191",
+       "object-194"
+      ]
+     }
+    },
+    "heldout": {
+     "as shown": {
+      "n": 22,
+      "unmatched": 6,
+      "typed": 22,
+      "right_r4b": 22,
+      "right_ext": 22,
+      "n_ext": 0,
+      "acc_r4b": 1.0,
+      "acc_ext": 1.0,
+      "precision_ext": 1.0
+     }
+    },
+    "dev": {
+     "as shown": {
+      "n": 34,
+      "unmatched": 13,
+      "typed": 34,
+      "right_r4b": 32,
+      "right_ext": 32,
+      "n_ext": 0,
+      "acc_r4b": 0.941,
+      "acc_ext": 0.941,
+      "precision_ext": 0.941
+     }
+    },
+    "times": {
+     "first 3D": 12.9,
+     "objects v1": 20.4,
+     "cards v1": 26.3,
+     "types (first pass)": 55.0,
+     "objects v3": 57.5,
+     "cards v3": 67.3,
+     "types (densify pass)": 78.8,
+     "first SAM 3D model": null,
+     "models final": null,
+     "splat preview": null,
+     "call end": 79.0,
+     "vocab known (mark)": 3.5,
+     "decode end": 3.5,
+     "sam3 done (mark)": 14.5
+    },
+    "sam3": {
+     "sam3.person": {
+      "n": 16,
+      "gpu_s": 10.09,
+      "span": [
+       0.17,
+       6.07
+      ]
+     },
+     "sam3.vocab.wave1": {
+      "n": 16,
+      "gpu_s": 3.06,
+      "span": [
+       6.07,
+       9.14
+      ]
+     },
+     "sam3.vocab.wave2": {
+      "n": 42,
+      "gpu_s": 6.79,
+      "span": [
+       9.14,
+       13.08
+      ]
+     },
+     "densify.sam3": {
+      "n": 21,
+      "gpu_s": 24.18,
+      "span": [
+       17.4,
+       36.87
+      ]
+     },
+     "vocab.pe": null,
+     "vlm.vocab": null
+    },
+    "vlm": {
+     "scene vocabulary": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "event captions": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming (cluster medoids)": {
+      "requests": 27,
+      "spans_s": [
+       [
+        50.2,
+        50.9
+       ],
+       [
+        72.4,
+        73.4
+       ]
+      ],
+      "before_cards_v1": 0
+     },
+     "hazard / judge": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "qwen identity decider": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming escalated": 0,
+     "question log (by priority)": {
+      "identity": {
+       "n": 27,
+       "failed": 0,
+       "wait_p50_s": 0.001,
+       "wait_p90_s": 0.005,
+       "request_p50_s": 0.436,
+       "request_p90_s": 0.716,
+       "per_s": 1.17,
+       "prompt_tokens_mean": 375.4
+      }
+     },
+     "before cards v1 (all)": 0
+    },
+    "naming": {
+     "on": true,
+     "error": null,
+     "family": "retail",
+     "bank_rows_at_load": 2393,
+     "bank": {
+      "path": "/v/layers/label-bank/frozen/r5b-B.npz",
+      "sha256": "cc5745c4db068bb0c3969f5ea659b8d92f7c6296ed787e2f06cd032efa1606e0",
+      "rows": 2393,
+      "zero_shot_classes": 105,
+      "exclude_sites": [
+       "samsclub-a2"
+      ],
+      "read_only": true
+     }
+    },
+    "gpu_peak_gib": [
+     69.04,
+     64.25
+    ],
+    "over_72": [],
+    "usd_estimate_call": 0.1709,
+    "clicks": [
+     {
+      "k": 3,
+      "frame": 450,
+      "x": 829,
+      "y": 359,
+      "pick_frame": 455,
+      "r4b_label": "miss",
+      "truth_note": "goods on a far rack",
+      "status": "entity",
+      "entity": "obj-1-353",
+      "name": null,
+      "decided_by": null,
+      "naming": null,
+      "vlm_requests": null,
+      "kind": null,
+      "surface": null,
+      "timing": {
+       "load_s": 0.068,
+       "segment_s": 0.091,
+       "total_s": 0.161,
+       "container_s": 1.678
+      },
+      "round_trip_s": 1.833
+     },
+     {
+      "k": 7,
+      "frame": 306,
+      "x": 889,
+      "y": 206,
+      "pick_frame": 305,
+      "r4b_label": "miss",
+      "truth_note": "yellow guard rail",
+      "status": "entity",
+      "entity": "obj-0-196",
+      "name": null,
+      "decided_by": null,
+      "naming": null,
+      "vlm_requests": null,
+      "kind": null,
+      "surface": null,
+      "timing": {
+       "load_s": 0.042,
+       "segment_s": 0.081,
+       "total_s": 0.125,
+       "container_s": 0.126
+      },
+      "round_trip_s": 0.28
+     },
+     {
+      "k": 12,
+      "frame": 681,
+      "x": 10,
+      "y": 285,
+      "pick_frame": 682,
+      "r4b_label": "miss",
+      "truth_note": "rack upright at the frame edge",
+      "status": "surface",
+      "entity": null,
+      "name": "not an object",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "merchandise",
+        0.42
+       ],
+       "zero_shot": [
+        "metal sheet",
+        0.17
+       ],
+       "zero_shot_family": [
+        "material",
+        0.237
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "surface",
+      "surface": "shelf surface",
+      "timing": {
+       "load_s": 0.027,
+       "segment_s": 0.085,
+       "lift_s": 0.005,
+       "name_s": 0.493,
+       "total_s": 0.639,
+       "container_s": 0.64
+      },
+      "round_trip_s": 0.801
+     },
+     {
+      "k": 15,
+      "frame": 55,
+      "x": 478,
+      "y": 663,
+      "pick_frame": 59,
+      "r4b_label": "miss",
+      "truth_note": "the camera's own shopping cart",
+      "status": "card",
+      "entity": null,
+      "name": "vehicle / handling equipment (type only)",
+      "decided_by": "cascade on demand: family",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "merchandise",
+        0.383
+       ],
+       "zero_shot": [
+        "cart",
+        0.897
+       ],
+       "zero_shot_family": [
+        "handling",
+        0.903
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "family"
+      },
+      "vlm_requests": 0,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.019,
+       "segment_s": 0.072,
+       "lift_s": 0.007,
+       "name_s": 0.042,
+       "total_s": 0.169,
+       "container_s": 0.17
+      },
+      "round_trip_s": 0.327
+     },
+     {
+      "k": 20,
+      "frame": 691,
+      "x": 892,
+      "y": 363,
+      "pick_frame": 694,
+      "r4b_label": "miss",
+      "truth_note": "goods on the rack",
+      "status": "surface",
+      "entity": null,
+      "name": "stack of water jugs",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "box",
+        0.652
+       ],
+       "zero_shot": [
+        "rack",
+        0.345
+       ],
+       "zero_shot_family": [
+        "storage",
+        0.542
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "surface",
+      "surface": "overhead structure",
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.071,
+       "lift_s": 0.008,
+       "name_s": 0.584,
+       "total_s": 0.696,
+       "container_s": 0.697
+      },
+      "round_trip_s": 0.863
+     },
+     {
+      "k": 25,
+      "frame": 618,
+      "x": 802,
+      "y": 285,
+      "pick_frame": 617,
+      "r4b_label": "miss",
+      "truth_note": "far rack",
+      "status": "entity",
+      "entity": "obj-1-1465",
+      "name": null,
+      "decided_by": null,
+      "naming": null,
+      "vlm_requests": null,
+      "kind": null,
+      "surface": null,
+      "timing": {
+       "load_s": 0.034,
+       "segment_s": 0.077,
+       "total_s": 0.114,
+       "container_s": 0.115
+      },
+      "round_trip_s": 0.282
+     },
+     {
+      "k": 46,
+      "frame": 654,
+      "x": 587,
+      "y": 227,
+      "pick_frame": 655,
+      "r4b_label": "miss",
+      "truth_note": "goods on a far rack",
+      "status": "entity",
+      "entity": "obj-1-1216",
+      "name": null,
+      "decided_by": null,
+      "naming": null,
+      "vlm_requests": null,
+      "kind": null,
+      "surface": null,
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.074,
+       "total_s": 0.076,
+       "container_s": 0.077
+      },
+      "round_trip_s": 0.249
+     },
+     {
+      "k": 47,
+      "frame": 72,
+      "x": 979,
+      "y": 717,
+      "pick_frame": 77,
+      "r4b_label": "miss",
+      "truth_note": "the camera's own shopping cart",
+      "status": "card",
+      "entity": null,
+      "name": "vehicle / handling equipment (type only)",
+      "decided_by": "cascade on demand: family",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "shelf",
+        0.414
+       ],
+       "zero_shot": [
+        "cart",
+        0.946
+       ],
+       "zero_shot_family": [
+        "handling",
+        0.958
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "family"
+      },
+      "vlm_requests": 0,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.039,
+       "segment_s": 0.071,
+       "lift_s": 0.006,
+       "name_s": 0.045,
+       "total_s": 0.191,
+       "container_s": 0.192
+      },
+      "round_trip_s": 0.346
+     },
+     {
+      "k": 48,
+      "frame": 22,
+      "x": 615,
+      "y": 191,
+      "pick_frame": 19,
+      "r4b_label": "miss",
+      "truth_note": "rack beam",
+      "status": "card",
+      "entity": null,
+      "name": "container / box / goods (type only)",
+      "decided_by": "cascade on demand: family",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "box",
+        0.573
+       ],
+       "zero_shot": [
+        "container",
+        0.137
+       ],
+       "zero_shot_family": [
+        "goods",
+        0.52
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "family"
+      },
+      "vlm_requests": 0,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.071,
+       "lift_s": 0.005,
+       "name_s": 0.042,
+       "total_s": 0.147,
+       "container_s": 0.148
+      },
+      "round_trip_s": 0.303
+     },
+     {
+      "k": 49,
+      "frame": 607,
+      "x": 1058,
+      "y": 242,
+      "pick_frame": 605,
+      "r4b_label": "miss",
+      "truth_note": "rack beam",
+      "status": "entity",
+      "entity": "obj-1-1297",
+      "name": null,
+      "decided_by": null,
+      "naming": null,
+      "vlm_requests": null,
+      "kind": null,
+      "surface": null,
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.075,
+       "total_s": 0.078,
+       "container_s": 0.079
+      },
+      "round_trip_s": 0.502
+     },
+     {
+      "k": 53,
+      "frame": 699,
+      "x": 383,
+      "y": 671,
+      "pick_frame": 701,
+      "r4b_label": "miss",
+      "truth_note": "pallet at the rack bottom",
+      "status": "surface",
+      "entity": null,
+      "name": "not an object",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "shelf",
+        0.488
+       ],
+       "zero_shot": [
+        "floor marking",
+        0.862
+       ],
+       "zero_shot_family": [
+        "signage",
+        0.865
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.082,
+       "lift_s": 0.006,
+       "name_s": 0.48,
+       "total_s": 0.6,
+       "container_s": 0.601
+      },
+      "round_trip_s": 0.768
+     },
+     {
+      "k": 2,
+      "frame": 588,
+      "x": 845,
+      "y": 716,
+      "pick_frame": 586,
+      "r4b_label": "background",
+      "truth_note": "floor",
+      "status": "surface",
+      "entity": null,
+      "name": "not an object",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated), copied from a look-alike click",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "shelf",
+        0.547
+       ],
+       "zero_shot": [
+        "floor marking",
+        0.385
+       ],
+       "zero_shot_family": [
+        "signage",
+        0.399
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 0,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.098,
+       "segment_s": 0.072,
+       "lift_s": 0.009,
+       "name_s": 0.046,
+       "total_s": 0.257,
+       "container_s": 0.259
+      },
+      "round_trip_s": 0.414
+     },
+     {
+      "k": 4,
+      "frame": 483,
+      "x": 458,
+      "y": 687,
+      "pick_frame": 485,
+      "r4b_label": "background",
+      "truth_note": "floor above the cart bar",
+      "status": "card",
+      "entity": null,
+      "name": "floor drain",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "rack",
+        0.886
+       ],
+       "zero_shot": [
+        "cable tray",
+        0.313
+       ],
+       "zero_shot_family": [
+        "linear",
+        0.319
+       ],
+       "yolo": [
+        "cart",
+        0.343
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.021,
+       "segment_s": 0.083,
+       "lift_s": 0.006,
+       "name_s": 0.497,
+       "total_s": 0.64,
+       "container_s": 0.641
+      },
+      "round_trip_s": 0.798
+     },
+     {
+      "k": 8,
+      "frame": 278,
+      "x": 1229,
+      "y": 645,
+      "pick_frame": 277,
+      "r4b_label": "background",
+      "truth_note": "floor",
+      "status": "surface",
+      "entity": null,
+      "name": "pallet of paper towels",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "shelf",
+        0.521
+       ],
+       "zero_shot": [
+        "floor marking",
+        0.882
+       ],
+       "zero_shot_family": [
+        "signage",
+        0.883
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.169,
+       "segment_s": 0.071,
+       "lift_s": 0.014,
+       "name_s": 0.537,
+       "total_s": 0.827,
+       "container_s": 0.828
+      },
+      "round_trip_s": 0.992
+     },
+     {
+      "k": 9,
+      "frame": 578,
+      "x": 1042,
+      "y": 656,
+      "pick_frame": 580,
+      "r4b_label": "background",
+      "truth_note": "floor beside a pallet",
+      "status": "surface",
+      "entity": null,
+      "name": "pallet of paper towels",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "box",
+        0.464
+       ],
+       "zero_shot": [
+        "floor marking",
+        0.514
+       ],
+       "zero_shot_family": [
+        "signage",
+        0.529
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.074,
+       "lift_s": 0.01,
+       "name_s": 0.57,
+       "total_s": 0.684,
+       "container_s": 0.685
+      },
+      "round_trip_s": 0.858
+     },
+     {
+      "k": 10,
+      "frame": 744,
+      "x": 464,
+      "y": 611,
+      "pick_frame": 744,
+      "r4b_label": "background",
+      "truth_note": "floor",
+      "status": "surface",
+      "entity": null,
+      "name": "not an object",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated), copied from a look-alike click",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "box",
+        0.466
+       ],
+       "zero_shot": [
+        "floor marking",
+        0.818
+       ],
+       "zero_shot_family": [
+        "signage",
+        0.82
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 0,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.019,
+       "segment_s": 0.077,
+       "lift_s": 0.006,
+       "name_s": 0.044,
+       "total_s": 0.177,
+       "container_s": 0.178
+      },
+      "round_trip_s": 0.338
+     }
+    ]
+   }
+  },
+  "walmart": {
+   "warm": {
+    "site": "walmart",
+    "report": "mvp-walmart-c0761a2a-1790735960",
+    "kind": "warm",
+    "source": "ram",
+    "error": null,
+    "first_call_after_boot": false,
+    "words": {
+     "wave2": 12,
+     "all": 20,
+     "list": [
+      "shelf",
+      "shoe",
+      "display",
+      "product",
+      "cart",
+      "shopping cart",
+      "doll",
+      "package",
+      "pillar",
+      "bag",
+      "bin",
+      "dolly"
+     ],
+     "vocab_s": 2.285
+    },
+    "objects_raw": 1439,
+    "shares": {
+     "object_cards": 842,
+     "typed": 0.987,
+     "specific_name": 0.635,
+     "unidentified": 0.013,
+     "top_names": [
+      [
+       "package",
+       278
+      ],
+      [
+       "container / box / goods (type only)",
+       268
+      ],
+      [
+       "shoe",
+       178
+      ],
+      [
+       "shelf",
+       39
+      ],
+      [
+       "shelf / rack / storage (type only)",
+       25
+      ],
+      [
+       "product",
+       23
+      ],
+      [
+       "unidentified (compact object)",
+       6
+      ],
+      [
+       "unidentified (long thin object)",
+       5
+      ]
+     ]
+    },
+    "instances": {
+     "frames_shared": 62,
+     "cards_on_shared_frames": 356,
+     "models": {
+      "delivered": 40,
+      "covered": 39,
+      "missed": 1,
+      "miss_rate": 0.025,
+      "in_pieces": 8,
+      "in_pieces_share": 0.205,
+      "pieces_per_covered_mean": 1.359,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 0,
+      "delivered_in_wrong_merges": 0,
+      "wholes_over_several": 6
+     },
+     "all": {
+      "delivered": 157,
+      "covered": 131,
+      "missed": 26,
+      "miss_rate": 0.166,
+      "in_pieces": 21,
+      "in_pieces_share": 0.16,
+      "pieces_per_covered_mean": 1.237,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 6,
+      "delivered_in_wrong_merges": 24,
+      "wholes_over_several": 8
+     },
+     "clean": {
+      "delivered": 74,
+      "covered": 58,
+      "missed": 16,
+      "miss_rate": 0.216,
+      "in_pieces": 2,
+      "in_pieces_share": 0.034,
+      "pieces_per_covered_mean": 1.034,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 1,
+      "delivered_in_wrong_merges": 5,
+      "wholes_over_several": 7
+     },
+     "missed_ids": {
+      "models": [
+       "object-206"
+      ],
+      "all": [
+       "object-001",
+       "object-002",
+       "object-003",
+       "object-004",
+       "object-005",
+       "object-020",
+       "object-024",
+       "object-037",
+       "object-039",
+       "object-075",
+       "object-076",
+       "object-080",
+       "object-084",
+       "object-100",
+       "object-107",
+       "object-112",
+       "object-117",
+       "object-121",
+       "object-127",
+       "object-129",
+       "object-135",
+       "object-137",
+       "object-158",
+       "object-206",
+       "object-213",
+       "object-217"
+      ],
+      "clean": [
+       "object-002",
+       "object-004",
+       "object-005",
+       "object-039",
+       "object-075",
+       "object-080",
+       "object-100",
+       "object-107",
+       "object-117",
+       "object-121",
+       "object-127",
+       "object-129",
+       "object-137",
+       "object-206",
+       "object-213",
+       "object-217"
+      ]
+     }
+    },
+    "heldout": {
+     "as shown": {
+      "n": 28,
+      "unmatched": 1,
+      "typed": 25,
+      "right_r4b": 22,
+      "right_ext": 22,
+      "n_ext": 0,
+      "acc_r4b": 0.786,
+      "acc_ext": 0.786,
+      "precision_ext": 0.88
+     }
+    },
+    "dev": {
+     "as shown": {
+      "n": 45,
+      "unmatched": 2,
+      "typed": 42,
+      "right_r4b": 37,
+      "right_ext": 37,
+      "n_ext": 0,
+      "acc_r4b": 0.822,
+      "acc_ext": 0.822,
+      "precision_ext": 0.881
+     }
+    },
+    "times": {
+     "first 3D": 12.0,
+     "objects v1": 19.0,
+     "cards v1": 26.4,
+     "types (first pass)": 54.6,
+     "objects v3": 52.9,
+     "cards v3": 62.5,
+     "types (densify pass)": 74.4,
+     "first SAM 3D model": null,
+     "models final": null,
+     "splat preview": null,
+     "call end": 74.7,
+     "vocab known (mark)": 3.1,
+     "decode end": 3.1,
+     "sam3 done (mark)": 13.6
+    },
+    "sam3": {
+     "sam3.person": {
+      "n": 16,
+      "gpu_s": 9.79,
+      "span": [
+       0.15,
+       5.86
+      ]
+     },
+     "sam3.vocab.wave1": {
+      "n": 16,
+      "gpu_s": 3.03,
+      "span": [
+       5.86,
+       8.9
+      ]
+     },
+     "sam3.vocab.wave2": {
+      "n": 42,
+      "gpu_s": 5.05,
+      "span": [
+       8.9,
+       11.74
+      ]
+     },
+     "densify.sam3": {
+      "n": 21,
+      "gpu_s": 21.55,
+      "span": [
+       16.73,
+       34.78
+      ]
+     },
+     "vocab.pe": null,
+     "vlm.vocab": null
+    },
+    "vlm": {
+     "scene vocabulary": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "event captions": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming (cluster medoids)": {
+      "requests": 20,
+      "spans_s": [
+       [
+        46.6,
+        47.6
+       ],
+       [
+        67.9,
+        68.7
+       ]
+      ],
+      "before_cards_v1": 0
+     },
+     "hazard / judge": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "qwen identity decider": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming escalated": 0,
+     "question log (by priority)": {
+      "identity": {
+       "n": 20,
+       "failed": 0,
+       "wait_p50_s": 0.002,
+       "wait_p90_s": 0.004,
+       "request_p50_s": 0.652,
+       "request_p90_s": 0.871,
+       "per_s": 0.91,
+       "prompt_tokens_mean": 387.9
+      }
+     },
+     "before cards v1 (all)": 0
+    },
+    "naming": {
+     "on": true,
+     "error": null,
+     "family": "retail",
+     "bank_rows_at_load": 2393,
+     "bank": {
+      "path": "/v/layers/label-bank/frozen/r5b-B.npz",
+      "sha256": "cc5745c4db068bb0c3969f5ea659b8d92f7c6296ed787e2f06cd032efa1606e0",
+      "rows": 2393,
+      "zero_shot_classes": 105,
+      "exclude_sites": [
+       "walmart"
+      ],
+      "read_only": true
+     }
+    },
+    "gpu_peak_gib": [
+     67.06,
+     63.4
+    ],
+    "over_72": [],
+    "usd_estimate_call": 0.1615,
+    "clicks": [
+     {
+      "k": 8,
+      "frame": 279,
+      "x": 1229,
+      "y": 645,
+      "pick_frame": 276,
+      "r4b_label": "miss",
+      "truth_note": "a pink plush slipper",
+      "status": "card",
+      "entity": null,
+      "name": "boot",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "merchandise",
+        1.0
+       ],
+       "zero_shot": [
+        "rag",
+        0.164
+       ],
+       "zero_shot_family": [
+        "misc",
+        0.252
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.019,
+       "segment_s": 0.081,
+       "lift_s": 0.006,
+       "name_s": 0.476,
+       "total_s": 0.614,
+       "container_s": 2.096
+      },
+      "round_trip_s": 2.267
+     },
+     {
+      "k": 28,
+      "frame": 585,
+      "x": 1229,
+      "y": 430,
+      "pick_frame": 583,
+      "r4b_label": "miss",
+      "truth_note": "shelf upright / its dark back",
+      "status": "entity",
+      "entity": "obj-1-1317",
+      "name": null,
+      "decided_by": null,
+      "naming": null,
+      "vlm_requests": null,
+      "kind": null,
+      "surface": null,
+      "timing": {
+       "load_s": 0.051,
+       "segment_s": 0.074,
+       "total_s": 0.128,
+       "container_s": 0.129
+      },
+      "round_trip_s": 0.285
+     },
+     {
+      "k": 29,
+      "frame": 410,
+      "x": 545,
+      "y": 239,
+      "pick_frame": 407,
+      "r4b_label": "miss",
+      "truth_note": "far display at the aisle end",
+      "status": "card",
+      "entity": null,
+      "name": "motor",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "merchandise",
+        0.947
+       ],
+       "zero_shot": [
+        "hard hat",
+        0.302
+       ],
+       "zero_shot_family": [
+        "ppe",
+        0.318
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.036,
+       "segment_s": 0.08,
+       "lift_s": 0.006,
+       "name_s": 0.472,
+       "total_s": 0.611,
+       "container_s": 0.612
+      },
+      "round_trip_s": 0.772
+     },
+     {
+      "k": 31,
+      "frame": 440,
+      "x": 826,
+      "y": 532,
+      "pick_frame": 437,
+      "r4b_label": "miss",
+      "truth_note": "pet-food bag on the lower shelf",
+      "status": "entity",
+      "entity": "obj-1-465",
+      "name": null,
+      "decided_by": null,
+      "naming": null,
+      "vlm_requests": null,
+      "kind": null,
+      "surface": null,
+      "timing": {
+       "load_s": 0.022,
+       "segment_s": 0.072,
+       "total_s": 0.097,
+       "container_s": 0.098
+      },
+      "round_trip_s": 0.255
+     },
+     {
+      "k": 54,
+      "frame": 75,
+      "x": 1171,
+      "y": 253,
+      "pick_frame": 73,
+      "r4b_label": "wrong",
+      "truth_note": "a black boot on the gridwall; the gridwall opened",
+      "status": "card",
+      "entity": null,
+      "name": "container / box / goods (type only)",
+      "decided_by": "cascade on demand: family",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "merchandise",
+        1.0
+       ],
+       "zero_shot": [
+        "mannequin",
+        0.099
+       ],
+       "zero_shot_family": [
+        "goods",
+        0.276
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "family"
+      },
+      "vlm_requests": 0,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.044,
+       "segment_s": 0.082,
+       "lift_s": 0.005,
+       "name_s": 0.046,
+       "total_s": 0.192,
+       "container_s": 0.193
+      },
+      "round_trip_s": 0.353
+     },
+     {
+      "k": 57,
+      "frame": 599,
+      "x": 1107,
+      "y": 190,
+      "pick_frame": 600,
+      "r4b_label": "miss",
+      "truth_note": "the shelf beside a box",
+      "status": "entity",
+      "entity": "obj-1-617",
+      "name": null,
+      "decided_by": null,
+      "naming": null,
+      "vlm_requests": null,
+      "kind": null,
+      "surface": null,
+      "timing": {
+       "load_s": 0.028,
+       "segment_s": 0.075,
+       "total_s": 0.106,
+       "container_s": 0.107
+      },
+      "round_trip_s": 0.263
+     },
+     {
+      "k": 59,
+      "frame": 267,
+      "x": 803,
+      "y": 678,
+      "pick_frame": 267,
+      "r4b_label": "miss",
+      "truth_note": "a slipper on the gridwall",
+      "status": "entity",
+      "entity": "obj-0-933",
+      "name": null,
+      "decided_by": null,
+      "naming": null,
+      "vlm_requests": null,
+      "kind": null,
+      "surface": null,
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.078,
+       "total_s": 0.081,
+       "container_s": 0.082
+      },
+      "round_trip_s": 0.239
+     },
+     {
+      "k": 0,
+      "frame": 192,
+      "x": 713,
+      "y": 547,
+      "pick_frame": 192,
+      "r4b_label": "background",
+      "truth_note": "floor",
+      "status": "surface",
+      "entity": null,
+      "name": "not an object",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "merchandise",
+        1.0
+       ],
+       "zero_shot": [
+        "floor marking",
+        0.668
+       ],
+       "zero_shot_family": [
+        "signage",
+        0.671
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.028,
+       "segment_s": 0.071,
+       "lift_s": 0.008,
+       "name_s": 0.497,
+       "total_s": 0.635,
+       "container_s": 0.636
+      },
+      "round_trip_s": 0.797
+     },
+     {
+      "k": 1,
+      "frame": 626,
+      "x": 275,
+      "y": 22,
+      "pick_frame": 623,
+      "r4b_label": "background",
+      "truth_note": "floor",
+      "status": "surface",
+      "entity": null,
+      "name": "not an object",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "shelf",
+        0.784
+       ],
+       "zero_shot": [
+        "floor marking",
+        0.803
+       ],
+       "zero_shot_family": [
+        "signage",
+        0.806
+       ],
+       "yolo": [
+        "spill",
+        0.703
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.076,
+       "lift_s": 0.04,
+       "name_s": 0.495,
+       "total_s": 0.662,
+       "container_s": 0.663
+      },
+      "round_trip_s": 0.825
+     },
+     {
+      "k": 2,
+      "frame": 588,
+      "x": 845,
+      "y": 716,
+      "pick_frame": 588,
+      "r4b_label": "background",
+      "truth_note": "floor",
+      "status": "surface",
+      "entity": null,
+      "name": "sign / label (type only)",
+      "decided_by": "cascade on demand: family",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "shelf",
+        0.84
+       ],
+       "zero_shot": [
+        "floor marking",
+        0.913
+       ],
+       "zero_shot_family": [
+        "signage",
+        0.914
+       ],
+       "yolo": [
+        "spill",
+        0.617
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "family"
+      },
+      "vlm_requests": 0,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.074,
+       "lift_s": 0.033,
+       "name_s": 0.05,
+       "total_s": 0.205,
+       "container_s": 0.206
+      },
+      "round_trip_s": 0.363
+     },
+     {
+      "k": 4,
+      "frame": 481,
+      "x": 458,
+      "y": 687,
+      "pick_frame": 482,
+      "r4b_label": "background",
+      "truth_note": "floor",
+      "status": "surface",
+      "entity": null,
+      "name": "not an object",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "shelf",
+        0.912
+       ],
+       "zero_shot": [
+        "floor marking",
+        0.659
+       ],
+       "zero_shot_family": [
+        "signage",
+        0.661
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "surface",
+      "surface": "floor",
+      "timing": {
+       "load_s": 0.146,
+       "segment_s": 0.086,
+       "lift_s": 0.006,
+       "name_s": 0.484,
+       "total_s": 0.751,
+       "container_s": 0.752
+      },
+      "round_trip_s": 0.912
+     },
+     {
+      "k": 11,
+      "frame": 500,
+      "x": 745,
+      "y": 150,
+      "pick_frame": 499,
+      "r4b_label": "background",
+      "truth_note": "ceiling",
+      "status": "card",
+      "entity": null,
+      "name": "fluorescent light fixture",
+      "decided_by": "Qwen3-VL-8B on demand (stated probability, uncalibrated)",
+      "naming": {
+       "route": "on demand",
+       "bank": [
+        "shelf",
+        1.0
+       ],
+       "zero_shot": [
+        "light fixture",
+        0.573
+       ],
+       "zero_shot_family": [
+        "electrical",
+        0.579
+       ],
+       "yolo": [
+        null,
+        0.0
+       ],
+       "sam3": [
+        null,
+        0.0,
+        null
+       ],
+       "rule": "vlm"
+      },
+      "vlm_requests": 1,
+      "kind": "object",
+      "surface": null,
+      "timing": {
+       "load_s": 0.0,
+       "segment_s": 0.072,
+       "lift_s": 0.005,
+       "name_s": 0.559,
+       "total_s": 0.654,
+       "container_s": 0.655
+      },
+      "round_trip_s": 0.82
+     }
+    ]
+   }
+  }
+ },
+ "r4b_rows": {
+  "me340": {
+   "first": {
+    "site": "me340",
+    "report": "mvp-me340-e84efffd-1790720167",
+    "kind": "first",
+    "source": null,
+    "error": null,
+    "first_call_after_boot": true,
+    "words": {
+     "wave2": 50,
+     "all": 56,
+     "list": [
+      "machine",
+      "tool",
+      "power tool",
+      "wrench",
+      "power cord",
+      "cable",
+      "workbench",
+      "equipment",
+      "metal part",
+      "fixture",
+      "tool holder",
+      "tool tray",
+      "plastic container",
+      "wooden board",
+      "metal rack",
+      "control panel",
+      "monitor",
+      "fan",
+      "laptop",
+      "clipboard",
+      "glasses",
+      "tool kit",
+      "battery",
+      "light fixture",
+      "ceiling fan",
+      "door",
+      "window",
+      "ventilation duct",
+      "pipe",
+      "electrical outlet",
+      "switch",
+      "button",
+      "display screen",
+      "keyboard",
+      "mouse",
+      "chair",
+      "table",
+      "stool",
+      "box",
+      "sign",
+      "poster",
+      "clock",
+      "lamp",
+      "hose",
+      "handle",
+      "lever",
+      "knob",
+      "gear",
+      "bolt",
+      "nut"
+     ],
+     "vocab_s": 7.514
+    },
+    "objects_raw": 1129,
+    "shares": {
+     "object_cards": 370,
+     "typed": 0.984,
+     "specific_name": 0.484,
+     "unidentified": 0.0,
+     "top_names": [
+      [
+       "cable / hose / pipe (type only)",
+       96
+      ],
+      [
+       "metal part",
+       59
+      ],
+      [
+       "equipment",
+       43
+      ],
+      [
+       "container / box / goods (type only)",
+       22
+      ],
+      [
+       "material / part (type only)",
+       19
+      ],
+      [
+       "electrical equipment (type only)",
+       14
+      ],
+      [
+       "furniture (type only)",
+       12
+      ],
+      [
+       "sign",
+       11
+      ]
+     ]
+    },
+    "instances": {
+     "frames_shared": 143,
+     "cards_on_shared_frames": 343,
+     "models": {
+      "delivered": 22,
+      "covered": 22,
+      "missed": 0,
+      "miss_rate": 0.0,
+      "in_pieces": 5,
+      "in_pieces_share": 0.227,
+      "pieces_per_covered_mean": 1.409,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 1,
+      "delivered_in_wrong_merges": 4,
+      "wholes_over_several": 0
+     },
+     "all": {
+      "delivered": 161,
+      "covered": 130,
+      "missed": 31,
+      "miss_rate": 0.193,
+      "in_pieces": 16,
+      "in_pieces_share": 0.123,
+      "pieces_per_covered_mean": 1.177,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 13,
+      "delivered_in_wrong_merges": 35,
+      "wholes_over_several": 6
+     },
+     "clean": {
+      "delivered": 105,
+      "covered": 82,
+      "missed": 23,
+      "miss_rate": 0.219,
+      "in_pieces": 6,
+      "in_pieces_share": 0.073,
+      "pieces_per_covered_mean": 1.073,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 5,
+      "delivered_in_wrong_merges": 15,
+      "wholes_over_several": 5
+     },
+     "missed_ids": {
+      "models": [],
+      "all": [
+       "object-004",
+       "object-010",
+       "object-011",
+       "object-018",
+       "object-020",
+       "object-021",
+       "object-031",
+       "object-032",
+       "object-046",
+       "object-063",
+       "object-066",
+       "object-068",
+       "object-078",
+       "object-079",
+       "object-080",
+       "object-088",
+       "object-095",
+       "object-097",
+       "object-098",
+       "object-115",
+       "object-117",
+       "object-124",
+       "object-128",
+       "object-134",
+       "object-155",
+       "object-160",
+       "object-163",
+       "object-178",
+       "object-180",
+       "object-183",
+       "object-188"
+      ],
+      "clean": [
+       "object-004",
+       "object-011",
+       "object-020",
+       "object-021",
+       "object-032",
+       "object-063",
+       "object-066",
+       "object-068",
+       "object-078",
+       "object-079",
+       "object-080",
+       "object-088",
+       "object-095",
+       "object-097",
+       "object-098",
+       "object-117",
+       "object-134",
+       "object-155",
+       "object-163",
+       "object-178",
+       "object-180",
+       "object-183",
+       "object-188"
+      ]
+     }
+    },
+    "heldout": {
+     "as shown": {
+      "n": 47,
+      "unmatched": 15,
+      "typed": 47,
+      "right_r4b": 29,
+      "right_ext": 29,
+      "n_ext": 0,
+      "acc_r4b": 0.617,
+      "acc_ext": 0.617,
+      "precision_ext": 0.617
+     }
+    },
+    "dev": {
+     "as shown": {
+      "n": 78,
+      "unmatched": 9,
+      "typed": 78,
+      "right_r4b": 46,
+      "right_ext": 46,
+      "n_ext": 0,
+      "acc_r4b": 0.59,
+      "acc_ext": 0.59,
+      "precision_ext": 0.59
+     }
+    },
+    "times": {
+     "first 3D": 23.7,
+     "objects v1": 36.5,
+     "cards v1": 49.4,
+     "types (first pass)": 68.4,
+     "objects v3": 84.1,
+     "cards v3": 89.9,
+     "types (densify pass)": 104.4,
+     "first SAM 3D model": 135.6,
+     "models final": 190.3,
+     "splat preview": 232.7,
+     "call end": 237.2,
+     "vocab known (mark)": 8.3,
+     "decode end": 7.8,
+     "sam3 done (mark)": 31.0
+    },
+    "sam3": {
+     "sam3.person": {
+      "n": 19,
+      "gpu_s": 14.81,
+      "span": [
+       0.28,
+       9.13
+      ]
+     },
+     "sam3.vocab.wave1": {
+      "n": 19,
+      "gpu_s": 6.87,
+      "span": [
+       1.44,
+       13.25
+      ]
+     },
+     "sam3.vocab.wave2": {
+      "n": 50,
+      "gpu_s": 30.21,
+      "span": [
+       13.25,
+       30.95
+      ]
+     },
+     "densify.sam3": {
+      "n": 25,
+      "gpu_s": 59.23,
+      "span": [
+       35.13,
+       72.26
+      ]
+     },
+     "vocab.pe": null,
+     "vlm.vocab": {
+      "n": 1,
+      "gpu_s": 7.59,
+      "span": [
+       0.49,
+       8.08
+      ]
+     }
+    },
+    "vlm": {
+     "scene vocabulary": {
+      "requests": 1,
+      "spans_s": [
+       [
+        0.5,
+        8.1
+       ]
+      ],
+      "before_cards_v1": 1
+     },
+     "event captions": {
+      "requests": 2,
+      "spans_s": [
+       [
+        8.4,
+        20.8
+       ]
+      ],
+      "before_cards_v1": 2
+     },
+     "naming (cluster medoids)": {
+      "requests": 67,
+      "spans_s": [
+       [
+        60.5,
+        64.2
+       ],
+       [
+        97.0,
+        99.5
+       ]
+      ],
+      "before_cards_v1": 0
+     },
+     "hazard / judge": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "qwen identity decider": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming escalated": 0,
+     "question log (by priority)": {
+      "identity": {
+       "n": 67,
+       "failed": 0,
+       "wait_p50_s": 0.326,
+       "wait_p90_s": 1.497,
+       "request_p50_s": 1.168,
+       "request_p90_s": 1.466,
+       "per_s": 1.73,
+       "prompt_tokens_mean": 382.8
+      }
+     },
+     "before cards v1 (all)": 3
+    },
+    "naming": {
+     "on": true,
+     "error": null,
+     "family": "shop floor",
+     "bank_rows_at_load": 1798,
+     "bank_rows_now": 1861
+    },
+    "gpu_peak_gib": [
+     67.66,
+     58.88
+    ],
+    "over_72": [],
+    "usd_estimate_call": 0.5128
+   },
+   "warm": {
+    "site": "me340",
+    "report": "mvp-me340-e84efffd-1790720411",
+    "kind": "warm",
+    "source": null,
+    "error": null,
+    "first_call_after_boot": false,
+    "words": {
+     "wave2": 50,
+     "all": 57,
+     "list": [
+      "machine",
+      "tool",
+      "power tool",
+      "wrench",
+      "power cord",
+      "cable",
+      "workbench",
+      "equipment",
+      "metal part",
+      "fixture",
+      "tool holder",
+      "tool tray",
+      "tool box",
+      "plastic container",
+      "metal rack",
+      "metal stand",
+      "wooden board",
+      "metal plate",
+      "metal bracket",
+      "metal rod",
+      "metal bolt",
+      "metal nut",
+      "metal washer",
+      "metal pin",
+      "metal clip",
+      "metal clamp",
+      "metal block",
+      "metal frame",
+      "metal pipe",
+      "metal hose",
+      "metal wire",
+      "metal spring",
+      "metal gear",
+      "metal screw",
+      "metal hinge",
+      "metal bearing",
+      "metal shaft",
+      "metal bushing",
+      "metal flange",
+      "metal stud",
+      "metal tab",
+      "metal latch",
+      "metal handle",
+      "metal knob",
+      "metal lever",
+      "metal switch",
+      "metal button",
+      "metal dial",
+      "metal gauge",
+      "metal scale"
+     ],
+     "vocab_s": 8.198
+    },
+    "objects_raw": 1087,
+    "shares": {
+     "object_cards": 376,
+     "typed": 0.947,
+     "specific_name": 0.202,
+     "unidentified": 0.0,
+     "top_names": [
+      [
+       "material / part (type only)",
+       104
+      ],
+      [
+       "cable / hose / pipe (type only)",
+       78
+      ],
+      [
+       "machine (type only)",
+       29
+      ],
+      [
+       "container / box / goods (type only)",
+       24
+      ],
+      [
+       "equipment",
+       23
+      ],
+      [
+       "tool (type only)",
+       22
+      ],
+      [
+       "furniture (type only)",
+       12
+      ],
+      [
+       "tool",
+       12
+      ]
+     ]
+    },
+    "instances": {
+     "frames_shared": 143,
+     "cards_on_shared_frames": 348,
+     "models": {
+      "delivered": 22,
+      "covered": 22,
+      "missed": 0,
+      "miss_rate": 0.0,
+      "in_pieces": 4,
+      "in_pieces_share": 0.182,
+      "pieces_per_covered_mean": 1.273,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 1,
+      "delivered_in_wrong_merges": 4,
+      "wholes_over_several": 0
+     },
+     "all": {
+      "delivered": 161,
+      "covered": 125,
+      "missed": 36,
+      "miss_rate": 0.224,
+      "in_pieces": 20,
+      "in_pieces_share": 0.16,
+      "pieces_per_covered_mean": 1.208,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 14,
+      "delivered_in_wrong_merges": 33,
+      "wholes_over_several": 7
+     },
+     "clean": {
+      "delivered": 105,
+      "covered": 80,
+      "missed": 25,
+      "miss_rate": 0.238,
+      "in_pieces": 7,
+      "in_pieces_share": 0.087,
+      "pieces_per_covered_mean": 1.087,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 4,
+      "delivered_in_wrong_merges": 9,
+      "wholes_over_several": 5
+     },
+     "missed_ids": {
+      "models": [],
+      "all": [
+       "object-004",
+       "object-010",
+       "object-011",
+       "object-018",
+       "object-020",
+       "object-021",
+       "object-023",
+       "object-031",
+       "object-032",
+       "object-034",
+       "object-037",
+       "object-046",
+       "object-063",
+       "object-066",
+       "object-068",
+       "object-078",
+       "object-080",
+       "object-088",
+       "object-095",
+       "object-097",
+       "object-098",
+       "object-115",
+       "object-117",
+       "object-124",
+       "object-128",
+       "object-134",
+       "object-135",
+       "object-143",
+       "object-155",
+       "object-160",
+       "object-163",
+       "object-178",
+       "object-180",
+       "object-183",
+       "object-188",
+       "object-192"
+      ],
+      "clean": [
+       "object-004",
+       "object-011",
+       "object-020",
+       "object-021",
+       "object-032",
+       "object-063",
+       "object-066",
+       "object-068",
+       "object-078",
+       "object-080",
+       "object-088",
+       "object-095",
+       "object-097",
+       "object-098",
+       "object-117",
+       "object-134",
+       "object-135",
+       "object-143",
+       "object-155",
+       "object-163",
+       "object-178",
+       "object-180",
+       "object-183",
+       "object-188",
+       "object-192"
+      ]
+     }
+    },
+    "heldout": {
+     "as shown": {
+      "n": 51,
+      "unmatched": 11,
+      "typed": 50,
+      "right_r4b": 26,
+      "right_ext": 26,
+      "n_ext": 0,
+      "acc_r4b": 0.51,
+      "acc_ext": 0.51,
+      "precision_ext": 0.52
+     }
+    },
+    "dev": {
+     "as shown": {
+      "n": 70,
+      "unmatched": 17,
+      "typed": 69,
+      "right_r4b": 38,
+      "right_ext": 38,
+      "n_ext": 0,
+      "acc_r4b": 0.543,
+      "acc_ext": 0.543,
+      "precision_ext": 0.551
+     }
+    },
+    "times": {
+     "first 3D": 18.0,
+     "objects v1": 32.2,
+     "cards v1": 43.1,
+     "types (first pass)": 60.3,
+     "objects v3": 77.5,
+     "cards v3": 83.5,
+     "types (densify pass)": 97.8,
+     "first SAM 3D model": 176.6,
+     "models final": 182.8,
+     "splat preview": 226.7,
+     "call end": 230.2,
+     "vocab known (mark)": 8.6,
+     "decode end": 4.2,
+     "sam3 done (mark)": 28.5
+    },
+    "sam3": {
+     "sam3.person": {
+      "n": 19,
+      "gpu_s": 14.63,
+      "span": [
+       0.12,
+       9.23
+      ]
+     },
+     "sam3.vocab.wave1": {
+      "n": 19,
+      "gpu_s": 16.7,
+      "span": [
+       9.23,
+       19.82
+      ]
+     },
+     "sam3.vocab.wave2": {
+      "n": 50,
+      "gpu_s": 17.22,
+      "span": [
+       19.71,
+       28.47
+      ]
+     },
+     "densify.sam3": {
+      "n": 25,
+      "gpu_s": 54.48,
+      "span": [
+       30.64,
+       66.45
+      ]
+     },
+     "vocab.pe": null,
+     "vlm.vocab": {
+      "n": 1,
+      "gpu_s": 8.27,
+      "span": [
+       0.37,
+       8.64
+      ]
+     }
+    },
+    "vlm": {
+     "scene vocabulary": {
+      "requests": 1,
+      "spans_s": [
+       [
+        0.4,
+        8.6
+       ]
+      ],
+      "before_cards_v1": 1
+     },
+     "event captions": {
+      "requests": 2,
+      "spans_s": [
+       [
+        8.7,
+        16.4
+       ]
+      ],
+      "before_cards_v1": 2
+     },
+     "naming (cluster medoids)": {
+      "requests": 48,
+      "spans_s": [
+       [
+        54.7,
+        57.0
+       ],
+       [
+        90.9,
+        92.7
+       ]
+      ],
+      "before_cards_v1": 0
+     },
+     "hazard / judge": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "qwen identity decider": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming escalated": 0,
+     "question log (by priority)": {
+      "identity": {
+       "n": 48,
+       "failed": 0,
+       "wait_p50_s": 0.005,
+       "wait_p90_s": 0.897,
+       "request_p50_s": 0.954,
+       "request_p90_s": 1.33,
+       "per_s": 1.27,
+       "prompt_tokens_mean": 386.1
+      }
+     },
+     "before cards v1 (all)": 3
+    },
+    "naming": {
+     "on": true,
+     "error": null,
+     "family": "shop floor",
+     "bank_rows_at_load": 1861,
+     "bank_rows_now": 1906
+    },
+    "gpu_peak_gib": [
+     70.02,
+     58.06
+    ],
+    "over_72": [],
+    "usd_estimate_call": 0.4979
+   }
+  },
+  "samsclub-a2": {
+   "first": {
+    "site": "samsclub-a2",
+    "report": "mvp-samsclub-a2-d5e0c855-1790721225",
+    "kind": "first",
+    "source": null,
+    "error": null,
+    "first_call_after_boot": true,
+    "words": {
+     "wave2": 13,
+     "all": 21,
+     "list": [
+      "shopping cart",
+      "pallet jack",
+      "pallet",
+      "stacked boxes",
+      "paper towels",
+      "toilet paper",
+      "tissues",
+      "eggs",
+      "water bottles",
+      "carton",
+      "box",
+      "shelves",
+      "plastic crates"
+     ],
+     "vocab_s": 3.205
+    },
+    "objects_raw": 1702,
+    "shares": {
+     "object_cards": 923,
+     "typed": 0.996,
+     "specific_name": 0.611,
+     "unidentified": 0.0,
+     "top_names": [
+      [
+       "container / box / goods (type only)",
+       333
+      ],
+      [
+       "box",
+       170
+      ],
+      [
+       "carton",
+       162
+      ],
+      [
+       "stacked boxes",
+       82
+      ],
+      [
+       "pallet",
+       55
+      ],
+      [
+       "water bottles",
+       32
+      ],
+      [
+       "shelves",
+       29
+      ],
+      [
+       "shelf / rack / storage (type only)",
+       11
+      ]
+     ]
+    },
+    "instances": {
+     "frames_shared": 64,
+     "cards_on_shared_frames": 447,
+     "models": {
+      "delivered": 67,
+      "covered": 66,
+      "missed": 1,
+      "miss_rate": 0.015,
+      "in_pieces": 21,
+      "in_pieces_share": 0.318,
+      "pieces_per_covered_mean": 1.364,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 5,
+      "delivered_in_wrong_merges": 10,
+      "wholes_over_several": 3
+     },
+     "all": {
+      "delivered": 152,
+      "covered": 129,
+      "missed": 23,
+      "miss_rate": 0.151,
+      "in_pieces": 31,
+      "in_pieces_share": 0.24,
+      "pieces_per_covered_mean": 1.326,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 9,
+      "delivered_in_wrong_merges": 19,
+      "wholes_over_several": 6
+     },
+     "clean": {
+      "delivered": 91,
+      "covered": 79,
+      "missed": 12,
+      "miss_rate": 0.132,
+      "in_pieces": 10,
+      "in_pieces_share": 0.127,
+      "pieces_per_covered_mean": 1.139,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 4,
+      "delivered_in_wrong_merges": 8,
+      "wholes_over_several": 5
+     },
+     "missed_ids": {
+      "models": [
+       "object-175"
+      ],
+      "all": [
+       "object-025",
+       "object-031",
+       "object-033",
+       "object-034",
+       "object-037",
+       "object-040",
+       "object-044",
+       "object-058",
+       "object-066",
+       "object-067",
+       "object-075",
+       "object-087",
+       "object-088",
+       "object-103",
+       "object-118",
+       "object-119",
+       "object-120",
+       "object-124",
+       "object-125",
+       "object-133",
+       "object-175",
+       "object-191",
+       "object-194"
+      ],
+      "clean": [
+       "object-025",
+       "object-058",
+       "object-067",
+       "object-075",
+       "object-087",
+       "object-088",
+       "object-124",
+       "object-125",
+       "object-133",
+       "object-175",
+       "object-191",
+       "object-194"
+      ]
+     }
+    },
+    "heldout": {
+     "as shown": {
+      "n": 26,
+      "unmatched": 2,
+      "typed": 26,
+      "right_r4b": 26,
+      "right_ext": 26,
+      "n_ext": 0,
+      "acc_r4b": 1.0,
+      "acc_ext": 1.0,
+      "precision_ext": 1.0
+     }
+    },
+    "dev": {
+     "as shown": {
+      "n": 42,
+      "unmatched": 5,
+      "typed": 42,
+      "right_r4b": 41,
+      "right_ext": 41,
+      "n_ext": 0,
+      "acc_r4b": 0.976,
+      "acc_ext": 0.976,
+      "precision_ext": 0.976
+     }
+    },
+    "times": {
+     "first 3D": 15.8,
+     "objects v1": 25.3,
+     "cards v1": 36.4,
+     "types (first pass)": 70.9,
+     "objects v3": 66.3,
+     "cards v3": 81.3,
+     "types (densify pass)": 97.2,
+     "first SAM 3D model": 122.2,
+     "models final": 191.8,
+     "splat preview": 225.9,
+     "call end": 245.6,
+     "vocab known (mark)": 5.5,
+     "decode end": 5.5,
+     "sam3 done (mark)": 18.4
+    },
+    "sam3": {
+     "sam3.person": {
+      "n": 16,
+      "gpu_s": 10.94,
+      "span": [
+       0.22,
+       6.66
+      ]
+     },
+     "sam3.vocab.wave1": {
+      "n": 16,
+      "gpu_s": 6.66,
+      "span": [
+       3.54,
+       11.78
+      ]
+     },
+     "sam3.vocab.wave2": {
+      "n": 42,
+      "gpu_s": 12.33,
+      "span": [
+       11.78,
+       18.39
+      ]
+     },
+     "densify.sam3": {
+      "n": 21,
+      "gpu_s": 27.22,
+      "span": [
+       23.93,
+       45.47
+      ]
+     },
+     "vocab.pe": null,
+     "vlm.vocab": {
+      "n": 1,
+      "gpu_s": 3.28,
+      "span": [
+       0.73,
+       4.01
+      ]
+     }
+    },
+    "vlm": {
+     "scene vocabulary": {
+      "requests": 1,
+      "spans_s": [
+       [
+        0.7,
+        4.0
+       ]
+      ],
+      "before_cards_v1": 1
+     },
+     "event captions": {
+      "requests": 2,
+      "spans_s": [
+       [
+        5.6,
+        15.8
+       ]
+      ],
+      "before_cards_v1": 2
+     },
+     "naming (cluster medoids)": {
+      "requests": 32,
+      "spans_s": [
+       [
+        64.4,
+        65.6
+       ],
+       [
+        88.7,
+        90.7
+       ]
+      ],
+      "before_cards_v1": 0
+     },
+     "hazard / judge": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "qwen identity decider": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming escalated": 0,
+     "question log (by priority)": {
+      "identity": {
+       "n": 32,
+       "failed": 0,
+       "wait_p50_s": 0.003,
+       "wait_p90_s": 0.678,
+       "request_p50_s": 1.061,
+       "request_p90_s": 1.436,
+       "per_s": 1.23,
+       "prompt_tokens_mean": 375.7
+      }
+     },
+     "before cards v1 (all)": 3
+    },
+    "naming": {
+     "on": true,
+     "error": null,
+     "family": "retail",
+     "bank_rows_at_load": 1906,
+     "bank_rows_now": 1934
+    },
+    "gpu_peak_gib": [
+     68.83,
+     65.47
+    ],
+    "over_72": [],
+    "usd_estimate_call": 0.5312
+   },
+   "warm": {
+    "site": "samsclub-a2",
+    "report": "mvp-samsclub-a2-d5e0c855-1790721476",
+    "kind": "warm",
+    "source": null,
+    "error": null,
+    "first_call_after_boot": false,
+    "words": {
+     "wave2": 13,
+     "all": 21,
+     "list": [
+      "shopping cart",
+      "pallet jack",
+      "pallet",
+      "stacked boxes",
+      "paper towels",
+      "toilet paper",
+      "tissues",
+      "eggs",
+      "water bottles",
+      "carton",
+      "box",
+      "shelves",
+      "plastic crates"
+     ],
+     "vocab_s": 2.892
+    },
+    "objects_raw": 1703,
+    "shares": {
+     "object_cards": 917,
+     "typed": 0.996,
+     "specific_name": 0.532,
+     "unidentified": 0.0,
+     "top_names": [
+      [
+       "container / box / goods (type only)",
+       403
+      ],
+      [
+       "box",
+       157
+      ],
+      [
+       "carton",
+       95
+      ],
+      [
+       "stacked boxes",
+       82
+      ],
+      [
+       "pallet",
+       55
+      ],
+      [
+       "water bottles",
+       32
+      ],
+      [
+       "shelves",
+       30
+      ],
+      [
+       "toilet paper",
+       12
+      ]
+     ]
+    },
+    "instances": {
+     "frames_shared": 64,
+     "cards_on_shared_frames": 445,
+     "models": {
+      "delivered": 67,
+      "covered": 66,
+      "missed": 1,
+      "miss_rate": 0.015,
+      "in_pieces": 21,
+      "in_pieces_share": 0.318,
+      "pieces_per_covered_mean": 1.364,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 5,
+      "delivered_in_wrong_merges": 10,
+      "wholes_over_several": 3
+     },
+     "all": {
+      "delivered": 152,
+      "covered": 129,
+      "missed": 23,
+      "miss_rate": 0.151,
+      "in_pieces": 31,
+      "in_pieces_share": 0.24,
+      "pieces_per_covered_mean": 1.326,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 9,
+      "delivered_in_wrong_merges": 19,
+      "wholes_over_several": 6
+     },
+     "clean": {
+      "delivered": 91,
+      "covered": 79,
+      "missed": 12,
+      "miss_rate": 0.132,
+      "in_pieces": 10,
+      "in_pieces_share": 0.127,
+      "pieces_per_covered_mean": 1.139,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 4,
+      "delivered_in_wrong_merges": 8,
+      "wholes_over_several": 5
+     },
+     "missed_ids": {
+      "models": [
+       "object-175"
+      ],
+      "all": [
+       "object-025",
+       "object-031",
+       "object-033",
+       "object-034",
+       "object-037",
+       "object-040",
+       "object-044",
+       "object-058",
+       "object-066",
+       "object-067",
+       "object-075",
+       "object-087",
+       "object-088",
+       "object-103",
+       "object-118",
+       "object-119",
+       "object-120",
+       "object-124",
+       "object-125",
+       "object-133",
+       "object-175",
+       "object-191",
+       "object-194"
+      ],
+      "clean": [
+       "object-025",
+       "object-058",
+       "object-067",
+       "object-075",
+       "object-087",
+       "object-088",
+       "object-124",
+       "object-125",
+       "object-133",
+       "object-175",
+       "object-191",
+       "object-194"
+      ]
+     }
+    },
+    "heldout": {
+     "as shown": {
+      "n": 26,
+      "unmatched": 2,
+      "typed": 26,
+      "right_r4b": 26,
+      "right_ext": 26,
+      "n_ext": 0,
+      "acc_r4b": 1.0,
+      "acc_ext": 1.0,
+      "precision_ext": 1.0
+     }
+    },
+    "dev": {
+     "as shown": {
+      "n": 41,
+      "unmatched": 6,
+      "typed": 41,
+      "right_r4b": 40,
+      "right_ext": 40,
+      "n_ext": 0,
+      "acc_r4b": 0.976,
+      "acc_ext": 0.976,
+      "precision_ext": 0.976
+     }
+    },
+    "times": {
+     "first 3D": 15.3,
+     "objects v1": 24.7,
+     "cards v1": 30.1,
+     "types (first pass)": 65.1,
+     "objects v3": 59.1,
+     "cards v3": 74.8,
+     "types (densify pass)": 87.5,
+     "first SAM 3D model": 105.6,
+     "models final": 180.3,
+     "splat preview": 226.7,
+     "call end": 228.5,
+     "vocab known (mark)": 4.3,
+     "decode end": 4.3,
+     "sam3 done (mark)": 17.8
+    },
+    "sam3": {
+     "sam3.person": {
+      "n": 16,
+      "gpu_s": 10.93,
+      "span": [
+       0.14,
+       6.21
+      ]
+     },
+     "sam3.vocab.wave1": {
+      "n": 16,
+      "gpu_s": 6.17,
+      "span": [
+       5.17,
+       11.63
+      ]
+     },
+     "sam3.vocab.wave2": {
+      "n": 42,
+      "gpu_s": 10.52,
+      "span": [
+       11.63,
+       17.15
+      ]
+     },
+     "densify.sam3": {
+      "n": 21,
+      "gpu_s": 25.24,
+      "span": [
+       19.51,
+       39.56
+      ]
+     },
+     "vocab.pe": null,
+     "vlm.vocab": {
+      "n": 1,
+      "gpu_s": 2.96,
+      "span": [
+       0.65,
+       3.61
+      ]
+     }
+    },
+    "vlm": {
+     "scene vocabulary": {
+      "requests": 1,
+      "spans_s": [
+       [
+        0.6,
+        3.6
+       ]
+      ],
+      "before_cards_v1": 1
+     },
+     "event captions": {
+      "requests": 2,
+      "spans_s": [
+       [
+        4.4,
+        11.0
+       ]
+      ],
+      "before_cards_v1": 2
+     },
+     "naming (cluster medoids)": {
+      "requests": 32,
+      "spans_s": [
+       [
+        56.8,
+        57.9
+       ],
+       [
+        80.1,
+        81.5
+       ]
+      ],
+      "before_cards_v1": 0
+     },
+     "hazard / judge": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "qwen identity decider": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming escalated": 0,
+     "question log (by priority)": {
+      "identity": {
+       "n": 32,
+       "failed": 0,
+       "wait_p50_s": 0.003,
+       "wait_p90_s": 0.649,
+       "request_p50_s": 0.656,
+       "request_p90_s": 1.011,
+       "per_s": 1.3,
+       "prompt_tokens_mean": 373.8
+      }
+     },
+     "before cards v1 (all)": 3
+    },
+    "naming": {
+     "on": true,
+     "error": null,
+     "family": "retail",
+     "bank_rows_at_load": 1934,
+     "bank_rows_now": 1963
+    },
+    "gpu_peak_gib": [
+     70.17,
+     65.65
+    ],
+    "over_72": [],
+    "usd_estimate_call": 0.4941
+   }
+  },
+  "walmart": {
+   "first": {
+    "site": "walmart",
+    "report": "mvp-walmart-c0761a2a-1790721969",
+    "kind": "first",
+    "source": null,
+    "error": null,
+    "first_call_after_boot": true,
+    "words": {
+     "wave2": 9,
+     "all": 17,
+     "list": [
+      "shoe",
+      "box",
+      "stroller",
+      "trolley",
+      "bag",
+      "sign",
+      "shelf",
+      "display rack",
+      "cart"
+     ],
+     "vocab_s": 2.583
+    },
+    "objects_raw": 1383,
+    "shares": {
+     "object_cards": 906,
+     "typed": 0.981,
+     "specific_name": 0.615,
+     "unidentified": 0.0,
+     "top_names": [
+      [
+       "container / box / goods (type only)",
+       300
+      ],
+      [
+       "shoe",
+       184
+      ],
+      [
+       "box",
+       156
+      ],
+      [
+       "bag",
+       149
+      ],
+      [
+       "shelf",
+       44
+      ],
+      [
+       "shelf / rack / storage (type only)",
+       27
+      ],
+      [
+       "compact object (type only)",
+       11
+      ],
+      [
+       "sign",
+       10
+      ]
+     ]
+    },
+    "instances": {
+     "frames_shared": 62,
+     "cards_on_shared_frames": 366,
+     "models": {
+      "delivered": 40,
+      "covered": 39,
+      "missed": 1,
+      "miss_rate": 0.025,
+      "in_pieces": 10,
+      "in_pieces_share": 0.256,
+      "pieces_per_covered_mean": 1.385,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 1,
+      "delivered_in_wrong_merges": 2,
+      "wholes_over_several": 2
+     },
+     "all": {
+      "delivered": 157,
+      "covered": 134,
+      "missed": 23,
+      "miss_rate": 0.146,
+      "in_pieces": 28,
+      "in_pieces_share": 0.209,
+      "pieces_per_covered_mean": 1.269,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 7,
+      "delivered_in_wrong_merges": 21,
+      "wholes_over_several": 7
+     },
+     "clean": {
+      "delivered": 74,
+      "covered": 61,
+      "missed": 13,
+      "miss_rate": 0.176,
+      "in_pieces": 1,
+      "in_pieces_share": 0.016,
+      "pieces_per_covered_mean": 1.016,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 0,
+      "delivered_in_wrong_merges": 0,
+      "wholes_over_several": 4
+     },
+     "missed_ids": {
+      "models": [
+       "object-206"
+      ],
+      "all": [
+       "object-001",
+       "object-003",
+       "object-004",
+       "object-005",
+       "object-020",
+       "object-024",
+       "object-037",
+       "object-039",
+       "object-061",
+       "object-080",
+       "object-084",
+       "object-100",
+       "object-107",
+       "object-112",
+       "object-117",
+       "object-121",
+       "object-128",
+       "object-129",
+       "object-135",
+       "object-137",
+       "object-158",
+       "object-206",
+       "object-217"
+      ],
+      "clean": [
+       "object-004",
+       "object-005",
+       "object-039",
+       "object-080",
+       "object-100",
+       "object-107",
+       "object-117",
+       "object-121",
+       "object-128",
+       "object-129",
+       "object-137",
+       "object-206",
+       "object-217"
+      ]
+     }
+    },
+    "heldout": {
+     "as shown": {
+      "n": 29,
+      "unmatched": 0,
+      "typed": 26,
+      "right_r4b": 24,
+      "right_ext": 24,
+      "n_ext": 0,
+      "acc_r4b": 0.828,
+      "acc_ext": 0.828,
+      "precision_ext": 0.923
+     }
+    },
+    "dev": {
+     "as shown": {
+      "n": 46,
+      "unmatched": 1,
+      "typed": 43,
+      "right_r4b": 41,
+      "right_ext": 41,
+      "n_ext": 0,
+      "acc_r4b": 0.891,
+      "acc_ext": 0.891,
+      "precision_ext": 0.953
+     }
+    },
+    "times": {
+     "first 3D": 16.2,
+     "objects v1": 25.1,
+     "cards v1": 38.6,
+     "types (first pass)": 64.8,
+     "objects v3": 71.0,
+     "cards v3": 89.6,
+     "types (densify pass)": 99.2,
+     "first SAM 3D model": 156.5,
+     "models final": 194.2,
+     "splat preview": 226.6,
+     "call end": 227.5,
+     "vocab known (mark)": 5.2,
+     "decode end": 5.2,
+     "sam3 done (mark)": 19.1
+    },
+    "sam3": {
+     "sam3.person": {
+      "n": 16,
+      "gpu_s": 14.69,
+      "span": [
+       0.46,
+       8.79
+      ]
+     },
+     "sam3.vocab.wave1": {
+      "n": 16,
+      "gpu_s": 4.79,
+      "span": [
+       8.79,
+       13.59
+      ]
+     },
+     "sam3.vocab.wave2": {
+      "n": 42,
+      "gpu_s": 10.99,
+      "span": [
+       13.57,
+       19.14
+      ]
+     },
+     "densify.sam3": {
+      "n": 21,
+      "gpu_s": 29.57,
+      "span": [
+       23.93,
+       48.66
+      ]
+     },
+     "vocab.pe": null,
+     "vlm.vocab": {
+      "n": 1,
+      "gpu_s": 2.67,
+      "span": [
+       0.74,
+       3.42
+      ]
+     }
+    },
+    "vlm": {
+     "scene vocabulary": {
+      "requests": 1,
+      "spans_s": [
+       [
+        0.7,
+        3.4
+       ]
+      ],
+      "before_cards_v1": 1
+     },
+     "event captions": {
+      "requests": 2,
+      "spans_s": [
+       [
+        5.3,
+        12.2
+       ]
+      ],
+      "before_cards_v1": 2
+     },
+     "naming (cluster medoids)": {
+      "requests": 18,
+      "spans_s": [
+       [
+        58.2,
+        58.8
+       ],
+       [
+        91.7,
+        93.0
+       ]
+      ],
+      "before_cards_v1": 0
+     },
+     "hazard / judge": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "qwen identity decider": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming escalated": 0,
+     "question log (by priority)": {
+      "identity": {
+       "n": 18,
+       "failed": 0,
+       "wait_p50_s": 0.002,
+       "wait_p90_s": 0.006,
+       "request_p50_s": 0.602,
+       "request_p90_s": 0.968,
+       "per_s": 0.52,
+       "prompt_tokens_mean": 382.4
+      }
+     },
+     "before cards v1 (all)": 3
+    },
+    "naming": {
+     "on": true,
+     "error": null,
+     "family": "retail",
+     "bank_rows_at_load": 1963,
+     "bank_rows_now": 1980
+    },
+    "gpu_peak_gib": [
+     63.77,
+     61.78
+    ],
+    "over_72": [],
+    "usd_estimate_call": 0.492
+   },
+   "warm": {
+    "site": "walmart",
+    "report": "mvp-walmart-c0761a2a-1790722201",
+    "kind": "warm",
+    "source": null,
+    "error": null,
+    "first_call_after_boot": false,
+    "words": {
+     "wave2": 9,
+     "all": 17,
+     "list": [
+      "shoe",
+      "box",
+      "stroller",
+      "trolley",
+      "bag",
+      "sign",
+      "display rack",
+      "shelf",
+      "carton"
+     ],
+     "vocab_s": 2.251
+    },
+    "objects_raw": 1375,
+    "shares": {
+     "object_cards": 896,
+     "typed": 0.981,
+     "specific_name": 0.636,
+     "unidentified": 0.0,
+     "top_names": [
+      [
+       "container / box / goods (type only)",
+       286
+      ],
+      [
+       "shoe",
+       178
+      ],
+      [
+       "box",
+       157
+      ],
+      [
+       "bag",
+       147
+      ],
+      [
+       "shelf",
+       60
+      ],
+      [
+       "shelf / rack / storage (type only)",
+       18
+      ],
+      [
+       "compact object (type only)",
+       11
+      ],
+      [
+       "sign",
+       8
+      ]
+     ]
+    },
+    "instances": {
+     "frames_shared": 62,
+     "cards_on_shared_frames": 367,
+     "models": {
+      "delivered": 40,
+      "covered": 39,
+      "missed": 1,
+      "miss_rate": 0.025,
+      "in_pieces": 9,
+      "in_pieces_share": 0.231,
+      "pieces_per_covered_mean": 1.359,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 1,
+      "delivered_in_wrong_merges": 2,
+      "wholes_over_several": 1
+     },
+     "all": {
+      "delivered": 157,
+      "covered": 134,
+      "missed": 23,
+      "miss_rate": 0.146,
+      "in_pieces": 26,
+      "in_pieces_share": 0.194,
+      "pieces_per_covered_mean": 1.254,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 7,
+      "delivered_in_wrong_merges": 21,
+      "wholes_over_several": 6
+     },
+     "clean": {
+      "delivered": 74,
+      "covered": 61,
+      "missed": 13,
+      "miss_rate": 0.176,
+      "in_pieces": 2,
+      "in_pieces_share": 0.033,
+      "pieces_per_covered_mean": 1.033,
+      "pieces_per_covered_median": 1.0,
+      "wrong_merge_cards": 0,
+      "delivered_in_wrong_merges": 0,
+      "wholes_over_several": 4
+     },
+     "missed_ids": {
+      "models": [
+       "object-206"
+      ],
+      "all": [
+       "object-001",
+       "object-003",
+       "object-004",
+       "object-005",
+       "object-020",
+       "object-024",
+       "object-037",
+       "object-039",
+       "object-061",
+       "object-080",
+       "object-084",
+       "object-100",
+       "object-107",
+       "object-112",
+       "object-117",
+       "object-121",
+       "object-128",
+       "object-129",
+       "object-135",
+       "object-137",
+       "object-158",
+       "object-206",
+       "object-217"
+      ],
+      "clean": [
+       "object-004",
+       "object-005",
+       "object-039",
+       "object-080",
+       "object-100",
+       "object-107",
+       "object-117",
+       "object-121",
+       "object-128",
+       "object-129",
+       "object-137",
+       "object-206",
+       "object-217"
+      ]
+     }
+    },
+    "heldout": {
+     "as shown": {
+      "n": 29,
+      "unmatched": 0,
+      "typed": 26,
+      "right_r4b": 24,
+      "right_ext": 24,
+      "n_ext": 0,
+      "acc_r4b": 0.828,
+      "acc_ext": 0.828,
+      "precision_ext": 0.923
+     }
+    },
+    "dev": {
+     "as shown": {
+      "n": 46,
+      "unmatched": 1,
+      "typed": 43,
+      "right_r4b": 41,
+      "right_ext": 41,
+      "n_ext": 0,
+      "acc_r4b": 0.891,
+      "acc_ext": 0.891,
+      "precision_ext": 0.953
+     }
+    },
+    "times": {
+     "first 3D": 13.1,
+     "objects v1": 21.8,
+     "cards v1": 31.2,
+     "types (first pass)": 60.3,
+     "objects v3": 65.3,
+     "cards v3": 83.0,
+     "types (densify pass)": 93.1,
+     "first SAM 3D model": 141.9,
+     "models final": 182.4,
+     "splat preview": 226.3,
+     "call end": 226.7,
+     "vocab known (mark)": 3.5,
+     "decode end": 3.5,
+     "sam3 done (mark)": 16.2
+    },
+    "sam3": {
+     "sam3.person": {
+      "n": 16,
+      "gpu_s": 12.49,
+      "span": [
+       0.17,
+       8.0
+      ]
+     },
+     "sam3.vocab.wave1": {
+      "n": 16,
+      "gpu_s": 3.4,
+      "span": [
+       8.0,
+       11.17
+      ]
+     },
+     "sam3.vocab.wave2": {
+      "n": 42,
+      "gpu_s": 10.28,
+      "span": [
+       10.92,
+       16.23
+      ]
+     },
+     "densify.sam3": {
+      "n": 21,
+      "gpu_s": 26.66,
+      "span": [
+       18.0,
+       41.84
+      ]
+     },
+     "vocab.pe": null,
+     "vlm.vocab": {
+      "n": 1,
+      "gpu_s": 2.34,
+      "span": [
+       0.59,
+       2.93
+      ]
+     }
+    },
+    "vlm": {
+     "scene vocabulary": {
+      "requests": 1,
+      "spans_s": [
+       [
+        0.6,
+        2.9
+       ]
+      ],
+      "before_cards_v1": 1
+     },
+     "event captions": {
+      "requests": 2,
+      "spans_s": [
+       [
+        3.7,
+        6.4
+       ]
+      ],
+      "before_cards_v1": 2
+     },
+     "naming (cluster medoids)": {
+      "requests": 19,
+      "spans_s": [
+       [
+        53.8,
+        54.9
+       ],
+       [
+        84.4,
+        85.7
+       ]
+      ],
+      "before_cards_v1": 0
+     },
+     "hazard / judge": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "qwen identity decider": {
+      "requests": 0,
+      "spans_s": [],
+      "before_cards_v1": 0
+     },
+     "naming escalated": 0,
+     "question log (by priority)": {
+      "identity": {
+       "n": 19,
+       "failed": 0,
+       "wait_p50_s": 0.003,
+       "wait_p90_s": 0.008,
+       "request_p50_s": 0.85,
+       "request_p90_s": 0.864,
+       "per_s": 0.6,
+       "prompt_tokens_mean": 381.5
+      }
+     },
+     "before cards v1 (all)": 3
+    },
+    "naming": {
+     "on": true,
+     "error": null,
+     "family": "retail",
+     "bank_rows_at_load": 1980,
+     "bank_rows_now": 1998
+    },
+    "gpu_peak_gib": [
+     63.99,
+     61.92
+    ],
+    "over_72": [],
+    "usd_estimate_call": 0.4901
+   }
+  }
+ }
+}

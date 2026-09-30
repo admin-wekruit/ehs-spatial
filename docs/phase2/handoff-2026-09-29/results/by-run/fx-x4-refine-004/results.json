@@ -1,0 +1,9197 @@
+{
+ "schema": "panoptes-x4-refine-results-v1",
+ "run": "fx-x4-refine-004",
+ "boot": {
+  "entered_unix": 1790645626.5747733,
+  "models_s": 18.4,
+  "vllm_ready_s": 60.92,
+  "ready_s": 78.28,
+  "gpus": [
+   "GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-4e3b407f-e424-82e6-d3c2-4152fbf0041d)"
+  ],
+  "resident_gib": 29.4,
+  "client_submitted_unix": 1790645573.334948
+ },
+ "units": {
+  "*_s": "seconds of wall time inside the container (perf_counter), models resident, cold start excluded",
+  "*_m / *_mm / *_m2": "estimated: floor plane + an assumed 1.6 m camera height; never measured",
+  "*_deg": "degrees; tilt = deviation from plumb (vertical surfaces) or level (horizontal), relative to the coarse floor normal",
+  "ci95_deg": "2.5-97.5 percentile of 200 bootstrap least-squares fits over the RANSAC inliers (point noise only; the floor normal's error is not in it)",
+  "*_gib / peak_gb": "GiB (2^30 bytes), whole device (nvidia-smi, every process incl. vLLM), per stage window; over_90 flags > 90 %",
+  "photometric_l1": "held-out crop pixels -> 3D through the predicted depth -> nearest chosen view; mean |colour difference| 0..255",
+  "outline_iou": "held-out crop: SAM 3 mask (observed) vs the object's points from the other views projected (fine) or the coarse spot points (coarse)"
+ },
+ "confirmation_rule": {
+  "pairwise_median_m": 0.015,
+  "coarse_nn_median_m": 0.05,
+  "photometric_ratio": 1.05,
+  "outline_iou": 0.5,
+  "plane_ci_width_deg": 2.0,
+  "thin_min_height_m": 0.004
+ },
+ "hardware": {
+  "refine": "1 x A100-80GB (Modal), vLLM Qwen3-VL-8B on the same card at 30 %",
+  "lingbot": "its own 1 x A100-80GB container (Modal)"
+ },
+ "videos": {
+  "me340-165": {
+   "error": null,
+   "coarse": {
+    "shots": [
+     [
+      14,
+      225
+     ],
+     [
+      226,
+      898
+     ]
+    ],
+    "keyframes": 150,
+    "frames": 899,
+    "fps": 29.97,
+    "shots_geometry": [
+     {
+      "frames": [
+       14,
+       225
+      ],
+      "keyframes": 34,
+      "metres_per_unit": 6.373249759862472,
+      "floor_plane": true,
+      "coarse_points": 193803
+     },
+     {
+      "frames": [
+       226,
+       898
+      ],
+      "keyframes": 113,
+      "metres_per_unit": 4.930369439624098,
+      "floor_plane": true,
+      "coarse_points": 859880
+     }
+    ],
+    "trigger_detections": 4834,
+    "clusters": 273,
+    "identity_threshold": 0.9475
+   },
+   "coarse_pass_s": 37.736,
+   "analysis_wall_s": 536.627,
+   "client_wall_s": 538.88,
+   "candidates_top": [
+    {
+     "id": "s0",
+     "group": "cable",
+     "word": "wire",
+     "n_keyframes": 23,
+     "rank": 3.855,
+     "view_spread_deg": 34.44,
+     "triggers": [
+      "semantic: cable ('wire')"
+     ]
+    },
+    {
+     "id": "s5",
+     "group": "cable",
+     "word": "cable",
+     "n_keyframes": 23,
+     "rank": 3.8,
+     "view_spread_deg": 35.63,
+     "triggers": [
+      "semantic: cable ('cable')"
+     ]
+    },
+    {
+     "id": "s8",
+     "group": "cable",
+     "word": "hose",
+     "n_keyframes": 19,
+     "rank": 3.51,
+     "view_spread_deg": 35.47,
+     "triggers": [
+      "semantic: cable ('hose')"
+     ]
+    },
+    {
+     "id": "s1",
+     "group": "box_stack",
+     "word": "pallet",
+     "n_keyframes": 20,
+     "rank": 2.931,
+     "view_spread_deg": 79.4,
+     "triggers": [
+      "semantic: box_stack ('pallet')"
+     ]
+    },
+    {
+     "id": "s2",
+     "group": "shelf_partition",
+     "word": "shelf",
+     "n_keyframes": 15,
+     "rank": 2.846,
+     "view_spread_deg": 28.69,
+     "triggers": [
+      "semantic: shelf_partition ('shelf')",
+      "quality: mean DA3 confidence 1.33 < the video's 25th percentile 1.65"
+     ]
+    },
+    {
+     "id": "s15",
+     "group": "box_stack",
+     "word": "pallet",
+     "n_keyframes": 12,
+     "rank": 2.802,
+     "view_spread_deg": 46.51,
+     "triggers": [
+      "semantic: box_stack ('pallet')",
+      "quality: 33% of the mask's depth dropped as flying pixels (holes)",
+      "rule-borderline: coarse tilt 3.6 deg, CI [2.168, 4.753] vs an assumed 5 deg rule"
+     ]
+    },
+    {
+     "id": "s6",
+     "group": "cable",
+     "word": "hose",
+     "n_keyframes": 9,
+     "rank": 2.728,
+     "view_spread_deg": 36.26,
+     "triggers": [
+      "semantic: cable ('hose')",
+      "quality: 16% of the mask's depth dropped as flying pixels (holes)"
+     ]
+    },
+    {
+     "id": "s13",
+     "group": "box_stack",
+     "word": "box",
+     "n_keyframes": 9,
+     "rank": 2.645,
+     "view_spread_deg": 83.65,
+     "triggers": [
+      "semantic: box_stack ('box')",
+      "quality: 23% of the mask's depth dropped as flying pixels (holes)"
+     ]
+    },
+    {
+     "id": "s7",
+     "group": "cable",
+     "word": "cable",
+     "n_keyframes": 17,
+     "rank": 2.366,
+     "view_spread_deg": 20.85,
+     "triggers": [
+      "semantic: cable ('cable')",
+      "quality: 32% of the mask's depth dropped as flying pixels (holes)"
+     ]
+    },
+    {
+     "id": "s54",
+     "group": "cable",
+     "word": "wire",
+     "n_keyframes": 17,
+     "rank": 2.362,
+     "view_spread_deg": 36.64,
+     "triggers": [
+      "semantic: cable ('wire')"
+     ]
+    },
+    {
+     "id": "s4",
+     "group": "cable",
+     "word": "cable",
+     "n_keyframes": 12,
+     "rank": 2.329,
+     "view_spread_deg": 22.65,
+     "triggers": [
+      "semantic: cable ('cable')",
+      "quality: 46% of the mask's depth dropped as flying pixels (holes)"
+     ]
+    },
+    {
+     "id": "s23",
+     "group": "shelf_partition",
+     "word": "shelf",
+     "n_keyframes": 14,
+     "rank": 2.323,
+     "view_spread_deg": 24.85,
+     "triggers": [
+      "semantic: shelf_partition ('shelf')"
+     ]
+    }
+   ],
+   "spots": [
+    {
+     "id": "s0",
+     "group": "cable",
+     "word": "wire",
+     "triggers": [
+      "semantic: cable ('wire')"
+     ],
+     "centre_m_estimated": [
+      4.676,
+      0.314,
+      1.959
+     ],
+     "extent_m_estimated": [
+      0.309,
+      0.724,
+      0.665
+     ],
+     "keyframes_detected": 23,
+     "frames_chosen": [
+      {
+       "frame": 665,
+       "t_s": 22.189,
+       "score": 0.2811,
+       "visible_share": 1.0,
+       "spot_px": 121.3,
+       "frontal_cos": 0.753,
+       "sharpness_rel": 0.952,
+       "confidence_rel": 1.0,
+       "distance_m": 4.861,
+       "rule": "best score",
+       "min_angle_deg": null
+      },
+      {
+       "frame": 492,
+       "t_s": 16.416,
+       "score": 0.1638,
+       "visible_share": 1.0,
+       "spot_px": 81.8,
+       "frontal_cos": 0.458,
+       "sharpness_rel": 0.99,
+       "confidence_rel": 1.0,
+       "distance_m": 5.589,
+       "rule": ">= 12 deg from every chosen view",
+       "min_angle_deg": 21.68
+      },
+      {
+       "frame": 282,
+       "t_s": 9.409,
+       "score": 0.1138,
+       "visible_share": 1.0,
+       "spot_px": 65.8,
+       "frontal_cos": 0.254,
+       "sharpness_rel": 1.0,
+       "confidence_rel": 0.993,
+       "distance_m": 5.82,
+       "rule": ">= 12 deg from every chosen view",
+       "min_angle_deg": 12.56
+      },
+      {
+       "frame": 595,
+       "t_s": 19.853,
+       "score": 0.2111,
+       "visible_share": 0.992,
+       "spot_px": 91.5,
+       "frontal_cos": 0.674,
+       "sharpness_rel": 1.0,
+       "confidence_rel": 1.0,
+       "distance_m": 5.025,
+       "rule": "relaxed: >= 6 deg",
+       "min_angle_deg": 6.5
+      }
+     ],
+     "selection": {
+      "candidates": 673,
+      "scored_positive": 453,
+      "median_score": 0.1293
+     },
+     "time_s": {
+      "select": 0.831,
+      "fine_i_iii": 0.727,
+      "holdout_check": 0.413,
+      "vlm": 0.659,
+      "propagate": 0.188,
+      "total_without_sweeps": 2.818
+     },
+     "before_after": {
+      "points_in_box": {
+       "coarse_tsdf_3cm": 769,
+       "fine_tsdf_1cm": 7828,
+       "fine_raw_da3_pixels": 18530,
+       "crop_pixels_in_box_plus_15cm_per_view": [
+        14979,
+        7541,
+        4961,
+        8946
+       ],
+       "lingbot": 5079
+      },
+      "spacing_m": {
+       "coarse": 0.01732,
+       "fine": 0.00491,
+       "lingbot": 0.01336
+      },
+      "pixel_footprint_mm_at_best_view": {
+       "coarse_grid": 21.34,
+       "fine_crop": 12.0,
+       "distance_m": 4.861
+      },
+      "plane_tilt_deg": null,
+      "thin_object": {
+       "observed_height_mm": 24.74,
+       "coarse_map": {
+        "height_mm": 15.13,
+        "mask_coverage": 1.0,
+        "thin_object_visible": true
+       },
+       "fine_map": {
+        "height_mm": 26.51,
+        "mask_coverage": 0.651,
+        "thin_object_visible": true
+       },
+       "lingbot": {
+        "height_mm": 16.62,
+        "mask_coverage": 0.479,
+        "thin_object_visible": false
+       }
+      }
+     },
+     "confirmation": {
+      "verdict": {
+       "status": "NEEDS_REVIEW",
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": false,
+        "thin_visible": true,
+        "vlm": false
+       },
+       "failed": [
+        "multi_view",
+        "holdout_outline",
+        "vlm"
+       ],
+       "rule": {
+        "pairwise_median_m": 0.015,
+        "coarse_nn_median_m": 0.05,
+        "photometric_ratio": 1.05,
+        "outline_iou": 0.5,
+        "plane_ci_width_deg": 2.0,
+        "thin_min_height_m": 0.004
+       }
+      },
+      "holdout": {
+       "view": 282,
+       "source_view": 492,
+       "photometric_l1": {
+        "fine": 18.299,
+        "coarse": 20.088,
+        "ratio_fine_over_coarse": 0.9109,
+        "pixels": 968,
+        "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+       },
+       "depth_vs_heldout_da3_median_m": 0.0468,
+       "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+       "outline_iou": {
+        "fine": 0.0344,
+        "coarse": 0.1727,
+        "observed": true
+       }
+      },
+      "multi_view": {
+       "median_m": 0.02313,
+       "within_1cm": 0.2322,
+       "within_2cm": 0.4453,
+       "pairs": 12,
+       "samples": 55043
+      },
+      "agreement_with_coarse": {
+       "fine_to_coarse_nn_median_m": 0.0198,
+       "p90_m": 0.0308
+      },
+      "vlm": {
+       "answer": {
+        "object": "yes",
+        "outline": "wrong",
+        "detail": "the red outline does not follow the wire's edges"
+       },
+       "raw": "{\n  \"object\": \"yes\",\n  \"outline\": \"wrong\",\n  \"detail\": \"the red outline does not follow the wire's edges\"\n}",
+       "s": 0.652,
+       "completion_tokens": 33
+      }
+     },
+     "lingbot_ii": {
+      "sim3_scale": 4.2839,
+      "camera_ate_after_sim3_m": 0.0427,
+      "icp": {
+       "fitness": 0.8154,
+       "rmse_m": 0.044,
+       "correction_m": 0.262,
+       "correction_deg": 2.926
+      },
+      "display_gate_share_within_25cm": 0.9913,
+      "display_gate_pass": true,
+      "align_s": 0.227,
+      "multi_view": {
+       "median_m": 0.0803,
+       "within_1cm": 0.0895,
+       "within_2cm": 0.1654,
+       "pairs": 12,
+       "samples": 14193
+      },
+      "frames": 66,
+      "stride": 6,
+      "span_frames": [
+       282,
+       665
+      ],
+      "infer_s": 11.774,
+      "prep_s": 0.395,
+      "fps": 5.61,
+      "peak_gib": 10.29,
+      "gpu": "NVIDIA A100-SXM4-80GB",
+      "points_in_box": 5079,
+      "spacing_m": 0.01336,
+      "coarse_nn_median_m": 0.0458,
+      "thin": {
+       "observed_height_mm": 24.74,
+       "lingbot": {
+        "height_mm": 16.62,
+        "mask_coverage": 0.479,
+        "thin_object_visible": false
+       }
+      }
+     },
+     "propagation": {
+      "replaced_coarse_points": 988,
+      "added_fine_points": 10188,
+      "band_coarse_points": 621,
+      "band_dropped_as_duplicate": 95,
+      "seam_gap_median_m": 0.0745,
+      "grow_along_plane": {
+       "skipped": "not a surface spot"
+      },
+      "reproject": {
+       "keyframes_in_shot": 113,
+       "keyframes_updated": 82,
+       "keyframes_with_sam3_mask": 23,
+       "iou_vs_sam3_fine_mean": 0.1325,
+       "iou_vs_sam3_coarse_mean": 0.1131,
+       "boxes_grid_504x280": {
+        "226": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "228": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "234": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "242": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "246": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "254": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "262": [
+         373,
+         108,
+         397,
+         151
+        ],
+        "266": [
+         373,
+         108,
+         397,
+         151
+        ],
+        "275": [
+         373,
+         108,
+         397,
+         151
+        ],
+        "276": [
+         373,
+         108,
+         397,
+         151
+        ],
+        "286": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "290": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "294": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "302": [
+         372,
+         108,
+         395,
+         151
+        ],
+        "310": [
+         372,
+         108,
+         395,
+         151
+        ],
+        "314": [
+         372,
+         109,
+         396,
+         151
+        ],
+        "318": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "328": [
+         372,
+         108,
+         396,
+         151
+        ],
+        "334": [
+         372,
+         109,
+         396,
+         152
+        ],
+        "338": [
+         372,
+         109,
+         396,
+         152
+        ],
+        "344": [
+         372,
+         109,
+         396,
+         152
+        ],
+        "352": [
+         373,
+         109,
+         396,
+         152
+        ],
+        "358": [
+         373,
+         109,
+         397,
+         152
+        ],
+        "362": [
+         374,
+         110,
+         398,
+         152
+        ],
+        "366": [
+         374,
+         110,
+         399,
+         153
+        ],
+        "372": [
+         376,
+         110,
+         400,
+         153
+        ],
+        "382": [
+         378,
+         110,
+         403,
+         153
+        ],
+        "386": [
+         379,
+         110,
+         403,
+         154
+        ],
+        "390": [
+         379,
+         111,
+         404,
+         154
+        ],
+        "400": [
+         379,
+         111,
+         404,
+         155
+        ],
+        "406": [
+         379,
+         112,
+         404,
+         155
+        ],
+        "410": [
+         379,
+         112,
+         405,
+         155
+        ],
+        "418": [
+         380,
+         113,
+         406,
+         156
+        ],
+        "422": [
+         380,
+         113,
+         407,
+         157
+        ],
+        "426": [
+         381,
+         114,
+         408,
+         157
+        ],
+        "437": [
+         385,
+         115,
+         413,
+         159
+        ],
+        "438": [
+         385,
+         115,
+         412,
+         159
+        ],
+        "446": [
+         387,
+         116,
+         416,
+         161
+        ],
+        "450": [
+         388,
+         116,
+         418,
+         161
+        ],
+        "458": [
+         391,
+         117,
+         421,
+         162
+        ]
+       },
+       "note": "grid 504x280; SAM 3 masks exist only on every 3rd keyframe with a detection; the others are new outlines"
+      },
+      "look_alikes": {
+       "threshold": 0.9475,
+       "negatives": 236819,
+       "flagged_for_refinement_next": [
+        {
+         "cluster": 110,
+         "group": "cable",
+         "words": [
+          "cable",
+          "power cord",
+          "wire"
+         ],
+         "shot": 1,
+         "centre_m": [
+          -2.592,
+          -1.712,
+          6.654
+         ],
+         "cosine": 0.9793
+        },
+        {
+         "cluster": 34,
+         "group": "cable",
+         "words": [
+          "cable",
+          "hose",
+          "power cord",
+          "wire"
+         ],
+         "shot": 1,
+         "centre_m": [
+          -3.046,
+          -0.079,
+          4.513
+         ],
+         "cosine": 0.9746
+        },
+        {
+         "cluster": 26,
+         "group": "cable",
+         "words": [
+          "cable",
+          "hose",
+          "power cord",
+          "wire"
+         ],
+         "shot": 1,
+         "centre_m": [
+          -2.313,
+          -0.095,
+          1.887
+         ],
+         "cosine": 0.9727
+        },
+        {
+         "cluster": 53,
+         "group": "cable",
+         "words": [
+          "cable",
+          "power cord",
+          "wire"
+         ],
+         "shot": 1,
+         "centre_m": [
+          -2.673,
+          0.5,
+          4.072
+         ],
+         "cosine": 0.9723
+        },
+        {
+         "cluster": 16,
+         "group": "cable",
+         "words": [
+          "cable",
+          "hose",
+          "power cord",
+          "wire"
+         ],
+         "shot": 1,
+         "centre_m": [
+          4.66,
+          0.776,
+          2.07
+         ],
+         "cosine": 0.9694
+        },
+        {
+         "cluster": 15,
+         "group": "cable",
+         "words": [
+          "cable",
+          "hose",
+          "power cord",
+          "wire"
+         ],
+         "shot": 1,
+         "centre_m": [
+          -1.515,
+          0.891,
+          1.647
+         ],
+         "cosine": 0.9683
+        },
+        {
+         "cluster": 33,
+         "group": "cable",
+         "words": [
+          "cable",
+          "hose",
+          "power cord",
+          "wire"
+         ],
+         "shot": 1,
+         "centre_m": [
+          -1.942,
+          0.813,
+          1.701
+         ],
+         "cosine": 0.9673
+        },
+        {
+         "cluster": 224,
+         "group": "cable",
+         "words": [
+          "cable",
+          "wire"
+         ],
+         "shot": 0,
+         "centre_m": [
+          -0.653,
+          -0.579,
+          11.114
+         ],
+         "cosine": 0.9598
+        },
+        {
+         "cluster": 186,
+         "group": "cable",
+         "words": [
+          "cable",
+          "hose",
+          "power cord",
+          "wire"
+         ],
+         "shot": 0,
+         "centre_m": [
+          -0.345,
+          -0.359,
+          8.916
+         ],
+         "cosine": 0.958
+        },
+        {
+         "cluster": 20,
+         "group": "cable",
+         "words": [
+          "cable",
+          "extension cord",
+          "hose",
+          "power cord",
+          "wire"
+         ],
+         "shot": 1,
+         "centre_m": [
+          -1.894,
+          0.309,
+          7.139
+         ],
+         "cosine": 0.9569
+        }
+       ],
+       "count": 28
+      }
+     },
+     "gpu0_peak_gib_during_spot": 40.26,
+     "variants": [
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 504,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.727,
+        "da3": 0.273,
+        "anchor_icp": 0.016,
+        "tsdf_1cm": 0.129,
+        "holdout_check": 0.413
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 7828,
+        "fine_raw_da3_pixels": 18530,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         14979,
+         7541,
+         4961,
+         8946
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01732,
+        "fine": 0.00491
+       },
+       "multi_view": {
+        "median_m": 0.02313,
+        "within_1cm": 0.2322,
+        "within_2cm": 0.4453,
+        "pairs": 12,
+        "samples": 55043
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0198,
+        "p90_m": 0.0308
+       },
+       "plane": null,
+       "thin": {
+        "observed_height_mm": 24.74,
+        "coarse_map": {
+         "height_mm": 15.13,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": 26.51,
+         "mask_coverage": 0.651,
+         "thin_object_visible": true
+        }
+       },
+       "holdout": {
+        "view": 282,
+        "source_view": 492,
+        "photometric_l1": {
+         "fine": 18.299,
+         "coarse": 20.088,
+         "ratio_fine_over_coarse": 0.9109,
+         "pixels": 968,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0468,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.0344,
+         "coarse": 0.1727,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "raw",
+       "res": 504,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.696,
+        "da3": 0.278,
+        "anchor_icp": 0.0,
+        "tsdf_1cm": 0.11,
+        "holdout_check": 0.363
+       },
+       "anchor": null,
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 0,
+        "fine_raw_da3_pixels": 0,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         0,
+         0,
+         53,
+         0
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01732,
+        "fine": null
+       },
+       "multi_view": {
+        "median_m": null,
+        "within_1cm": null,
+        "within_2cm": null,
+        "pairs": 12,
+        "samples": 0
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": null,
+        "p90_m": null
+       },
+       "plane": null,
+       "thin": {
+        "observed_height_mm": 19.47,
+        "coarse_map": {
+         "height_mm": 15.13,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": null,
+         "mask_coverage": 0.0,
+         "thin_object_visible": false
+        }
+       },
+       "holdout": {
+        "view": 282,
+        "source_view": 492,
+        "photometric_l1": {
+         "fine": null,
+         "coarse": null,
+         "ratio_fine_over_coarse": null,
+         "pixels": 0,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": null,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": null,
+         "coarse": 0.1727,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor+icp",
+       "res": 504,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.919,
+        "da3": 0.272,
+        "anchor_icp": 0.216,
+        "tsdf_1cm": 0.095,
+        "holdout_check": 0.525
+       },
+       "anchor": {
+        "scales": [
+         0.7945,
+         0.8397,
+         0.8567,
+         0.7914
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.0%",
+         "spot -0.4%",
+         "spot -0.1%",
+         "spot -0.5%"
+        ]
+       },
+       "pose_refine": [
+        {
+         "view": 1,
+         "fitness": 0.61,
+         "rmse_mm": 17.64,
+         "deg": 3.73,
+         "cm": 25.06,
+         "applied": false
+        },
+        {
+         "view": 2,
+         "fitness": 0.562,
+         "rmse_mm": 19.33,
+         "deg": 7.353,
+         "cm": 10.34,
+         "applied": false
+        },
+        {
+         "view": 3,
+         "fitness": 0.65,
+         "rmse_mm": 21.87,
+         "deg": 8.011,
+         "cm": 56.14,
+         "applied": false
+        }
+       ],
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 7828,
+        "fine_raw_da3_pixels": 18530,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         14979,
+         7541,
+         4961,
+         8946
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01732,
+        "fine": 0.00491
+       },
+       "multi_view": {
+        "median_m": 0.02313,
+        "within_1cm": 0.2322,
+        "within_2cm": 0.4453,
+        "pairs": 12,
+        "samples": 55043
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0198,
+        "p90_m": 0.0308
+       },
+       "plane": null,
+       "thin": {
+        "observed_height_mm": 24.74,
+        "coarse_map": {
+         "height_mm": 15.13,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": 26.51,
+         "mask_coverage": 0.651,
+         "thin_object_visible": true
+        }
+       },
+       "holdout": {
+        "view": 282,
+        "source_view": 492,
+        "photometric_l1": {
+         "fine": 18.299,
+         "coarse": 20.088,
+         "ratio_fine_over_coarse": 0.9109,
+         "pixels": 968,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0468,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.0344,
+         "coarse": 0.1727,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "unposed",
+       "res": 504,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.8,
+        "da3": 0.262,
+        "anchor_icp": 0.0,
+        "tsdf_1cm": 0.1,
+        "holdout_check": 0.424
+       },
+       "anchor": null,
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 0,
+        "fine_raw_da3_pixels": 0,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         0,
+         0,
+         0,
+         0
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01732,
+        "fine": null
+       },
+       "multi_view": {
+        "median_m": null,
+        "within_1cm": null,
+        "within_2cm": null,
+        "pairs": 12,
+        "samples": 0
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": null,
+        "p90_m": null
+       },
+       "plane": null,
+       "thin": {
+        "observed_height_mm": 59.93,
+        "coarse_map": {
+         "height_mm": 340.95,
+         "mask_coverage": 0.64,
+         "thin_object_visible": true
+        },
+        "fine_map": {
+         "height_mm": null,
+         "mask_coverage": 0.0,
+         "thin_object_visible": false
+        }
+       },
+       "holdout": {
+        "view": 282,
+        "source_view": 492,
+        "photometric_l1": {
+         "fine": null,
+         "coarse": null,
+         "ratio_fine_over_coarse": null,
+         "pixels": 0,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": null,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": null,
+         "coarse": 0.1727,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "tight",
+       "method": "anchor",
+       "res": 504,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.673,
+        "da3": 0.263,
+        "anchor_icp": 0.016,
+        "tsdf_1cm": 0.101,
+        "holdout_check": 0.39
+       },
+       "anchor": {
+        "scales": [
+         0.9758,
+         1.1539,
+         0.9873,
+         0.7724
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +1.4%",
+         "spot -1.4%",
+         "spot -3.4%",
+         "spot -1.2%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 8238,
+        "fine_raw_da3_pixels": 113141,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         119569,
+         62065,
+         43905,
+         71229
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01732,
+        "fine": 0.0039
+       },
+       "multi_view": {
+        "median_m": 0.10121,
+        "within_1cm": 0.0495,
+        "within_2cm": 0.1007,
+        "pairs": 12,
+        "samples": 209509
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0378,
+        "p90_m": 0.1017
+       },
+       "plane": null,
+       "thin": {
+        "observed_height_mm": 172.23,
+        "coarse_map": {
+         "height_mm": 5.64,
+         "mask_coverage": 1.0,
+         "thin_object_visible": false
+        },
+        "fine_map": {
+         "height_mm": 66.06,
+         "mask_coverage": 0.609,
+         "thin_object_visible": false
+        }
+       },
+       "holdout": {
+        "view": 282,
+        "source_view": 492,
+        "photometric_l1": {
+         "fine": 29.403,
+         "coarse": 26.126,
+         "ratio_fine_over_coarse": 1.1254,
+         "pixels": 1885,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.1283,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.144,
+         "coarse": 0.1486,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 336,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.538,
+        "da3": 0.139,
+        "anchor_icp": 0.011,
+        "tsdf_1cm": 0.08,
+        "holdout_check": 0.241
+       },
+       "anchor": {
+        "scales": [
+         0.8824,
+         0.9111,
+         0.922,
+         0.8685
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot +0.2%",
+         "spot -0.5%",
+         "spot -0.2%",
+         "spot +0.1%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 7948,
+        "fine_raw_da3_pixels": 8567,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         6724,
+         3160,
+         1997,
+         3993
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01732,
+        "fine": 0.00467
+       },
+       "multi_view": {
+        "median_m": 0.02392,
+        "within_1cm": 0.2114,
+        "within_2cm": 0.4222,
+        "pairs": 12,
+        "samples": 25449
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0208,
+        "p90_m": 0.0318
+       },
+       "plane": null,
+       "thin": {
+        "observed_height_mm": 14.49,
+        "coarse_map": {
+         "height_mm": 5.6,
+         "mask_coverage": 1.0,
+         "thin_object_visible": false
+        },
+        "fine_map": {
+         "height_mm": 7.49,
+         "mask_coverage": 1.0,
+         "thin_object_visible": true
+        }
+       },
+       "holdout": {
+        "view": 282,
+        "source_view": 492,
+        "photometric_l1": {
+         "fine": 19.124,
+         "coarse": 19.391,
+         "ratio_fine_over_coarse": 0.9862,
+         "pixels": 490,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0194,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.0961,
+         "coarse": 0.1664,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 756,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 1.197,
+        "da3": 0.59,
+        "anchor_icp": 0.035,
+        "tsdf_1cm": 0.224,
+        "holdout_check": 0.812
+       },
+       "anchor": {
+        "scales": [
+         0.6043,
+         0.7337,
+         0.7844,
+         0.62
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot -0.3%",
+         "spot -1.7%",
+         "spot -2.3%",
+         "spot -1.4%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 8543,
+        "fine_raw_da3_pixels": 40336,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         33517,
+         20387,
+         13550,
+         21317
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01732,
+        "fine": 0.00425
+       },
+       "multi_view": {
+        "median_m": 0.04518,
+        "within_1cm": 0.1304,
+        "within_2cm": 0.2786,
+        "pairs": 12,
+        "samples": 119856
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0525,
+        "p90_m": 0.0913
+       },
+       "plane": null,
+       "thin": {
+        "observed_height_mm": 170.75,
+        "coarse_map": {
+         "height_mm": 9.08,
+         "mask_coverage": 1.0,
+         "thin_object_visible": false
+        },
+        "fine_map": {
+         "height_mm": 27.76,
+         "mask_coverage": 1.0,
+         "thin_object_visible": false
+        }
+       },
+       "holdout": {
+        "view": 282,
+        "source_view": 492,
+        "photometric_l1": {
+         "fine": 16.615,
+         "coarse": 19.355,
+         "ratio_fine_over_coarse": 0.8584,
+         "pixels": 1507,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.1956,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.0855,
+         "coarse": 0.1733,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 504,
+       "views": 3,
+       "time_s": {
+        "fine_i_iii": 0.569,
+        "da3": 0.197,
+        "anchor_icp": 0.012,
+        "tsdf_1cm": 0.092,
+        "holdout_check": 0.001
+       },
+       "anchor": {
+        "scales": [
+         0.9133,
+         0.9271,
+         0.9462
+        ],
+        "kept": [
+         0,
+         1,
+         2
+        ],
+        "notes": [
+         "spot +0.2%",
+         "spot -0.6%",
+         "spot +0.0%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 3,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 769,
+        "fine_tsdf_1cm": 7149,
+        "fine_raw_da3_pixels": 13876,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         14919,
+         7380,
+         4436
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01732,
+        "fine": 0.00479
+       },
+       "multi_view": {
+        "median_m": 0.02239,
+        "within_1cm": 0.2515,
+        "within_2cm": 0.46,
+        "pairs": 6,
+        "samples": 27752
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0214,
+        "p90_m": 0.0406
+       },
+       "plane": null,
+       "thin": {
+        "observed_height_mm": 51.06,
+        "coarse_map": {
+         "height_mm": 7.96,
+         "mask_coverage": 1.0,
+         "thin_object_visible": false
+        },
+        "fine_map": {
+         "height_mm": 21.48,
+         "mask_coverage": 0.954,
+         "thin_object_visible": false
+        }
+       },
+       "holdout": {
+        "skipped": "3 views: the hold-out would leave 2 cameras, DA3's Umeyama pose alignment needs >= 3"
+       }
+      }
+     ]
+    },
+    {
+     "id": "s1",
+     "group": "box_stack",
+     "word": "pallet",
+     "triggers": [
+      "semantic: box_stack ('pallet')"
+     ],
+     "centre_m_estimated": [
+      1.707,
+      0.562,
+      -0.377
+     ],
+     "extent_m_estimated": [
+      0.556,
+      0.395,
+      0.754
+     ],
+     "keyframes_detected": 20,
+     "frames_chosen": [
+      {
+       "frame": 562,
+       "t_s": 18.752,
+       "score": 0.4761,
+       "visible_share": 0.609,
+       "spot_px": 281.3,
+       "frontal_cos": 1.0,
+       "sharpness_rel": 1.0,
+       "confidence_rel": 1.0,
+       "distance_m": 1.559,
+       "rule": "best score",
+       "min_angle_deg": null
+      },
+      {
+       "frame": 508,
+       "t_s": 16.95,
+       "score": 0.3557,
+       "visible_share": 0.695,
+       "spot_px": 184.2,
+       "frontal_cos": 1.0,
+       "sharpness_rel": 1.0,
+       "confidence_rel": 1.0,
+       "distance_m": 1.833,
+       "rule": ">= 12 deg from every chosen view",
+       "min_angle_deg": 25.53
+      },
+      {
+       "frame": 536,
+       "t_s": 17.885,
+       "score": 0.3154,
+       "visible_share": 0.625,
+       "spot_px": 191.4,
+       "frontal_cos": 1.0,
+       "sharpness_rel": 0.949,
+       "confidence_rel": 1.0,
+       "distance_m": 1.743,
+       "rule": ">= 12 deg from every chosen view",
+       "min_angle_deg": 12.68
+      },
+      {
+       "frame": 473,
+       "t_s": 15.782,
+       "score": 0.3136,
+       "visible_share": 0.742,
+       "spot_px": 152.1,
+       "frontal_cos": 1.0,
+       "sharpness_rel": 1.0,
+       "confidence_rel": 1.0,
+       "distance_m": 2.067,
+       "rule": ">= 12 deg from every chosen view",
+       "min_angle_deg": 12.05
+      },
+      {
+       "frame": 429,
+       "t_s": 14.314,
+       "score": 0.2739,
+       "visible_share": 0.789,
+       "spot_px": 125.0,
+       "frontal_cos": 1.0,
+       "sharpness_rel": 1.0,
+       "confidence_rel": 1.0,
+       "distance_m": 2.351,
+       "rule": ">= 12 deg from every chosen view",
+       "min_angle_deg": 12.07
+      }
+     ],
+     "selection": {
+      "candidates": 673,
+      "scored_positive": 338,
+      "median_score": 0.2532
+     },
+     "time_s": {
+      "select": 0.107,
+      "fine_i_iii": 0.852,
+      "holdout_check": 0.475,
+      "vlm": 0.746,
+      "propagate": 0.189,
+      "total_without_sweeps": 2.369
+     },
+     "before_after": {
+      "points_in_box": {
+       "coarse_tsdf_3cm": 1320,
+       "fine_tsdf_1cm": 6041,
+       "fine_raw_da3_pixels": 61502,
+       "crop_pixels_in_box_plus_15cm_per_view": [
+        43382,
+        18032,
+        26924,
+        12975,
+        8905
+       ],
+       "lingbot": 20790
+      },
+      "spacing_m": {
+       "coarse": 0.01348,
+       "fine": 0.00428,
+       "lingbot": 0.00624
+      },
+      "pixel_footprint_mm_at_best_view": {
+       "coarse_grid": 6.84,
+       "fine_crop": 3.85,
+       "distance_m": 1.559
+      },
+      "plane_tilt_deg": {
+       "coarse": {
+        "kind": "vertical",
+        "tilt_deg": 26.962,
+        "ci95_deg": [
+         26.011,
+         27.942
+        ],
+        "ci_width_deg": 1.931,
+        "inliers": 302,
+        "points": 1320,
+        "rms_mm": 17.51,
+        "normal": [
+         0.7607300281524658,
+         0.3550899922847748,
+         0.5433200001716614
+        ],
+        "centre": [
+         1.6368999481201172,
+         0.5734999775886536,
+         -0.31610000133514404
+        ]
+       },
+       "fine": {
+        "kind": "vertical",
+        "tilt_deg": 0.3,
+        "ci95_deg": [
+         0.149,
+         0.438
+        ],
+        "ci_width_deg": 0.289,
+        "inliers": 1505,
+        "points": 6041,
+        "rms_mm": 5.01,
+        "normal": [
+         0.965910017490387,
+         -0.058639999479055405,
+         0.2521600127220154
+        ],
+        "centre": [
+         1.7055000066757202,
+         0.5877000093460083,
+         -0.3434999883174896
+        ]
+       },
+       "lingbot": {
+        "kind": "vertical",
+        "tilt_deg": 7.872,
+        "ci95_deg": [
+         7.764,
+         7.962
+        ],
+        "ci_width_deg": 0.198,
+        "inliers": 4108,
+        "points": 20790,
+        "rms_mm": 5.08,
+        "normal": [
+         0.94454,
+         0.0735,
+         0.32006
+        ],
+        "centre": [
+         1.8067,
+         0.5842,
+         -0.3734
+        ]
+       }
+      },
+      "thin_object": null
+     },
+     "confirmation": {
+      "verdict": {
+       "status": "NEEDS_REVIEW",
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": true,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": true
+       },
+       "failed": [
+        "multi_view"
+       ],
+       "rule": {
+        "pairwise_median_m": 0.015,
+        "coarse_nn_median_m": 0.05,
+        "photometric_ratio": 1.05,
+        "outline_iou": 0.5,
+        "plane_ci_width_deg": 2.0,
+        "thin_min_height_m": 0.004
+       }
+      },
+      "holdout": {
+       "view": 536,
+       "source_view": 508,
+       "photometric_l1": {
+        "fine": 16.01,
+        "coarse": 15.81,
+        "ratio_fine_over_coarse": 1.0126,
+        "pixels": 8421,
+        "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+       },
+       "depth_vs_heldout_da3_median_m": 0.0227,
+       "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+       "outline_iou": {
+        "fine": 0.6283,
+        "coarse": 0.6402,
+        "observed": true
+       }
+      },
+      "multi_view": {
+       "median_m": 0.07839,
+       "within_1cm": 0.0522,
+       "within_2cm": 0.1108,
+       "pairs": 20,
+       "samples": 200069
+      },
+      "agreement_with_coarse": {
+       "fine_to_coarse_nn_median_m": 0.0303,
+       "p90_m": 0.0848
+      },
+      "vlm": {
+       "answer": {
+        "object": "yes",
+        "outline": "loose",
+        "detail": "The red outline loosely encloses the pallet, missing some edges and including some surrounding clutter."
+       },
+       "raw": "{\n  \"object\": \"yes\",\n  \"outline\": \"loose\",\n  \"detail\": \"The red outline loosely encloses the pallet, missing some edges and including some surrounding clutter.\"\n}",
+       "s": 0.731,
+       "completion_tokens": 41
+      }
+     },
+     "lingbot_ii": {
+      "sim3_scale": 4.64205,
+      "camera_ate_after_sim3_m": 0.0376,
+      "icp": {
+       "fitness": 0.9248,
+       "rmse_m": 0.0445,
+       "correction_m": 0.1492,
+       "correction_deg": 3.995
+      },
+      "display_gate_share_within_25cm": 0.9999,
+      "display_gate_pass": true,
+      "align_s": 0.402,
+      "multi_view": {
+       "median_m": 0.08489,
+       "within_1cm": 0.1052,
+       "within_2cm": 0.1888,
+       "pairs": 20,
+       "samples": 64620
+      },
+      "frames": 49,
+      "stride": 3,
+      "span_frames": [
+       429,
+       562
+      ],
+      "infer_s": 4.756,
+      "prep_s": 0.259,
+      "fps": 10.3,
+      "peak_gib": 8.35,
+      "gpu": "NVIDIA A100-SXM4-80GB",
+      "points_in_box": 20790,
+      "spacing_m": 0.00624,
+      "coarse_nn_median_m": 0.0428,
+      "plane": {
+       "kind": "vertical",
+       "tilt_deg": 7.872,
+       "ci95_deg": [
+        7.764,
+        7.962
+       ],
+       "ci_width_deg": 0.198,
+       "inliers": 4108,
+       "points": 20790,
+       "rms_mm": 5.08,
+       "normal": [
+        0.94454,
+        0.0735,
+        0.32006
+       ],
+       "centre": [
+        1.8067,
+        0.5842,
+        -0.3734
+       ]
+      }
+     },
+     "propagation": {
+      "replaced_coarse_points": 1787,
+      "added_fine_points": 7844,
+      "band_coarse_points": 828,
+      "band_dropped_as_duplicate": 37,
+      "seam_gap_median_m": 0.1472,
+      "grow_along_plane": {
+       "skipped": "no confirmed plane"
+      },
+      "reproject": {
+       "keyframes_in_shot": 113,
+       "keyframes_updated": 70,
+       "keyframes_with_sam3_mask": 20,
+       "iou_vs_sam3_fine_mean": 0.6354,
+       "iou_vs_sam3_coarse_mean": 0.541,
+       "boxes_grid_504x280": {
+        "226": [
+         231,
+         111,
+         289,
+         152
+        ],
+        "228": [
+         231,
+         111,
+         289,
+         152
+        ],
+        "234": [
+         231,
+         111,
+         289,
+         151
+        ],
+        "242": [
+         231,
+         111,
+         289,
+         151
+        ],
+        "246": [
+         231,
+         111,
+         289,
+         152
+        ],
+        "254": [
+         231,
+         112,
+         289,
+         152
+        ],
+        "262": [
+         232,
+         112,
+         290,
+         152
+        ],
+        "266": [
+         232,
+         112,
+         290,
+         152
+        ],
+        "275": [
+         231,
+         112,
+         289,
+         152
+        ],
+        "276": [
+         231,
+         112,
+         289,
+         152
+        ],
+        "286": [
+         230,
+         112,
+         288,
+         152
+        ],
+        "290": [
+         230,
+         112,
+         288,
+         152
+        ],
+        "294": [
+         230,
+         112,
+         288,
+         152
+        ],
+        "302": [
+         229,
+         112,
+         287,
+         152
+        ],
+        "310": [
+         229,
+         112,
+         287,
+         152
+        ],
+        "314": [
+         229,
+         112,
+         288,
+         152
+        ],
+        "318": [
+         229,
+         112,
+         288,
+         152
+        ],
+        "328": [
+         230,
+         112,
+         288,
+         152
+        ],
+        "334": [
+         230,
+         113,
+         288,
+         153
+        ],
+        "338": [
+         230,
+         113,
+         288,
+         153
+        ],
+        "344": [
+         231,
+         113,
+         289,
+         153
+        ],
+        "352": [
+         231,
+         113,
+         289,
+         154
+        ],
+        "358": [
+         232,
+         114,
+         290,
+         154
+        ],
+        "362": [
+         233,
+         114,
+         291,
+         155
+        ],
+        "366": [
+         235,
+         114,
+         292,
+         155
+        ],
+        "372": [
+         236,
+         115,
+         294,
+         156
+        ],
+        "382": [
+         238,
+         115,
+         296,
+         157
+        ],
+        "386": [
+         239,
+         116,
+         298,
+         157
+        ],
+        "390": [
+         240,
+         116,
+         299,
+         158
+        ],
+        "400": [
+         243,
+         117,
+         301,
+         160
+        ],
+        "406": [
+         245,
+         118,
+         304,
+         161
+        ],
+        "410": [
+         247,
+         119,
+         306,
+         162
+        ],
+        "418": [
+         250,
+         120,
+         309,
+         164
+        ],
+        "422": [
+         251,
+         120,
+         311,
+         165
+        ],
+        "426": [
+         252,
+         122,
+         313,
+         167
+        ],
+        "437": [
+         256,
+         124,
+         319,
+         173
+        ],
+        "438": [
+         256,
+         124,
+         319,
+         173
+        ],
+        "446": [
+         260,
+         127,
+         325,
+         178
+        ],
+        "450": [
+         263,
+         127,
+         328,
+         179
+        ],
+        "458": [
+         270,
+         128,
+         336,
+         181
+        ]
+       },
+       "note": "grid 504x280; SAM 3 masks exist only on every 3rd keyframe with a detection; the others are new outlines"
+      },
+      "look_alikes": {
+       "threshold": 0.9475,
+       "negatives": 236819,
+       "flagged_for_refinement_next": [
+        {
+         "cluster": 146,
+         "group": "shelf_partition",
+         "words": [
+          "rack",
+          "shelving unit"
+         ],
+         "shot": 1,
+         "centre_m": [
+          1.687,
+          0.571,
+          -0.426
+         ],
+         "cosine": 0.9807
+        },
+        {
+         "cluster": 38,
+         "group": "box_stack",
+         "words": [
+          "box",
+          "pallet"
+         ],
+         "shot": 0,
+         "centre_m": [
+          0.247,
+          0.044,
+          3.632
+         ],
+         "cosine": 0.9793
+        },
+        {
+         "cluster": 66,
+         "group": "shelf_partition",
+         "words": [
+          "rack"
+         ],
+         "shot": 0,
+         "centre_m": [
+          0.276,
+          0.041,
+          3.624
+         ],
+         "cosine": 0.976
+        },
+        {
+         "cluster": 28,
+         "group": "box_stack",
+         "words": [
+          "box",
+          "cardboard box",
+          "pallet",
+          "stack of boxes"
+         ],
+         "shot": 1,
+         "centre_m": [
+          2.178,
+          0.657,
+          -0.403
+         ],
+         "cosine": 0.955
+        },
+        {
+         "cluster": 144,
+         "group": "floor_item",
+         "words": [
+          "small object on the floor"
+         ],
+         "shot": 1,
+         "centre_m": [
+          0.691,
+          0.11,
+          2.67
+         ],
+         "cosine": 0.9518
+        },
+        {
+         "cluster": 23,
+         "group": "floor_item",
+         "words": [
+          "small object on the floor"
+         ],
+         "shot": 1,
+         "centre_m": [
+          2.186,
+          0.725,
+          -0.401
+         ],
+         "cosine": 0.9515
+        },
+        {
+         "cluster": 245,
+         "group": "shelf_partition",
+         "words": [
+          "rack",
+          "shelving unit"
+         ],
+         "shot": 1,
+         "centre_m": [
+          3.501,
+          -1.157,
+          8.996
+         ],
+         "cosine": 0.9501
+        },
+        {
+         "cluster": 238,
+         "group": "floor_item",
+         "words": [
+          "small object on the floor"
+         ],
+         "shot": 0,
+         "centre_m": [
+          -0.034,
+          0.453,
+          2.643
+         ],
+         "cosine": 0.9488
+        }
+       ],
+       "count": 8
+      }
+     },
+     "gpu0_peak_gib_during_spot": 41.68,
+     "variants": [
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 504,
+       "views": 5,
+       "time_s": {
+        "fine_i_iii": 0.852,
+        "da3": 0.33,
+        "anchor_icp": 0.02,
+        "tsdf_1cm": 0.127,
+        "holdout_check": 0.475
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 6041,
+        "fine_raw_da3_pixels": 61502,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         43382,
+         18032,
+         26924,
+         12975,
+         8905
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01348,
+        "fine": 0.00428
+       },
+       "multi_view": {
+        "median_m": 0.07839,
+        "within_1cm": 0.0522,
+        "within_2cm": 0.1108,
+        "pairs": 20,
+        "samples": 200069
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0303,
+        "p90_m": 0.0848
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 26.962,
+         "ci95_deg": [
+          26.011,
+          27.942
+         ],
+         "ci_width_deg": 1.931,
+         "inliers": 302,
+         "points": 1320,
+         "rms_mm": 17.51,
+         "normal": [
+          0.7607300281524658,
+          0.3550899922847748,
+          0.5433200001716614
+         ],
+         "centre": [
+          1.6368999481201172,
+          0.5734999775886536,
+          -0.31610000133514404
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 0.3,
+         "ci95_deg": [
+          0.149,
+          0.438
+         ],
+         "ci_width_deg": 0.289,
+         "inliers": 1505,
+         "points": 6041,
+         "rms_mm": 5.01,
+         "normal": [
+          0.965910017490387,
+          -0.058639999479055405,
+          0.2521600127220154
+         ],
+         "centre": [
+          1.7055000066757202,
+          0.5877000093460083,
+          -0.3434999883174896
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 536,
+        "source_view": 508,
+        "photometric_l1": {
+         "fine": 16.01,
+         "coarse": 15.81,
+         "ratio_fine_over_coarse": 1.0126,
+         "pixels": 8421,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0227,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.6283,
+         "coarse": 0.6402,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "raw",
+       "res": 504,
+       "views": 5,
+       "time_s": {
+        "fine_i_iii": 0.845,
+        "da3": 0.317,
+        "anchor_icp": 0.0,
+        "tsdf_1cm": 0.129,
+        "holdout_check": 0.471
+       },
+       "anchor": null,
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 6115,
+        "fine_raw_da3_pixels": 56737,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         42461,
+         16212,
+         24805,
+         12123,
+         8399
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01348,
+        "fine": 0.00431
+       },
+       "multi_view": {
+        "median_m": 0.09657,
+        "within_1cm": 0.0546,
+        "within_2cm": 0.1081,
+        "pairs": 20,
+        "samples": 184357
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0546,
+        "p90_m": 0.1271
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 26.962,
+         "ci95_deg": [
+          26.011,
+          27.942
+         ],
+         "ci_width_deg": 1.931,
+         "inliers": 302,
+         "points": 1320,
+         "rms_mm": 17.51,
+         "normal": [
+          0.7607300281524658,
+          0.3550899922847748,
+          0.5433200001716614
+         ],
+         "centre": [
+          1.6368999481201172,
+          0.5734999775886536,
+          -0.31610000133514404
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 2.366,
+         "ci95_deg": [
+          2.182,
+          2.526
+         ],
+         "ci_width_deg": 0.344,
+         "inliers": 1583,
+         "points": 6115,
+         "rms_mm": 5.68,
+         "normal": [
+          0.9346299767494202,
+          -0.03012000024318695,
+          0.3543500006198883
+         ],
+         "centre": [
+          1.7683000564575195,
+          0.6007000207901001,
+          -0.2621000111103058
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 536,
+        "source_view": 508,
+        "photometric_l1": {
+         "fine": 23.394,
+         "coarse": 19.742,
+         "ratio_fine_over_coarse": 1.1849,
+         "pixels": 3196,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.1721,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.4666,
+         "coarse": 0.6402,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor+icp",
+       "res": 504,
+       "views": 5,
+       "time_s": {
+        "fine_i_iii": 1.167,
+        "da3": 0.327,
+        "anchor_icp": 0.333,
+        "tsdf_1cm": 0.137,
+        "holdout_check": 0.761
+       },
+       "anchor": {
+        "scales": [
+         1.0544,
+         1.0493,
+         1.0646,
+         1.043,
+         1.0747
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +1.8%",
+         "spot +4.4%",
+         "spot +0.5%",
+         "spot +3.9%",
+         "spot +1.6%"
+        ]
+       },
+       "pose_refine": [
+        {
+         "view": 1,
+         "fitness": 0.576,
+         "rmse_mm": 20.67,
+         "deg": 2.456,
+         "cm": 7.83,
+         "applied": true
+        },
+        {
+         "view": 2,
+         "fitness": 0.737,
+         "rmse_mm": 18.0,
+         "deg": 2.068,
+         "cm": 11.4,
+         "applied": false
+        },
+        {
+         "view": 3,
+         "fitness": 0.546,
+         "rmse_mm": 21.52,
+         "deg": 8.058,
+         "cm": 12.42,
+         "applied": false
+        },
+        {
+         "view": 4,
+         "fitness": 0.535,
+         "rmse_mm": 24.67,
+         "deg": 11.289,
+         "cm": 26.2,
+         "applied": false
+        }
+       ],
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 5657,
+        "fine_raw_da3_pixels": 60648,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         43382,
+         17877,
+         26924,
+         12975,
+         8905
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01348,
+        "fine": 0.00445
+       },
+       "multi_view": {
+        "median_m": 0.06898,
+        "within_1cm": 0.0646,
+        "within_2cm": 0.1381,
+        "pairs": 20,
+        "samples": 194725
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0234,
+        "p90_m": 0.0746
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 26.962,
+         "ci95_deg": [
+          26.011,
+          27.942
+         ],
+         "ci_width_deg": 1.931,
+         "inliers": 302,
+         "points": 1320,
+         "rms_mm": 17.51,
+         "normal": [
+          0.7607300281524658,
+          0.3550899922847748,
+          0.5433200001716614
+         ],
+         "centre": [
+          1.6368999481201172,
+          0.5734999775886536,
+          -0.31610000133514404
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 1.181,
+         "ci95_deg": [
+          1.026,
+          1.345
+         ],
+         "ci_width_deg": 0.319,
+         "inliers": 1304,
+         "points": 5657,
+         "rms_mm": 5.33,
+         "normal": [
+          0.9286699891090393,
+          -0.053449999541044235,
+          0.36702999472618103
+         ],
+         "centre": [
+          1.700700044631958,
+          0.6051999926567078,
+          -0.39419999718666077
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 536,
+        "source_view": 508,
+        "photometric_l1": {
+         "fine": 16.01,
+         "coarse": 15.81,
+         "ratio_fine_over_coarse": 1.0126,
+         "pixels": 8421,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0227,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.6283,
+         "coarse": 0.6402,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "unposed",
+       "res": 504,
+       "views": 5,
+       "time_s": {
+        "fine_i_iii": 1.179,
+        "da3": 0.311,
+        "anchor_icp": 0.0,
+        "tsdf_1cm": 0.121,
+        "holdout_check": 0.707
+       },
+       "anchor": null,
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 1086,
+        "fine_raw_da3_pixels": 13493,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         1937,
+         10258,
+         8480,
+         7791,
+         5998
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01348,
+        "fine": 0.00608
+       },
+       "multi_view": {
+        "median_m": 0.04874,
+        "within_1cm": 0.132,
+        "within_2cm": 0.2686,
+        "pairs": 20,
+        "samples": 38824
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.03,
+        "p90_m": 0.064
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 26.962,
+         "ci95_deg": [
+          26.011,
+          27.942
+         ],
+         "ci_width_deg": 1.931,
+         "inliers": 302,
+         "points": 1320,
+         "rms_mm": 17.51,
+         "normal": [
+          0.7607300281524658,
+          0.3550899922847748,
+          0.5433200001716614
+         ],
+         "centre": [
+          1.6368999481201172,
+          0.5734999775886536,
+          -0.31610000133514404
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 13.09,
+         "ci95_deg": [
+          11.698,
+          14.89
+         ],
+         "ci_width_deg": 3.192,
+         "inliers": 215,
+         "points": 1086,
+         "rms_mm": 5.58,
+         "normal": [
+          0.9753599762916565,
+          0.21367000043392181,
+          0.054910000413656235
+         ],
+         "centre": [
+          1.5625,
+          0.6678000092506409,
+          -0.37779998779296875
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 536,
+        "source_view": 508,
+        "photometric_l1": {
+         "fine": 19.529,
+         "coarse": 18.951,
+         "ratio_fine_over_coarse": 1.0305,
+         "pixels": 1367,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.1492,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.0,
+         "coarse": 0.6402,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "tight",
+       "method": "anchor",
+       "res": 504,
+       "views": 5,
+       "time_s": {
+        "fine_i_iii": 0.849,
+        "da3": 0.309,
+        "anchor_icp": 0.02,
+        "tsdf_1cm": 0.13,
+        "holdout_check": 0.508
+       },
+       "anchor": {
+        "scales": [
+         0.8033,
+         1.024,
+         0.888,
+         1.1513,
+         1.2649
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +2.9%",
+         "spot +0.1%",
+         "spot -6.7%",
+         "spot +3.7%",
+         "spot +3.6%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 5,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 5368,
+        "fine_raw_da3_pixels": 172381,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         47946,
+         70836,
+         65394,
+         65048,
+         65330
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01348,
+        "fine": 0.0041
+       },
+       "multi_view": {
+        "median_m": 0.11567,
+        "within_1cm": 0.0408,
+        "within_2cm": 0.0784,
+        "pairs": 20,
+        "samples": 386040
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0381,
+        "p90_m": 0.0867
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 26.962,
+         "ci95_deg": [
+          26.011,
+          27.942
+         ],
+         "ci_width_deg": 1.931,
+         "inliers": 302,
+         "points": 1320,
+         "rms_mm": 17.51,
+         "normal": [
+          0.7607300281524658,
+          0.3550899922847748,
+          0.5433200001716614
+         ],
+         "centre": [
+          1.6368999481201172,
+          0.5734999775886536,
+          -0.31610000133514404
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 1.08,
+         "ci95_deg": [
+          0.904,
+          1.256
+         ],
+         "ci_width_deg": 0.353,
+         "inliers": 1484,
+         "points": 5368,
+         "rms_mm": 5.29,
+         "normal": [
+          0.955489993095398,
+          -0.04149999842047691,
+          0.2921000123023987
+         ],
+         "centre": [
+          1.6995999813079834,
+          0.5659000277519226,
+          -0.31839999556541443
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 536,
+        "source_view": 508,
+        "photometric_l1": {
+         "fine": 20.021,
+         "coarse": 17.22,
+         "ratio_fine_over_coarse": 1.1627,
+         "pixels": 20888,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.1544,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.6294,
+         "coarse": 0.5828,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 336,
+       "views": 5,
+       "time_s": {
+        "fine_i_iii": 0.615,
+        "da3": 0.164,
+        "anchor_icp": 0.014,
+        "tsdf_1cm": 0.069,
+        "holdout_check": 0.281
+       },
+       "anchor": {
+        "scales": [
+         1.1336,
+         1.1308,
+         1.1359,
+         1.1463,
+         1.1559
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +2.2%",
+         "spot +5.3%",
+         "spot +0.5%",
+         "spot +3.4%",
+         "spot +1.3%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 5391,
+        "fine_raw_da3_pixels": 25020,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         18372,
+         7434,
+         11439,
+         5229,
+         3575
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01348,
+        "fine": 0.00437
+       },
+       "multi_view": {
+        "median_m": 0.08486,
+        "within_1cm": 0.0518,
+        "within_2cm": 0.1083,
+        "pairs": 20,
+        "samples": 95650
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0312,
+        "p90_m": 0.0827
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 26.962,
+         "ci95_deg": [
+          26.011,
+          27.942
+         ],
+         "ci_width_deg": 1.931,
+         "inliers": 302,
+         "points": 1320,
+         "rms_mm": 17.51,
+         "normal": [
+          0.7607300281524658,
+          0.3550899922847748,
+          0.5433200001716614
+         ],
+         "centre": [
+          1.6368999481201172,
+          0.5734999775886536,
+          -0.31610000133514404
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 4.119,
+         "ci95_deg": [
+          3.933,
+          4.313
+         ],
+         "ci_width_deg": 0.38,
+         "inliers": 1361,
+         "points": 5391,
+         "rms_mm": 5.63,
+         "normal": [
+          0.9243900179862976,
+          -0.004009999800473452,
+          0.38144001364707947
+         ],
+         "centre": [
+          1.7182999849319458,
+          0.5983999967575073,
+          -0.38019999861717224
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 536,
+        "source_view": 508,
+        "photometric_l1": {
+         "fine": 16.268,
+         "coarse": 16.587,
+         "ratio_fine_over_coarse": 0.9807,
+         "pixels": 3226,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0194,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.6225,
+         "coarse": 0.723,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 756,
+       "views": 5,
+       "time_s": {
+        "fine_i_iii": 1.458,
+        "da3": 0.75,
+        "anchor_icp": 0.039,
+        "tsdf_1cm": 0.267,
+        "holdout_check": 1.014
+       },
+       "anchor": {
+        "scales": [
+         1.0769,
+         1.0366,
+         1.0689,
+         1.0493,
+         1.0782
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3,
+         4
+        ],
+        "notes": [
+         "spot +0.9%",
+         "spot +4.5%",
+         "spot -0.2%",
+         "spot +2.8%",
+         "spot +1.6%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 4,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 5905,
+        "fine_raw_da3_pixels": 136607,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         98415,
+         39173,
+         61094,
+         28480,
+         19413
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01348,
+        "fine": 0.00425
+       },
+       "multi_view": {
+        "median_m": 0.07449,
+        "within_1cm": 0.0587,
+        "within_2cm": 0.1167,
+        "pairs": 20,
+        "samples": 314848
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0289,
+        "p90_m": 0.0758
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 26.962,
+         "ci95_deg": [
+          26.011,
+          27.942
+         ],
+         "ci_width_deg": 1.931,
+         "inliers": 302,
+         "points": 1320,
+         "rms_mm": 17.51,
+         "normal": [
+          0.7607300281524658,
+          0.3550899922847748,
+          0.5433200001716614
+         ],
+         "centre": [
+          1.6368999481201172,
+          0.5734999775886536,
+          -0.31610000133514404
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 2.893,
+         "ci95_deg": [
+          2.76,
+          3.019
+         ],
+         "ci_width_deg": 0.259,
+         "inliers": 1509,
+         "points": 5905,
+         "rms_mm": 5.14,
+         "normal": [
+          0.9745100140571594,
+          -0.09556999802589417,
+          0.2029699981212616
+         ],
+         "centre": [
+          1.6999000310897827,
+          0.5834000110626221,
+          -0.36649999022483826
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 536,
+        "source_view": 508,
+        "photometric_l1": {
+         "fine": 18.533,
+         "coarse": 18.313,
+         "ratio_fine_over_coarse": 1.012,
+         "pixels": 20379,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0201,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.6018,
+         "coarse": 0.7164,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 504,
+       "views": 3,
+       "time_s": {
+        "fine_i_iii": 0.573,
+        "da3": 0.22,
+        "anchor_icp": 0.013,
+        "tsdf_1cm": 0.089,
+        "holdout_check": 0.0
+       },
+       "anchor": {
+        "scales": [
+         1.0697,
+         1.0771,
+         1.0839
+        ],
+        "kept": [
+         0,
+         1,
+         2
+        ],
+        "notes": [
+         "spot +1.1%",
+         "spot +4.4%",
+         "spot +0.6%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 2,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 1320,
+        "fine_tsdf_1cm": 2515,
+        "fine_raw_da3_pixels": 48923,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         43245,
+         17955,
+         27703
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.01348,
+        "fine": 0.00501
+       },
+       "multi_view": {
+        "median_m": 0.07387,
+        "within_1cm": 0.0244,
+        "within_2cm": 0.0651,
+        "pairs": 6,
+        "samples": 79704
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0263,
+        "p90_m": 0.0815
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 26.962,
+         "ci95_deg": [
+          26.011,
+          27.942
+         ],
+         "ci_width_deg": 1.931,
+         "inliers": 302,
+         "points": 1320,
+         "rms_mm": 17.51,
+         "normal": [
+          0.7607300281524658,
+          0.3550899922847748,
+          0.5433200001716614
+         ],
+         "centre": [
+          1.6368999481201172,
+          0.5734999775886536,
+          -0.31610000133514404
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 0.814,
+         "ci95_deg": [
+          0.662,
+          0.988
+         ],
+         "ci_width_deg": 0.326,
+         "inliers": 987,
+         "points": 2515,
+         "rms_mm": 4.79,
+         "normal": [
+          0.9637899994850159,
+          -0.06876999884843826,
+          0.25766000151634216
+         ],
+         "centre": [
+          1.7275999784469604,
+          0.6017000079154968,
+          -0.45239999890327454
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "skipped": "3 views: the hold-out would leave 2 cameras, DA3's Umeyama pose alignment needs >= 3"
+       }
+      }
+     ]
+    },
+    {
+     "id": "s2",
+     "group": "shelf_partition",
+     "word": "shelf",
+     "triggers": [
+      "semantic: shelf_partition ('shelf')",
+      "quality: mean DA3 confidence 1.33 < the video's 25th percentile 1.65"
+     ],
+     "centre_m_estimated": [
+      4.717,
+      -0.705,
+      3.258
+     ],
+     "extent_m_estimated": [
+      0.295,
+      0.253,
+      0.791
+     ],
+     "keyframes_detected": 15,
+     "frames_chosen": [
+      {
+       "frame": 695,
+       "t_s": 23.19,
+       "score": 0.101,
+       "visible_share": 0.984,
+       "spot_px": 50.8,
+       "frontal_cos": 1.0,
+       "sharpness_rel": 0.871,
+       "confidence_rel": 0.835,
+       "distance_m": 5.56,
+       "rule": "best score",
+       "min_angle_deg": null
+      },
+      {
+       "frame": 226,
+       "t_s": 7.541,
+       "score": 0.0741,
+       "visible_share": 0.961,
+       "spot_px": 27.8,
+       "frontal_cos": 1.0,
+       "sharpness_rel": 1.0,
+       "confidence_rel": 1.0,
+       "distance_m": 7.094,
+       "rule": ">= 12 deg from every chosen view",
+       "min_angle_deg": 28.34
+      },
+      {
+       "frame": 542,
+       "t_s": 18.085,
+       "score": 0.0519,
+       "visible_share": 0.984,
+       "spot_px": 33.6,
+       "frontal_cos": 1.0,
+       "sharpness_rel": 0.934,
+       "confidence_rel": 0.605,
+       "distance_m": 6.446,
+       "rule": ">= 12 deg from every chosen view",
+       "min_angle_deg": 12.64
+      },
+      {
+       "frame": 599,
+       "t_s": 19.987,
+       "score": 0.0654,
+       "visible_share": 0.984,
+       "spot_px": 36.9,
+       "frontal_cos": 1.0,
+       "sharpness_rel": 1.0,
+       "confidence_rel": 0.649,
+       "distance_m": 5.862,
+       "rule": "relaxed: >= 6 deg",
+       "min_angle_deg": 6.13
+      }
+     ],
+     "selection": {
+      "candidates": 673,
+      "scored_positive": 510,
+      "median_score": 0.0617
+     },
+     "time_s": {
+      "select": 0.105,
+      "fine_i_iii": 0.681,
+      "holdout_check": 0.407,
+      "vlm": 0.659,
+      "propagate": 0.187,
+      "total_without_sweeps": 2.039
+     },
+     "before_after": {
+      "points_in_box": {
+       "coarse_tsdf_3cm": 275,
+       "fine_tsdf_1cm": 3717,
+       "fine_raw_da3_pixels": 3330,
+       "crop_pixels_in_box_plus_15cm_per_view": [
+        4499,
+        310,
+        2015,
+        2394
+       ],
+       "lingbot": 566
+      },
+      "spacing_m": {
+       "coarse": 0.03,
+       "fine": 0.0041,
+       "lingbot": 0.01747
+      },
+      "pixel_footprint_mm_at_best_view": {
+       "coarse_grid": 24.4,
+       "fine_crop": 13.73,
+       "distance_m": 5.56
+      },
+      "plane_tilt_deg": {
+       "coarse": {
+        "kind": "vertical",
+        "tilt_deg": 6.391,
+        "ci95_deg": [
+         5.023,
+         7.647
+        ],
+        "ci_width_deg": 2.624,
+        "inliers": 269,
+        "points": 275,
+        "rms_mm": 12.8,
+        "normal": [
+         0.9921200275421143,
+         0.09052000194787979,
+         0.08664000034332275
+        ],
+        "centre": [
+         4.742199897766113,
+         -0.7008000016212463,
+         3.3194000720977783
+        ]
+       },
+       "fine": {
+        "kind": "vertical",
+        "tilt_deg": 4.623,
+        "ci95_deg": [
+         4.409,
+         4.829
+        ],
+        "ci_width_deg": 0.42,
+        "inliers": 1200,
+        "points": 3717,
+        "rms_mm": 4.96,
+        "normal": [
+         0.9968199729919434,
+         0.06746000051498413,
+         0.04236000031232834
+        ],
+        "centre": [
+         4.735000133514404,
+         -0.6758000254631042,
+         3.2407000064849854
+        ]
+       },
+       "lingbot": {
+        "kind": "vertical",
+        "tilt_deg": 26.091,
+        "ci95_deg": [
+         25.648,
+         26.576
+        ],
+        "ci_width_deg": 0.929,
+        "inliers": 255,
+        "points": 566,
+        "rms_mm": 4.88,
+        "normal": [
+         0.90074,
+         0.43026,
+         0.0596
+        ],
+        "centre": [
+         4.7768,
+         -0.6868,
+         3.2373
+        ]
+       }
+      },
+      "thin_object": null
+     },
+     "confirmation": {
+      "verdict": {
+       "status": "NEEDS_REVIEW",
+       "checks": {
+        "multi_view": false,
+        "agrees_with_coarse": true,
+        "holdout_photometric": false,
+        "holdout_outline": true,
+        "plane_ci": true,
+        "vlm": false
+       },
+       "failed": [
+        "multi_view",
+        "holdout_photometric",
+        "vlm"
+       ],
+       "rule": {
+        "pairwise_median_m": 0.015,
+        "coarse_nn_median_m": 0.05,
+        "photometric_ratio": 1.05,
+        "outline_iou": 0.5,
+        "plane_ci_width_deg": 2.0,
+        "thin_min_height_m": 0.004
+       }
+      },
+      "holdout": {
+       "view": 542,
+       "source_view": 599,
+       "photometric_l1": {
+        "fine": null,
+        "coarse": null,
+        "ratio_fine_over_coarse": null,
+        "pixels": 0,
+        "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+       },
+       "depth_vs_heldout_da3_median_m": 0.0183,
+       "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+       "outline_iou": {
+        "fine": 0.7679,
+        "coarse": 0.6051,
+        "observed": true
+       }
+      },
+      "multi_view": {
+       "median_m": 0.02425,
+       "within_1cm": 0.2181,
+       "within_2cm": 0.426,
+       "pairs": 12,
+       "samples": 8117
+      },
+      "agreement_with_coarse": {
+       "fine_to_coarse_nn_median_m": 0.039,
+       "p90_m": 0.0866
+      },
+      "vlm": {
+       "answer": {
+        "object": "no",
+        "outline": "wrong",
+        "detail": "the red outline is on a horizontal bar or handle, not a shelf"
+       },
+       "raw": "{\n  \"object\": \"no\",\n  \"outline\": \"wrong\",\n  \"detail\": \"the red outline is on a horizontal bar or handle, not a shelf\"\n}",
+       "s": 0.653,
+       "completion_tokens": 37
+      }
+     },
+     "lingbot_ii": {
+      "sim3_scale": 4.6713,
+      "camera_ate_after_sim3_m": 0.0422,
+      "icp": {
+       "fitness": 0.9392,
+       "rmse_m": 0.0369,
+       "correction_m": 0.7824,
+       "correction_deg": 10.111
+      },
+      "display_gate_share_within_25cm": 0.9992,
+      "display_gate_pass": true,
+      "align_s": 0.139,
+      "multi_view": {
+       "median_m": 0.07832,
+       "within_1cm": 0.0,
+       "within_2cm": 0.0,
+       "pairs": 12,
+       "samples": 50
+      },
+      "frames": 62,
+      "stride": 8,
+      "span_frames": [
+       226,
+       695
+      ],
+      "infer_s": 6.391,
+      "prep_s": 0.308,
+      "fps": 9.7,
+      "peak_gib": 9.83,
+      "gpu": "NVIDIA A100-SXM4-80GB",
+      "points_in_box": 566,
+      "spacing_m": 0.01747,
+      "coarse_nn_median_m": 0.0241,
+      "plane": {
+       "kind": "vertical",
+       "tilt_deg": 26.091,
+       "ci95_deg": [
+        25.648,
+        26.576
+       ],
+       "ci_width_deg": 0.929,
+       "inliers": 255,
+       "points": 566,
+       "rms_mm": 4.88,
+       "normal": [
+        0.90074,
+        0.43026,
+        0.0596
+       ],
+       "centre": [
+        4.7768,
+        -0.6868,
+        3.2373
+       ]
+      }
+     },
+     "propagation": {
+      "replaced_coarse_points": 523,
+      "added_fine_points": 5097,
+      "band_coarse_points": 659,
+      "band_dropped_as_duplicate": 55,
+      "seam_gap_median_m": 0.1333,
+      "grow_along_plane": {
+       "skipped": "no confirmed plane"
+      },
+      "reproject": {
+       "keyframes_in_shot": 113,
+       "keyframes_updated": 87,
+       "keyframes_with_sam3_mask": 15,
+       "iou_vs_sam3_fine_mean": 0.5388,
+       "iou_vs_sam3_coarse_mean": 0.348,
+       "boxes_grid_504x280": {
+        "226": [
+         342,
+         83,
+         361,
+         92
+        ],
+        "228": [
+         342,
+         83,
+         361,
+         92
+        ],
+        "234": [
+         342,
+         83,
+         361,
+         92
+        ],
+        "242": [
+         343,
+         83,
+         361,
+         92
+        ],
+        "246": [
+         343,
+         83,
+         361,
+         92
+        ],
+        "254": [
+         343,
+         83,
+         361,
+         92
+        ],
+        "262": [
+         343,
+         84,
+         361,
+         93
+        ],
+        "266": [
+         343,
+         84,
+         362,
+         93
+        ],
+        "275": [
+         343,
+         84,
+         361,
+         93
+        ],
+        "276": [
+         343,
+         84,
+         362,
+         93
+        ],
+        "286": [
+         343,
+         84,
+         361,
+         93
+        ],
+        "290": [
+         342,
+         84,
+         361,
+         93
+        ],
+        "294": [
+         342,
+         84,
+         361,
+         93
+        ],
+        "302": [
+         342,
+         84,
+         361,
+         93
+        ],
+        "310": [
+         342,
+         84,
+         361,
+         93
+        ],
+        "314": [
+         342,
+         84,
+         361,
+         93
+        ],
+        "318": [
+         342,
+         84,
+         361,
+         93
+        ],
+        "328": [
+         342,
+         84,
+         361,
+         93
+        ],
+        "334": [
+         342,
+         84,
+         361,
+         93
+        ],
+        "338": [
+         343,
+         84,
+         361,
+         93
+        ],
+        "344": [
+         343,
+         84,
+         361,
+         93
+        ],
+        "352": [
+         343,
+         84,
+         361,
+         93
+        ],
+        "358": [
+         343,
+         84,
+         362,
+         93
+        ],
+        "362": [
+         344,
+         85,
+         363,
+         93
+        ],
+        "366": [
+         344,
+         85,
+         363,
+         94
+        ],
+        "372": [
+         345,
+         85,
+         364,
+         94
+        ],
+        "382": [
+         347,
+         85,
+         366,
+         94
+        ],
+        "386": [
+         347,
+         85,
+         366,
+         94
+        ],
+        "390": [
+         347,
+         85,
+         367,
+         94
+        ],
+        "400": [
+         346,
+         86,
+         366,
+         95
+        ],
+        "406": [
+         346,
+         86,
+         366,
+         95
+        ],
+        "410": [
+         346,
+         86,
+         366,
+         95
+        ],
+        "418": [
+         346,
+         87,
+         366,
+         96
+        ],
+        "422": [
+         346,
+         87,
+         366,
+         96
+        ],
+        "426": [
+         346,
+         87,
+         367,
+         96
+        ],
+        "437": [
+         348,
+         88,
+         369,
+         96
+        ],
+        "438": [
+         348,
+         88,
+         369,
+         96
+        ],
+        "446": [
+         350,
+         88,
+         371,
+         97
+        ],
+        "450": [
+         350,
+         88,
+         372,
+         97
+        ],
+        "458": [
+         352,
+         88,
+         374,
+         97
+        ]
+       },
+       "note": "grid 504x280; SAM 3 masks exist only on every 3rd keyframe with a detection; the others are new outlines"
+      },
+      "look_alikes": {
+       "threshold": 0.9475,
+       "negatives": 236819,
+       "flagged_for_refinement_next": [
+        {
+         "cluster": 257,
+         "group": "shelf_partition",
+         "words": [
+          "shelf"
+         ],
+         "shot": 1,
+         "centre_m": [
+          -1.947,
+          -2.809,
+          15.591
+         ],
+         "cosine": 0.9601
+        },
+        {
+         "cluster": 28,
+         "group": "box_stack",
+         "words": [
+          "box",
+          "cardboard box",
+          "pallet",
+          "stack of boxes"
+         ],
+         "shot": 1,
+         "centre_m": [
+          2.178,
+          0.657,
+          -0.403
+         ],
+         "cosine": 0.9595
+        },
+        {
+         "cluster": 96,
+         "group": "floor_item",
+         "words": [
+          "small object on the floor"
+         ],
+         "shot": 0,
+         "centre_m": [
+          0.626,
+          0.203,
+          3.53
+         ],
+         "cosine": 0.9476
+        }
+       ],
+       "count": 3
+      }
+     },
+     "gpu0_peak_gib_during_spot": 40.35,
+     "variants": [
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 504,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.681,
+        "da3": 0.262,
+        "anchor_icp": 0.016,
+        "tsdf_1cm": 0.103,
+        "holdout_check": 0.407
+       },
+       "anchor": {
+        "scales": [
+         0.8364,
+         0.3253,
+         0.8483,
+         0.8311
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot -1.1%",
+         "spot -7.3%",
+         "spot -1.1%",
+         "spot -0.5%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 3,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 275,
+        "fine_tsdf_1cm": 3717,
+        "fine_raw_da3_pixels": 3330,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         4499,
+         310,
+         2015,
+         2394
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.03,
+        "fine": 0.0041
+       },
+       "multi_view": {
+        "median_m": 0.02425,
+        "within_1cm": 0.2181,
+        "within_2cm": 0.426,
+        "pairs": 12,
+        "samples": 8117
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.039,
+        "p90_m": 0.0866
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 6.391,
+         "ci95_deg": [
+          5.023,
+          7.647
+         ],
+         "ci_width_deg": 2.624,
+         "inliers": 269,
+         "points": 275,
+         "rms_mm": 12.8,
+         "normal": [
+          0.9921200275421143,
+          0.09052000194787979,
+          0.08664000034332275
+         ],
+         "centre": [
+          4.742199897766113,
+          -0.7008000016212463,
+          3.3194000720977783
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 4.623,
+         "ci95_deg": [
+          4.409,
+          4.829
+         ],
+         "ci_width_deg": 0.42,
+         "inliers": 1200,
+         "points": 3717,
+         "rms_mm": 4.96,
+         "normal": [
+          0.9968199729919434,
+          0.06746000051498413,
+          0.04236000031232834
+         ],
+         "centre": [
+          4.735000133514404,
+          -0.6758000254631042,
+          3.2407000064849854
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 542,
+        "source_view": 599,
+        "photometric_l1": {
+         "fine": null,
+         "coarse": null,
+         "ratio_fine_over_coarse": null,
+         "pixels": 0,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0183,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.7679,
+         "coarse": 0.6051,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "raw",
+       "res": 504,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.66,
+        "da3": 0.256,
+        "anchor_icp": 0.0,
+        "tsdf_1cm": 0.105,
+        "holdout_check": 0.315
+       },
+       "anchor": null,
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 3,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 275,
+        "fine_tsdf_1cm": 0,
+        "fine_raw_da3_pixels": 0,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         0,
+         7,
+         0,
+         0
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.03,
+        "fine": null
+       },
+       "multi_view": {
+        "median_m": null,
+        "within_1cm": null,
+        "within_2cm": null,
+        "pairs": 12,
+        "samples": 0
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": null,
+        "p90_m": null
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 6.391,
+         "ci95_deg": [
+          5.023,
+          7.647
+         ],
+         "ci_width_deg": 2.624,
+         "inliers": 269,
+         "points": 275,
+         "rms_mm": 12.8,
+         "normal": [
+          0.9921200275421143,
+          0.09052000194787979,
+          0.08664000034332275
+         ],
+         "centre": [
+          4.742199897766113,
+          -0.7008000016212463,
+          3.3194000720977783
+         ]
+        },
+        "fine": null
+       },
+       "thin": null,
+       "holdout": {
+        "view": 542,
+        "source_view": 599,
+        "photometric_l1": {
+         "fine": null,
+         "coarse": null,
+         "ratio_fine_over_coarse": null,
+         "pixels": 0,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": null,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": null,
+         "coarse": 0.6051,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor+icp",
+       "res": 504,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.734,
+        "da3": 0.255,
+        "anchor_icp": 0.105,
+        "tsdf_1cm": 0.085,
+        "holdout_check": 0.435
+       },
+       "anchor": {
+        "scales": [
+         0.8364,
+         0.3253,
+         0.8483,
+         0.8311
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot -1.1%",
+         "spot -7.3%",
+         "spot -1.1%",
+         "spot -0.5%"
+        ]
+       },
+       "pose_refine": [
+        {
+         "view": 1,
+         "fitness": 0.0,
+         "rmse_mm": 0.0,
+         "deg": 35.484,
+         "cm": 301.39,
+         "applied": false
+        },
+        {
+         "view": 2,
+         "fitness": 0.959,
+         "rmse_mm": 15.4,
+         "deg": 5.357,
+         "cm": 50.7,
+         "applied": false
+        },
+        {
+         "view": 3,
+         "fitness": 0.956,
+         "rmse_mm": 16.9,
+         "deg": 6.125,
+         "cm": 63.64,
+         "applied": false
+        }
+       ],
+       "da3_camera_check": null,
+       "sam3_masks_found": 3,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 275,
+        "fine_tsdf_1cm": 3717,
+        "fine_raw_da3_pixels": 3330,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         4499,
+         310,
+         2015,
+         2394
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.03,
+        "fine": 0.0041
+       },
+       "multi_view": {
+        "median_m": 0.02425,
+        "within_1cm": 0.2181,
+        "within_2cm": 0.426,
+        "pairs": 12,
+        "samples": 8117
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.039,
+        "p90_m": 0.0866
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 6.391,
+         "ci95_deg": [
+          5.023,
+          7.647
+         ],
+         "ci_width_deg": 2.624,
+         "inliers": 269,
+         "points": 275,
+         "rms_mm": 12.8,
+         "normal": [
+          0.9921200275421143,
+          0.09052000194787979,
+          0.08664000034332275
+         ],
+         "centre": [
+          4.742199897766113,
+          -0.7008000016212463,
+          3.3194000720977783
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 4.14,
+         "ci95_deg": [
+          3.937,
+          4.339
+         ],
+         "ci_width_deg": 0.402,
+         "inliers": 1203,
+         "points": 3717,
+         "rms_mm": 4.92,
+         "normal": [
+          0.9972000122070312,
+          0.05801999941468239,
+          0.047200001776218414
+         ],
+         "centre": [
+          4.734600067138672,
+          -0.6759999990463257,
+          3.2493999004364014
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 542,
+        "source_view": 599,
+        "photometric_l1": {
+         "fine": null,
+         "coarse": null,
+         "ratio_fine_over_coarse": null,
+         "pixels": 0,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0183,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.7679,
+         "coarse": 0.6051,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "unposed",
+       "res": 504,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.748,
+        "da3": 0.25,
+        "anchor_icp": 0.0,
+        "tsdf_1cm": 0.094,
+        "holdout_check": 0.386
+       },
+       "anchor": null,
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 3,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 275,
+        "fine_tsdf_1cm": 0,
+        "fine_raw_da3_pixels": 0,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         0,
+         0,
+         0,
+         0
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.03,
+        "fine": null
+       },
+       "multi_view": {
+        "median_m": null,
+        "within_1cm": null,
+        "within_2cm": null,
+        "pairs": 12,
+        "samples": 0
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": null,
+        "p90_m": null
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 6.391,
+         "ci95_deg": [
+          5.023,
+          7.647
+         ],
+         "ci_width_deg": 2.624,
+         "inliers": 269,
+         "points": 275,
+         "rms_mm": 12.8,
+         "normal": [
+          0.9921200275421143,
+          0.09052000194787979,
+          0.08664000034332275
+         ],
+         "centre": [
+          4.742199897766113,
+          -0.7008000016212463,
+          3.3194000720977783
+         ]
+        },
+        "fine": null
+       },
+       "thin": null,
+       "holdout": {
+        "view": 542,
+        "source_view": 599,
+        "photometric_l1": {
+         "fine": null,
+         "coarse": null,
+         "ratio_fine_over_coarse": null,
+         "pixels": 0,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": null,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": null,
+         "coarse": 0.6051,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "tight",
+       "method": "anchor",
+       "res": 504,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.668,
+        "da3": 0.263,
+        "anchor_icp": 0.015,
+        "tsdf_1cm": 0.089,
+        "holdout_check": 0.371
+       },
+       "anchor": {
+        "scales": [
+         1.1212,
+         0.5691,
+         1.0572,
+         1.0077
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot -1.6%",
+         "spot -7.1%",
+         "spot -0.9%",
+         "spot -0.1%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 3,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 275,
+        "fine_tsdf_1cm": 3565,
+        "fine_raw_da3_pixels": 26163,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         37670,
+         2620,
+         16788,
+         19219
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.03,
+        "fine": 0.00417
+       },
+       "multi_view": {
+        "median_m": 0.06989,
+        "within_1cm": 0.071,
+        "within_2cm": 0.1276,
+        "pairs": 12,
+        "samples": 62763
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0554,
+        "p90_m": 0.1016
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 6.391,
+         "ci95_deg": [
+          5.023,
+          7.647
+         ],
+         "ci_width_deg": 2.624,
+         "inliers": 269,
+         "points": 275,
+         "rms_mm": 12.8,
+         "normal": [
+          0.9921200275421143,
+          0.09052000194787979,
+          0.08664000034332275
+         ],
+         "centre": [
+          4.742199897766113,
+          -0.7008000016212463,
+          3.3194000720977783
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 7.767,
+         "ci95_deg": [
+          7.559,
+          7.97
+         ],
+         "ci_width_deg": 0.411,
+         "inliers": 954,
+         "points": 3565,
+         "rms_mm": 5.26,
+         "normal": [
+          0.9733200073242188,
+          0.09189999848604202,
+          0.2102299928665161
+         ],
+         "centre": [
+          4.717199802398682,
+          -0.685699999332428,
+          3.283900022506714
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 542,
+        "source_view": 599,
+        "photometric_l1": {
+         "fine": null,
+         "coarse": null,
+         "ratio_fine_over_coarse": null,
+         "pixels": 0,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0317,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.7433,
+         "coarse": 0.5733,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 336,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 0.507,
+        "da3": 0.131,
+        "anchor_icp": 0.01,
+        "tsdf_1cm": 0.071,
+        "holdout_check": 0.216
+       },
+       "anchor": {
+        "scales": [
+         0.8895,
+         0.3486,
+         0.9107,
+         0.8851
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot -1.0%",
+         "spot -6.5%",
+         "spot -1.0%",
+         "spot -0.1%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 3,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 275,
+        "fine_tsdf_1cm": 3297,
+        "fine_raw_da3_pixels": 1426,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         1929,
+         141,
+         877,
+         1020
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.03,
+        "fine": 0.00406
+       },
+       "multi_view": {
+        "median_m": 0.04853,
+        "within_1cm": 0.1618,
+        "within_2cm": 0.3084,
+        "pairs": 12,
+        "samples": 3363
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0273,
+        "p90_m": 0.0463
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 6.391,
+         "ci95_deg": [
+          5.023,
+          7.647
+         ],
+         "ci_width_deg": 2.624,
+         "inliers": 269,
+         "points": 275,
+         "rms_mm": 12.8,
+         "normal": [
+          0.9921200275421143,
+          0.09052000194787979,
+          0.08664000034332275
+         ],
+         "centre": [
+          4.742199897766113,
+          -0.7008000016212463,
+          3.3194000720977783
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 20.956,
+         "ci95_deg": [
+          20.756,
+          21.148
+         ],
+         "ci_width_deg": 0.392,
+         "inliers": 2113,
+         "points": 3297,
+         "rms_mm": 4.93,
+         "normal": [
+          0.9276300072669983,
+          0.3226099908351898,
+          0.18825000524520874
+         ],
+         "centre": [
+          4.734399795532227,
+          -0.6843000054359436,
+          3.2590999603271484
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 542,
+        "source_view": 599,
+        "photometric_l1": {
+         "fine": null,
+         "coarse": null,
+         "ratio_fine_over_coarse": null,
+         "pixels": 0,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0419,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.7337,
+         "coarse": 0.5765,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 756,
+       "views": 4,
+       "time_s": {
+        "fine_i_iii": 1.162,
+        "da3": 0.601,
+        "anchor_icp": 0.031,
+        "tsdf_1cm": 0.209,
+        "holdout_check": 0.806
+       },
+       "anchor": {
+        "scales": [
+         0.8551,
+         0.3347,
+         0.8767,
+         0.8372
+        ],
+        "kept": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "notes": [
+         "spot -2.3%",
+         "spot -8.0%",
+         "spot -1.9%",
+         "spot -0.5%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 3,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 275,
+        "fine_tsdf_1cm": 3118,
+        "fine_raw_da3_pixels": 7088,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         10471,
+         470,
+         4888,
+         5571
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.03,
+        "fine": 0.00395
+       },
+       "multi_view": {
+        "median_m": 0.05999,
+        "within_1cm": 0.0698,
+        "within_2cm": 0.1448,
+        "pairs": 12,
+        "samples": 16945
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.0701,
+        "p90_m": 0.1259
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 6.391,
+         "ci95_deg": [
+          5.023,
+          7.647
+         ],
+         "ci_width_deg": 2.624,
+         "inliers": 269,
+         "points": 275,
+         "rms_mm": 12.8,
+         "normal": [
+          0.9921200275421143,
+          0.09052000194787979,
+          0.08664000034332275
+         ],
+         "centre": [
+          4.742199897766113,
+          -0.7008000016212463,
+          3.3194000720977783
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 0.239,
+         "ci95_deg": [
+          0.039,
+          0.465
+         ],
+         "ci_width_deg": 0.426,
+         "inliers": 894,
+         "points": 3118,
+         "rms_mm": 5.26,
+         "normal": [
+          0.9894000291824341,
+          -0.0369499996304512,
+          0.14045999944210052
+         ],
+         "centre": [
+          4.68310022354126,
+          -0.6723999977111816,
+          3.2869999408721924
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "view": 542,
+        "source_view": 599,
+        "photometric_l1": {
+         "fine": null,
+         "coarse": null,
+         "ratio_fine_over_coarse": null,
+         "pixels": 0,
+         "note": "same pixels, same cameras: only the depth differs; colour 0..255"
+        },
+        "depth_vs_heldout_da3_median_m": 0.0413,
+        "depth_note": "the held-out view's own DA3 depth came from the n-view forward (not independent)",
+        "outline_iou": {
+         "fine": 0.8383,
+         "coarse": 0.658,
+         "observed": true
+        }
+       }
+      },
+      {
+       "crop": "wide",
+       "method": "anchor",
+       "res": 504,
+       "views": 3,
+       "time_s": {
+        "fine_i_iii": 0.53,
+        "da3": 0.199,
+        "anchor_icp": 0.013,
+        "tsdf_1cm": 0.086,
+        "holdout_check": 0.0
+       },
+       "anchor": {
+        "scales": [
+         0.8361,
+         0.32,
+         0.8466
+        ],
+        "kept": [
+         0,
+         1,
+         2
+        ],
+        "notes": [
+         "spot -1.4%",
+         "spot -7.2%",
+         "spot -1.1%"
+        ]
+       },
+       "pose_refine": null,
+       "da3_camera_check": null,
+       "sam3_masks_found": 2,
+       "points_in_box": {
+        "coarse_tsdf_3cm": 275,
+        "fine_tsdf_1cm": 164,
+        "fine_raw_da3_pixels": 2414,
+        "crop_pixels_in_box_plus_15cm_per_view": [
+         4584,
+         315,
+         2015
+        ]
+       },
+       "spacing_m": {
+        "coarse": 0.03,
+        "fine": 0.00367
+       },
+       "multi_view": {
+        "median_m": 0.03265,
+        "within_1cm": 0.2151,
+        "within_2cm": 0.3591,
+        "pairs": 6,
+        "samples": 3514
+       },
+       "agreement_with_coarse": {
+        "fine_to_coarse_nn_median_m": 0.038,
+        "p90_m": 0.0602
+       },
+       "plane": {
+        "coarse": {
+         "kind": "vertical",
+         "tilt_deg": 6.391,
+         "ci95_deg": [
+          5.023,
+          7.647
+         ],
+         "ci_width_deg": 2.624,
+         "inliers": 269,
+         "points": 275,
+         "rms_mm": 12.8,
+         "normal": [
+          0.9921200275421143,
+          0.09052000194787979,
+          0.08664000034332275
+         ],
+         "centre": [
+          4.742199897766113,
+          -0.7008000016212463,
+          3.3194000720977783
+         ]
+        },
+        "fine": {
+         "kind": "vertical",
+         "tilt_deg": 28.239,
+         "ci95_deg": [
+          27.392,
+          29.04
+         ],
+         "ci_width_deg": 1.648,
+         "inliers": 158,
+         "points": 164,
+         "rms_mm": 4.03,
+         "normal": [
+          0.15318000316619873,
+          0.305510014295578,
+          0.9397900104522705
+         ],
+         "centre": [
+          4.722300052642822,
+          -0.6564000248908997,
+          2.951900005340576
+         ]
+        }
+       },
+       "thin": null,
+       "holdout": {
+        "skipped": "3 views: the hold-out would leave 2 cameras, DA3's Umeyama pose alignment needs >= 3"
+       }
+      }
+     ]
+    }
+   ],
+   "stages": [
+    {
+     "stage": "decode",
+     "start_s": 0.022,
+     "end_s": 2.64,
+     "s": 2.618,
+     "peak_gb": [
+      29.41
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "cuts",
+     "start_s": 2.64,
+     "end_s": 8.727,
+     "s": 6.087,
+     "peak_gb": [
+      29.41
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "da3.shot0",
+     "start_s": 8.926,
+     "end_s": 10.023,
+     "s": 1.097,
+     "peak_gb": [
+      34.95
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 34
+     }
+    },
+    {
+     "stage": "da3.shot1",
+     "start_s": 10.023,
+     "end_s": 15.682,
+     "s": 5.659,
+     "peak_gb": [
+      40.62
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 113
+     }
+    },
+    {
+     "stage": "sam3.person",
+     "start_s": 15.682,
+     "end_s": 29.756,
+     "s": 14.074,
+     "peak_gb": [
+      47.95
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "keyframes": 150,
+      "trigger_words": 16
+     }
+    },
+    {
+     "stage": "scale.shot0",
+     "start_s": 29.936,
+     "end_s": 30.125,
+     "s": 0.189,
+     "peak_gb": [
+      33.38
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "tsdf.shot0",
+     "start_s": 30.125,
+     "end_s": 31.524,
+     "s": 1.399,
+     "peak_gb": [
+      38.68
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 34
+     }
+    },
+    {
+     "stage": "scale.shot1",
+     "start_s": 31.63,
+     "end_s": 31.675,
+     "s": 0.045,
+     "peak_gb": [
+      32.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "tsdf.shot1",
+     "start_s": 31.675,
+     "end_s": 31.911,
+     "s": 0.236,
+     "peak_gb": [
+      39.72
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 113
+     }
+    },
+    {
+     "stage": "lift",
+     "start_s": 32.155,
+     "end_s": 36.184,
+     "s": 4.029,
+     "peak_gb": [
+      33.28
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "detections": 6503
+     }
+    },
+    {
+     "stage": "siglip",
+     "start_s": 36.185,
+     "end_s": 37.736,
+     "s": 1.551,
+     "peak_gb": [
+      37.18
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4834
+     }
+    },
+    {
+     "stage": "refine.spots",
+     "start_s": 37.739,
+     "end_s": 40.32,
+     "s": 2.581,
+     "peak_gb": [
+      37.18
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.select.s0",
+     "start_s": 40.32,
+     "end_s": 41.151,
+     "s": 0.831,
+     "peak_gb": [
+      37.18
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.select.s1",
+     "start_s": 43.496,
+     "end_s": 43.603,
+     "s": 0.107,
+     "peak_gb": [
+      37.18
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.select.s2",
+     "start_s": 45.485,
+     "end_s": 45.589,
+     "s": 0.104,
+     "peak_gb": [
+      37.18
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s0.wide.anchor.r504.v4",
+     "start_s": 47.709,
+     "end_s": 47.716,
+     "s": 0.007,
+     "peak_gb": [
+      37.18
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s0.wide.anchor.r504.v4",
+     "start_s": 47.716,
+     "end_s": 48.007,
+     "s": 0.291,
+     "peak_gb": [
+      37.19
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s0.wide.anchor.r504.v4",
+     "start_s": 48.007,
+     "end_s": 48.28,
+     "s": 0.273,
+     "peak_gb": [
+      37.19
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.anchor.r504.v4",
+     "start_s": 48.28,
+     "end_s": 48.296,
+     "s": 0.016,
+     "peak_gb": [
+      37.19
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.anchor.r504.v4",
+     "start_s": 48.297,
+     "end_s": 48.425,
+     "s": 0.128,
+     "peak_gb": [
+      40.25
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s0.wide.anchor.r504.v4",
+     "start_s": 48.436,
+     "end_s": 48.626,
+     "s": 0.19,
+     "peak_gb": [
+      40.25
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s0.wide.anchor.r504.v4.holdout",
+     "start_s": 48.626,
+     "end_s": 48.863,
+     "s": 0.237,
+     "peak_gb": [
+      40.25
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.anchor.r504.v4.holdout",
+     "start_s": 48.863,
+     "end_s": 48.875,
+     "s": 0.012,
+     "peak_gb": [
+      37.16
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.anchor.r504.v4.holdout",
+     "start_s": 48.876,
+     "end_s": 48.983,
+     "s": 0.107,
+     "peak_gb": [
+      40.22
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s0.wide.anchor.r504.v4",
+     "start_s": 48.991,
+     "end_s": 49.039,
+     "s": 0.048,
+     "peak_gb": [
+      40.22
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s0.wide.raw.r504.v4",
+     "start_s": 49.113,
+     "end_s": 49.121,
+     "s": 0.008,
+     "peak_gb": [
+      32.68
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s0.wide.raw.r504.v4",
+     "start_s": 49.121,
+     "end_s": 49.413,
+     "s": 0.292,
+     "peak_gb": [
+      32.68
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s0.wide.raw.r504.v4",
+     "start_s": 49.413,
+     "end_s": 49.691,
+     "s": 0.278,
+     "peak_gb": [
+      33.37
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.raw.r504.v4",
+     "start_s": 49.691,
+     "end_s": 49.691,
+     "s": 0.0,
+     "peak_gb": [
+      33.37
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.raw.r504.v4",
+     "start_s": 49.691,
+     "end_s": 49.801,
+     "s": 0.11,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s0.wide.raw.r504.v4",
+     "start_s": 49.81,
+     "end_s": 49.943,
+     "s": 0.133,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s0.wide.raw.r504.v4.holdout",
+     "start_s": 49.943,
+     "end_s": 50.181,
+     "s": 0.238,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.raw.r504.v4.holdout",
+     "start_s": 50.181,
+     "end_s": 50.181,
+     "s": 0.0,
+     "peak_gb": [
+      33.4
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.raw.r504.v4.holdout",
+     "start_s": 50.181,
+     "end_s": 50.26,
+     "s": 0.079,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s0.wide.raw.r504.v4",
+     "start_s": 50.268,
+     "end_s": 50.305,
+     "s": 0.037,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s0.wide.anchor+icp.r504.v4",
+     "start_s": 50.338,
+     "end_s": 50.347,
+     "s": 0.009,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s0.wide.anchor+icp.r504.v4",
+     "start_s": 50.347,
+     "end_s": 50.666,
+     "s": 0.319,
+     "peak_gb": [
+      35.63
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s0.wide.anchor+icp.r504.v4",
+     "start_s": 50.666,
+     "end_s": 50.937,
+     "s": 0.271,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.anchor+icp.r504.v4",
+     "start_s": 50.937,
+     "end_s": 51.153,
+     "s": 0.216,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.anchor+icp.r504.v4",
+     "start_s": 51.153,
+     "end_s": 51.248,
+     "s": 0.095,
+     "peak_gb": [
+      36.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s0.wide.anchor+icp.r504.v4",
+     "start_s": 51.257,
+     "end_s": 51.456,
+     "s": 0.199,
+     "peak_gb": [
+      36.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s0.wide.anchor+icp.r504.v4.holdout",
+     "start_s": 51.456,
+     "end_s": 51.688,
+     "s": 0.232,
+     "peak_gb": [
+      36.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.anchor+icp.r504.v4.holdout",
+     "start_s": 51.688,
+     "end_s": 51.839,
+     "s": 0.151,
+     "peak_gb": [
+      33.37
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.anchor+icp.r504.v4.holdout",
+     "start_s": 51.839,
+     "end_s": 51.927,
+     "s": 0.088,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s0.wide.anchor+icp.r504.v4",
+     "start_s": 51.935,
+     "end_s": 51.981,
+     "s": 0.046,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s0.wide.unposed.r504.v4",
+     "start_s": 52.029,
+     "end_s": 52.037,
+     "s": 0.008,
+     "peak_gb": [
+      32.88
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s0.wide.unposed.r504.v4",
+     "start_s": 52.037,
+     "end_s": 52.335,
+     "s": 0.298,
+     "peak_gb": [
+      32.88
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s0.wide.unposed.r504.v4",
+     "start_s": 52.335,
+     "end_s": 52.597,
+     "s": 0.262,
+     "peak_gb": [
+      33.37
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.unposed.r504.v4",
+     "start_s": 52.72,
+     "end_s": 52.72,
+     "s": 0.0,
+     "peak_gb": [
+      33.37
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.unposed.r504.v4",
+     "start_s": 52.721,
+     "end_s": 52.82,
+     "s": 0.099,
+     "peak_gb": [
+      36.4
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s0.wide.unposed.r504.v4",
+     "start_s": 52.829,
+     "end_s": 52.934,
+     "s": 0.105,
+     "peak_gb": [
+      36.4
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s0.wide.unposed.r504.v4.holdout",
+     "start_s": 52.934,
+     "end_s": 53.144,
+     "s": 0.21,
+     "peak_gb": [
+      36.4
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.unposed.r504.v4.holdout",
+     "start_s": 53.251,
+     "end_s": 53.251,
+     "s": 0.0,
+     "peak_gb": [
+      36.4
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.unposed.r504.v4.holdout",
+     "start_s": 53.251,
+     "end_s": 53.314,
+     "s": 0.063,
+     "peak_gb": [
+      36.4
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s0.wide.unposed.r504.v4",
+     "start_s": 53.321,
+     "end_s": 53.358,
+     "s": 0.037,
+     "peak_gb": [
+      36.4
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s0.tight.anchor.r504.v4",
+     "start_s": 53.389,
+     "end_s": 53.398,
+     "s": 0.009,
+     "peak_gb": [
+      35.64
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s0.tight.anchor.r504.v4",
+     "start_s": 53.399,
+     "end_s": 53.673,
+     "s": 0.274,
+     "peak_gb": [
+      35.64
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s0.tight.anchor.r504.v4",
+     "start_s": 53.673,
+     "end_s": 53.937,
+     "s": 0.264,
+     "peak_gb": [
+      36.4
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.tight.anchor.r504.v4",
+     "start_s": 53.937,
+     "end_s": 53.953,
+     "s": 0.016,
+     "peak_gb": [
+      36.4
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.tight.anchor.r504.v4",
+     "start_s": 53.953,
+     "end_s": 54.054,
+     "s": 0.101,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s0.tight.anchor.r504.v4",
+     "start_s": 54.063,
+     "end_s": 54.348,
+     "s": 0.285,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s0.tight.anchor.r504.v4.holdout",
+     "start_s": 54.348,
+     "end_s": 54.582,
+     "s": 0.234,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.tight.anchor.r504.v4.holdout",
+     "start_s": 54.582,
+     "end_s": 54.593,
+     "s": 0.011,
+     "peak_gb": [
+      33.37
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.tight.anchor.r504.v4.holdout",
+     "start_s": 54.593,
+     "end_s": 54.683,
+     "s": 0.09,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s0.tight.anchor.r504.v4",
+     "start_s": 54.692,
+     "end_s": 54.739,
+     "s": 0.047,
+     "peak_gb": [
+      36.43
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s0.wide.anchor.r336.v4",
+     "start_s": 54.782,
+     "end_s": 54.791,
+     "s": 0.009,
+     "peak_gb": [
+      31.39
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s0.wide.anchor.r336.v4",
+     "start_s": 54.791,
+     "end_s": 55.081,
+     "s": 0.29,
+     "peak_gb": [
+      32.57
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s0.wide.anchor.r336.v4",
+     "start_s": 55.081,
+     "end_s": 55.22,
+     "s": 0.139,
+     "peak_gb": [
+      32.57
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 336
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.anchor.r336.v4",
+     "start_s": 55.22,
+     "end_s": 55.231,
+     "s": 0.011,
+     "peak_gb": [
+      32.57
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.anchor.r336.v4",
+     "start_s": 55.231,
+     "end_s": 55.311,
+     "s": 0.08,
+     "peak_gb": [
+      35.63
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s0.wide.anchor.r336.v4",
+     "start_s": 55.32,
+     "end_s": 55.397,
+     "s": 0.077,
+     "peak_gb": [
+      35.63
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s0.wide.anchor.r336.v4.holdout",
+     "start_s": 55.397,
+     "end_s": 55.531,
+     "s": 0.134,
+     "peak_gb": [
+      35.63
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 336
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.anchor.r336.v4.holdout",
+     "start_s": 55.531,
+     "end_s": 55.539,
+     "s": 0.008,
+     "peak_gb": [
+      32.57
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.anchor.r336.v4.holdout",
+     "start_s": 55.539,
+     "end_s": 55.6,
+     "s": 0.061,
+     "peak_gb": [
+      35.6
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s0.wide.anchor.r336.v4",
+     "start_s": 55.611,
+     "end_s": 55.637,
+     "s": 0.026,
+     "peak_gb": [
+      35.6
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s0.wide.anchor.r756.v4",
+     "start_s": 55.685,
+     "end_s": 55.698,
+     "s": 0.013,
+     "peak_gb": [
+      35.44
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s0.wide.anchor.r756.v4",
+     "start_s": 55.698,
+     "end_s": 56.021,
+     "s": 0.323,
+     "peak_gb": [
+      32.55
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s0.wide.anchor.r756.v4",
+     "start_s": 56.021,
+     "end_s": 56.611,
+     "s": 0.59,
+     "peak_gb": [
+      37.19
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 756
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.anchor.r756.v4",
+     "start_s": 56.611,
+     "end_s": 56.646,
+     "s": 0.035,
+     "peak_gb": [
+      37.19
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.anchor.r756.v4",
+     "start_s": 56.646,
+     "end_s": 56.87,
+     "s": 0.224,
+     "peak_gb": [
+      40.26
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s0.wide.anchor.r756.v4",
+     "start_s": 56.882,
+     "end_s": 57.177,
+     "s": 0.295,
+     "peak_gb": [
+      40.26
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s0.wide.anchor.r756.v4.holdout",
+     "start_s": 57.178,
+     "end_s": 57.677,
+     "s": 0.499,
+     "peak_gb": [
+      40.26
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 756
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.anchor.r756.v4.holdout",
+     "start_s": 57.677,
+     "end_s": 57.701,
+     "s": 0.024,
+     "peak_gb": [
+      37.23
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.anchor.r756.v4.holdout",
+     "start_s": 57.701,
+     "end_s": 57.873,
+     "s": 0.172,
+     "peak_gb": [
+      40.26
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s0.wide.anchor.r756.v4",
+     "start_s": 57.886,
+     "end_s": 57.99,
+     "s": 0.104,
+     "peak_gb": [
+      40.26
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s0.wide.anchor.r504.v3",
+     "start_s": 58.101,
+     "end_s": 58.107,
+     "s": 0.006,
+     "peak_gb": [
+      32.6
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s0.wide.anchor.r504.v3",
+     "start_s": 58.107,
+     "end_s": 58.359,
+     "s": 0.252,
+     "peak_gb": [
+      32.6
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 3
+     }
+    },
+    {
+     "stage": "refine.da3.s0.wide.anchor.r504.v3",
+     "start_s": 58.359,
+     "end_s": 58.556,
+     "s": 0.197,
+     "peak_gb": [
+      32.71
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s0.wide.anchor.r504.v3",
+     "start_s": 58.556,
+     "end_s": 58.569,
+     "s": 0.013,
+     "peak_gb": [
+      32.71
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s0.wide.anchor.r504.v3",
+     "start_s": 58.569,
+     "end_s": 58.661,
+     "s": 0.092,
+     "peak_gb": [
+      35.75
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.metrics.s0.wide.anchor.r504.v3",
+     "start_s": 58.67,
+     "end_s": 58.85,
+     "s": 0.18,
+     "peak_gb": [
+      35.75
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.confirm.s0.wide.anchor.r504.v3",
+     "start_s": 58.851,
+     "end_s": 58.851,
+     "s": 0.0,
+     "peak_gb": [
+      35.75
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.vlm.s0",
+     "start_s": 58.921,
+     "end_s": 59.573,
+     "s": 0.652,
+     "peak_gb": [
+      32.1
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.lingbot_align.s0",
+     "start_s": 500.453,
+     "end_s": 500.68,
+     "s": 0.227,
+     "peak_gb": [
+      30.82
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.propagate.s0",
+     "start_s": 500.816,
+     "end_s": 501.004,
+     "s": 0.188,
+     "peak_gb": [
+      30.82
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s1.wide.anchor.r504.v5",
+     "start_s": 501.137,
+     "end_s": 501.154,
+     "s": 0.017,
+     "peak_gb": [
+      30.82
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s1.wide.anchor.r504.v5",
+     "start_s": 501.154,
+     "end_s": 501.502,
+     "s": 0.348,
+     "peak_gb": [
+      33.11
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 5
+     }
+    },
+    {
+     "stage": "refine.da3.s1.wide.anchor.r504.v5",
+     "start_s": 501.502,
+     "end_s": 501.832,
+     "s": 0.33,
+     "peak_gb": [
+      33.99
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.anchor.r504.v5",
+     "start_s": 501.832,
+     "end_s": 501.852,
+     "s": 0.02,
+     "peak_gb": [
+      33.99
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.anchor.r504.v5",
+     "start_s": 501.853,
+     "end_s": 501.979,
+     "s": 0.126,
+     "peak_gb": [
+      37.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5
+     }
+    },
+    {
+     "stage": "refine.metrics.s1.wide.anchor.r504.v5",
+     "start_s": 501.988,
+     "end_s": 502.127,
+     "s": 0.139,
+     "peak_gb": [
+      37.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s1.wide.anchor.r504.v5.holdout",
+     "start_s": 502.128,
+     "end_s": 502.424,
+     "s": 0.296,
+     "peak_gb": [
+      37.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.anchor.r504.v5.holdout",
+     "start_s": 502.424,
+     "end_s": 502.441,
+     "s": 0.017,
+     "peak_gb": [
+      33.99
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.anchor.r504.v5.holdout",
+     "start_s": 502.441,
+     "end_s": 502.544,
+     "s": 0.103,
+     "peak_gb": [
+      37.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.confirm.s1.wide.anchor.r504.v5",
+     "start_s": 502.554,
+     "end_s": 502.602,
+     "s": 0.048,
+     "peak_gb": [
+      37.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s1.wide.raw.r504.v5",
+     "start_s": 502.671,
+     "end_s": 502.69,
+     "s": 0.019,
+     "peak_gb": [
+      34.08
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s1.wide.raw.r504.v5",
+     "start_s": 502.69,
+     "end_s": 503.061,
+     "s": 0.371,
+     "peak_gb": [
+      33.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 5
+     }
+    },
+    {
+     "stage": "refine.da3.s1.wide.raw.r504.v5",
+     "start_s": 503.061,
+     "end_s": 503.378,
+     "s": 0.317,
+     "peak_gb": [
+      33.83
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.raw.r504.v5",
+     "start_s": 503.378,
+     "end_s": 503.378,
+     "s": 0.0,
+     "peak_gb": [
+      33.83
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.raw.r504.v5",
+     "start_s": 503.378,
+     "end_s": 503.507,
+     "s": 0.129,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5
+     }
+    },
+    {
+     "stage": "refine.metrics.s1.wide.raw.r504.v5",
+     "start_s": 503.517,
+     "end_s": 503.658,
+     "s": 0.141,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s1.wide.raw.r504.v5.holdout",
+     "start_s": 503.659,
+     "end_s": 503.959,
+     "s": 0.3,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.raw.r504.v5.holdout",
+     "start_s": 503.959,
+     "end_s": 503.959,
+     "s": 0.0,
+     "peak_gb": [
+      34.01
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.raw.r504.v5.holdout",
+     "start_s": 503.959,
+     "end_s": 504.074,
+     "s": 0.115,
+     "peak_gb": [
+      37.07
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.confirm.s1.wide.raw.r504.v5",
+     "start_s": 504.083,
+     "end_s": 504.13,
+     "s": 0.047,
+     "peak_gb": [
+      37.07
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s1.wide.anchor+icp.r504.v5",
+     "start_s": 504.175,
+     "end_s": 504.193,
+     "s": 0.018,
+     "peak_gb": [
+      35.82
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s1.wide.anchor+icp.r504.v5",
+     "start_s": 504.193,
+     "end_s": 504.536,
+     "s": 0.343,
+     "peak_gb": [
+      33.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 5
+     }
+    },
+    {
+     "stage": "refine.da3.s1.wide.anchor+icp.r504.v5",
+     "start_s": 504.536,
+     "end_s": 504.863,
+     "s": 0.327,
+     "peak_gb": [
+      33.83
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.anchor+icp.r504.v5",
+     "start_s": 504.863,
+     "end_s": 505.196,
+     "s": 0.333,
+     "peak_gb": [
+      33.83
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.anchor+icp.r504.v5",
+     "start_s": 505.196,
+     "end_s": 505.333,
+     "s": 0.137,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5
+     }
+    },
+    {
+     "stage": "refine.metrics.s1.wide.anchor+icp.r504.v5",
+     "start_s": 505.342,
+     "end_s": 505.479,
+     "s": 0.137,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s1.wide.anchor+icp.r504.v5.holdout",
+     "start_s": 505.479,
+     "end_s": 505.771,
+     "s": 0.292,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.anchor+icp.r504.v5.holdout",
+     "start_s": 505.771,
+     "end_s": 506.036,
+     "s": 0.265,
+     "peak_gb": [
+      34.01
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.anchor+icp.r504.v5.holdout",
+     "start_s": 506.036,
+     "end_s": 506.179,
+     "s": 0.143,
+     "peak_gb": [
+      37.07
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.confirm.s1.wide.anchor+icp.r504.v5",
+     "start_s": 506.189,
+     "end_s": 506.24,
+     "s": 0.051,
+     "peak_gb": [
+      37.07
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s1.wide.unposed.r504.v5",
+     "start_s": 506.286,
+     "end_s": 506.304,
+     "s": 0.018,
+     "peak_gb": [
+      32.91
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s1.wide.unposed.r504.v5",
+     "start_s": 506.304,
+     "end_s": 506.665,
+     "s": 0.361,
+     "peak_gb": [
+      33.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 5
+     }
+    },
+    {
+     "stage": "refine.da3.s1.wide.unposed.r504.v5",
+     "start_s": 506.665,
+     "end_s": 506.976,
+     "s": 0.311,
+     "peak_gb": [
+      33.83
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.unposed.r504.v5",
+     "start_s": 507.335,
+     "end_s": 507.335,
+     "s": 0.0,
+     "peak_gb": [
+      33.83
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.unposed.r504.v5",
+     "start_s": 507.335,
+     "end_s": 507.456,
+     "s": 0.121,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5
+     }
+    },
+    {
+     "stage": "refine.metrics.s1.wide.unposed.r504.v5",
+     "start_s": 507.466,
+     "end_s": 507.53,
+     "s": 0.064,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s1.wide.unposed.r504.v5.holdout",
+     "start_s": 507.53,
+     "end_s": 507.798,
+     "s": 0.268,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.unposed.r504.v5.holdout",
+     "start_s": 508.071,
+     "end_s": 508.071,
+     "s": 0.0,
+     "peak_gb": [
+      34.01
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.unposed.r504.v5.holdout",
+     "start_s": 508.071,
+     "end_s": 508.186,
+     "s": 0.115,
+     "peak_gb": [
+      37.07
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.confirm.s1.wide.unposed.r504.v5",
+     "start_s": 508.194,
+     "end_s": 508.237,
+     "s": 0.043,
+     "peak_gb": [
+      37.07
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s1.tight.anchor.r504.v5",
+     "start_s": 508.29,
+     "end_s": 508.307,
+     "s": 0.017,
+     "peak_gb": [
+      31.82
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s1.tight.anchor.r504.v5",
+     "start_s": 508.307,
+     "end_s": 508.671,
+     "s": 0.364,
+     "peak_gb": [
+      33.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 5
+     }
+    },
+    {
+     "stage": "refine.da3.s1.tight.anchor.r504.v5",
+     "start_s": 508.671,
+     "end_s": 508.98,
+     "s": 0.309,
+     "peak_gb": [
+      33.83
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.tight.anchor.r504.v5",
+     "start_s": 508.98,
+     "end_s": 509.0,
+     "s": 0.02,
+     "peak_gb": [
+      33.83
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.tight.anchor.r504.v5",
+     "start_s": 509.0,
+     "end_s": 509.13,
+     "s": 0.13,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5
+     }
+    },
+    {
+     "stage": "refine.metrics.s1.tight.anchor.r504.v5",
+     "start_s": 509.139,
+     "end_s": 509.313,
+     "s": 0.174,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s1.tight.anchor.r504.v5.holdout",
+     "start_s": 509.314,
+     "end_s": 509.614,
+     "s": 0.3,
+     "peak_gb": [
+      36.89
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.tight.anchor.r504.v5.holdout",
+     "start_s": 509.614,
+     "end_s": 509.63,
+     "s": 0.016,
+     "peak_gb": [
+      34.01
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.tight.anchor.r504.v5.holdout",
+     "start_s": 509.63,
+     "end_s": 509.735,
+     "s": 0.105,
+     "peak_gb": [
+      37.07
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.confirm.s1.tight.anchor.r504.v5",
+     "start_s": 509.744,
+     "end_s": 509.822,
+     "s": 0.078,
+     "peak_gb": [
+      37.07
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s1.wide.anchor.r336.v5",
+     "start_s": 509.877,
+     "end_s": 509.896,
+     "s": 0.019,
+     "peak_gb": [
+      33.25
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s1.wide.anchor.r336.v5",
+     "start_s": 509.896,
+     "end_s": 510.236,
+     "s": 0.34,
+     "peak_gb": [
+      33.25
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 5
+     }
+    },
+    {
+     "stage": "refine.da3.s1.wide.anchor.r336.v5",
+     "start_s": 510.236,
+     "end_s": 510.4,
+     "s": 0.164,
+     "peak_gb": [
+      33.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5,
+      "res": 336
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.anchor.r336.v5",
+     "start_s": 510.4,
+     "end_s": 510.414,
+     "s": 0.014,
+     "peak_gb": [
+      33.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.anchor.r336.v5",
+     "start_s": 510.414,
+     "end_s": 510.483,
+     "s": 0.069,
+     "peak_gb": [
+      36.11
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5
+     }
+    },
+    {
+     "stage": "refine.metrics.s1.wide.anchor.r336.v5",
+     "start_s": 510.492,
+     "end_s": 510.614,
+     "s": 0.122,
+     "peak_gb": [
+      36.11
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s1.wide.anchor.r336.v5.holdout",
+     "start_s": 510.614,
+     "end_s": 510.787,
+     "s": 0.173,
+     "peak_gb": [
+      36.11
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 336
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.anchor.r336.v5.holdout",
+     "start_s": 510.787,
+     "end_s": 510.797,
+     "s": 0.01,
+     "peak_gb": [
+      33.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.anchor.r336.v5.holdout",
+     "start_s": 510.797,
+     "end_s": 510.859,
+     "s": 0.062,
+     "peak_gb": [
+      36.11
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.confirm.s1.wide.anchor.r336.v5",
+     "start_s": 510.869,
+     "end_s": 510.895,
+     "s": 0.026,
+     "peak_gb": [
+      36.11
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s1.wide.anchor.r756.v5",
+     "start_s": 510.938,
+     "end_s": 510.961,
+     "s": 0.023,
+     "peak_gb": [
+      33.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s1.wide.anchor.r756.v5",
+     "start_s": 510.961,
+     "end_s": 511.33,
+     "s": 0.369,
+     "peak_gb": [
+      33.17
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 5
+     }
+    },
+    {
+     "stage": "refine.da3.s1.wide.anchor.r756.v5",
+     "start_s": 511.33,
+     "end_s": 512.079,
+     "s": 0.749,
+     "peak_gb": [
+      38.62
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5,
+      "res": 756
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.anchor.r756.v5",
+     "start_s": 512.079,
+     "end_s": 512.118,
+     "s": 0.039,
+     "peak_gb": [
+      38.62
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.anchor.r756.v5",
+     "start_s": 512.118,
+     "end_s": 512.385,
+     "s": 0.267,
+     "peak_gb": [
+      41.68
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 5
+     }
+    },
+    {
+     "stage": "refine.metrics.s1.wide.anchor.r756.v5",
+     "start_s": 512.396,
+     "end_s": 512.574,
+     "s": 0.178,
+     "peak_gb": [
+      41.68
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s1.wide.anchor.r756.v5.holdout",
+     "start_s": 512.575,
+     "end_s": 513.209,
+     "s": 0.634,
+     "peak_gb": [
+      41.68
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 756
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.anchor.r756.v5.holdout",
+     "start_s": 513.209,
+     "end_s": 513.24,
+     "s": 0.031,
+     "peak_gb": [
+      38.65
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.anchor.r756.v5.holdout",
+     "start_s": 513.24,
+     "end_s": 513.465,
+     "s": 0.225,
+     "peak_gb": [
+      41.68
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.confirm.s1.wide.anchor.r756.v5",
+     "start_s": 513.475,
+     "end_s": 513.588,
+     "s": 0.113,
+     "peak_gb": [
+      41.68
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s1.wide.anchor.r504.v3",
+     "start_s": 513.703,
+     "end_s": 513.714,
+     "s": 0.011,
+     "peak_gb": [
+      31.65
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s1.wide.anchor.r504.v3",
+     "start_s": 513.714,
+     "end_s": 513.946,
+     "s": 0.232,
+     "peak_gb": [
+      32.1
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 3
+     }
+    },
+    {
+     "stage": "refine.da3.s1.wide.anchor.r504.v3",
+     "start_s": 513.946,
+     "end_s": 514.166,
+     "s": 0.22,
+     "peak_gb": [
+      33.08
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s1.wide.anchor.r504.v3",
+     "start_s": 514.166,
+     "end_s": 514.178,
+     "s": 0.012,
+     "peak_gb": [
+      33.08
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s1.wide.anchor.r504.v3",
+     "start_s": 514.178,
+     "end_s": 514.267,
+     "s": 0.089,
+     "peak_gb": [
+      36.11
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.metrics.s1.wide.anchor.r504.v3",
+     "start_s": 514.276,
+     "end_s": 514.355,
+     "s": 0.079,
+     "peak_gb": [
+      36.11
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.confirm.s1.wide.anchor.r504.v3",
+     "start_s": 514.355,
+     "end_s": 514.355,
+     "s": 0.0,
+     "peak_gb": [
+      36.11
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.vlm.s1",
+     "start_s": 514.424,
+     "end_s": 515.155,
+     "s": 0.731,
+     "peak_gb": [
+      30.85
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.lingbot_align.s1",
+     "start_s": 517.143,
+     "end_s": 517.544,
+     "s": 0.401,
+     "peak_gb": [
+      30.85
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.propagate.s1",
+     "start_s": 517.783,
+     "end_s": 517.972,
+     "s": 0.189,
+     "peak_gb": [
+      30.85
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s2.wide.anchor.r504.v4",
+     "start_s": 518.112,
+     "end_s": 518.119,
+     "s": 0.007,
+     "peak_gb": [
+      31.68
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s2.wide.anchor.r504.v4",
+     "start_s": 518.119,
+     "end_s": 518.401,
+     "s": 0.282,
+     "peak_gb": [
+      32.64
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s2.wide.anchor.r504.v4",
+     "start_s": 518.401,
+     "end_s": 518.663,
+     "s": 0.262,
+     "peak_gb": [
+      33.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.anchor.r504.v4",
+     "start_s": 518.663,
+     "end_s": 518.679,
+     "s": 0.016,
+     "peak_gb": [
+      33.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.anchor.r504.v4",
+     "start_s": 518.679,
+     "end_s": 518.783,
+     "s": 0.104,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s2.wide.anchor.r504.v4",
+     "start_s": 518.792,
+     "end_s": 518.894,
+     "s": 0.102,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s2.wide.anchor.r504.v4.holdout",
+     "start_s": 518.894,
+     "end_s": 519.159,
+     "s": 0.265,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.anchor.r504.v4.holdout",
+     "start_s": 519.159,
+     "end_s": 519.171,
+     "s": 0.012,
+     "peak_gb": [
+      33.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.anchor.r504.v4.holdout",
+     "start_s": 519.171,
+     "end_s": 519.257,
+     "s": 0.086,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s2.wide.anchor.r504.v4",
+     "start_s": 519.265,
+     "end_s": 519.301,
+     "s": 0.036,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s2.wide.raw.r504.v4",
+     "start_s": 519.349,
+     "end_s": 519.356,
+     "s": 0.007,
+     "peak_gb": [
+      32.66
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s2.wide.raw.r504.v4",
+     "start_s": 519.356,
+     "end_s": 519.639,
+     "s": 0.283,
+     "peak_gb": [
+      32.66
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s2.wide.raw.r504.v4",
+     "start_s": 519.639,
+     "end_s": 519.895,
+     "s": 0.256,
+     "peak_gb": [
+      33.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.raw.r504.v4",
+     "start_s": 519.895,
+     "end_s": 519.895,
+     "s": 0.0,
+     "peak_gb": [
+      33.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.raw.r504.v4",
+     "start_s": 519.895,
+     "end_s": 520.0,
+     "s": 0.105,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s2.wide.raw.r504.v4",
+     "start_s": 520.008,
+     "end_s": 520.037,
+     "s": 0.029,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s2.wide.raw.r504.v4.holdout",
+     "start_s": 520.037,
+     "end_s": 520.248,
+     "s": 0.211,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.raw.r504.v4.holdout",
+     "start_s": 520.248,
+     "end_s": 520.248,
+     "s": 0.0,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.raw.r504.v4.holdout",
+     "start_s": 520.248,
+     "end_s": 520.308,
+     "s": 0.06,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s2.wide.raw.r504.v4",
+     "start_s": 520.316,
+     "end_s": 520.351,
+     "s": 0.035,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s2.wide.anchor+icp.r504.v4",
+     "start_s": 520.391,
+     "end_s": 520.399,
+     "s": 0.008,
+     "peak_gb": [
+      35.67
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s2.wide.anchor+icp.r504.v4",
+     "start_s": 520.399,
+     "end_s": 520.672,
+     "s": 0.273,
+     "peak_gb": [
+      35.67
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s2.wide.anchor+icp.r504.v4",
+     "start_s": 520.672,
+     "end_s": 520.927,
+     "s": 0.255,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.anchor+icp.r504.v4",
+     "start_s": 520.927,
+     "end_s": 521.032,
+     "s": 0.105,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.anchor+icp.r504.v4",
+     "start_s": 521.032,
+     "end_s": 521.117,
+     "s": 0.085,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s2.wide.anchor+icp.r504.v4",
+     "start_s": 521.125,
+     "end_s": 521.228,
+     "s": 0.103,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s2.wide.anchor+icp.r504.v4.holdout",
+     "start_s": 521.228,
+     "end_s": 521.454,
+     "s": 0.226,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.anchor+icp.r504.v4.holdout",
+     "start_s": 521.454,
+     "end_s": 521.534,
+     "s": 0.08,
+     "peak_gb": [
+      33.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.anchor+icp.r504.v4.holdout",
+     "start_s": 521.534,
+     "end_s": 521.618,
+     "s": 0.084,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s2.wide.anchor+icp.r504.v4",
+     "start_s": 521.626,
+     "end_s": 521.662,
+     "s": 0.036,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s2.wide.unposed.r504.v4",
+     "start_s": 521.71,
+     "end_s": 521.717,
+     "s": 0.007,
+     "peak_gb": [
+      33.58
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s2.wide.unposed.r504.v4",
+     "start_s": 521.717,
+     "end_s": 522.003,
+     "s": 0.286,
+     "peak_gb": [
+      33.58
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s2.wide.unposed.r504.v4",
+     "start_s": 522.003,
+     "end_s": 522.253,
+     "s": 0.25,
+     "peak_gb": [
+      33.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.unposed.r504.v4",
+     "start_s": 522.355,
+     "end_s": 522.355,
+     "s": 0.0,
+     "peak_gb": [
+      33.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.unposed.r504.v4",
+     "start_s": 522.355,
+     "end_s": 522.449,
+     "s": 0.094,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s2.wide.unposed.r504.v4",
+     "start_s": 522.458,
+     "end_s": 522.485,
+     "s": 0.027,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s2.wide.unposed.r504.v4.holdout",
+     "start_s": 522.485,
+     "end_s": 522.69,
+     "s": 0.205,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.unposed.r504.v4.holdout",
+     "start_s": 522.77,
+     "end_s": 522.77,
+     "s": 0.0,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.unposed.r504.v4.holdout",
+     "start_s": 522.77,
+     "end_s": 522.828,
+     "s": 0.058,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s2.wide.unposed.r504.v4",
+     "start_s": 522.836,
+     "end_s": 522.871,
+     "s": 0.035,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s2.tight.anchor.r504.v4",
+     "start_s": 522.906,
+     "end_s": 522.913,
+     "s": 0.007,
+     "peak_gb": [
+      35.01
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s2.tight.anchor.r504.v4",
+     "start_s": 522.913,
+     "end_s": 523.198,
+     "s": 0.285,
+     "peak_gb": [
+      35.67
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s2.tight.anchor.r504.v4",
+     "start_s": 523.198,
+     "end_s": 523.461,
+     "s": 0.263,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.tight.anchor.r504.v4",
+     "start_s": 523.461,
+     "end_s": 523.476,
+     "s": 0.015,
+     "peak_gb": [
+      36.49
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.tight.anchor.r504.v4",
+     "start_s": 523.476,
+     "end_s": 523.565,
+     "s": 0.089,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s2.tight.anchor.r504.v4",
+     "start_s": 523.575,
+     "end_s": 523.681,
+     "s": 0.106,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s2.tight.anchor.r504.v4.holdout",
+     "start_s": 523.681,
+     "end_s": 523.907,
+     "s": 0.226,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.tight.anchor.r504.v4.holdout",
+     "start_s": 523.907,
+     "end_s": 523.917,
+     "s": 0.01,
+     "peak_gb": [
+      33.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.tight.anchor.r504.v4.holdout",
+     "start_s": 523.917,
+     "end_s": 524.002,
+     "s": 0.085,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s2.tight.anchor.r504.v4",
+     "start_s": 524.012,
+     "end_s": 524.052,
+     "s": 0.04,
+     "peak_gb": [
+      36.52
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s2.wide.anchor.r336.v4",
+     "start_s": 524.131,
+     "end_s": 524.139,
+     "s": 0.008,
+     "peak_gb": [
+      32.39
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s2.wide.anchor.r336.v4",
+     "start_s": 524.139,
+     "end_s": 524.418,
+     "s": 0.279,
+     "peak_gb": [
+      32.64
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s2.wide.anchor.r336.v4",
+     "start_s": 524.418,
+     "end_s": 524.549,
+     "s": 0.131,
+     "peak_gb": [
+      32.64
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 336
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.anchor.r336.v4",
+     "start_s": 524.549,
+     "end_s": 524.559,
+     "s": 0.01,
+     "peak_gb": [
+      32.64
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.anchor.r336.v4",
+     "start_s": 524.559,
+     "end_s": 524.63,
+     "s": 0.071,
+     "peak_gb": [
+      35.7
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s2.wide.anchor.r336.v4",
+     "start_s": 524.638,
+     "end_s": 524.748,
+     "s": 0.11,
+     "peak_gb": [
+      35.7
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s2.wide.anchor.r336.v4.holdout",
+     "start_s": 524.749,
+     "end_s": 524.885,
+     "s": 0.136,
+     "peak_gb": [
+      35.7
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 336
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.anchor.r336.v4.holdout",
+     "start_s": 524.885,
+     "end_s": 524.894,
+     "s": 0.009,
+     "peak_gb": [
+      32.64
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.anchor.r336.v4.holdout",
+     "start_s": 524.894,
+     "end_s": 524.946,
+     "s": 0.052,
+     "peak_gb": [
+      35.7
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s2.wide.anchor.r336.v4",
+     "start_s": 524.947,
+     "end_s": 524.965,
+     "s": 0.018,
+     "peak_gb": [
+      35.7
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s2.wide.anchor.r756.v4",
+     "start_s": 525.018,
+     "end_s": 525.028,
+     "s": 0.01,
+     "peak_gb": [
+      31.46
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s2.wide.anchor.r756.v4",
+     "start_s": 525.028,
+     "end_s": 525.328,
+     "s": 0.3,
+     "peak_gb": [
+      32.66
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 4
+     }
+    },
+    {
+     "stage": "refine.da3.s2.wide.anchor.r756.v4",
+     "start_s": 525.328,
+     "end_s": 525.929,
+     "s": 0.601,
+     "peak_gb": [
+      37.29
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4,
+      "res": 756
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.anchor.r756.v4",
+     "start_s": 525.929,
+     "end_s": 525.96,
+     "s": 0.031,
+     "peak_gb": [
+      37.29
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.anchor.r756.v4",
+     "start_s": 525.96,
+     "end_s": 526.169,
+     "s": 0.209,
+     "peak_gb": [
+      40.35
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 4
+     }
+    },
+    {
+     "stage": "refine.metrics.s2.wide.anchor.r756.v4",
+     "start_s": 526.18,
+     "end_s": 526.292,
+     "s": 0.112,
+     "peak_gb": [
+      40.35
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.da3.s2.wide.anchor.r756.v4.holdout",
+     "start_s": 526.292,
+     "end_s": 526.777,
+     "s": 0.485,
+     "peak_gb": [
+      40.35
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 756
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.anchor.r756.v4.holdout",
+     "start_s": 526.777,
+     "end_s": 526.799,
+     "s": 0.022,
+     "peak_gb": [
+      37.32
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.anchor.r756.v4.holdout",
+     "start_s": 526.799,
+     "end_s": 526.984,
+     "s": 0.185,
+     "peak_gb": [
+      40.35
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.confirm.s2.wide.anchor.r756.v4",
+     "start_s": 526.994,
+     "end_s": 527.098,
+     "s": 0.104,
+     "peak_gb": [
+      40.35
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.crops.s2.wide.anchor.r504.v3",
+     "start_s": 527.173,
+     "end_s": 527.178,
+     "s": 0.005,
+     "peak_gb": [
+      33.98
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.sam3.s2.wide.anchor.r504.v3",
+     "start_s": 527.178,
+     "end_s": 527.396,
+     "s": 0.218,
+     "peak_gb": [
+      33.98
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "crops": 3
+     }
+    },
+    {
+     "stage": "refine.da3.s2.wide.anchor.r504.v3",
+     "start_s": 527.396,
+     "end_s": 527.595,
+     "s": 0.199,
+     "peak_gb": [
+      33.02
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3,
+      "res": 504
+     }
+    },
+    {
+     "stage": "refine.anchor.s2.wide.anchor.r504.v3",
+     "start_s": 527.595,
+     "end_s": 527.608,
+     "s": 0.013,
+     "peak_gb": [
+      33.02
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.tsdf.s2.wide.anchor.r504.v3",
+     "start_s": 527.608,
+     "end_s": 527.694,
+     "s": 0.086,
+     "peak_gb": [
+      36.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {
+      "views": 3
+     }
+    },
+    {
+     "stage": "refine.metrics.s2.wide.anchor.r504.v3",
+     "start_s": 527.703,
+     "end_s": 527.756,
+     "s": 0.053,
+     "peak_gb": [
+      36.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.confirm.s2.wide.anchor.r504.v3",
+     "start_s": 527.756,
+     "end_s": 527.756,
+     "s": 0.0,
+     "peak_gb": [
+      36.05
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.vlm.s2",
+     "start_s": 527.808,
+     "end_s": 528.461,
+     "s": 0.653,
+     "peak_gb": [
+      31.26
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.lingbot_align.s2",
+     "start_s": 530.612,
+     "end_s": 530.752,
+     "s": 0.14,
+     "peak_gb": [
+      30.85
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    },
+    {
+     "stage": "refine.propagate.s2",
+     "start_s": 530.845,
+     "end_s": 531.031,
+     "s": 0.186,
+     "peak_gb": [
+      30.85
+     ],
+     "over_90": [
+      false
+     ],
+     "n": {}
+    }
+   ],
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 80.0,
+     "peak_gb": 47.95,
+     "at_s": 28.44,
+     "stages_active": [
+      "sam3.person"
+     ]
+    }
+   ],
+   "flags": [],
+   "torch_reserved_peak_gib": 26.71,
+   "volume_paths": {
+    "s0-lingbot": "panoptes-fb-layers:/x4/fx-x4-refine-004/me340-165/s0-lingbot.npz",
+    "s0-fine": "panoptes-fb-layers:/x4/fx-x4-refine-004/me340-165/s0-fine.npz",
+    "s0-fine-rgb": "panoptes-fb-layers:/x4/fx-x4-refine-004/me340-165/s0-fine-rgb.npz",
+    "s1-lingbot": "panoptes-fb-layers:/x4/fx-x4-refine-004/me340-165/s1-lingbot.npz",
+    "s1-fine": "panoptes-fb-layers:/x4/fx-x4-refine-004/me340-165/s1-fine.npz",
+    "s1-fine-rgb": "panoptes-fb-layers:/x4/fx-x4-refine-004/me340-165/s1-fine-rgb.npz",
+    "s2-lingbot": "panoptes-fb-layers:/x4/fx-x4-refine-004/me340-165/s2-lingbot.npz",
+    "s2-fine": "panoptes-fb-layers:/x4/fx-x4-refine-004/me340-165/s2-fine.npz",
+    "s2-fine-rgb": "panoptes-fb-layers:/x4/fx-x4-refine-004/me340-165/s2-fine-rgb.npz",
+    "shot1-patched-map": "panoptes-fb-layers:/x4/fx-x4-refine-004/me340-165/shot1-patched-map.npz"
+   },
+   "before_after_jpg": "me340-165-before-after.jpg"
+  }
+ },
+ "sweeps": {
+  "tight-anchor-res504-viewsall": {
+   "n": 3,
+   "median_fine_s": 0.673,
+   "median_da3_s": 0.263,
+   "median_tsdf_s": 0.101,
+   "median_views": 4.0,
+   "median_plane_ci_width_deg": 0.382,
+   "thin_visible": "0/1",
+   "median_photometric_ratio": 1.1441,
+   "median_outline_iou_fine": 0.6294,
+   "median_outline_iou_coarse": 0.5733,
+   "median_multi_view_m": 0.1012,
+   "median_multi_view_within_2cm": 0.1007,
+   "median_coarse_nn_m": 0.0381,
+   "median_fine_points_in_box": 5368.0,
+   "rows": [
+    {
+     "clip": "me340-165",
+     "spot": "s0",
+     "group": "cable",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.673,
+      "da3": 0.263,
+      "anchor_icp": 0.016,
+      "tsdf_1cm": 0.101,
+      "holdout_check": 0.39
+     },
+     "plane_ci_width_deg": null,
+     "thin_visible": false,
+     "photometric_ratio": 1.1254,
+     "outline_iou_fine": 0.144,
+     "outline_iou_coarse": 0.1486,
+     "multi_view_within_2cm": 0.1007,
+     "fine_points_in_box": 8238,
+     "multi_view_median_m": 0.10121,
+     "coarse_nn_median_m": 0.0378
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s1",
+     "group": "box_stack",
+     "views": 5,
+     "time_s": {
+      "fine_i_iii": 0.849,
+      "da3": 0.309,
+      "anchor_icp": 0.02,
+      "tsdf_1cm": 0.13,
+      "holdout_check": 0.508
+     },
+     "plane_ci_width_deg": 0.353,
+     "thin_visible": null,
+     "photometric_ratio": 1.1627,
+     "outline_iou_fine": 0.6294,
+     "outline_iou_coarse": 0.5828,
+     "multi_view_within_2cm": 0.0784,
+     "fine_points_in_box": 5368,
+     "multi_view_median_m": 0.11567,
+     "coarse_nn_median_m": 0.0381
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s2",
+     "group": "shelf_partition",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.668,
+      "da3": 0.263,
+      "anchor_icp": 0.015,
+      "tsdf_1cm": 0.089,
+      "holdout_check": 0.371
+     },
+     "plane_ci_width_deg": 0.411,
+     "thin_visible": null,
+     "photometric_ratio": null,
+     "outline_iou_fine": 0.7433,
+     "outline_iou_coarse": 0.5733,
+     "multi_view_within_2cm": 0.1276,
+     "fine_points_in_box": 3565,
+     "multi_view_median_m": 0.06989,
+     "coarse_nn_median_m": 0.0554
+    }
+   ]
+  },
+  "wide-anchor+icp-res504-viewsall": {
+   "n": 3,
+   "median_fine_s": 0.919,
+   "median_da3_s": 0.272,
+   "median_tsdf_s": 0.095,
+   "median_views": 4.0,
+   "median_plane_ci_width_deg": 0.3605,
+   "thin_visible": "1/1",
+   "median_photometric_ratio": 0.9617,
+   "median_outline_iou_fine": 0.6283,
+   "median_outline_iou_coarse": 0.6051,
+   "median_multi_view_m": 0.0243,
+   "median_multi_view_within_2cm": 0.426,
+   "median_coarse_nn_m": 0.0234,
+   "median_fine_points_in_box": 5657.0,
+   "rows": [
+    {
+     "clip": "me340-165",
+     "spot": "s0",
+     "group": "cable",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.919,
+      "da3": 0.272,
+      "anchor_icp": 0.216,
+      "tsdf_1cm": 0.095,
+      "holdout_check": 0.525
+     },
+     "plane_ci_width_deg": null,
+     "thin_visible": true,
+     "photometric_ratio": 0.9109,
+     "outline_iou_fine": 0.0344,
+     "outline_iou_coarse": 0.1727,
+     "multi_view_within_2cm": 0.4453,
+     "fine_points_in_box": 7828,
+     "multi_view_median_m": 0.02313,
+     "coarse_nn_median_m": 0.0198
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s1",
+     "group": "box_stack",
+     "views": 5,
+     "time_s": {
+      "fine_i_iii": 1.167,
+      "da3": 0.327,
+      "anchor_icp": 0.333,
+      "tsdf_1cm": 0.137,
+      "holdout_check": 0.761
+     },
+     "plane_ci_width_deg": 0.319,
+     "thin_visible": null,
+     "photometric_ratio": 1.0126,
+     "outline_iou_fine": 0.6283,
+     "outline_iou_coarse": 0.6402,
+     "multi_view_within_2cm": 0.1381,
+     "fine_points_in_box": 5657,
+     "multi_view_median_m": 0.06898,
+     "coarse_nn_median_m": 0.0234
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s2",
+     "group": "shelf_partition",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.734,
+      "da3": 0.255,
+      "anchor_icp": 0.105,
+      "tsdf_1cm": 0.085,
+      "holdout_check": 0.435
+     },
+     "plane_ci_width_deg": 0.402,
+     "thin_visible": null,
+     "photometric_ratio": null,
+     "outline_iou_fine": 0.7679,
+     "outline_iou_coarse": 0.6051,
+     "multi_view_within_2cm": 0.426,
+     "fine_points_in_box": 3717,
+     "multi_view_median_m": 0.02425,
+     "coarse_nn_median_m": 0.039
+    }
+   ]
+  },
+  "wide-anchor-res336-viewsall": {
+   "n": 3,
+   "median_fine_s": 0.538,
+   "median_da3_s": 0.139,
+   "median_tsdf_s": 0.071,
+   "median_views": 4.0,
+   "median_plane_ci_width_deg": 0.386,
+   "thin_visible": "1/1",
+   "median_photometric_ratio": 0.9834,
+   "median_outline_iou_fine": 0.6225,
+   "median_outline_iou_coarse": 0.5765,
+   "median_multi_view_m": 0.0485,
+   "median_multi_view_within_2cm": 0.3084,
+   "median_coarse_nn_m": 0.0273,
+   "median_fine_points_in_box": 5391.0,
+   "rows": [
+    {
+     "clip": "me340-165",
+     "spot": "s0",
+     "group": "cable",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.538,
+      "da3": 0.139,
+      "anchor_icp": 0.011,
+      "tsdf_1cm": 0.08,
+      "holdout_check": 0.241
+     },
+     "plane_ci_width_deg": null,
+     "thin_visible": true,
+     "photometric_ratio": 0.9862,
+     "outline_iou_fine": 0.0961,
+     "outline_iou_coarse": 0.1664,
+     "multi_view_within_2cm": 0.4222,
+     "fine_points_in_box": 7948,
+     "multi_view_median_m": 0.02392,
+     "coarse_nn_median_m": 0.0208
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s1",
+     "group": "box_stack",
+     "views": 5,
+     "time_s": {
+      "fine_i_iii": 0.615,
+      "da3": 0.164,
+      "anchor_icp": 0.014,
+      "tsdf_1cm": 0.069,
+      "holdout_check": 0.281
+     },
+     "plane_ci_width_deg": 0.38,
+     "thin_visible": null,
+     "photometric_ratio": 0.9807,
+     "outline_iou_fine": 0.6225,
+     "outline_iou_coarse": 0.723,
+     "multi_view_within_2cm": 0.1083,
+     "fine_points_in_box": 5391,
+     "multi_view_median_m": 0.08486,
+     "coarse_nn_median_m": 0.0312
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s2",
+     "group": "shelf_partition",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.507,
+      "da3": 0.131,
+      "anchor_icp": 0.01,
+      "tsdf_1cm": 0.071,
+      "holdout_check": 0.216
+     },
+     "plane_ci_width_deg": 0.392,
+     "thin_visible": null,
+     "photometric_ratio": null,
+     "outline_iou_fine": 0.7337,
+     "outline_iou_coarse": 0.5765,
+     "multi_view_within_2cm": 0.3084,
+     "fine_points_in_box": 3297,
+     "multi_view_median_m": 0.04853,
+     "coarse_nn_median_m": 0.0273
+    }
+   ]
+  },
+  "wide-anchor-res504-views3": {
+   "n": 3,
+   "median_fine_s": 0.569,
+   "median_da3_s": 0.199,
+   "median_tsdf_s": 0.089,
+   "median_views": 3.0,
+   "median_plane_ci_width_deg": 0.987,
+   "thin_visible": "0/1",
+   "median_photometric_ratio": null,
+   "median_outline_iou_fine": null,
+   "median_outline_iou_coarse": null,
+   "median_multi_view_m": 0.0326,
+   "median_multi_view_within_2cm": 0.3591,
+   "median_coarse_nn_m": 0.0263,
+   "median_fine_points_in_box": 2515.0,
+   "rows": [
+    {
+     "clip": "me340-165",
+     "spot": "s0",
+     "group": "cable",
+     "views": 3,
+     "time_s": {
+      "fine_i_iii": 0.569,
+      "da3": 0.197,
+      "anchor_icp": 0.012,
+      "tsdf_1cm": 0.092,
+      "holdout_check": 0.001
+     },
+     "plane_ci_width_deg": null,
+     "thin_visible": false,
+     "photometric_ratio": null,
+     "outline_iou_fine": null,
+     "outline_iou_coarse": null,
+     "multi_view_within_2cm": 0.46,
+     "fine_points_in_box": 7149,
+     "multi_view_median_m": 0.02239,
+     "coarse_nn_median_m": 0.0214
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s1",
+     "group": "box_stack",
+     "views": 3,
+     "time_s": {
+      "fine_i_iii": 0.573,
+      "da3": 0.22,
+      "anchor_icp": 0.013,
+      "tsdf_1cm": 0.089,
+      "holdout_check": 0.0
+     },
+     "plane_ci_width_deg": 0.326,
+     "thin_visible": null,
+     "photometric_ratio": null,
+     "outline_iou_fine": null,
+     "outline_iou_coarse": null,
+     "multi_view_within_2cm": 0.0651,
+     "fine_points_in_box": 2515,
+     "multi_view_median_m": 0.07387,
+     "coarse_nn_median_m": 0.0263
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s2",
+     "group": "shelf_partition",
+     "views": 3,
+     "time_s": {
+      "fine_i_iii": 0.53,
+      "da3": 0.199,
+      "anchor_icp": 0.013,
+      "tsdf_1cm": 0.086,
+      "holdout_check": 0.0
+     },
+     "plane_ci_width_deg": 1.648,
+     "thin_visible": null,
+     "photometric_ratio": null,
+     "outline_iou_fine": null,
+     "outline_iou_coarse": null,
+     "multi_view_within_2cm": 0.3591,
+     "fine_points_in_box": 164,
+     "multi_view_median_m": 0.03265,
+     "coarse_nn_median_m": 0.038
+    }
+   ]
+  },
+  "wide-anchor-res504-viewsall": {
+   "n": 3,
+   "median_fine_s": 0.727,
+   "median_da3_s": 0.273,
+   "median_tsdf_s": 0.127,
+   "median_views": 4.0,
+   "median_plane_ci_width_deg": 0.3545,
+   "thin_visible": "1/1",
+   "median_photometric_ratio": 0.9617,
+   "median_outline_iou_fine": 0.6283,
+   "median_outline_iou_coarse": 0.6051,
+   "median_multi_view_m": 0.0243,
+   "median_multi_view_within_2cm": 0.426,
+   "median_coarse_nn_m": 0.0303,
+   "median_fine_points_in_box": 6041.0,
+   "rows": [
+    {
+     "clip": "me340-165",
+     "spot": "s0",
+     "group": "cable",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.727,
+      "da3": 0.273,
+      "anchor_icp": 0.016,
+      "tsdf_1cm": 0.129,
+      "holdout_check": 0.413
+     },
+     "plane_ci_width_deg": null,
+     "thin_visible": true,
+     "photometric_ratio": 0.9109,
+     "outline_iou_fine": 0.0344,
+     "outline_iou_coarse": 0.1727,
+     "multi_view_within_2cm": 0.4453,
+     "fine_points_in_box": 7828,
+     "multi_view_median_m": 0.02313,
+     "coarse_nn_median_m": 0.0198
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s1",
+     "group": "box_stack",
+     "views": 5,
+     "time_s": {
+      "fine_i_iii": 0.852,
+      "da3": 0.33,
+      "anchor_icp": 0.02,
+      "tsdf_1cm": 0.127,
+      "holdout_check": 0.475
+     },
+     "plane_ci_width_deg": 0.289,
+     "thin_visible": null,
+     "photometric_ratio": 1.0126,
+     "outline_iou_fine": 0.6283,
+     "outline_iou_coarse": 0.6402,
+     "multi_view_within_2cm": 0.1108,
+     "fine_points_in_box": 6041,
+     "multi_view_median_m": 0.07839,
+     "coarse_nn_median_m": 0.0303
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s2",
+     "group": "shelf_partition",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.681,
+      "da3": 0.262,
+      "anchor_icp": 0.016,
+      "tsdf_1cm": 0.103,
+      "holdout_check": 0.407
+     },
+     "plane_ci_width_deg": 0.42,
+     "thin_visible": null,
+     "photometric_ratio": null,
+     "outline_iou_fine": 0.7679,
+     "outline_iou_coarse": 0.6051,
+     "multi_view_within_2cm": 0.426,
+     "fine_points_in_box": 3717,
+     "multi_view_median_m": 0.02425,
+     "coarse_nn_median_m": 0.039
+    }
+   ]
+  },
+  "wide-anchor-res756-viewsall": {
+   "n": 3,
+   "median_fine_s": 1.197,
+   "median_da3_s": 0.601,
+   "median_tsdf_s": 0.224,
+   "median_views": 4.0,
+   "median_plane_ci_width_deg": 0.3425,
+   "thin_visible": "0/1",
+   "median_photometric_ratio": 0.9352,
+   "median_outline_iou_fine": 0.6018,
+   "median_outline_iou_coarse": 0.658,
+   "median_multi_view_m": 0.06,
+   "median_multi_view_within_2cm": 0.1448,
+   "median_coarse_nn_m": 0.0525,
+   "median_fine_points_in_box": 5905.0,
+   "rows": [
+    {
+     "clip": "me340-165",
+     "spot": "s0",
+     "group": "cable",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 1.197,
+      "da3": 0.59,
+      "anchor_icp": 0.035,
+      "tsdf_1cm": 0.224,
+      "holdout_check": 0.812
+     },
+     "plane_ci_width_deg": null,
+     "thin_visible": false,
+     "photometric_ratio": 0.8584,
+     "outline_iou_fine": 0.0855,
+     "outline_iou_coarse": 0.1733,
+     "multi_view_within_2cm": 0.2786,
+     "fine_points_in_box": 8543,
+     "multi_view_median_m": 0.04518,
+     "coarse_nn_median_m": 0.0525
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s1",
+     "group": "box_stack",
+     "views": 5,
+     "time_s": {
+      "fine_i_iii": 1.458,
+      "da3": 0.75,
+      "anchor_icp": 0.039,
+      "tsdf_1cm": 0.267,
+      "holdout_check": 1.014
+     },
+     "plane_ci_width_deg": 0.259,
+     "thin_visible": null,
+     "photometric_ratio": 1.012,
+     "outline_iou_fine": 0.6018,
+     "outline_iou_coarse": 0.7164,
+     "multi_view_within_2cm": 0.1167,
+     "fine_points_in_box": 5905,
+     "multi_view_median_m": 0.07449,
+     "coarse_nn_median_m": 0.0289
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s2",
+     "group": "shelf_partition",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 1.162,
+      "da3": 0.601,
+      "anchor_icp": 0.031,
+      "tsdf_1cm": 0.209,
+      "holdout_check": 0.806
+     },
+     "plane_ci_width_deg": 0.426,
+     "thin_visible": null,
+     "photometric_ratio": null,
+     "outline_iou_fine": 0.8383,
+     "outline_iou_coarse": 0.658,
+     "multi_view_within_2cm": 0.1448,
+     "fine_points_in_box": 3118,
+     "multi_view_median_m": 0.05999,
+     "coarse_nn_median_m": 0.0701
+    }
+   ]
+  },
+  "wide-raw-res504-viewsall": {
+   "n": 3,
+   "median_fine_s": 0.696,
+   "median_da3_s": 0.278,
+   "median_tsdf_s": 0.11,
+   "median_views": 4.0,
+   "median_plane_ci_width_deg": 0.344,
+   "thin_visible": "0/1",
+   "median_photometric_ratio": 1.1849,
+   "median_outline_iou_fine": 0.4666,
+   "median_outline_iou_coarse": 0.6051,
+   "median_multi_view_m": 0.0966,
+   "median_multi_view_within_2cm": 0.1081,
+   "median_coarse_nn_m": 0.0546,
+   "median_fine_points_in_box": 0.0,
+   "rows": [
+    {
+     "clip": "me340-165",
+     "spot": "s0",
+     "group": "cable",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.696,
+      "da3": 0.278,
+      "anchor_icp": 0.0,
+      "tsdf_1cm": 0.11,
+      "holdout_check": 0.363
+     },
+     "plane_ci_width_deg": null,
+     "thin_visible": false,
+     "photometric_ratio": null,
+     "outline_iou_fine": null,
+     "outline_iou_coarse": 0.1727,
+     "multi_view_within_2cm": null,
+     "fine_points_in_box": 0,
+     "multi_view_median_m": null,
+     "coarse_nn_median_m": null
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s1",
+     "group": "box_stack",
+     "views": 5,
+     "time_s": {
+      "fine_i_iii": 0.845,
+      "da3": 0.317,
+      "anchor_icp": 0.0,
+      "tsdf_1cm": 0.129,
+      "holdout_check": 0.471
+     },
+     "plane_ci_width_deg": 0.344,
+     "thin_visible": null,
+     "photometric_ratio": 1.1849,
+     "outline_iou_fine": 0.4666,
+     "outline_iou_coarse": 0.6402,
+     "multi_view_within_2cm": 0.1081,
+     "fine_points_in_box": 6115,
+     "multi_view_median_m": 0.09657,
+     "coarse_nn_median_m": 0.0546
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s2",
+     "group": "shelf_partition",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.66,
+      "da3": 0.256,
+      "anchor_icp": 0.0,
+      "tsdf_1cm": 0.105,
+      "holdout_check": 0.315
+     },
+     "plane_ci_width_deg": null,
+     "thin_visible": null,
+     "photometric_ratio": null,
+     "outline_iou_fine": null,
+     "outline_iou_coarse": 0.6051,
+     "multi_view_within_2cm": null,
+     "fine_points_in_box": 0,
+     "multi_view_median_m": null,
+     "coarse_nn_median_m": null
+    }
+   ]
+  },
+  "wide-unposed-res504-viewsall": {
+   "n": 3,
+   "median_fine_s": 0.8,
+   "median_da3_s": 0.262,
+   "median_tsdf_s": 0.1,
+   "median_views": 4.0,
+   "median_plane_ci_width_deg": 3.192,
+   "thin_visible": "0/1",
+   "median_photometric_ratio": 1.0305,
+   "median_outline_iou_fine": 0.0,
+   "median_outline_iou_coarse": 0.6051,
+   "median_multi_view_m": 0.0487,
+   "median_multi_view_within_2cm": 0.2686,
+   "median_coarse_nn_m": 0.03,
+   "median_fine_points_in_box": 0.0,
+   "rows": [
+    {
+     "clip": "me340-165",
+     "spot": "s0",
+     "group": "cable",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.8,
+      "da3": 0.262,
+      "anchor_icp": 0.0,
+      "tsdf_1cm": 0.1,
+      "holdout_check": 0.424
+     },
+     "plane_ci_width_deg": null,
+     "thin_visible": false,
+     "photometric_ratio": null,
+     "outline_iou_fine": null,
+     "outline_iou_coarse": 0.1727,
+     "multi_view_within_2cm": null,
+     "fine_points_in_box": 0,
+     "multi_view_median_m": null,
+     "coarse_nn_median_m": null
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s1",
+     "group": "box_stack",
+     "views": 5,
+     "time_s": {
+      "fine_i_iii": 1.179,
+      "da3": 0.311,
+      "anchor_icp": 0.0,
+      "tsdf_1cm": 0.121,
+      "holdout_check": 0.707
+     },
+     "plane_ci_width_deg": 3.192,
+     "thin_visible": null,
+     "photometric_ratio": 1.0305,
+     "outline_iou_fine": 0.0,
+     "outline_iou_coarse": 0.6402,
+     "multi_view_within_2cm": 0.2686,
+     "fine_points_in_box": 1086,
+     "multi_view_median_m": 0.04874,
+     "coarse_nn_median_m": 0.03
+    },
+    {
+     "clip": "me340-165",
+     "spot": "s2",
+     "group": "shelf_partition",
+     "views": 4,
+     "time_s": {
+      "fine_i_iii": 0.748,
+      "da3": 0.25,
+      "anchor_icp": 0.0,
+      "tsdf_1cm": 0.094,
+      "holdout_check": 0.386
+     },
+     "plane_ci_width_deg": null,
+     "thin_visible": null,
+     "photometric_ratio": null,
+     "outline_iou_fine": null,
+     "outline_iou_coarse": 0.6051,
+     "multi_view_within_2cm": null,
+     "fine_points_in_box": 0,
+     "multi_view_median_m": null,
+     "coarse_nn_median_m": null
+    }
+   ]
+  }
+ }
+}

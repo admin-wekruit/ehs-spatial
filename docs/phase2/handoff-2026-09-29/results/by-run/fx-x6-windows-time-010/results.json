@@ -1,0 +1,4695 @@
+{
+ "task": "X6 content windows + object time, three videos (ME340 165-195 s, Sam's Club 337-367 s, Walmart 190-220 s)",
+ "branch": "fx/x6-windows-time (worktree /Users/adam/.codex/worktrees/panoptes-phase2-video-fx-x6-windows-time), from fb/a-core + fb/d-harness",
+ "clock": "analysis time from the MP4 bytes in the container; cold start below, never included",
+ "cold_start": {
+  "002": {
+   "imports_s": 19.57,
+   "da3_both_s": 40.12,
+   "sam3_siglip_both_s": 53.98,
+   "warm_s": 63.14,
+   "ready_s": 63.36,
+   "resident_gb": [
+    7.88,
+    8.9
+   ]
+  },
+  "003": {
+   "imports_s": 11.24,
+   "da3_both_s": 26.04,
+   "sam3_siglip_both_s": 35.78,
+   "warm_s": 43.55,
+   "ready_s": 43.75,
+   "resident_gb": [
+    7.88,
+    8.9
+   ]
+  },
+  "005": {
+   "imports_s": 13.96,
+   "da3_both_s": 31.91,
+   "sam3_siglip_both_s": 43.85,
+   "warm_s": 52.22,
+   "ready_s": 52.43,
+   "resident_gb": [
+    7.88,
+    8.9
+   ]
+  },
+  "006": {
+   "imports_s": 10.7,
+   "da3_both_s": 24.75,
+   "sam3_siglip_both_s": 34.16,
+   "warm_s": 41.95,
+   "ready_s": 42.16,
+   "resident_gb": [
+    7.88,
+    8.9
+   ]
+  },
+  "007": {
+   "imports_s": 13.67,
+   "da3_both_s": 31.43,
+   "sam3_siglip_both_s": 43.01,
+   "warm_s": 51.49,
+   "ready_s": 51.7,
+   "resident_gb": [
+    7.88,
+    8.9
+   ]
+  }
+ },
+ "1_window_rule": {
+  "rule": "ORB co-visibility with the window's anchor keyframe: share of the anchor's textured 8x4 grid cells (middle 60% of rows; overlays excluded) keeping >= 2 MAGSAC-verified matches; close at < threshold once >= 8 new keyframes, or at 40 new keyframes, or at a shot cut (prefix of the core's cut measure, trusted 25 frames behind); carry 2 keyframes; no carry after a cut or a collapse (<= 0.05)",
+  "per_video": {
+   "me340": {
+    "keyframes": 150,
+    "cuts": [
+     14,
+     226
+    ],
+    "orb_ms_per_keyframe_mac": 8.72,
+    "thresholds": {
+     "0.4": {
+      "windows": 10,
+      "reasons": {
+       "cut": 2,
+       "content": 7,
+       "end": 1
+      },
+      "new_keyframes_median": 10.5,
+      "span_s_median": 1.97,
+      "span_s_min_max": [
+       0.27,
+       6.74
+      ],
+      "cuts_respected": true,
+      "windows_without_min_keys": 11
+     },
+     "0.55": {
+      "windows": 13,
+      "reasons": {
+       "cut": 2,
+       "content": 10,
+       "end": 1
+      },
+      "new_keyframes_median": 8.0,
+      "span_s_median": 1.4,
+      "span_s_min_max": [
+       0.23,
+       6.74
+      ],
+      "cuts_respected": true,
+      "windows_without_min_keys": 20
+     },
+     "0.7": {
+      "windows": 14,
+      "reasons": {
+       "cut": 2,
+       "content": 11,
+       "end": 1
+      },
+      "new_keyframes_median": 8.0,
+      "span_s_median": 1.42,
+      "span_s_min_max": [
+       0.27,
+       6.74
+      ],
+      "cuts_respected": true,
+      "windows_without_min_keys": 42
+     }
+    },
+    "still_camera_10s": {
+     "still_noise_jpeg_jitter": {
+      "0.4": [
+       "end"
+      ],
+      "0.55": [
+       "end"
+      ],
+      "0.7": [
+       "end"
+      ],
+      "covis_min": 0.929
+     },
+     "still_with_walking_occluder": {
+      "0.4": [
+       "end"
+      ],
+      "0.55": [
+       "end"
+      ],
+      "0.7": [
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "content",
+       "end"
+      ],
+      "covis_min": 0.667
+     }
+    },
+    "content_rule_alone_at_cuts_055": {
+     "reason_at_each_cut": [
+      null,
+      "content"
+     ]
+    }
+   },
+   "samsclub-a2": {
+    "keyframes": 125,
+    "cuts": [
+     420
+    ],
+    "orb_ms_per_keyframe_mac": 10.01,
+    "thresholds": {
+     "0.4": {
+      "windows": 11,
+      "reasons": {
+       "content": 9,
+       "cut": 1,
+       "end": 1
+      },
+      "new_keyframes_median": 9.0,
+      "span_s_median": 1.96,
+      "span_s_min_max": [
+       1.6,
+       5.12
+      ],
+      "cuts_respected": true,
+      "windows_without_min_keys": 13
+     },
+     "0.55": {
+      "windows": 15,
+      "reasons": {
+       "content": 13,
+       "cut": 1,
+       "end": 1
+      },
+      "new_keyframes_median": 8.0,
+      "span_s_median": 1.72,
+      "span_s_min_max": [
+       0.72,
+       3.16
+      ],
+      "cuts_respected": true,
+      "windows_without_min_keys": 22
+     },
+     "0.7": {
+      "windows": 16,
+      "reasons": {
+       "content": 14,
+       "cut": 1,
+       "end": 1
+      },
+      "new_keyframes_median": 8.0,
+      "span_s_median": 1.68,
+      "span_s_min_max": [
+       0.72,
+       2.4
+      ],
+      "cuts_respected": true,
+      "windows_without_min_keys": 41
+     }
+    },
+    "still_camera_10s": {
+     "still_noise_jpeg_jitter": {
+      "0.4": [
+       "end"
+      ],
+      "0.55": [
+       "end"
+      ],
+      "0.7": [
+       "end"
+      ],
+      "covis_min": 0.931
+     },
+     "still_with_walking_occluder": {
+      "0.4": [
+       "end"
+      ],
+      "0.55": [
+       "end"
+      ],
+      "0.7": [
+       "end"
+      ],
+      "covis_min": 0.714
+     }
+    },
+    "content_rule_alone_at_cuts_055": {
+     "reason_at_each_cut": [
+      null
+     ]
+    }
+   },
+   "walmart": {
+    "keyframes": 125,
+    "cuts": [
+     383
+    ],
+    "orb_ms_per_keyframe_mac": 8.78,
+    "thresholds": {
+     "0.4": {
+      "windows": 17,
+      "reasons": {
+       "content": 12,
+       "cut": 1,
+       "collapse": 3,
+       "end": 1
+      },
+      "new_keyframes_median": 8.0,
+      "span_s_median": 1.68,
+      "span_s_min_max": [
+       0.28,
+       2.08
+      ],
+      "cuts_respected": true,
+      "windows_without_min_keys": 48
+     },
+     "0.55": {
+      "windows": 17,
+      "reasons": {
+       "content": 13,
+       "cut": 1,
+       "collapse": 2,
+       "end": 1
+      },
+      "new_keyframes_median": 8.0,
+      "span_s_median": 1.64,
+      "span_s_min_max": [
+       0.48,
+       1.88
+      ],
+      "cuts_respected": true,
+      "windows_without_min_keys": 71
+     },
+     "0.7": {
+      "windows": 17,
+      "reasons": {
+       "content": 13,
+       "cut": 1,
+       "collapse": 2,
+       "end": 1
+      },
+      "new_keyframes_median": 8.0,
+      "span_s_median": 1.64,
+      "span_s_min_max": [
+       0.48,
+       1.88
+      ],
+      "cuts_respected": true,
+      "windows_without_min_keys": 108
+     }
+    },
+    "still_camera_10s": {
+     "still_noise_jpeg_jitter": {
+      "0.4": [
+       "end"
+      ],
+      "0.55": [
+       "end"
+      ],
+      "0.7": [
+       "end"
+      ],
+      "covis_min": 0.968
+     },
+     "still_with_walking_occluder": {
+      "0.4": [
+       "end"
+      ],
+      "0.55": [
+       "end"
+      ],
+      "0.7": [
+       "end"
+      ],
+      "covis_min": 0.71
+     }
+    },
+    "content_rule_alone_at_cuts_055": {
+     "reason_at_each_cut": [
+      "content"
+     ]
+    }
+   }
+  },
+  "orb_vs_da3_overlap": {
+   "me340": {
+    "shots": [
+     {
+      "shot": 0,
+      "keyframes": 34,
+      "0.4": {
+       "da3_windows": 1,
+       "orb_windows": 1,
+       "da3_span_s_median": 6.74,
+       "orb_span_s_median": 6.74
+      },
+      "0.55": {
+       "da3_windows": 1,
+       "orb_windows": 1,
+       "da3_span_s_median": 6.74,
+       "orb_span_s_median": 6.74
+      },
+      "0.7": {
+       "da3_windows": 1,
+       "orb_windows": 1,
+       "da3_span_s_median": 6.74,
+       "orb_span_s_median": 6.74
+      }
+     },
+     {
+      "shot": 1,
+      "keyframes": 113,
+      "0.4": {
+       "da3_windows": 7,
+       "orb_windows": 8,
+       "da3_span_s_median": 2.07,
+       "orb_span_s_median": 1.97
+      },
+      "0.55": {
+       "da3_windows": 10,
+       "orb_windows": 11,
+       "da3_span_s_median": 1.42,
+       "orb_span_s_median": 1.4
+      },
+      "0.7": {
+       "da3_windows": 12,
+       "orb_windows": 12,
+       "da3_span_s_median": 1.4,
+       "orb_span_s_median": 1.42
+      }
+     }
+    ],
+    "pairs": 174,
+    "pearson_orb_da3": 0.947,
+    "da3_overlap_when_orb_below": {
+     "0.4": 0.372,
+     "0.55": 0.437,
+     "0.7": 0.491
+    },
+    "orb_when_da3_below": {
+     "0.4": 0.333,
+     "0.55": 0.385,
+     "0.7": 0.456
+    }
+   },
+   "samsclub-a2": {
+    "shots": [
+     {
+      "shot": 0,
+      "keyframes": 70,
+      "0.4": {
+       "da3_windows": 9,
+       "orb_windows": 7,
+       "da3_span_s_median": 1.76,
+       "orb_span_s_median": 1.88
+      },
+      "0.55": {
+       "da3_windows": 9,
+       "orb_windows": 9,
+       "da3_span_s_median": 1.68,
+       "orb_span_s_median": 1.68
+      },
+      "0.7": {
+       "da3_windows": 9,
+       "orb_windows": 9,
+       "da3_span_s_median": 1.68,
+       "orb_span_s_median": 1.68
+      }
+     },
+     {
+      "shot": 1,
+      "keyframes": 55,
+      "0.4": {
+       "da3_windows": 6,
+       "orb_windows": 4,
+       "da3_span_s_median": 1.66,
+       "orb_span_s_median": 2.56
+      },
+      "0.55": {
+       "da3_windows": 7,
+       "orb_windows": 6,
+       "da3_span_s_median": 1.64,
+       "orb_span_s_median": 1.9
+      },
+      "0.7": {
+       "da3_windows": 7,
+       "orb_windows": 7,
+       "da3_span_s_median": 1.64,
+       "orb_span_s_median": 1.68
+      }
+     }
+    ],
+    "pairs": 144,
+    "pearson_orb_da3": 0.965,
+    "da3_overlap_when_orb_below": {
+     "0.4": 0.185,
+     "0.55": 0.223,
+     "0.7": 0.321
+    },
+    "orb_when_da3_below": {
+     "0.4": 0.328,
+     "0.55": 0.435,
+     "0.7": 0.5
+    }
+   },
+   "walmart": {
+    "shots": [
+     {
+      "shot": 0,
+      "keyframes": 64,
+      "0.4": {
+       "da3_windows": 8,
+       "orb_windows": 8,
+       "da3_span_s_median": 1.66,
+       "orb_span_s_median": 1.68
+      },
+      "0.55": {
+       "da3_windows": 8,
+       "orb_windows": 8,
+       "da3_span_s_median": 1.66,
+       "orb_span_s_median": 1.66
+      },
+      "0.7": {
+       "da3_windows": 8,
+       "orb_windows": 8,
+       "da3_span_s_median": 1.66,
+       "orb_span_s_median": 1.66
+      }
+     },
+     {
+      "shot": 1,
+      "keyframes": 61,
+      "0.4": {
+       "da3_windows": 8,
+       "orb_windows": 9,
+       "da3_span_s_median": 1.64,
+       "orb_span_s_median": 1.52
+      },
+      "0.55": {
+       "da3_windows": 8,
+       "orb_windows": 9,
+       "da3_span_s_median": 1.64,
+       "orb_span_s_median": 1.56
+      },
+      "0.7": {
+       "da3_windows": 8,
+       "orb_windows": 9,
+       "da3_span_s_median": 1.64,
+       "orb_span_s_median": 1.56
+      }
+     }
+    ],
+    "pairs": 144,
+    "pearson_orb_da3": 0.915,
+    "da3_overlap_when_orb_below": {
+     "0.4": 0.166,
+     "0.55": 0.247,
+     "0.7": 0.268
+    },
+    "orb_when_da3_below": {
+     "0.4": 0.214,
+     "0.55": 0.258,
+     "0.7": 0.283
+    }
+   }
+  },
+  "prefix_cuts_equal_final_cuts": "all prefixes on all three clips (local check)",
+  "windows_spanning_final_cut": {
+   "x6-me340-a-0.4-1790648828": [],
+   "x6-me340-a-0.4-1790649848": [],
+   "x6-me340-b-0.4-1790648682": [],
+   "x6-me340-b-0.4-1790648867": [],
+   "x6-me340-b-0.4-1790649806": [],
+   "x6-me340-b-0.4-p1-1790650150": [],
+   "x6-me340-b-0.55-1790650208": [],
+   "x6-samsclub-a2-a-0.4-1790648720": [],
+   "x6-samsclub-a2-a-0.4-1790649896": [],
+   "x6-samsclub-a2-a-0.4-every1-1790651378": [],
+   "x6-samsclub-a2-a-0.4-planted-1790650023": [],
+   "x6-samsclub-a2-a-0.4-planted-1790651013": [],
+   "x6-samsclub-a2-a-0.4-planted-every1-1790651241": [],
+   "x6-samsclub-a2-b-0.4-1790648749": [],
+   "x6-samsclub-a2-b-0.4-1790649777": [],
+   "x6-samsclub-a2-b-0.4-1790649931": [],
+   "x6-samsclub-a2-b-0.4-every1-1790651431": [],
+   "x6-samsclub-a2-b-0.4-p1-1790650183": [],
+   "x6-samsclub-a2-b-0.4-planted-1790650061": [],
+   "x6-samsclub-a2-b-0.4-planted-1790650987": [],
+   "x6-samsclub-a2-b-0.4-planted-every1-1790651195": [],
+   "x6-samsclub-a2-b-0.55-1790650251": [],
+   "x6-walmart-a-0.4-1790648777": [],
+   "x6-walmart-a-0.4-1790649962": [],
+   "x6-walmart-a-0.4-planted-1790650090": [],
+   "x6-walmart-a-0.4-planted-1790651063": [],
+   "x6-walmart-a-0.4-planted-every1-1790651331": [],
+   "x6-walmart-b-0.4-1790648804": [],
+   "x6-walmart-b-0.4-1790649992": [],
+   "x6-walmart-b-0.4-planted-1790650120": [],
+   "x6-walmart-b-0.4-planted-1790651041": [],
+   "x6-walmart-b-0.4-planted-every1-1790651293": [],
+   "x6-walmart-b-0.55-1790650284": []
+  }
+ },
+ "2_geometry_a_vs_b_threshold_0.4": {
+  "me340:a": {
+   "ate_m": 0.0409,
+   "path_m": 4.6,
+   "ate_share_of_path": 0.0089,
+   "coverage_of_reference_keyframes": 0.974,
+   "rotation_error_deg_median": 0.5,
+   "ours_metres_over_reference": 0.9896,
+   "map_frames": 2,
+   "windows": 10,
+   "stitches_accepted": "0/0",
+   "stitch_scale_median": null,
+   "timing_s_two_workers_per_gpu_run005": {
+    "first_window_dispatched": 2.538,
+    "first_window_facts": 39.363,
+    "first_objects": 39.363,
+    "all_windows_facts": 43.556,
+    "decoded": 2.658,
+    "da3_done": 25.493
+   },
+   "gpu_peak_gib": [
+    49.06,
+    45.61
+   ],
+   "over_90pct_flags": [],
+   "global_objects": 232,
+   "per_window_instances": 453,
+   "seen_in_2plus_windows": 98,
+   "split_candidates_0.3m_same_word": 0,
+   "delivered_objects_in_pieces_global": {
+    "covered": 20,
+    "of": 22,
+    "in_pieces": 13,
+    "pieces_per_covered_median": 3.0,
+    "ours_inside": 102
+   },
+   "delivered_objects_in_pieces_per_window": {
+    "covered": 22,
+    "of": 22,
+    "in_pieces": 21,
+    "pieces_per_covered_median": 6.5,
+    "ours_inside": 315
+   }
+  },
+  "me340:b": {
+   "ate_m": 0.0429,
+   "path_m": 4.6,
+   "ate_share_of_path": 0.0093,
+   "coverage_of_reference_keyframes": 0.974,
+   "rotation_error_deg_median": 0.36,
+   "ours_metres_over_reference": 0.9176,
+   "map_frames": 3,
+   "windows": 10,
+   "stitches_accepted": "7/7",
+   "stitch_scale_median": 0.9591,
+   "timing_s_two_workers_per_gpu_run005": {
+    "first_window_dispatched": 2.426,
+    "first_window_facts": 8.527,
+    "first_objects": 20.408,
+    "all_windows_facts": 37.248,
+    "decoded": 2.862,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    45.29,
+    49.02
+   ],
+   "over_90pct_flags": [],
+   "global_objects": 244,
+   "per_window_instances": 470,
+   "seen_in_2plus_windows": 112,
+   "split_candidates_0.3m_same_word": 0,
+   "delivered_objects_in_pieces_global": {
+    "covered": 19,
+    "of": 22,
+    "in_pieces": 12,
+    "pieces_per_covered_median": 3.0,
+    "ours_inside": 99
+   },
+   "delivered_objects_in_pieces_per_window": {
+    "covered": 21,
+    "of": 22,
+    "in_pieces": 20,
+    "pieces_per_covered_median": 6.0,
+    "ours_inside": 272
+   }
+  },
+  "samsclub-a2:a": {
+   "ate_m": 0.2213,
+   "path_m": 18.634,
+   "ate_share_of_path": 0.0119,
+   "coverage_of_reference_keyframes": 1.0,
+   "rotation_error_deg_median": 3.73,
+   "ours_metres_over_reference": 1.1242,
+   "map_frames": 2,
+   "windows": 11,
+   "stitches_accepted": "0/0",
+   "stitch_scale_median": null,
+   "timing_s_two_workers_per_gpu_run005": {
+    "first_window_dispatched": 2.384,
+    "first_window_facts": 22.254,
+    "first_objects": 22.254,
+    "all_windows_facts": 30.205,
+    "decoded": 1.708,
+    "da3_done": 17.927
+   },
+   "gpu_peak_gib": [
+    48.18,
+    36.5
+   ],
+   "over_90pct_flags": [],
+   "global_objects": 375,
+   "per_window_instances": 652,
+   "seen_in_2plus_windows": 192,
+   "split_candidates_0.3m_same_word": 0,
+   "delivered_objects_in_pieces_global": {
+    "covered": 14,
+    "of": 67,
+    "in_pieces": 7,
+    "pieces_per_covered_median": 1.5,
+    "ours_inside": 52
+   },
+   "delivered_objects_in_pieces_per_window": {
+    "covered": 18,
+    "of": 67,
+    "in_pieces": 13,
+    "pieces_per_covered_median": 3.0,
+    "ours_inside": 100
+   }
+  },
+  "samsclub-a2:b": {
+   "ate_m": 0.1445,
+   "path_m": 18.634,
+   "ate_share_of_path": 0.0078,
+   "coverage_of_reference_keyframes": 1.0,
+   "rotation_error_deg_median": 2.4,
+   "ours_metres_over_reference": 1.1683,
+   "map_frames": 2,
+   "windows": 11,
+   "stitches_accepted": "9/9",
+   "stitch_scale_median": 1.0219,
+   "timing_s_two_workers_per_gpu_run005": {
+    "first_window_dispatched": 3.025,
+    "first_window_facts": 10.373,
+    "first_objects": 10.373,
+    "all_windows_facts": 24.898,
+    "decoded": 2.741,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    33.49,
+    41.12
+   ],
+   "over_90pct_flags": [],
+   "global_objects": 377,
+   "per_window_instances": 689,
+   "seen_in_2plus_windows": 219,
+   "split_candidates_0.3m_same_word": 0,
+   "delivered_objects_in_pieces_global": {
+    "covered": 25,
+    "of": 67,
+    "in_pieces": 14,
+    "pieces_per_covered_median": 2.0,
+    "ours_inside": 73
+   },
+   "delivered_objects_in_pieces_per_window": {
+    "covered": 30,
+    "of": 67,
+    "in_pieces": 22,
+    "pieces_per_covered_median": 2.0,
+    "ours_inside": 139
+   }
+  },
+  "walmart:a": {
+   "ate_m": 0.1782,
+   "path_m": 15.397,
+   "ate_share_of_path": 0.0116,
+   "coverage_of_reference_keyframes": 1.0,
+   "rotation_error_deg_median": 2.56,
+   "ours_metres_over_reference": 1.0062,
+   "map_frames": 2,
+   "windows": 16,
+   "stitches_accepted": "0/0",
+   "stitch_scale_median": null,
+   "timing_s_two_workers_per_gpu_run005": {
+    "first_window_dispatched": 2.327,
+    "first_window_facts": 22.601,
+    "first_objects": 22.824,
+    "all_windows_facts": 26.325,
+    "decoded": 1.755,
+    "da3_done": 19.011
+   },
+   "gpu_peak_gib": [
+    35.59,
+    32.22
+   ],
+   "over_90pct_flags": [],
+   "global_objects": 229,
+   "per_window_instances": 422,
+   "seen_in_2plus_windows": 125,
+   "split_candidates_0.3m_same_word": 0,
+   "delivered_objects_in_pieces_global": {
+    "covered": 25,
+    "of": 40,
+    "in_pieces": 16,
+    "pieces_per_covered_median": 2.0,
+    "ours_inside": 97
+   },
+   "delivered_objects_in_pieces_per_window": {
+    "covered": 26,
+    "of": 40,
+    "in_pieces": 20,
+    "pieces_per_covered_median": 3.5,
+    "ours_inside": 164
+   }
+  },
+  "walmart:b": {
+   "ate_m": 0.0395,
+   "path_m": 8.057,
+   "ate_share_of_path": 0.0049,
+   "coverage_of_reference_keyframes": 0.541,
+   "rotation_error_deg_median": 0.36,
+   "ours_metres_over_reference": 0.8301,
+   "map_frames": 4,
+   "windows": 16,
+   "stitches_accepted": "12/12",
+   "stitch_scale_median": 0.9879,
+   "timing_s_two_workers_per_gpu_run005": {
+    "first_window_dispatched": 2.279,
+    "first_window_facts": 9.662,
+    "first_objects": 14.198,
+    "all_windows_facts": 24.616,
+    "decoded": 1.693,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    30.65,
+    29.23
+   ],
+   "over_90pct_flags": [],
+   "global_objects": 286,
+   "per_window_instances": 487,
+   "seen_in_2plus_windows": 141,
+   "split_candidates_0.3m_same_word": 0,
+   "delivered_objects_in_pieces_global": {
+    "covered": 14,
+    "of": 40,
+    "in_pieces": 11,
+    "pieces_per_covered_median": 2.5,
+    "ours_inside": 44
+   },
+   "delivered_objects_in_pieces_per_window": {
+    "covered": 18,
+    "of": 40,
+    "in_pieces": 16,
+    "pieces_per_covered_median": 3.5,
+    "ours_inside": 90
+   }
+  }
+ },
+ "2_timing_and_workers": {
+  "me340:b:p1": {
+   "timing_s": {
+    "first_window_dispatched": 2.3,
+    "first_window_facts": 4.621,
+    "first_objects": 11.308,
+    "all_windows_facts": 29.474,
+    "decoded": 2.211,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    32.35,
+    32.07
+   ],
+   "run": "x6-me340-b-0.4-p1-1790650150",
+   "ate_m": 0.0429,
+   "windows": 10
+  },
+  "samsclub-a2:b:p1": {
+   "timing_s": {
+    "first_window_dispatched": 2.429,
+    "first_window_facts": 7.047,
+    "first_objects": 7.047,
+    "all_windows_facts": 21.696,
+    "decoded": 1.953,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    31.96,
+    32.02
+   ],
+   "run": "x6-samsclub-a2-b-0.4-p1-1790650183",
+   "ate_m": 0.1445,
+   "windows": 11
+  },
+  "samsclub-a2:b:p1:planted": {
+   "timing_s": {
+    "first_window_dispatched": 2.274,
+    "first_window_facts": 6.196,
+    "first_objects": 6.196,
+    "all_windows_facts": 19.332,
+    "decoded": 2.022,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    31.85,
+    31.98
+   ],
+   "run": "x6-samsclub-a2-b-0.4-planted-1790650987",
+   "ate_m": 0.1508,
+   "windows": 11
+  },
+  "samsclub-a2:a:p1:planted": {
+   "timing_s": {
+    "first_window_dispatched": 1.607,
+    "first_window_facts": 15.317,
+    "first_objects": 15.317,
+    "all_windows_facts": 20.221,
+    "decoded": 0.989,
+    "da3_done": 10.363
+   },
+   "gpu_peak_gib": [
+    34.07,
+    32.86
+   ],
+   "run": "x6-samsclub-a2-a-0.4-planted-1790651013",
+   "ate_m": 0.2265,
+   "windows": 11
+  },
+  "walmart:b:p1:planted": {
+   "timing_s": {
+    "first_window_dispatched": 1.541,
+    "first_window_facts": 3.854,
+    "first_objects": 7.264,
+    "all_windows_facts": 16.602,
+    "decoded": 0.935,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    28.15,
+    27.71
+   ],
+   "run": "x6-walmart-b-0.4-planted-1790651041",
+   "ate_m": 0.0391,
+   "windows": 17
+  },
+  "walmart:a:p1:planted": {
+   "timing_s": {
+    "first_window_dispatched": 1.575,
+    "first_window_facts": 15.18,
+    "first_objects": 15.265,
+    "all_windows_facts": 18.647,
+    "decoded": 0.92,
+    "da3_done": 10.062
+   },
+   "gpu_peak_gib": [
+    28.56,
+    28.29
+   ],
+   "run": "x6-walmart-a-0.4-planted-1790651063",
+   "ate_m": 0.179,
+   "windows": 17
+  },
+  "me340:b:p2": {
+   "timing_s": {
+    "first_window_dispatched": 2.426,
+    "first_window_facts": 8.527,
+    "first_objects": 20.408,
+    "all_windows_facts": 37.248,
+    "decoded": 2.862,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    45.29,
+    49.02
+   ],
+   "run": "x6-me340-b-0.4-1790649806",
+   "ate_m": 0.0429,
+   "windows": 10
+  },
+  "samsclub-a2:b:p2": {
+   "timing_s": {
+    "first_window_dispatched": 2.394,
+    "first_window_facts": 9.651,
+    "first_objects": 9.651,
+    "all_windows_facts": 24.455,
+    "decoded": 1.787,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    34.66,
+    33.76
+   ],
+   "run": "x6-samsclub-a2-b-0.4-1790649931",
+   "ate_m": 0.1445,
+   "windows": 11
+  },
+  "me340:b:0.55": {
+   "timing_s": {
+    "first_window_dispatched": 2.386,
+    "first_window_facts": 4.783,
+    "first_objects": 19.709,
+    "all_windows_facts": 38.055,
+    "decoded": 2.33,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    44.42,
+    49.1
+   ],
+   "run": "x6-me340-b-0.55-1790650208",
+   "ate_m": 0.0352,
+   "windows": 13
+  },
+  "samsclub-a2:b:0.55": {
+   "timing_s": {
+    "first_window_dispatched": 2.421,
+    "first_window_facts": 8.995,
+    "first_objects": 8.995,
+    "all_windows_facts": 25.451,
+    "decoded": 2.126,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    34.23,
+    32.69
+   ],
+   "run": "x6-samsclub-a2-b-0.55-1790650251",
+   "ate_m": 0.16,
+   "windows": 15
+  },
+  "walmart:b:0.55": {
+   "timing_s": {
+    "first_window_dispatched": 2.225,
+    "first_window_facts": 7.058,
+    "first_objects": 10.848,
+    "all_windows_facts": 21.222,
+    "decoded": 1.712,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    29.81,
+    31.83
+   ],
+   "run": "x6-walmart-b-0.55-1790650284",
+   "ate_m": 0.0399,
+   "windows": 17
+  },
+  "me340:a:run003": {
+   "timing_s": {
+    "first_window_dispatched": 1.302,
+    "first_window_facts": 28.833,
+    "first_objects": 28.833,
+    "all_windows_facts": 31.933,
+    "decoded": 1.134,
+    "da3_done": 17.216
+   },
+   "gpu_peak_gib": [
+    50.84,
+    49.87
+   ],
+   "run": "x6-me340-a-0.4-1790648828",
+   "ate_m": 0.0409,
+   "windows": 10
+  },
+  "me340:b:run003": {
+   "timing_s": {
+    "first_window_dispatched": 1.295,
+    "first_window_facts": 3.344,
+    "first_objects": 15.896,
+    "all_windows_facts": 28.74,
+    "decoded": 1.097,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    47.04,
+    40.77
+   ],
+   "run": "x6-me340-b-0.4-1790648867",
+   "ate_m": 0.0429,
+   "windows": 10
+  },
+  "samsclub-a2:a:run003": {
+   "timing_s": {
+    "first_window_dispatched": 1.607,
+    "first_window_facts": 18.002,
+    "first_objects": 18.002,
+    "all_windows_facts": 23.13,
+    "decoded": 0.967,
+    "da3_done": 14.646
+   },
+   "gpu_peak_gib": [
+    47.64,
+    40.27
+   ],
+   "run": "x6-samsclub-a2-a-0.4-1790648720",
+   "ate_m": 0.2213,
+   "windows": 11
+  },
+  "samsclub-a2:b:run003": {
+   "timing_s": {
+    "first_window_dispatched": 1.619,
+    "first_window_facts": 8.32,
+    "first_objects": 8.32,
+    "all_windows_facts": 20.632,
+    "decoded": 0.973,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    38.15,
+    34.02
+   ],
+   "run": "x6-samsclub-a2-b-0.4-1790648749",
+   "ate_m": 0.1445,
+   "windows": 11
+  },
+  "walmart:a:run003": {
+   "timing_s": {
+    "first_window_dispatched": 1.587,
+    "first_window_facts": 16.562,
+    "first_objects": 16.712,
+    "all_windows_facts": 20.086,
+    "decoded": 0.932,
+    "da3_done": 14.001
+   },
+   "gpu_peak_gib": [
+    44.08,
+    31.82
+   ],
+   "run": "x6-walmart-a-0.4-1790648777",
+   "ate_m": 0.1782,
+   "windows": 16
+  },
+  "walmart:b:run003": {
+   "timing_s": {
+    "first_window_dispatched": 1.599,
+    "first_window_facts": 5.748,
+    "first_objects": 8.958,
+    "all_windows_facts": 18.544,
+    "decoded": 0.972,
+    "da3_done": null
+   },
+   "gpu_peak_gib": [
+    30.94,
+    31.66
+   ],
+   "run": "x6-walmart-b-0.4-1790648804",
+   "ate_m": 0.0395,
+   "windows": 16
+  }
+ },
+ "3_association_sweep_6_runs_summed": {
+  "runs": [
+   "x6-me340-a-0.4-1790648828",
+   "x6-me340-b-0.4-1790648867",
+   "x6-samsclub-a2-a-0.4-1790648720",
+   "x6-samsclub-a2-b-0.4-1790648749",
+   "x6-walmart-a-0.4-1790648777",
+   "x6-walmart-b-0.4-1790648804"
+  ],
+  "note": "runs of fx-x6-windows-time-003; iou_min 9 = box overlap off; per-window instances before association: 3,173 over the 6 runs",
+  "table": {
+   "k_sigma=2.0,iou_min=0.1,appearance=none": {
+    "global_objects": 1867,
+    "split_candidates": 6,
+    "delivered_in_pieces": 87,
+    "delivered_covered": 126
+   },
+   "k_sigma=2.0,iou_min=0.1,appearance=q50_negatives": {
+    "global_objects": 1936,
+    "split_candidates": 14,
+    "delivered_in_pieces": 92,
+    "delivered_covered": 130
+   },
+   "k_sigma=2.0,iou_min=0.1,appearance=q90_negatives": {
+    "global_objects": 2286,
+    "split_candidates": 266,
+    "delivered_in_pieces": 99,
+    "delivered_covered": 132
+   },
+   "k_sigma=2.0,iou_min=0.2,appearance=none": {
+    "global_objects": 1872,
+    "split_candidates": 7,
+    "delivered_in_pieces": 87,
+    "delivered_covered": 126
+   },
+   "k_sigma=2.0,iou_min=0.2,appearance=q50_negatives": {
+    "global_objects": 1945,
+    "split_candidates": 14,
+    "delivered_in_pieces": 93,
+    "delivered_covered": 130
+   },
+   "k_sigma=2.0,iou_min=0.2,appearance=q90_negatives": {
+    "global_objects": 2293,
+    "split_candidates": 267,
+    "delivered_in_pieces": 99,
+    "delivered_covered": 132
+   },
+   "k_sigma=2.0,iou_min=0.3,appearance=none": {
+    "global_objects": 1876,
+    "split_candidates": 7,
+    "delivered_in_pieces": 87,
+    "delivered_covered": 126
+   },
+   "k_sigma=2.0,iou_min=0.3,appearance=q50_negatives": {
+    "global_objects": 1952,
+    "split_candidates": 14,
+    "delivered_in_pieces": 93,
+    "delivered_covered": 130
+   },
+   "k_sigma=2.0,iou_min=0.3,appearance=q90_negatives": {
+    "global_objects": 2299,
+    "split_candidates": 269,
+    "delivered_in_pieces": 99,
+    "delivered_covered": 133
+   },
+   "k_sigma=2.0,iou_min=9.0,appearance=none": {
+    "global_objects": 1880,
+    "split_candidates": 8,
+    "delivered_in_pieces": 87,
+    "delivered_covered": 126
+   },
+   "k_sigma=2.0,iou_min=9.0,appearance=q50_negatives": {
+    "global_objects": 1960,
+    "split_candidates": 15,
+    "delivered_in_pieces": 93,
+    "delivered_covered": 130
+   },
+   "k_sigma=2.0,iou_min=9.0,appearance=q90_negatives": {
+    "global_objects": 2307,
+    "split_candidates": 274,
+    "delivered_in_pieces": 99,
+    "delivered_covered": 133
+   },
+   "k_sigma=3.0,iou_min=0.1,appearance=none": {
+    "global_objects": 1741,
+    "split_candidates": 0,
+    "delivered_in_pieces": 73,
+    "delivered_covered": 117
+   },
+   "k_sigma=3.0,iou_min=0.1,appearance=q50_negatives": {
+    "global_objects": 1821,
+    "split_candidates": 3,
+    "delivered_in_pieces": 83,
+    "delivered_covered": 125
+   },
+   "k_sigma=3.0,iou_min=0.1,appearance=q90_negatives": {
+    "global_objects": 2247,
+    "split_candidates": 248,
+    "delivered_in_pieces": 99,
+    "delivered_covered": 130
+   },
+   "k_sigma=3.0,iou_min=0.2,appearance=none": {
+    "global_objects": 1743,
+    "split_candidates": 0,
+    "delivered_in_pieces": 73,
+    "delivered_covered": 117
+   },
+   "k_sigma=3.0,iou_min=0.2,appearance=q50_negatives": {
+    "global_objects": 1829,
+    "split_candidates": 3,
+    "delivered_in_pieces": 84,
+    "delivered_covered": 125
+   },
+   "k_sigma=3.0,iou_min=0.2,appearance=q90_negatives": {
+    "global_objects": 2254,
+    "split_candidates": 249,
+    "delivered_in_pieces": 99,
+    "delivered_covered": 130
+   },
+   "k_sigma=3.0,iou_min=0.3,appearance=none": {
+    "global_objects": 1744,
+    "split_candidates": 0,
+    "delivered_in_pieces": 73,
+    "delivered_covered": 117
+   },
+   "k_sigma=3.0,iou_min=0.3,appearance=q50_negatives": {
+    "global_objects": 1833,
+    "split_candidates": 3,
+    "delivered_in_pieces": 84,
+    "delivered_covered": 125
+   },
+   "k_sigma=3.0,iou_min=0.3,appearance=q90_negatives": {
+    "global_objects": 2258,
+    "split_candidates": 249,
+    "delivered_in_pieces": 99,
+    "delivered_covered": 130
+   },
+   "k_sigma=3.0,iou_min=9.0,appearance=none": {
+    "global_objects": 1747,
+    "split_candidates": 0,
+    "delivered_in_pieces": 73,
+    "delivered_covered": 117
+   },
+   "k_sigma=3.0,iou_min=9.0,appearance=q50_negatives": {
+    "global_objects": 1837,
+    "split_candidates": 4,
+    "delivered_in_pieces": 84,
+    "delivered_covered": 125
+   },
+   "k_sigma=3.0,iou_min=9.0,appearance=q90_negatives": {
+    "global_objects": 2260,
+    "split_candidates": 249,
+    "delivered_in_pieces": 99,
+    "delivered_covered": 130
+   },
+   "k_sigma=5.0,iou_min=0.1,appearance=none": {
+    "global_objects": 1570,
+    "split_candidates": 0,
+    "delivered_in_pieces": 66,
+    "delivered_covered": 101
+   },
+   "k_sigma=5.0,iou_min=0.1,appearance=q50_negatives": {
+    "global_objects": 1650,
+    "split_candidates": 3,
+    "delivered_in_pieces": 72,
+    "delivered_covered": 111
+   },
+   "k_sigma=5.0,iou_min=0.1,appearance=q90_negatives": {
+    "global_objects": 2185,
+    "split_candidates": 223,
+    "delivered_in_pieces": 96,
+    "delivered_covered": 129
+   },
+   "k_sigma=5.0,iou_min=0.2,appearance=none": {
+    "global_objects": 1573,
+    "split_candidates": 0,
+    "delivered_in_pieces": 66,
+    "delivered_covered": 101
+   },
+   "k_sigma=5.0,iou_min=0.2,appearance=q50_negatives": {
+    "global_objects": 1654,
+    "split_candidates": 3,
+    "delivered_in_pieces": 72,
+    "delivered_covered": 111
+   },
+   "k_sigma=5.0,iou_min=0.2,appearance=q90_negatives": {
+    "global_objects": 2187,
+    "split_candidates": 223,
+    "delivered_in_pieces": 96,
+    "delivered_covered": 129
+   },
+   "k_sigma=5.0,iou_min=0.3,appearance=none": {
+    "global_objects": 1573,
+    "split_candidates": 0,
+    "delivered_in_pieces": 66,
+    "delivered_covered": 101
+   },
+   "k_sigma=5.0,iou_min=0.3,appearance=q50_negatives": {
+    "global_objects": 1654,
+    "split_candidates": 3,
+    "delivered_in_pieces": 72,
+    "delivered_covered": 111
+   },
+   "k_sigma=5.0,iou_min=0.3,appearance=q90_negatives": {
+    "global_objects": 2187,
+    "split_candidates": 223,
+    "delivered_in_pieces": 96,
+    "delivered_covered": 129
+   },
+   "k_sigma=5.0,iou_min=9.0,appearance=none": {
+    "global_objects": 1573,
+    "split_candidates": 0,
+    "delivered_in_pieces": 66,
+    "delivered_covered": 101
+   },
+   "k_sigma=5.0,iou_min=9.0,appearance=q50_negatives": {
+    "global_objects": 1654,
+    "split_candidates": 3,
+    "delivered_in_pieces": 72,
+    "delivered_covered": 111
+   },
+   "k_sigma=5.0,iou_min=9.0,appearance=q90_negatives": {
+    "global_objects": 2187,
+    "split_candidates": 223,
+    "delivered_in_pieces": 96,
+    "delivered_covered": 129
+   }
+  }
+ },
+ "4_change_rule_sweep": {
+  "(0, 0.0, 5.0, 1, 0.1)": {
+   "false_claims_unplanted": 3,
+   "false_withdrawn": 1,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 3,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     3,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.0, 5.0, 1, 9.0)": {
+   "false_claims_unplanted": 21,
+   "false_withdrawn": 2,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 33,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     21,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.0, 5.0, 2, 0.1)": {
+   "false_claims_unplanted": 2,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 3,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     2,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.0, 5.0, 2, 9.0)": {
+   "false_claims_unplanted": 19,
+   "false_withdrawn": 1,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 30,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     19,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.0, 8.0, 1, 0.1)": {
+   "false_claims_unplanted": 15,
+   "false_withdrawn": 1,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 3,
+   "by_geo": {
+    "a": [
+     2,
+     0,
+     10
+    ],
+    "b": [
+     13,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.0, 8.0, 1, 9.0)": {
+   "false_claims_unplanted": 45,
+   "false_withdrawn": 2,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 45,
+   "by_geo": {
+    "a": [
+     2,
+     0,
+     10
+    ],
+    "b": [
+     43,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.0, 8.0, 2, 0.1)": {
+   "false_claims_unplanted": 14,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 3,
+   "by_geo": {
+    "a": [
+     2,
+     0,
+     10
+    ],
+    "b": [
+     12,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.0, 8.0, 2, 9.0)": {
+   "false_claims_unplanted": 42,
+   "false_withdrawn": 1,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 42,
+   "by_geo": {
+    "a": [
+     2,
+     0,
+     10
+    ],
+    "b": [
+     40,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.1, 5.0, 1, 0.1)": {
+   "false_claims_unplanted": 1,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     1,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.1, 5.0, 1, 9.0)": {
+   "false_claims_unplanted": 9,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 12,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     9,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.1, 5.0, 2, 0.1)": {
+   "false_claims_unplanted": 1,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     1,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.1, 5.0, 2, 9.0)": {
+   "false_claims_unplanted": 8,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 11,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     8,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.1, 8.0, 1, 0.1)": {
+   "false_claims_unplanted": 7,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 1,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     6,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.1, 8.0, 1, 9.0)": {
+   "false_claims_unplanted": 20,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 20,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     19,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.1, 8.0, 2, 0.1)": {
+   "false_claims_unplanted": 7,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 1,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     6,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.1, 8.0, 2, 9.0)": {
+   "false_claims_unplanted": 19,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 19,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     18,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.2, 5.0, 1, 0.1)": {
+   "false_claims_unplanted": 0,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     0,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.2, 5.0, 1, 9.0)": {
+   "false_claims_unplanted": 5,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 12,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     5,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.2, 5.0, 2, 0.1)": {
+   "false_claims_unplanted": 0,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     0,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.2, 5.0, 2, 9.0)": {
+   "false_claims_unplanted": 5,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 11,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     5,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.2, 8.0, 1, 0.1)": {
+   "false_claims_unplanted": 6,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 1,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     5,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.2, 8.0, 1, 9.0)": {
+   "false_claims_unplanted": 14,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 18,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     13,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.2, 8.0, 2, 0.1)": {
+   "false_claims_unplanted": 6,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 1,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     5,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.2, 8.0, 2, 9.0)": {
+   "false_claims_unplanted": 14,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 17,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     13,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.3, 5.0, 1, 0.1)": {
+   "false_claims_unplanted": 0,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     0,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.3, 5.0, 1, 9.0)": {
+   "false_claims_unplanted": 5,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 10,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     5,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.3, 5.0, 2, 0.1)": {
+   "false_claims_unplanted": 0,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     0,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.3, 5.0, 2, 9.0)": {
+   "false_claims_unplanted": 5,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 10,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     5,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.3, 8.0, 1, 0.1)": {
+   "false_claims_unplanted": 4,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 1,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     3,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.3, 8.0, 1, 9.0)": {
+   "false_claims_unplanted": 11,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 12,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     10,
+     1,
+     10
+    ]
+   }
+  },
+  "(0, 0.3, 8.0, 2, 0.1)": {
+   "false_claims_unplanted": 4,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 1,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     3,
+     0,
+     10
+    ]
+   }
+  },
+  "(0, 0.3, 8.0, 2, 9.0)": {
+   "false_claims_unplanted": 11,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 12,
+   "by_geo": {
+    "a": [
+     1,
+     0,
+     10
+    ],
+    "b": [
+     10,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.0, 5.0, 1, 0.1)": {
+   "false_claims_unplanted": 2,
+   "false_withdrawn": 1,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     2,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.0, 5.0, 1, 9.0)": {
+   "false_claims_unplanted": 11,
+   "false_withdrawn": 1,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 15,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     11,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.0, 5.0, 2, 0.1)": {
+   "false_claims_unplanted": 1,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     1,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.0, 5.0, 2, 9.0)": {
+   "false_claims_unplanted": 10,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 14,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     10,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.0, 8.0, 1, 0.1)": {
+   "false_claims_unplanted": 7,
+   "false_withdrawn": 1,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 1,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     7,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.0, 8.0, 1, 9.0)": {
+   "false_claims_unplanted": 22,
+   "false_withdrawn": 1,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 25,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     22,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.0, 8.0, 2, 0.1)": {
+   "false_claims_unplanted": 6,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 1,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     6,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.0, 8.0, 2, 9.0)": {
+   "false_claims_unplanted": 21,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 24,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     21,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.1, 5.0, 1, 0.1)": {
+   "false_claims_unplanted": 1,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     1,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.1, 5.0, 1, 9.0)": {
+   "false_claims_unplanted": 4,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 7,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     4,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.1, 5.0, 2, 0.1)": {
+   "false_claims_unplanted": 1,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     1,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.1, 5.0, 2, 9.0)": {
+   "false_claims_unplanted": 4,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 7,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     4,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.1, 8.0, 1, 0.1)": {
+   "false_claims_unplanted": 3,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     3,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.1, 8.0, 1, 9.0)": {
+   "false_claims_unplanted": 10,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 15,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     10,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.1, 8.0, 2, 0.1)": {
+   "false_claims_unplanted": 3,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     3,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.1, 8.0, 2, 9.0)": {
+   "false_claims_unplanted": 10,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 15,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     10,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.2, 5.0, 1, 0.1)": {
+   "false_claims_unplanted": 0,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     0,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.2, 5.0, 1, 9.0)": {
+   "false_claims_unplanted": 3,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 7,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     3,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.2, 5.0, 2, 0.1)": {
+   "false_claims_unplanted": 0,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     0,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.2, 5.0, 2, 9.0)": {
+   "false_claims_unplanted": 3,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 7,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     3,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.2, 8.0, 1, 0.1)": {
+   "false_claims_unplanted": 1,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     1,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.2, 8.0, 1, 9.0)": {
+   "false_claims_unplanted": 7,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 11,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     7,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.2, 8.0, 2, 0.1)": {
+   "false_claims_unplanted": 1,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     1,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.2, 8.0, 2, 9.0)": {
+   "false_claims_unplanted": 7,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 11,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     7,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.3, 5.0, 1, 0.1)": {
+   "false_claims_unplanted": 0,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     0,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.3, 5.0, 1, 9.0)": {
+   "false_claims_unplanted": 2,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 6,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     2,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.3, 5.0, 2, 0.1)": {
+   "false_claims_unplanted": 0,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     0,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.3, 5.0, 2, 9.0)": {
+   "false_claims_unplanted": 2,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 6,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     2,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.3, 8.0, 1, 0.1)": {
+   "false_claims_unplanted": 1,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     1,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.3, 8.0, 1, 9.0)": {
+   "false_claims_unplanted": 6,
+   "false_withdrawn": 0,
+   "planted_found": 1,
+   "planted_placed": 20,
+   "planted_extra_claims": 9,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     6,
+     1,
+     10
+    ]
+   }
+  },
+  "(2, 0.3, 8.0, 2, 0.1)": {
+   "false_claims_unplanted": 1,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 0,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     1,
+     0,
+     10
+    ]
+   }
+  },
+  "(2, 0.3, 8.0, 2, 9.0)": {
+   "false_claims_unplanted": 6,
+   "false_withdrawn": 0,
+   "planted_found": 0,
+   "planted_placed": 20,
+   "planted_extra_claims": 9,
+   "by_geo": {
+    "a": [
+     0,
+     0,
+     10
+    ],
+    "b": [
+     6,
+     0,
+     10
+    ]
+   }
+  }
+ },
+ "4_false_changes": {
+  "run002_me340_b_first_rule": {
+   "claims": 10,
+   "false_by_eye": 10,
+   "sheet": "false-claims-run002-me340-b.jpg"
+  },
+  "run003_rule_neigh_border_range8_obskeys": {
+   "claims": 5,
+   "false_by_eye": 5,
+   "detail": "ME340 b monitor at a person's rim, pipe (withdrawn); Walmart b 3 'appeared' across a 0.87-scale stitch",
+   "sheets": [
+    "false-claims-run003-me340-b.jpg",
+    "false-claims-run003-walmart-b.jpg"
+   ]
+  },
+  "run005_me340_b_0.55": {
+   "claims": 1,
+   "false_by_eye": 1,
+   "withdrawn": true
+  },
+  "final_rule": {
+   "config": {
+    "neigh_px": 2,
+    "rel_margin": 0.2,
+    "max_range_m": 5.0,
+    "min_obs_windows": 1,
+    "chain_max": 0.1,
+    "free_share": 0.6,
+    "min_views": 2,
+    "min_obs_keys": 3,
+    "border": 0.05,
+    "person_grow_px": 2
+   },
+   "claims_on_unplanted_runs": 0,
+   "unplanted_runs": 8,
+   "objects_judged_note": "every object not detected in a later window of its map frame gets a state; see results-data runs[*] and facts_final_rule",
+   "false_change_rate": "0 claims / 0 true changes seen twice by the camera in these clips"
+  },
+  "threshold_0.55_runs": {
+   "runs": 3,
+   "claims": 1,
+   "false_by_eye": 1,
+   "detail": "ME340 (b) 'metal part' at the left image edge, disappeared at 13.5 s, withdrawn in window 10 when detected again (sheet fx-x6-windows-time-005/x6-me340-b-0.55-1790650208-changes.jpg); same free-rule constants, before the deferred-appearance change"
+  },
+  "summary": "final rule at threshold 0.40: 0 claims on 8 unplanted runs (3 videos x a/b + Sam's Club every-keyframe a/b) and 0 extra claims on 8 planted runs; at 0.55: 1 false (withdrawn) claim in 3 runs"
+ },
+ "4_real_changes": {
+  "found": 0,
+  "why": "walk-throughs move forward: no object's place is seen again after a person moves it; the Sam's Club trolley and Walmart carts are seen once; the delivered events report no moved object; SAM 3 lifted a pallet jack once (Sam's Club) and no cart",
+  "planted_substitute": "rendered 0.8 m boxes (scripts/x6_plant.py) on Sam's Club (3 events) and Walmart (2 events, last 1.3 s); ME340 had no free floor spot by DROID depth",
+  "planted_result": {
+   "found": 1,
+   "placed": 20,
+   "which": "Sam's Club (b), every keyframe an object keyframe: 'disappeared' at 2.6 s, image IoU 0.90 with the box, before 1.9 s / after 3.8 s",
+   "sheet": "planted-found-samsclub-b.jpg",
+   "misses": "19 of 20: the box was not lifted as its own object in the windows around its change (SAM 3 does segment it: IoU 0.95-0.99, score 0.83-0.97 on 10 probe frames); at 1 object keyframe in 3 the close views give 1-2 object keyframes, and near shelves the box joins the shelf's instance",
+   "extra_claims_on_planted_clips": 0,
+   "per_run": {
+    "x6-samsclub-a2-a-0.4-planted-1790650023": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 2.0,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 8.88,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "moved",
+       "placed": true,
+       "change_s": 10.56,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      }
+     ],
+     "placed": 3,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": [],
+     "ate_m": 0.2263
+    },
+    "x6-samsclub-a2-a-0.4-planted-1790651013": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 2.72,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 9.56,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "moved",
+       "placed": true,
+       "change_s": 14.24,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      }
+     ],
+     "placed": 3,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": [],
+     "ate_m": 0.2265
+    },
+    "x6-samsclub-a2-a-0.4-planted-every1-1790651241": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 2.72,
+       "found": false,
+       "claim": null,
+       "iou": null,
+       "claim_t": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 9.56,
+       "found": false,
+       "claim": null,
+       "iou": null,
+       "claim_t": null
+      },
+      {
+       "kind": "moved",
+       "placed": true,
+       "change_s": 14.24,
+       "found": false,
+       "claim": null,
+       "iou": null,
+       "claim_t": null
+      }
+     ],
+     "placed": 3,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": []
+    },
+    "x6-samsclub-a2-b-0.4-planted-1790650061": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 2.0,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 8.88,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "moved",
+       "placed": true,
+       "change_s": 10.56,
+       "found": false,
+       "claim": null,
+       "box_as_object": {
+        "id": "g126",
+        "label": "packaging",
+        "intervals": [
+         [
+          "first-seen",
+          8.84,
+          12.36
+         ],
+         [
+          "static",
+          12.2,
+          16.76
+         ]
+        ]
+       }
+      }
+     ],
+     "placed": 3,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": [],
+     "ate_m": 0.1487
+    },
+    "x6-samsclub-a2-b-0.4-planted-1790650987": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 2.72,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 9.56,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "moved",
+       "placed": true,
+       "change_s": 14.24,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      }
+     ],
+     "placed": 3,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": [],
+     "ate_m": 0.1508
+    },
+    "x6-samsclub-a2-b-0.4-planted-every1-1790651195": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 2.72,
+       "found": true,
+       "claim": "g8",
+       "iou": 0.903,
+       "claim_t": [
+        2.64,
+        2.6
+       ]
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 9.56,
+       "found": false,
+       "claim": null,
+       "iou": null,
+       "claim_t": null
+      },
+      {
+       "kind": "moved",
+       "placed": true,
+       "change_s": 14.24,
+       "found": false,
+       "claim": null,
+       "iou": null,
+       "claim_t": null
+      }
+     ],
+     "placed": 3,
+     "found": 1,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": []
+    },
+    "x6-walmart-a-0.4-planted-1790650090": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 28.76,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 28.92,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "moved",
+       "placed": false
+      }
+     ],
+     "placed": 2,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": [],
+     "ate_m": 0.1761
+    },
+    "x6-walmart-a-0.4-planted-1790651063": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 29.16,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 29.2,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "moved",
+       "placed": false
+      }
+     ],
+     "placed": 2,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": [],
+     "ate_m": 0.179
+    },
+    "x6-walmart-a-0.4-planted-every1-1790651331": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 29.16,
+       "found": false,
+       "claim": null,
+       "iou": null,
+       "claim_t": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 29.2,
+       "found": false,
+       "claim": null,
+       "iou": null,
+       "claim_t": null
+      },
+      {
+       "kind": "moved",
+       "placed": false
+      }
+     ],
+     "placed": 2,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": []
+    },
+    "x6-walmart-b-0.4-planted-1790650120": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 28.76,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 28.92,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "moved",
+       "placed": false
+      }
+     ],
+     "placed": 2,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": [],
+     "ate_m": 0.0377
+    },
+    "x6-walmart-b-0.4-planted-1790651041": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 29.16,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 29.2,
+       "found": false,
+       "claim": null,
+       "box_as_object": null
+      },
+      {
+       "kind": "moved",
+       "placed": false
+      }
+     ],
+     "placed": 2,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": [],
+     "ate_m": 0.0391
+    },
+    "x6-walmart-b-0.4-planted-every1-1790651293": {
+     "events": [
+      {
+       "kind": "disappeared",
+       "placed": true,
+       "change_s": 29.16,
+       "found": false,
+       "claim": null,
+       "iou": null,
+       "claim_t": null
+      },
+      {
+       "kind": "appeared",
+       "placed": true,
+       "change_s": 29.2,
+       "found": false,
+       "claim": null,
+       "iou": null,
+       "claim_t": null
+      },
+      {
+       "kind": "moved",
+       "placed": false
+      }
+     ],
+     "placed": 2,
+     "found": 0,
+     "claims_not_planted": 0,
+     "claims_not_planted_detail": []
+    }
+   }
+  }
+ },
+ "5_facts": {
+  "x6-me340-a-0.4-1790649848": {
+   "facts": [
+    {
+     "object": "g47",
+     "label": "box",
+     "property": "top height above floor (m)",
+     "value": 0.61,
+     "uncertainty": 0.51,
+     "interval_s": [
+      0.63,
+      4.87
+     ],
+     "windows": 1,
+     "evidence_keys": [
+      19
+     ],
+     "status": "estimated"
+    },
+    {
+     "object": "g143",
+     "label": "door",
+     "property": "tilt of its main face from vertical (deg)",
+     "value": 6.8,
+     "uncertainty": 0.2,
+     "interval_s": [
+      8.48,
+      24.06
+     ],
+     "windows": 4,
+     "evidence_keys": [
+      400,
+      470,
+      524,
+      561
+     ],
+     "status": "estimated",
+     "note": "sign-free; +- is the spread over windows"
+    },
+    {
+     "object": "g148",
+     "label": "cable",
+     "property": "closest person on the floor plan (m)",
+     "value": 0.45,
+     "uncertainty": 0.17,
+     "interval_s": [
+      25.59,
+      29.86
+     ],
+     "within_1m_keyframes": 23,
+     "evidence_keys": [
+      767,
+      773,
+      775,
+      785
+     ],
+     "status": "estimated",
+     "note": "person = median 3D point of the SAM 3 person mask; +- adds 0.15 m for the body's half-width"
+    }
+   ],
+   "facts_s_cpu": 0.026,
+   "claims": 0,
+   "objects": 232,
+   "timeline_examples": [
+    {
+     "id": "g85",
+     "frame": 1,
+     "label": "cable",
+     "first_seen_s": 7.81,
+     "last_seen_s": 29.46,
+     "positions": [
+      {
+       "window": 2,
+       "centroid": [
+        -1.914,
+        0.538,
+        0.904
+       ]
+      },
+      {
+       "window": 8,
+       "centroid": [
+        -1.646,
+        0.955,
+        1.563
+       ]
+      },
+      {
+       "window": 9,
+       "centroid": [
+        -1.778,
+        0.927,
+        1.681
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 7.541,
+       "t1": 14.081,
+       "windows": [
+        2
+       ]
+      },
+      {
+       "state": "not-observed:out-of-view",
+       "t0": 13.947,
+       "t1": 25.192,
+       "windows": [
+        3,
+        4,
+        5,
+        6,
+        7
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 24.992,
+       "t1": 29.863,
+       "windows": [
+        8,
+        9
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    },
+    {
+     "id": "g87",
+     "frame": 1,
+     "label": "equipment",
+     "first_seen_s": 7.81,
+     "last_seen_s": 20.59,
+     "positions": [
+      {
+       "window": 2,
+       "centroid": [
+        5.196,
+        0.039,
+        1.381
+       ]
+      },
+      {
+       "window": 3,
+       "centroid": [
+        4.959,
+        0.033,
+        1.459
+       ]
+      },
+      {
+       "window": 4,
+       "centroid": [
+        4.926,
+        0.018,
+        1.451
+       ]
+      },
+      {
+       "window": 5,
+       "centroid": [
+        4.938,
+        -0.01,
+        1.411
+       ]
+      },
+      {
+       "window": 6,
+       "centroid": [
+        4.769,
+        -0.025,
+        1.34
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 7.541,
+       "t1": 14.081,
+       "windows": [
+        2
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 13.947,
+       "t1": 22.856,
+       "windows": [
+        3,
+        4,
+        5,
+        6
+       ]
+      },
+      {
+       "state": "not-observed:out-of-view",
+       "t0": 22.723,
+       "t1": 29.863,
+       "windows": [
+        7,
+        8,
+        9
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 5
+    },
+    {
+     "id": "g88",
+     "frame": 1,
+     "label": "equipment",
+     "first_seen_s": 7.81,
+     "last_seen_s": 29.46,
+     "positions": [
+      {
+       "window": 2,
+       "centroid": [
+        -1.972,
+        0.47,
+        1.244
+       ]
+      },
+      {
+       "window": 3,
+       "centroid": [
+        -1.827,
+        0.479,
+        1.366
+       ]
+      },
+      {
+       "window": 8,
+       "centroid": [
+        -1.358,
+        0.143,
+        1.67
+       ]
+      },
+      {
+       "window": 9,
+       "centroid": [
+        -1.373,
+        0.414,
+        1.379
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 7.541,
+       "t1": 14.081,
+       "windows": [
+        2
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 13.947,
+       "t1": 15.883,
+       "windows": [
+        3
+       ]
+      },
+      {
+       "state": "not-observed:occupied-undetected",
+       "t0": 15.682,
+       "t1": 17.484,
+       "windows": [
+        4
+       ]
+      },
+      {
+       "state": "not-observed:out-of-view",
+       "t0": 17.351,
+       "t1": 25.192,
+       "windows": [
+        5,
+        6,
+        7
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 24.992,
+       "t1": 29.863,
+       "windows": [
+        8,
+        9
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 4
+    }
+   ]
+  },
+  "x6-me340-b-0.4-p1-1790650150": {
+   "facts": [
+    {
+     "object": "g143",
+     "label": "machine",
+     "property": "top height above floor (m)",
+     "value": 2.01,
+     "uncertainty": 0.63,
+     "interval_s": [
+      8.48,
+      22.86
+     ],
+     "windows": 2,
+     "evidence_keys": [
+      254,
+      666
+     ],
+     "status": "estimated"
+    },
+    {
+     "object": "g176",
+     "label": "door",
+     "property": "tilt of its main face from vertical (deg)",
+     "value": 7.2,
+     "uncertainty": 1.6,
+     "interval_s": [
+      11.48,
+      22.22
+     ],
+     "windows": 5,
+     "evidence_keys": [
+      382,
+      470,
+      524,
+      561
+     ],
+     "status": "estimated",
+     "note": "sign-free; +- is the spread over windows"
+    },
+    {
+     "object": "g181",
+     "label": "machine",
+     "property": "closest person on the floor plan (m)",
+     "value": 0.51,
+     "uncertainty": 0.2,
+     "interval_s": [
+      7.54,
+      21.25
+     ],
+     "within_1m_keyframes": 60,
+     "evidence_keys": [
+      226,
+      228,
+      234,
+      242
+     ],
+     "status": "estimated",
+     "note": "person = median 3D point of the SAM 3 person mask; +- adds 0.15 m for the body's half-width"
+    }
+   ],
+   "facts_s_cpu": 0.023,
+   "claims": 0,
+   "objects": 244,
+   "timeline_examples": [
+    {
+     "id": "g85",
+     "frame": 2,
+     "label": "cable",
+     "first_seen_s": 7.81,
+     "last_seen_s": 28.4,
+     "positions": [
+      {
+       "window": 2,
+       "centroid": [
+        -3.832,
+        -0.095,
+        3.432
+       ]
+      },
+      {
+       "window": 3,
+       "centroid": [
+        -3.52,
+        0.159,
+        3.611
+       ]
+      },
+      {
+       "window": 8,
+       "centroid": [
+        -3.193,
+        0.27,
+        4.039
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 7.541,
+       "t1": 14.081,
+       "windows": [
+        2
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 13.947,
+       "t1": 15.883,
+       "windows": [
+        3
+       ]
+      },
+      {
+       "state": "not-observed:out-of-view",
+       "t0": 15.682,
+       "t1": 17.484,
+       "windows": [
+        4
+       ]
+      },
+      {
+       "state": "not-observed:loose stitch chain",
+       "t0": 17.351,
+       "t1": 25.192,
+       "windows": [
+        5,
+        6,
+        7
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 24.992,
+       "t1": 29.062,
+       "windows": [
+        8
+       ]
+      },
+      {
+       "state": "not-observed:out-of-view",
+       "t0": 28.829,
+       "t1": 29.863,
+       "windows": [
+        9
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    },
+    {
+     "id": "g87",
+     "frame": 2,
+     "label": "equipment",
+     "first_seen_s": 7.81,
+     "last_seen_s": 16.82,
+     "positions": [
+      {
+       "window": 2,
+       "centroid": [
+        3.598,
+        -0.673,
+        3.985
+       ]
+      },
+      {
+       "window": 3,
+       "centroid": [
+        3.605,
+        -0.729,
+        3.872
+       ]
+      },
+      {
+       "window": 4,
+       "centroid": [
+        3.546,
+        -0.729,
+        3.872
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 7.541,
+       "t1": 14.081,
+       "windows": [
+        2
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 13.947,
+       "t1": 17.484,
+       "windows": [
+        3,
+        4
+       ]
+      },
+      {
+       "state": "not-observed:out-of-view",
+       "t0": 17.351,
+       "t1": 19.186,
+       "windows": [
+        5
+       ]
+      },
+      {
+       "state": "not-observed:loose stitch chain",
+       "t0": 18.852,
+       "t1": 29.863,
+       "windows": [
+        6,
+        7,
+        8,
+        9
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    },
+    {
+     "id": "g88",
+     "frame": 2,
+     "label": "equipment",
+     "first_seen_s": 7.81,
+     "last_seen_s": 29.46,
+     "positions": [
+      {
+       "window": 2,
+       "centroid": [
+        -3.878,
+        -0.208,
+        3.639
+       ]
+      },
+      {
+       "window": 8,
+       "centroid": [
+        -3.408,
+        0.147,
+        4.192
+       ]
+      },
+      {
+       "window": 9,
+       "centroid": [
+        -3.339,
+        0.1,
+        4.279
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 7.541,
+       "t1": 14.081,
+       "windows": [
+        2
+       ]
+      },
+      {
+       "state": "not-observed:out-of-view",
+       "t0": 13.947,
+       "t1": 17.484,
+       "windows": [
+        3,
+        4
+       ]
+      },
+      {
+       "state": "not-observed:loose stitch chain",
+       "t0": 17.351,
+       "t1": 25.192,
+       "windows": [
+        5,
+        6,
+        7
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 24.992,
+       "t1": 29.863,
+       "windows": [
+        8,
+        9
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    }
+   ]
+  },
+  "x6-samsclub-a2-a-0.4-1790649896": {
+   "facts": [
+    {
+     "object": "g91",
+     "label": "stacked boxes",
+     "property": "top height above floor (m)",
+     "value": 4.81,
+     "uncertainty": 1.13,
+     "interval_s": [
+      7.2,
+      9.48
+     ],
+     "windows": 2,
+     "evidence_keys": [
+      221
+     ],
+     "status": "estimated"
+    },
+    {
+     "object": "g26",
+     "label": "shelves",
+     "property": "tilt of its main face from vertical (deg)",
+     "value": 12.9,
+     "uncertainty": 0.0,
+     "interval_s": [
+      0.2,
+      6.56
+     ],
+     "windows": 1,
+     "evidence_keys": [
+      5,
+      126
+     ],
+     "status": "estimated",
+     "note": "sign-free; +- is the spread over windows"
+    },
+    {
+     "object": null,
+     "label": "aisle",
+     "property": "free width across the walking direction, 0.1-2 m above the floor (m)",
+     "value": 2.79,
+     "uncertainty": 0.99,
+     "interval_s": [
+      22.04,
+      25.44
+     ],
+     "window": 8,
+     "evidence_keys": [
+      574,
+      586,
+      599,
+      609
+     ],
+     "status": "estimated",
+     "note": "the narrowest window; bounded by detected objects only (an undetected obstacle would narrow it)"
+    }
+   ],
+   "facts_s_cpu": 0.125,
+   "claims": 0,
+   "objects": 375,
+   "timeline_examples": [
+    {
+     "id": "g0",
+     "frame": 0,
+     "label": "packaging",
+     "first_seen_s": 0.2,
+     "last_seen_s": 6.56,
+     "positions": [
+      {
+       "window": 0,
+       "centroid": [
+        2.232,
+        -2.224,
+        7.559
+       ]
+      },
+      {
+       "window": 1,
+       "centroid": [
+        2.415,
+        -0.704,
+        7.647
+       ]
+      },
+      {
+       "window": 2,
+       "centroid": [
+        3.308,
+        -0.516,
+        7.936
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 0.2,
+       "t1": 2.64,
+       "windows": [
+        0
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 2.6,
+       "t1": 7.04,
+       "windows": [
+        1,
+        2
+       ]
+      },
+      {
+       "state": "not-observed:occupied-undetected",
+       "t0": 6.92,
+       "t1": 9.08,
+       "windows": [
+        3
+       ]
+      },
+      {
+       "state": "not-observed:out-of-view",
+       "t0": 8.84,
+       "t1": 16.76,
+       "windows": [
+        4,
+        5,
+        6
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    },
+    {
+     "id": "g4",
+     "frame": 0,
+     "label": "stacked boxes",
+     "first_seen_s": 0.2,
+     "last_seen_s": 6.56,
+     "positions": [
+      {
+       "window": 0,
+       "centroid": [
+        0.376,
+        0.053,
+        7.368
+       ]
+      },
+      {
+       "window": 1,
+       "centroid": [
+        0.231,
+        0.067,
+        7.364
+       ]
+      },
+      {
+       "window": 2,
+       "centroid": [
+        1.12,
+        0.071,
+        7.489
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 0.2,
+       "t1": 2.64,
+       "windows": [
+        0
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 2.6,
+       "t1": 7.04,
+       "windows": [
+        1,
+        2
+       ]
+      },
+      {
+       "state": "not-observed:out-of-view",
+       "t0": 6.92,
+       "t1": 16.76,
+       "windows": [
+        3,
+        4,
+        5,
+        6
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    },
+    {
+     "id": "g6",
+     "frame": 0,
+     "label": "packaging",
+     "first_seen_s": 0.2,
+     "last_seen_s": 6.56,
+     "positions": [
+      {
+       "window": 0,
+       "centroid": [
+        0.997,
+        -2.203,
+        7.395
+       ]
+      },
+      {
+       "window": 1,
+       "centroid": [
+        1.555,
+        -0.664,
+        7.59
+       ]
+      },
+      {
+       "window": 2,
+       "centroid": [
+        2.385,
+        -0.69,
+        7.672
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 0.2,
+       "t1": 2.64,
+       "windows": [
+        0
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 2.6,
+       "t1": 7.04,
+       "windows": [
+        1,
+        2
+       ]
+      },
+      {
+       "state": "not-observed:occupied-undetected",
+       "t0": 6.92,
+       "t1": 9.08,
+       "windows": [
+        3
+       ]
+      },
+      {
+       "state": "not-observed:out-of-view",
+       "t0": 8.84,
+       "t1": 16.76,
+       "windows": [
+        4,
+        5,
+        6
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    }
+   ]
+  },
+  "x6-samsclub-a2-b-0.4-p1-1790650183": {
+   "facts": [
+    {
+     "object": "g84",
+     "label": "stacked boxes",
+     "property": "top height above floor (m)",
+     "value": 5.62,
+     "uncertainty": 1.01,
+     "interval_s": [
+      7.2,
+      10.16
+     ],
+     "windows": 2,
+     "evidence_keys": [
+      221
+     ],
+     "status": "estimated"
+    },
+    {
+     "object": "g236",
+     "label": "shelves",
+     "property": "tilt of its main face from vertical (deg)",
+     "value": 1.4,
+     "uncertainty": 0.0,
+     "interval_s": [
+      18.88,
+      25.4
+     ],
+     "windows": 1,
+     "evidence_keys": [
+      490,
+      617
+     ],
+     "status": "estimated",
+     "note": "sign-free; +- is the spread over windows"
+    },
+    {
+     "object": null,
+     "label": "aisle",
+     "property": "free width across the walking direction, 0.1-2 m above the floor (m)",
+     "value": 3.75,
+     "uncertainty": 0.71,
+     "interval_s": [
+      6.92,
+      9.08
+     ],
+     "window": 3,
+     "evidence_keys": [
+      173,
+      180,
+      195,
+      209
+     ],
+     "status": "estimated",
+     "note": "the narrowest window; bounded by detected objects only (an undetected obstacle would narrow it)"
+    }
+   ],
+   "facts_s_cpu": 0.166,
+   "claims": 0,
+   "objects": 377,
+   "timeline_examples": [
+    {
+     "id": "g3",
+     "frame": 0,
+     "label": "packaging",
+     "first_seen_s": 0.2,
+     "last_seen_s": 6.56,
+     "positions": [
+      {
+       "window": 0,
+       "centroid": [
+        1.293,
+        -0.256,
+        9.148
+       ]
+      },
+      {
+       "window": 1,
+       "centroid": [
+        3.079,
+        -1.072,
+        9.054
+       ]
+      },
+      {
+       "window": 2,
+       "centroid": [
+        4.301,
+        -1.294,
+        9.502
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 0.2,
+       "t1": 2.64,
+       "windows": [
+        0
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 2.6,
+       "t1": 7.04,
+       "windows": [
+        1,
+        2
+       ]
+      },
+      {
+       "state": "not-observed:loose stitch chain",
+       "t0": 6.92,
+       "t1": 16.76,
+       "windows": [
+        3,
+        4,
+        5,
+        6
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    },
+    {
+     "id": "g10",
+     "frame": 0,
+     "label": "packaging",
+     "first_seen_s": 0.2,
+     "last_seen_s": 5.8,
+     "positions": [
+      {
+       "window": 0,
+       "centroid": [
+        0.465,
+        -0.918,
+        9.028
+       ]
+      },
+      {
+       "window": 1,
+       "centroid": [
+        1.082,
+        -1.596,
+        8.85
+       ]
+      },
+      {
+       "window": 2,
+       "centroid": [
+        1.794,
+        -0.978,
+        8.964
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 0.2,
+       "t1": 2.64,
+       "windows": [
+        0
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 2.6,
+       "t1": 7.04,
+       "windows": [
+        1,
+        2
+       ]
+      },
+      {
+       "state": "not-observed:loose stitch chain",
+       "t0": 6.92,
+       "t1": 16.76,
+       "windows": [
+        3,
+        4,
+        5,
+        6
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    },
+    {
+     "id": "g11",
+     "frame": 0,
+     "label": "packaging",
+     "first_seen_s": 0.2,
+     "last_seen_s": 6.56,
+     "positions": [
+      {
+       "window": 0,
+       "centroid": [
+        2.078,
+        0.476,
+        9.229
+       ]
+      },
+      {
+       "window": 1,
+       "centroid": [
+        2.498,
+        0.435,
+        9.112
+       ]
+      },
+      {
+       "window": 2,
+       "centroid": [
+        3.172,
+        0.355,
+        9.041
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 0.2,
+       "t1": 2.64,
+       "windows": [
+        0
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 2.6,
+       "t1": 7.04,
+       "windows": [
+        1,
+        2
+       ]
+      },
+      {
+       "state": "not-observed:loose stitch chain",
+       "t0": 6.92,
+       "t1": 16.76,
+       "windows": [
+        3,
+        4,
+        5,
+        6
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    }
+   ]
+  },
+  "x6-walmart-a-0.4-1790649962": {
+   "facts": [
+    {
+     "object": "g176",
+     "label": "pallet",
+     "property": "top height above floor (m)",
+     "value": 1.12,
+     "uncertainty": 0.42,
+     "interval_s": [
+      21.08,
+      26.04
+     ],
+     "windows": 2,
+     "evidence_keys": [
+      558,
+      651
+     ],
+     "status": "estimated"
+    },
+    {
+     "object": "g67",
+     "label": "shelf",
+     "property": "tilt of its main face from vertical (deg)",
+     "value": 8.7,
+     "uncertainty": 1.6,
+     "interval_s": [
+      15.84,
+      18.2
+     ],
+     "windows": 2,
+     "evidence_keys": [
+      415,
+      437
+     ],
+     "status": "estimated",
+     "note": "sign-free; +- is the spread over windows"
+    },
+    {
+     "object": null,
+     "label": "aisle",
+     "property": "free width across the walking direction, 0.1-2 m above the floor (m)",
+     "value": 1.51,
+     "uncertainty": 0.69,
+     "interval_s": [
+      27.8,
+      29.96
+     ],
+     "window": 15,
+     "evidence_keys": [
+      695,
+      702,
+      719
+     ],
+     "status": "estimated",
+     "note": "the narrowest window; bounded by detected objects only (an undetected obstacle would narrow it)"
+    }
+   ],
+   "facts_s_cpu": 0.056,
+   "claims": 0,
+   "objects": 229,
+   "timeline_examples": [
+    {
+     "id": "g0",
+     "frame": 0,
+     "label": "box",
+     "first_seen_s": 6.48,
+     "last_seen_s": 15.24,
+     "positions": [
+      {
+       "window": 3,
+       "centroid": [
+        1.656,
+        -0.977,
+        10.259
+       ]
+      },
+      {
+       "window": 4,
+       "centroid": [
+        1.444,
+        -0.682,
+        10.244
+       ]
+      },
+      {
+       "window": 5,
+       "centroid": [
+        1.466,
+        -0.693,
+        10.305
+       ]
+      },
+      {
+       "window": 6,
+       "centroid": [
+        1.364,
+        -0.895,
+        10.36
+       ]
+      },
+      {
+       "window": 7,
+       "centroid": [
+        1.982,
+        -0.06,
+        10.284
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 5.8,
+       "t1": 8.0,
+       "windows": [
+        3
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 7.68,
+       "t1": 15.24,
+       "windows": [
+        4,
+        5,
+        6,
+        7
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 5
+    },
+    {
+     "id": "g1",
+     "frame": 0,
+     "label": "box",
+     "first_seen_s": 7.36,
+     "last_seen_s": 15.24,
+     "positions": [
+      {
+       "window": 3,
+       "centroid": [
+        0.963,
+        0.222,
+        10.272
+       ]
+      },
+      {
+       "window": 4,
+       "centroid": [
+        1.011,
+        0.222,
+        10.277
+       ]
+      },
+      {
+       "window": 5,
+       "centroid": [
+        0.996,
+        0.217,
+        10.3
+       ]
+      },
+      {
+       "window": 6,
+       "centroid": [
+        0.972,
+        0.217,
+        10.31
+       ]
+      },
+      {
+       "window": 7,
+       "centroid": [
+        0.986,
+        0.22,
+        10.356
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 5.8,
+       "t1": 8.0,
+       "windows": [
+        3
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 7.68,
+       "t1": 15.24,
+       "windows": [
+        4,
+        5,
+        6,
+        7
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 5
+    },
+    {
+     "id": "g2",
+     "frame": 0,
+     "label": "box",
+     "first_seen_s": 8.0,
+     "last_seen_s": 15.24,
+     "positions": [
+      {
+       "window": 4,
+       "centroid": [
+        0.916,
+        0.664,
+        10.291
+       ]
+      },
+      {
+       "window": 5,
+       "centroid": [
+        0.904,
+        0.658,
+        10.329
+       ]
+      },
+      {
+       "window": 6,
+       "centroid": [
+        0.635,
+        0.76,
+        10.704
+       ]
+      },
+      {
+       "window": 7,
+       "centroid": [
+        0.645,
+        0.784,
+        10.745
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 7.68,
+       "t1": 10.04,
+       "windows": [
+        4
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 9.64,
+       "t1": 15.24,
+       "windows": [
+        5,
+        6,
+        7
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 4
+    }
+   ]
+  },
+  "x6-walmart-b-0.4-1790649992": {
+   "facts": [
+    {
+     "object": "g35",
+     "label": "box",
+     "property": "top height above floor (m)",
+     "value": 2.94,
+     "uncertainty": 0.37,
+     "interval_s": [
+      10.8,
+      15.24
+     ],
+     "windows": 3,
+     "evidence_keys": [
+      311,
+      342,
+      381
+     ],
+     "status": "estimated"
+    },
+    {
+     "object": "g133",
+     "label": "shelf",
+     "property": "tilt of its main face from vertical (deg)",
+     "value": 15.9,
+     "uncertainty": 1.2,
+     "interval_s": [
+      17.48,
+      21.08
+     ],
+     "windows": 2,
+     "evidence_keys": [
+      473,
+      527
+     ],
+     "status": "estimated",
+     "note": "sign-free; +- is the spread over windows"
+    },
+    {
+     "object": null,
+     "label": "aisle",
+     "property": "free width across the walking direction, 0.1-2 m above the floor (m)",
+     "value": 1.89,
+     "uncertainty": 0.16,
+     "interval_s": [
+      21.08,
+      23.04
+     ],
+     "window": 11,
+     "evidence_keys": [
+      527,
+      539,
+      549,
+      558
+     ],
+     "status": "estimated",
+     "note": "the narrowest window; bounded by detected objects only (an undetected obstacle would narrow it)"
+    }
+   ],
+   "facts_s_cpu": 0.057,
+   "claims": 0,
+   "objects": 286,
+   "timeline_examples": [
+    {
+     "id": "g0",
+     "frame": 0,
+     "label": "box",
+     "first_seen_s": 8.0,
+     "last_seen_s": 15.24,
+     "positions": [
+      {
+       "window": 4,
+       "centroid": [
+        -0.558,
+        0.869,
+        16.778
+       ]
+      },
+      {
+       "window": 5,
+       "centroid": [
+        -0.533,
+        0.847,
+        16.777
+       ]
+      },
+      {
+       "window": 6,
+       "centroid": [
+        -0.522,
+        0.864,
+        16.913
+       ]
+      },
+      {
+       "window": 7,
+       "centroid": [
+        -0.676,
+        0.943,
+        16.794
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 7.68,
+       "t1": 10.04,
+       "windows": [
+        4
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 9.64,
+       "t1": 15.24,
+       "windows": [
+        5,
+        6,
+        7
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 4
+    },
+    {
+     "id": "g1",
+     "frame": 0,
+     "label": "box",
+     "first_seen_s": 8.0,
+     "last_seen_s": 15.24,
+     "positions": [
+      {
+       "window": 4,
+       "centroid": [
+        -0.163,
+        1.591,
+        16.707
+       ]
+      },
+      {
+       "window": 5,
+       "centroid": [
+        -0.136,
+        1.534,
+        16.748
+       ]
+      },
+      {
+       "window": 6,
+       "centroid": [
+        0.183,
+        1.302,
+        17.262
+       ]
+      },
+      {
+       "window": 7,
+       "centroid": [
+        0.179,
+        1.281,
+        17.227
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 7.68,
+       "t1": 10.04,
+       "windows": [
+        4
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 9.64,
+       "t1": 15.24,
+       "windows": [
+        5,
+        6,
+        7
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 4
+    },
+    {
+     "id": "g2",
+     "frame": 0,
+     "label": "box",
+     "first_seen_s": 10.28,
+     "last_seen_s": 15.24,
+     "positions": [
+      {
+       "window": 5,
+       "centroid": [
+        -0.877,
+        1.609,
+        16.621
+       ]
+      },
+      {
+       "window": 6,
+       "centroid": [
+        -0.923,
+        1.576,
+        16.828
+       ]
+      },
+      {
+       "window": 7,
+       "centroid": [
+        -0.912,
+        1.545,
+        16.772
+       ]
+      }
+     ],
+     "intervals": [
+      {
+       "state": "first-seen",
+       "t0": 9.64,
+       "t1": 12.44,
+       "windows": [
+        5
+       ]
+      },
+      {
+       "state": "static",
+       "t0": 12.04,
+       "t1": 15.24,
+       "windows": [
+        6,
+        7
+       ]
+      }
+     ],
+     "moves": 0,
+     "windows_observed": 3
+    }
+   ]
+  }
+ },
+ "5_facts_vs_delivered": {
+  "samsclub-a2 stacked boxes top (a/b)": [
+   4.81,
+   5.62,
+   "delivered pallet of paper towels top 4.11 m (object-106, 0.26/0.93 m away)"
+  ],
+  "tilt check": "ME340 'door' (the CNC machine's sliding door, vertical) reads 6.8 deg (a) / 7.2 deg (b): a ~7 deg geometry bias on a vertical face; Sam's Club shelves 12.9 (a) vs 1.4 (b), Walmart shelf 8.7 (a) vs 15.9 (b): tilt facts are not usable at this geometry without a plumb reference",
+  "note": "the +- in each fact is the spread over windows + sigma(z); the two geometry options differ by more than it (heights 0.8 m on Sam's Club, 1.8 m on Walmart where they picked different objects)"
+ },
+ "spend_usd_estimate": {
+  "gpu_sessions": {
+   "002": 0.278,
+   "003": 0.626,
+   "005": 1.322,
+   "006": 0.368,
+   "007": 0.777
+  },
+  "gpu_total": 3.37,
+  "cpu_sweeps_and_probes": 0.37,
+  "l4_sam3_probe": 0.04,
+  "image_load_before_enter": 0.2,
+  "total": 4.0,
+  "basis": "Modal list prices x container lifetime (boot enter -> last result + 30 s); not the bill",
+  "cap": 10
+ },
+ "raw": "results-data.json (every run's evaluation, sweeps, planted, facts); per-run JSON in fx-x6-windows-time-002/003/005/006/007",
+ "recommendation": {
+  "window_rule": "ORB co-visibility threshold 0.40 with >= 8 new keyframes, <= 40, carry 2, cut/collapse = new window without carry: 10/11/17 windows on ME340/Sam's Club/Walmart (median 2.0/2.0/1.7 s). 0.55 and 0.70 are held by the 8-keyframe floor (13-17 windows) and changed ATE by <= 1.5 cm either way and all-facts time by <= 4 s; ORB co-visibility tracks DA3's geometric overlap (Pearson 0.92-0.97, same window counts within 2); a still camera opened no window at any threshold, a person-sized occluder crossing it opened 6 at 0.70 only (ME340).",
+  "geometry": "(b) per-window DA3 + Sim3 on the 2 carried keyframes (register_cut_shot gate, all 28 stitches passed) for the stream: first objects 6-11 s vs 15-39 s for (a), all facts 17-29 s vs 19-44 s, ATE 4.3/14.5/4.0 cm vs (a) 4.1/22.1/17.8 cm; but a collapse (whip pan) leaves no carried keyframe and splits the map (Walmart: 4 pieces, 54% of the path in the largest) and a stitch that rescales by > 10% makes places incomparable (the chain rule). Keep (a)'s per-shot DA3 as the re-join after the shot when (b) split the map. One worker per GPU (two per GPU: all facts 13-26% later, first objects 37-81% later: the GIL).",
+  "association": "position only, one to one (Hungarian): centroid within 3 sigma_pair (sigma = sqrt(0.04^2 + (0.05 z)^2) per observation) or robust-box IoU >= 0.2 (IoU 0.1-0.3 or off moves <= 6 of 1,743 objects); no appearance gate for static identity (q50 gate: +5% objects, q90: +29% objects and 249 splits); appearance only for 'moved' at the video's q99 of known-negative cosines (0.98). 2 sigma leaves 6-8 split pairs, 5 sigma merges neighbours (delivered objects covered 117 -> 101).",
+  "change_rule": "free = 5x5-minimum depth beyond the object's points by > 20% z + 2 sigma on >= 60% of judged points in >= 2 keyframes, points <= 5 m and in the inner 90% of the view, person rim +2 px, object seen on >= 3 keyframes, only across stitches whose Sim3 scales sum |log s| <= 0.1: 0 claims on 8 unplanted runs; recall is detection-limited (1 of 20 planted events)."
+ },
+ "storage_note": "raw per-config sweep outputs of fx-x6-windows-time-004/008 (34 MB / 119 MB) kept out of the notes tree (disk nearly full); their summaries are fx-x6-windows-time-004/sweep-summary.json and fx-x6-windows-time-008/change-sweep-summary.json; saved windows for every GPU run are on Modal Volume panoptes-fb-layers under x6/<run_id>/windows.pkl"
+}

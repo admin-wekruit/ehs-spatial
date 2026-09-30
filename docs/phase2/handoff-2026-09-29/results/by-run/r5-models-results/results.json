@@ -1,0 +1,485 @@
+{
+ "bench": "r5-models-bench-001",
+ "table": [
+  {
+   "video": "me340",
+   "method": "(a) observed-surface mesh",
+   "modelled": "255/261",
+   "s_per_object": "0.025 (p90 0.136)",
+   "cpu_s_all": 13.1,
+   "iou": 0.438,
+   "depth_p50": 0.016,
+   "gate": "7/55",
+   "look": "\u2014"
+  },
+  {
+   "video": "me340",
+   "method": "(d) planar parts (angles)",
+   "modelled": "104/261",
+   "s_per_object": "0.012 (p90 0.113)",
+   "cpu_s_all": 9.2,
+   "iou": null,
+   "depth_p50": null,
+   "gate": "\u2014",
+   "look": "\u2014"
+  },
+  {
+   "video": "me340",
+   "method": "r4 primitive (refit)",
+   "modelled": "261/261",
+   "s_per_object": "\u2014",
+   "cpu_s_all": null,
+   "iou": 0.446,
+   "depth_p50": 0.032,
+   "gate": "9/55",
+   "look": "\u2014"
+  },
+  {
+   "video": "me340",
+   "method": "(c) splat crop",
+   "modelled": "55/261 (splat shot)",
+   "s_per_object": "~0 (a cut)",
+   "cpu_s_all": null,
+   "iou": 0.25,
+   "depth_p50": null,
+   "gate": "bleed median 0.534",
+   "look": "\u2014"
+  },
+  {
+   "video": "me340",
+   "method": "recgen (internal: non-commercial)",
+   "modelled": "14/261 (of 55 top picks)",
+   "s_per_object": "gen 6.986 + gate 0.757",
+   "cpu_s_all": null,
+   "first_last_s": [
+    8.971,
+    106.162,
+    106.78
+   ],
+   "objects_per_min": 30.9,
+   "iou": 0.504,
+   "depth_p50": 0.021,
+   "gate": "14/55",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    33.33,
+    30.92
+   ],
+   "max_reserved_gib_process": 18.47
+  },
+  {
+   "video": "me340",
+   "method": "sam3d",
+   "modelled": "7/261 (of 55 top picks)",
+   "s_per_object": "gen 5.056 + gate 2.008",
+   "cpu_s_all": null,
+   "first_last_s": [
+    41.907,
+    85.966,
+    90.388
+   ],
+   "objects_per_min": 36.5,
+   "iou": 0.471,
+   "depth_p50": 0.026,
+   "gate": "7/30",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    36.05,
+    33.61
+   ],
+   "max_reserved_gib_process": 20.95
+  },
+  {
+   "video": "me340",
+   "method": "trellis",
+   "modelled": "3/261 (of 55 top picks)",
+   "s_per_object": "gen 4.01 + gate 3.888",
+   "cpu_s_all": null,
+   "first_last_s": [
+    33.061,
+    77.669,
+    120.481
+   ],
+   "objects_per_min": 27.4,
+   "iou": 0.397,
+   "depth_p50": 0.027,
+   "gate": "3/55",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    36.05,
+    33.61
+   ],
+   "max_reserved_gib_process": 11.31
+  },
+  {
+   "video": "me340",
+   "method": "triposr",
+   "modelled": "6/261 (of 55 top picks)",
+   "s_per_object": "gen 1.035 + gate 7.133",
+   "cpu_s_all": null,
+   "first_last_s": [
+    28.763,
+    42.071,
+    42.516
+   ],
+   "objects_per_min": 77.6,
+   "iou": 0.483,
+   "depth_p50": 0.034,
+   "gate": "6/55",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    36.05,
+    33.61
+   ],
+   "max_reserved_gib_process": 2.2
+  },
+  {
+   "video": "samsclub-a2",
+   "method": "(a) observed-surface mesh",
+   "modelled": "617/620",
+   "s_per_object": "0.016 (p90 0.062)",
+   "cpu_s_all": 16.2,
+   "iou": 0.63,
+   "depth_p50": 0.005,
+   "gate": "26/66",
+   "look": "\u2014"
+  },
+  {
+   "video": "samsclub-a2",
+   "method": "(d) planar parts (angles)",
+   "modelled": "557/620",
+   "s_per_object": "0.012 (p90 0.07)",
+   "cpu_s_all": 15.4,
+   "iou": null,
+   "depth_p50": null,
+   "gate": "\u2014",
+   "look": "\u2014"
+  },
+  {
+   "video": "samsclub-a2",
+   "method": "r4 primitive (refit)",
+   "modelled": "620/620",
+   "s_per_object": "\u2014",
+   "cpu_s_all": null,
+   "iou": 0.689,
+   "depth_p50": 0.007,
+   "gate": "45/66",
+   "look": "\u2014"
+  },
+  {
+   "video": "samsclub-a2",
+   "method": "(c) splat crop",
+   "modelled": "23/620 (splat shot)",
+   "s_per_object": "~0 (a cut)",
+   "cpu_s_all": null,
+   "iou": 0.349,
+   "depth_p50": null,
+   "gate": "bleed median 0.195",
+   "look": "\u2014"
+  },
+  {
+   "video": "samsclub-a2",
+   "method": "recgen (internal: non-commercial)",
+   "modelled": "42/620 (of 66 top picks)",
+   "s_per_object": "gen 6.812 + gate 0.754",
+   "cpu_s_all": null,
+   "first_last_s": [
+    8.048,
+    120.654,
+    120.654
+   ],
+   "objects_per_min": 32.8,
+   "iou": 0.725,
+   "depth_p50": 0.007,
+   "gate": "42/66",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    35.61,
+    30.95
+   ],
+   "max_reserved_gib_process": 18.47
+  },
+  {
+   "video": "samsclub-a2",
+   "method": "sam3d",
+   "modelled": "30/620 (of 66 top picks)",
+   "s_per_object": "gen 4.658 + gate 1.603",
+   "cpu_s_all": null,
+   "first_last_s": [
+    23.064,
+    157.844,
+    157.844
+   ],
+   "objects_per_min": 25.1,
+   "iou": 0.654,
+   "depth_p50": 0.013,
+   "gate": "30/59",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    43.28,
+    41.94
+   ],
+   "max_reserved_gib_process": 26.09
+  },
+  {
+   "video": "samsclub-a2",
+   "method": "trellis",
+   "modelled": "19/620 (of 66 top picks)",
+   "s_per_object": "gen 4.357 + gate 5.518",
+   "cpu_s_all": null,
+   "first_last_s": [
+    29.535,
+    144.074,
+    161.64
+   ],
+   "objects_per_min": 24.5,
+   "iou": 0.404,
+   "depth_p50": 0.018,
+   "gate": "19/66",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    43.28,
+    41.94
+   ],
+   "max_reserved_gib_process": 13.41
+  },
+  {
+   "video": "samsclub-a2",
+   "method": "triposr",
+   "modelled": "27/620 (of 66 top picks)",
+   "s_per_object": "gen 1.016 + gate 8.392",
+   "cpu_s_all": null,
+   "first_last_s": [
+    11.614,
+    47.799,
+    51.095
+   ],
+   "objects_per_min": 77.5,
+   "iou": 0.625,
+   "depth_p50": 0.019,
+   "gate": "27/66",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    43.28,
+    41.94
+   ],
+   "max_reserved_gib_process": 2.2
+  },
+  {
+   "video": "walmart",
+   "method": "(a) observed-surface mesh",
+   "modelled": "720/720",
+   "s_per_object": "0.014 (p90 0.034)",
+   "cpu_s_all": 13.6,
+   "iou": 0.515,
+   "depth_p50": 0.01,
+   "gate": "15/77",
+   "look": "\u2014"
+  },
+  {
+   "video": "walmart",
+   "method": "(d) planar parts (angles)",
+   "modelled": "626/720",
+   "s_per_object": "0.011 (p90 0.058)",
+   "cpu_s_all": 16.0,
+   "iou": null,
+   "depth_p50": null,
+   "gate": "\u2014",
+   "look": "\u2014"
+  },
+  {
+   "video": "walmart",
+   "method": "r4 primitive (refit)",
+   "modelled": "720/720",
+   "s_per_object": "\u2014",
+   "cpu_s_all": null,
+   "iou": 0.516,
+   "depth_p50": 0.016,
+   "gate": "11/77",
+   "look": "\u2014"
+  },
+  {
+   "video": "walmart",
+   "method": "(c) splat crop",
+   "modelled": "48/720 (splat shot)",
+   "s_per_object": "~0 (a cut)",
+   "cpu_s_all": null,
+   "iou": 0.399,
+   "depth_p50": null,
+   "gate": "bleed median 0.328",
+   "look": "\u2014"
+  },
+  {
+   "video": "walmart",
+   "method": "recgen (internal: non-commercial)",
+   "modelled": "21/720 (of 70 top picks)",
+   "s_per_object": "gen 7.101 + gate 0.782",
+   "cpu_s_all": null,
+   "first_last_s": [
+    9.18,
+    130.515,
+    130.515
+   ],
+   "objects_per_min": 32.2,
+   "iou": 0.53,
+   "depth_p50": 0.014,
+   "gate": "21/70",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    32.23,
+    33.17
+   ],
+   "max_reserved_gib_process": 17.25
+  },
+  {
+   "video": "walmart",
+   "method": "sam3d",
+   "modelled": "18/720 (of 70 top picks)",
+   "s_per_object": "gen 4.361 + gate 1.529",
+   "cpu_s_all": null,
+   "first_last_s": [
+    13.997,
+    167.391,
+    167.391
+   ],
+   "objects_per_min": 25.1,
+   "iou": 0.531,
+   "depth_p50": 0.016,
+   "gate": "18/65",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    39.08,
+    43.25
+   ],
+   "max_reserved_gib_process": 27.11
+  },
+  {
+   "video": "walmart",
+   "method": "trellis",
+   "modelled": "11/720 (of 70 top picks)",
+   "s_per_object": "gen 4.015 + gate 6.268",
+   "cpu_s_all": null,
+   "first_last_s": [
+    37.865,
+    165.266,
+    165.266
+   ],
+   "objects_per_min": 25.4,
+   "iou": 0.373,
+   "depth_p50": 0.015,
+   "gate": "11/70",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    39.08,
+    43.25
+   ],
+   "max_reserved_gib_process": 13.41
+  },
+  {
+   "video": "walmart",
+   "method": "triposr",
+   "modelled": "6/720 (of 70 top picks)",
+   "s_per_object": "gen 1.022 + gate 8.417",
+   "cpu_s_all": null,
+   "first_last_s": [
+    12.662,
+    47.425,
+    56.504
+   ],
+   "objects_per_min": 74.3,
+   "iou": 0.463,
+   "depth_p50": 0.017,
+   "gate": "6/70",
+   "look": "\u2014",
+   "gpu_peak_gib": [
+    39.08,
+    43.25
+   ],
+   "max_reserved_gib_process": 2.2
+  }
+ ],
+ "gt_angles": {
+  "arkit42": {
+   "parts_matched": 50,
+   "err_median_deg": 2.689,
+   "err_p90_deg": 8.968,
+   "u_median_deg": 10.244,
+   "coverage": 0.94,
+   "decided_vs_30": "44/50",
+   "decided_right": "44/44",
+   "gt_tilted_15_75": 16
+  },
+  "arkit47": {
+   "parts_matched": 66,
+   "err_median_deg": 3.805,
+   "err_p90_deg": 15.012,
+   "u_median_deg": 12.367,
+   "coverage": 0.848,
+   "decided_vs_30": "63/66",
+   "decided_right": "62/63",
+   "gt_tilted_15_75": 15
+  },
+  "tum": {
+   "parts_matched": 142,
+   "err_median_deg": 2.306,
+   "err_p90_deg": 9.887,
+   "u_median_deg": 9.636,
+   "coverage": 0.923,
+   "decided_vs_30": "128/142",
+   "decided_right": "128/128",
+   "gt_tilted_15_75": 20
+  }
+ },
+ "video_angles": {
+  "me340": {
+   "cards": 261,
+   "cards_with_parts": 104,
+   "parts": 139,
+   "parts_curved": 11,
+   "u_median": 14.697,
+   "u_p90": 24.334,
+   "near_0": 53,
+   "near_90": 54,
+   "tilted_15_75": 32,
+   "within_u_of_0_or_90": 112,
+   "decidable_vs_30": 120,
+   "bends": 11,
+   "bends_decidable_vs_90": 5
+  },
+  "samsclub-a2": {
+   "cards": 620,
+   "cards_with_parts": 557,
+   "parts": 789,
+   "parts_curved": 70,
+   "u_median": 10.169,
+   "u_p90": 20.904,
+   "near_0": 14,
+   "near_90": 751,
+   "tilted_15_75": 24,
+   "within_u_of_0_or_90": 770,
+   "decidable_vs_30": 777,
+   "bends": 76,
+   "bends_decidable_vs_90": 59
+  },
+  "walmart": {
+   "cards": 720,
+   "cards_with_parts": 626,
+   "parts": 874,
+   "parts_curved": 212,
+   "u_median": 17.704,
+   "u_p90": 24.998,
+   "near_0": 48,
+   "near_90": 525,
+   "tilted_15_75": 301,
+   "within_u_of_0_or_90": 615,
+   "decidable_vs_30": 763,
+   "bends": 180,
+   "bends_decidable_vs_90": 145
+  }
+ },
+ "look_labels": "r5-models-bench-001/sheets/labels.json (agent-labelled)",
+ "notes": {
+  "angle_u": "k 1.75 on the planar parts' u (GT calibration, fast_report.surface.SURFACE_K); bench 001 records carry k 1, the tables apply 1.75",
+  "look": "90 objects (30 a video, seeded among the top picks), agent-labelled by eye: outline right / partly / wrong / none"
+ }
+}

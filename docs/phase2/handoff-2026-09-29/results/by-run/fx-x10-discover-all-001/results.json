@@ -1,0 +1,8482 @@
+{
+ "experiment": "X10 discover-all: can we segment 'everything' without categories?",
+ "branch": "fx/x10-discover-all",
+ "policy": {
+  "scale": "estimated (floor plane + assumed 1.6 m camera height) wherever metres appear (geometry lane only)",
+  "agent_labelled": "the reference letters and the own-look boxes are agent-labelled (Claude looking at images): reference.json, own-look.json, audit-sheets/*.jpg (letter stamped bottom right of each tile), own-look/*.jpg",
+  "observed_vs_inferred": "observed: every recall, precision, per-frame and stack time below; inferred: lines marked 'inferred'"
+ },
+ "setup": {
+  "videos": {
+   "me340": {
+    "video": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/data/clips/me340-165/source-full.mp4",
+    "size_wh": [
+     1280,
+     720
+    ],
+    "frames": 899,
+    "object_keyframes": 50,
+    "reference_keyframes": [
+     38,
+     113,
+     182,
+     254,
+     328,
+     400,
+     486,
+     561,
+     630,
+     705,
+     775,
+     851
+    ],
+    "reference_t_s": [
+     1.27,
+     3.77,
+     6.07,
+     8.48,
+     10.94,
+     13.35,
+     16.22,
+     18.72,
+     21.02,
+     23.52,
+     25.86,
+     28.4
+    ]
+   },
+   "samsclub": {
+    "video": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/data/clips/samsclub-337/source-full.mp4",
+    "size_wh": [
+     1280,
+     720
+    ],
+    "frames": 750,
+    "object_keyframes": 42,
+    "reference_keyframes": [
+     19,
+     95,
+     145,
+     221,
+     275,
+     345,
+     396,
+     472,
+     524,
+     599,
+     648,
+     725
+    ],
+    "reference_t_s": [
+     0.76,
+     3.8,
+     5.8,
+     8.84,
+     11.0,
+     13.8,
+     15.84,
+     18.88,
+     20.96,
+     23.96,
+     25.92,
+     29.0
+    ]
+   },
+   "walmart": {
+    "video": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/data/clips/walmart-190/source-full.mp4",
+    "size_wh": [
+     1280,
+     720
+    ],
+    "frames": 750,
+    "object_keyframes": 42,
+    "reference_keyframes": [
+     18,
+     93,
+     145,
+     217,
+     270,
+     342,
+     396,
+     473,
+     527,
+     596,
+     651,
+     720
+    ],
+    "reference_t_s": [
+     0.72,
+     3.72,
+     5.8,
+     8.68,
+     10.8,
+     13.68,
+     15.84,
+     18.92,
+     21.08,
+     23.84,
+     26.04,
+     28.8
+    ]
+   },
+   "lightning": {
+    "video": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/data/clips/lightning-3585/source-rgb.mp4",
+    "size_wh": [
+     640,
+     480
+    ],
+    "frames": 779,
+    "object_keyframes": 44,
+    "reference_keyframes": [
+     21,
+     95,
+     163,
+     219,
+     290,
+     362,
+     418,
+     486,
+     560,
+     612,
+     685,
+     757
+    ],
+    "reference_t_s": [
+     0.7,
+     3.17,
+     5.44,
+     7.31,
+     9.68,
+     12.08,
+     13.95,
+     16.22,
+     18.69,
+     20.42,
+     22.86,
+     25.26
+    ]
+   }
+  },
+  "keyframe_rule": "the core's: 5 fps = sharpest of each 6-frame block, object keyframes = every 3rd; 12 reference keyframes spread evenly over the object keyframes; 5 fps neighbours = the 5 fps keyframe before and after",
+  "evaluation_grid": "half resolution (640 x 360) for the 1280 x 720 clips, native 640 x 480 for lightning; every method's masks resized there (area > 0.3)",
+  "methods_as_used": {
+   "score floors": {
+    "vocab": 0.3,
+    "generic": 0.3,
+    "ram": 0.3,
+    "owlw": 0.3,
+    "aux": 0.3,
+    "labelw": 0.3,
+    "labelw_t": 0.3,
+    "generic_t": 0.3
+   },
+   "SAM 3 word methods": "the core's dedupe rule (segment.dedupe: IoU > 0.8 across words, >= 0.5 inside within a word)",
+   "all": "people out (>= 0.5 inside a SAM 3 person mask), masks < 24 px or > 0.6 of the frame dropped"
+  },
+  "hardware": [
+   "GPU 0: NVIDIA A100-SXM4-80GB (UUID: GPU-a8c9a727-5e8c-ac05-87ad-67efda0af15a)",
+   "GPU 1: NVIDIA A100-SXM4-80GB (UUID: GPU-d453166e-627f-6828-5382-7efb4f8c2d2f)"
+  ],
+  "cold_start_s_not_analysis": {
+   "vllm_spawned_s": 0.03,
+   "imports_s": 16.44,
+   "da3_s": 30.33,
+   "sam3_s": 35.51,
+   "sam2_s": 40.31,
+   "owl_s": 42.83,
+   "vllm_ready_s": 79.1,
+   "warm_s": 88.92,
+   "ready_s": 88.92,
+   "client_submit_to_ready_s": 100.9
+  },
+  "resident_gb_after_boot": [
+   9.64,
+   30.99
+  ],
+  "licences": {
+   "SAM 2.1": "Apache-2.0",
+   "SAM 3": "SAM License (Meta, custom; commercial use allowed with conditions)",
+   "OWLv2": "Apache-2.0",
+   "RAM++": "Apache-2.0 (code and weights)",
+   "Qwen3-VL-8B": "Apache-2.0",
+   "DA3-GIANT-1.1": "CC BY-NC 4.0 (research only)",
+   "YOLO-World": "not used: GPL-3.0 code, AGPL-3.0 via ultralytics",
+   "Grounding DINO": "not used (Apache-2.0); OWLv2 covered the box route"
+  },
+  "ram_plus": {
+   "load_s": 6.2,
+   "note": "per frame = decode + 5 crops (full + 2x2 tiles) + one batched forward"
+  }
+ },
+ "reference_pool": {
+  "frames": 48,
+  "audited_clusters": 2835,
+  "clusters_total": 19575,
+  "estimated_per_frame": {
+   "B": 75.1,
+   "K": 5.1,
+   "M": 34.4,
+   "P": 232.5,
+   "T": 4.4,
+   "W": 38.3,
+   "X": 24.4
+  },
+  "estimated_share": {
+   "B": 0.181,
+   "K": 0.012,
+   "M": 0.083,
+   "P": 0.561,
+   "T": 0.011,
+   "W": 0.093,
+   "X": 0.059
+  },
+  "items": 304,
+  "items_by_shape": {
+   "thin": 75,
+   "small": 162,
+   "normal": 67
+  },
+  "items_by_size": {
+   "tiny": 37,
+   "small": 227,
+   "medium": 35,
+   "large": 5
+  },
+  "items_by_kind": {
+   "whole": 226,
+   "thin": 49,
+   "block": 29
+  },
+  "how": "every method's masks (as used) on the 48 reference frames, clustered at IoU >= 0.6 (19,575 clusters); a seeded stratified sample audited on contact sheets (thin-shaped clusters at 30%, the rest at 12%): W whole thing, T thin whole thing, K block of repeated things, P part, B background, M mixture, X unclear; W/T/K = reference items, weight 1/p",
+  "matching": "found = a method mask with IoU >= 0.5 with the item (thin items: 1 px dilation on both), on a stride-2 grid; recall weighted by 1/p",
+  "bias": "the pool is made of the methods' own masks: it cannot contain what no method outlined (see own_look), and it favours methods with many masks; the four later methods (ridge2, labelw, labelw_t, generic_t) were not in the pool: their pool recall is a lower bound"
+ },
+ "own_look": {
+  "frames": 25,
+  "items": 342,
+  "by_class": {
+   "cable": 36,
+   "tool": 43,
+   "label": 77,
+   "floor": 6,
+   "small": 180
+  },
+  "rule": "own look at every other reference frame (6 per video): small and thin things an EHS inspector could care about, boxed on a 5% grid (units 0-20); classes: cable (cables, cords, hoses, wires), tool (hand and power tools, vises, clamps), label (labels, signs, placards, stickers), floor (loose items or debris on the floor), small (other small items: bins, cans, bottles, boxes, parts, electrical boxes)",
+  "matching": "found = a mask whose box centre is inside the look box and box IoU >= 0.3 (the look boxes are read off a 5% grid)",
+  "note": "independent of every method's masks: the completeness check of the pool reference"
+ },
+ "recall_pool_reference": {
+  "vocab": {
+   "all": {
+    "items": 304,
+    "found": 181,
+    "weighted_recall": 0.6
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 17,
+    "weighted_recall": 0.461
+   },
+   "size:small": {
+    "items": 227,
+    "found": 139,
+    "weighted_recall": 0.616
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 20,
+    "weighted_recall": 0.571
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 42,
+    "weighted_recall": 0.556
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 97,
+    "weighted_recall": 0.599
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 42,
+    "weighted_recall": 0.627
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 130,
+    "weighted_recall": 0.591
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 34,
+    "weighted_recall": 0.672
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 17,
+    "weighted_recall": 0.599
+   }
+  },
+  "generic": {
+   "all": {
+    "items": 304,
+    "found": 130,
+    "weighted_recall": 0.422
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 14,
+    "weighted_recall": 0.362
+   },
+   "size:small": {
+    "items": 227,
+    "found": 105,
+    "weighted_recall": 0.461
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 8,
+    "weighted_recall": 0.229
+   },
+   "size:large": {
+    "items": 5,
+    "found": 3,
+    "weighted_recall": 0.6
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 36,
+    "weighted_recall": 0.492
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 71,
+    "weighted_recall": 0.438
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 23,
+    "weighted_recall": 0.343
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 96,
+    "weighted_recall": 0.44
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 31,
+    "weighted_recall": 0.625
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 3,
+    "weighted_recall": 0.106
+   }
+  },
+  "ram": {
+   "all": {
+    "items": 304,
+    "found": 84,
+    "weighted_recall": 0.304
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 3,
+    "weighted_recall": 0.099
+   },
+   "size:small": {
+    "items": 227,
+    "found": 61,
+    "weighted_recall": 0.295
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 17,
+    "weighted_recall": 0.486
+   },
+   "size:large": {
+    "items": 5,
+    "found": 3,
+    "weighted_recall": 0.6
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 6,
+    "weighted_recall": 0.079
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 42,
+    "weighted_recall": 0.259
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 36,
+    "weighted_recall": 0.537
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 71,
+    "weighted_recall": 0.322
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 1,
+    "weighted_recall": 0.016
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 12,
+    "weighted_recall": 0.423
+   }
+  },
+  "owlw": {
+   "all": {
+    "items": 304,
+    "found": 108,
+    "weighted_recall": 0.382
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 6,
+    "weighted_recall": 0.197
+   },
+   "size:small": {
+    "items": 227,
+    "found": 84,
+    "weighted_recall": 0.397
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 16,
+    "weighted_recall": 0.457
+   },
+   "size:large": {
+    "items": 5,
+    "found": 2,
+    "weighted_recall": 0.4
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 14,
+    "weighted_recall": 0.212
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 61,
+    "weighted_recall": 0.377
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 33,
+    "weighted_recall": 0.493
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 94,
+    "weighted_recall": 0.428
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 7,
+    "weighted_recall": 0.156
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 7,
+    "weighted_recall": 0.246
+   }
+  },
+  "owlbox": {
+   "all": {
+    "items": 304,
+    "found": 112,
+    "weighted_recall": 0.411
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 4,
+    "weighted_recall": 0.132
+   },
+   "size:small": {
+    "items": 227,
+    "found": 80,
+    "weighted_recall": 0.395
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 24,
+    "weighted_recall": 0.686
+   },
+   "size:large": {
+    "items": 5,
+    "found": 4,
+    "weighted_recall": 0.8
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 4,
+    "weighted_recall": 0.042
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 66,
+    "weighted_recall": 0.407
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 42,
+    "weighted_recall": 0.627
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 92,
+    "weighted_recall": 0.424
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 1,
+    "weighted_recall": 0.016
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 19,
+    "weighted_recall": 0.669
+   }
+  },
+  "amg16": {
+   "all": {
+    "items": 304,
+    "found": 30,
+    "weighted_recall": 0.112
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 0,
+    "weighted_recall": 0.0
+   },
+   "size:small": {
+    "items": 227,
+    "found": 14,
+    "weighted_recall": 0.071
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 13,
+    "weighted_recall": 0.371
+   },
+   "size:large": {
+    "items": 5,
+    "found": 3,
+    "weighted_recall": 0.6
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 1,
+    "weighted_recall": 0.026
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 9,
+    "weighted_recall": 0.056
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 20,
+    "weighted_recall": 0.299
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 20,
+    "weighted_recall": 0.094
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 1,
+    "weighted_recall": 0.039
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 9,
+    "weighted_recall": 0.317
+   }
+  },
+  "amg32": {
+   "all": {
+    "items": 304,
+    "found": 68,
+    "weighted_recall": 0.25
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 2,
+    "weighted_recall": 0.066
+   },
+   "size:small": {
+    "items": 227,
+    "found": 45,
+    "weighted_recall": 0.223
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 18,
+    "weighted_recall": 0.514
+   },
+   "size:large": {
+    "items": 5,
+    "found": 3,
+    "weighted_recall": 0.6
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 5,
+    "weighted_recall": 0.101
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 31,
+    "weighted_recall": 0.191
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 32,
+    "weighted_recall": 0.478
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 54,
+    "weighted_recall": 0.254
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 4,
+    "weighted_recall": 0.109
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 10,
+    "weighted_recall": 0.352
+   }
+  },
+  "amg16c1": {
+   "all": {
+    "items": 304,
+    "found": 66,
+    "weighted_recall": 0.243
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 2,
+    "weighted_recall": 0.066
+   },
+   "size:small": {
+    "items": 227,
+    "found": 44,
+    "weighted_recall": 0.218
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 17,
+    "weighted_recall": 0.486
+   },
+   "size:large": {
+    "items": 5,
+    "found": 3,
+    "weighted_recall": 0.6
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 4,
+    "weighted_recall": 0.074
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 30,
+    "weighted_recall": 0.185
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 32,
+    "weighted_recall": 0.478
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 52,
+    "weighted_recall": 0.242
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 3,
+    "weighted_recall": 0.094
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 11,
+    "weighted_recall": 0.387
+   }
+  },
+  "amg32c1": {
+   "all": {
+    "items": 304,
+    "found": 106,
+    "weighted_recall": 0.379
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 7,
+    "weighted_recall": 0.23
+   },
+   "size:small": {
+    "items": 227,
+    "found": 76,
+    "weighted_recall": 0.363
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 20,
+    "weighted_recall": 0.571
+   },
+   "size:large": {
+    "items": 5,
+    "found": 3,
+    "weighted_recall": 0.6
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 11,
+    "weighted_recall": 0.164
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 59,
+    "weighted_recall": 0.364
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 36,
+    "weighted_recall": 0.537
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 85,
+    "weighted_recall": 0.394
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 8,
+    "weighted_recall": 0.172
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 13,
+    "weighted_recall": 0.458
+   }
+  },
+  "geo": {
+   "all": {
+    "items": 304,
+    "found": 23,
+    "weighted_recall": 0.064
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 3,
+    "weighted_recall": 0.039
+   },
+   "size:small": {
+    "items": 227,
+    "found": 17,
+    "weighted_recall": 0.065
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 3,
+    "weighted_recall": 0.086
+   },
+   "size:large": {
+    "items": 5,
+    "found": 0,
+    "weighted_recall": 0.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 12,
+    "weighted_recall": 0.159
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 5,
+    "weighted_recall": 0.031
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 6,
+    "weighted_recall": 0.09
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 16,
+    "weighted_recall": 0.061
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 6,
+    "weighted_recall": 0.141
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 1,
+    "weighted_recall": 0.014
+   }
+  },
+  "geosam": {
+   "all": {
+    "items": 304,
+    "found": 29,
+    "weighted_recall": 0.086
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 3,
+    "weighted_recall": 0.039
+   },
+   "size:small": {
+    "items": 227,
+    "found": 21,
+    "weighted_recall": 0.086
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 4,
+    "weighted_recall": 0.114
+   },
+   "size:large": {
+    "items": 5,
+    "found": 1,
+    "weighted_recall": 0.2
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 11,
+    "weighted_recall": 0.132
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 9,
+    "weighted_recall": 0.056
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 9,
+    "weighted_recall": 0.134
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 22,
+    "weighted_recall": 0.092
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 6,
+    "weighted_recall": 0.117
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 1,
+    "weighted_recall": 0.014
+   }
+  },
+  "ridge": {
+   "all": {
+    "items": 304,
+    "found": 22,
+    "weighted_recall": 0.08
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 0,
+    "weighted_recall": 0.0
+   },
+   "size:small": {
+    "items": 227,
+    "found": 8,
+    "weighted_recall": 0.038
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 12,
+    "weighted_recall": 0.343
+   },
+   "size:large": {
+    "items": 5,
+    "found": 2,
+    "weighted_recall": 0.4
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 1,
+    "weighted_recall": 0.011
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 6,
+    "weighted_recall": 0.037
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 15,
+    "weighted_recall": 0.224
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 13,
+    "weighted_recall": 0.061
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 1,
+    "weighted_recall": 0.016
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 8,
+    "weighted_recall": 0.282
+   }
+  },
+  "listing": {
+   "all": {
+    "items": 304,
+    "found": 124,
+    "weighted_recall": 0.429
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 12,
+    "weighted_recall": 0.355
+   },
+   "size:small": {
+    "items": 227,
+    "found": 91,
+    "weighted_recall": 0.421
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 20,
+    "weighted_recall": 0.571
+   },
+   "size:large": {
+    "items": 5,
+    "found": 1,
+    "weighted_recall": 0.2
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 23,
+    "weighted_recall": 0.354
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 72,
+    "weighted_recall": 0.444
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 29,
+    "weighted_recall": 0.433
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 91,
+    "weighted_recall": 0.399
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 12,
+    "weighted_recall": 0.328
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 21,
+    "weighted_recall": 0.739
+   }
+  },
+  "ridge2": {
+   "all": {
+    "items": 304,
+    "found": 30,
+    "weighted_recall": 0.103
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 0,
+    "weighted_recall": 0.0
+   },
+   "size:small": {
+    "items": 227,
+    "found": 20,
+    "weighted_recall": 0.09
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 7,
+    "weighted_recall": 0.2
+   },
+   "size:large": {
+    "items": 5,
+    "found": 3,
+    "weighted_recall": 0.6
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 5,
+    "weighted_recall": 0.069
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 12,
+    "weighted_recall": 0.074
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 13,
+    "weighted_recall": 0.194
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 22,
+    "weighted_recall": 0.098
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 2,
+    "weighted_recall": 0.031
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 6,
+    "weighted_recall": 0.211
+   }
+  },
+  "labelw": {
+   "all": {
+    "items": 304,
+    "found": 23,
+    "weighted_recall": 0.084
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 5,
+    "weighted_recall": 0.145
+   },
+   "size:small": {
+    "items": 227,
+    "found": 17,
+    "weighted_recall": 0.087
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 0,
+    "weighted_recall": 0.0
+   },
+   "size:large": {
+    "items": 5,
+    "found": 1,
+    "weighted_recall": 0.2
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 1,
+    "weighted_recall": 0.011
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 20,
+    "weighted_recall": 0.123
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 2,
+    "weighted_recall": 0.03
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 23,
+    "weighted_recall": 0.105
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 0,
+    "weighted_recall": 0.0
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 0,
+    "weighted_recall": 0.0
+   }
+  },
+  "labelw_t": {
+   "all": {
+    "items": 304,
+    "found": 23,
+    "weighted_recall": 0.086
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 4,
+    "weighted_recall": 0.132
+   },
+   "size:small": {
+    "items": 227,
+    "found": 18,
+    "weighted_recall": 0.092
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 0,
+    "weighted_recall": 0.0
+   },
+   "size:large": {
+    "items": 5,
+    "found": 1,
+    "weighted_recall": 0.2
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 0,
+    "weighted_recall": 0.0
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 20,
+    "weighted_recall": 0.123
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 3,
+    "weighted_recall": 0.045
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 23,
+    "weighted_recall": 0.108
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 0,
+    "weighted_recall": 0.0
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 0,
+    "weighted_recall": 0.0
+   }
+  },
+  "generic_t": {
+   "all": {
+    "items": 304,
+    "found": 138,
+    "weighted_recall": 0.445
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 20,
+    "weighted_recall": 0.559
+   },
+   "size:small": {
+    "items": 227,
+    "found": 108,
+    "weighted_recall": 0.467
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 7,
+    "weighted_recall": 0.2
+   },
+   "size:large": {
+    "items": 5,
+    "found": 3,
+    "weighted_recall": 0.6
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 38,
+    "weighted_recall": 0.497
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 76,
+    "weighted_recall": 0.469
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 24,
+    "weighted_recall": 0.358
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 101,
+    "weighted_recall": 0.466
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 34,
+    "weighted_recall": 0.648
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 3,
+    "weighted_recall": 0.106
+   }
+  },
+  "vocab+generic": {
+   "all": {
+    "items": 304,
+    "found": 186,
+    "weighted_recall": 0.614
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 19,
+    "weighted_recall": 0.507
+   },
+   "size:small": {
+    "items": 227,
+    "found": 141,
+    "weighted_recall": 0.623
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 21,
+    "weighted_recall": 0.6
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 44,
+    "weighted_recall": 0.577
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 98,
+    "weighted_recall": 0.605
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 44,
+    "weighted_recall": 0.657
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 134,
+    "weighted_recall": 0.607
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 35,
+    "weighted_recall": 0.688
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 17,
+    "weighted_recall": 0.599
+   }
+  },
+  "vocab+ram": {
+   "all": {
+    "items": 304,
+    "found": 187,
+    "weighted_recall": 0.622
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 17,
+    "weighted_recall": 0.461
+   },
+   "size:small": {
+    "items": 227,
+    "found": 143,
+    "weighted_recall": 0.636
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 22,
+    "weighted_recall": 0.629
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 42,
+    "weighted_recall": 0.556
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 99,
+    "weighted_recall": 0.611
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 46,
+    "weighted_recall": 0.687
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 136,
+    "weighted_recall": 0.619
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 34,
+    "weighted_recall": 0.672
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 17,
+    "weighted_recall": 0.599
+   }
+  },
+  "vocab+owlw": {
+   "all": {
+    "items": 304,
+    "found": 191,
+    "weighted_recall": 0.635
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 17,
+    "weighted_recall": 0.461
+   },
+   "size:small": {
+    "items": 227,
+    "found": 146,
+    "weighted_recall": 0.649
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 23,
+    "weighted_recall": 0.657
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 44,
+    "weighted_recall": 0.593
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 101,
+    "weighted_recall": 0.623
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 46,
+    "weighted_recall": 0.687
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 139,
+    "weighted_recall": 0.631
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 34,
+    "weighted_recall": 0.672
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 18,
+    "weighted_recall": 0.634
+   }
+  },
+  "vocab+owlbox": {
+   "all": {
+    "items": 304,
+    "found": 209,
+    "weighted_recall": 0.702
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 19,
+    "weighted_recall": 0.526
+   },
+   "size:small": {
+    "items": 227,
+    "found": 155,
+    "weighted_recall": 0.695
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 30,
+    "weighted_recall": 0.857
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 43,
+    "weighted_recall": 0.566
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 110,
+    "weighted_recall": 0.679
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 56,
+    "weighted_recall": 0.836
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 153,
+    "weighted_recall": 0.699
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 35,
+    "weighted_recall": 0.688
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 21,
+    "weighted_recall": 0.739
+   }
+  },
+  "vocab+amg16": {
+   "all": {
+    "items": 304,
+    "found": 186,
+    "weighted_recall": 0.618
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 17,
+    "weighted_recall": 0.461
+   },
+   "size:small": {
+    "items": 227,
+    "found": 141,
+    "weighted_recall": 0.626
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 23,
+    "weighted_recall": 0.657
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 42,
+    "weighted_recall": 0.556
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 98,
+    "weighted_recall": 0.605
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 46,
+    "weighted_recall": 0.687
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 133,
+    "weighted_recall": 0.605
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 34,
+    "weighted_recall": 0.672
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 19,
+    "weighted_recall": 0.669
+   }
+  },
+  "vocab+amg32": {
+   "all": {
+    "items": 304,
+    "found": 196,
+    "weighted_recall": 0.656
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 18,
+    "weighted_recall": 0.493
+   },
+   "size:small": {
+    "items": 227,
+    "found": 149,
+    "weighted_recall": 0.667
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 24,
+    "weighted_recall": 0.686
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 42,
+    "weighted_recall": 0.556
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 105,
+    "weighted_recall": 0.648
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 49,
+    "weighted_recall": 0.731
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 143,
+    "weighted_recall": 0.652
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 34,
+    "weighted_recall": 0.672
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 19,
+    "weighted_recall": 0.669
+   }
+  },
+  "vocab+amg32c1": {
+   "all": {
+    "items": 304,
+    "found": 206,
+    "weighted_recall": 0.691
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 20,
+    "weighted_recall": 0.559
+   },
+   "size:small": {
+    "items": 227,
+    "found": 155,
+    "weighted_recall": 0.695
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 26,
+    "weighted_recall": 0.743
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 43,
+    "weighted_recall": 0.566
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 110,
+    "weighted_recall": 0.679
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 53,
+    "weighted_recall": 0.791
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 151,
+    "weighted_recall": 0.69
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 35,
+    "weighted_recall": 0.688
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 20,
+    "weighted_recall": 0.704
+   }
+  },
+  "vocab+geosam": {
+   "all": {
+    "items": 304,
+    "found": 205,
+    "weighted_recall": 0.669
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 20,
+    "weighted_recall": 0.5
+   },
+   "size:small": {
+    "items": 227,
+    "found": 157,
+    "weighted_recall": 0.689
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 23,
+    "weighted_recall": 0.657
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 52,
+    "weighted_recall": 0.677
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 105,
+    "weighted_recall": 0.648
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 48,
+    "weighted_recall": 0.716
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 148,
+    "weighted_recall": 0.664
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 39,
+    "weighted_recall": 0.773
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 18,
+    "weighted_recall": 0.613
+   }
+  },
+  "vocab+ridge": {
+   "all": {
+    "items": 304,
+    "found": 190,
+    "weighted_recall": 0.633
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 17,
+    "weighted_recall": 0.461
+   },
+   "size:small": {
+    "items": 227,
+    "found": 142,
+    "weighted_recall": 0.631
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 26,
+    "weighted_recall": 0.743
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 42,
+    "weighted_recall": 0.556
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 99,
+    "weighted_recall": 0.611
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 49,
+    "weighted_recall": 0.731
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 138,
+    "weighted_recall": 0.629
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 34,
+    "weighted_recall": 0.672
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 18,
+    "weighted_recall": 0.634
+   }
+  },
+  "vocab+generic+owlbox": {
+   "all": {
+    "items": 304,
+    "found": 214,
+    "weighted_recall": 0.717
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 21,
+    "weighted_recall": 0.572
+   },
+   "size:small": {
+    "items": 227,
+    "found": 157,
+    "weighted_recall": 0.702
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 31,
+    "weighted_recall": 0.886
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 45,
+    "weighted_recall": 0.587
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 111,
+    "weighted_recall": 0.685
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 58,
+    "weighted_recall": 0.866
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 157,
+    "weighted_recall": 0.715
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 21,
+    "weighted_recall": 0.739
+   }
+  },
+  "vocab+generic+ridge": {
+   "all": {
+    "items": 304,
+    "found": 194,
+    "weighted_recall": 0.644
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 19,
+    "weighted_recall": 0.507
+   },
+   "size:small": {
+    "items": 227,
+    "found": 144,
+    "weighted_recall": 0.638
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 26,
+    "weighted_recall": 0.743
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 44,
+    "weighted_recall": 0.577
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 100,
+    "weighted_recall": 0.617
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 50,
+    "weighted_recall": 0.746
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 141,
+    "weighted_recall": 0.64
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 35,
+    "weighted_recall": 0.688
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 18,
+    "weighted_recall": 0.634
+   }
+  },
+  "vocab+generic+owlbox+ridge": {
+   "all": {
+    "items": 304,
+    "found": 218,
+    "weighted_recall": 0.732
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 21,
+    "weighted_recall": 0.572
+   },
+   "size:small": {
+    "items": 227,
+    "found": 160,
+    "weighted_recall": 0.717
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 32,
+    "weighted_recall": 0.914
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 45,
+    "weighted_recall": 0.587
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 113,
+    "weighted_recall": 0.698
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 60,
+    "weighted_recall": 0.896
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 161,
+    "weighted_recall": 0.734
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 21,
+    "weighted_recall": 0.739
+   }
+  },
+  "vocab+generic+owlw+owlbox+ridge": {
+   "all": {
+    "items": 304,
+    "found": 222,
+    "weighted_recall": 0.744
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 21,
+    "weighted_recall": 0.572
+   },
+   "size:small": {
+    "items": 227,
+    "found": 164,
+    "weighted_recall": 0.734
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 32,
+    "weighted_recall": 0.914
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 47,
+    "weighted_recall": 0.624
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 115,
+    "weighted_recall": 0.71
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 60,
+    "weighted_recall": 0.896
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 165,
+    "weighted_recall": 0.75
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 21,
+    "weighted_recall": 0.739
+   }
+  },
+  "vocab+generic+owlbox+ridge+amg16": {
+   "all": {
+    "items": 304,
+    "found": 220,
+    "weighted_recall": 0.739
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 21,
+    "weighted_recall": 0.572
+   },
+   "size:small": {
+    "items": 227,
+    "found": 161,
+    "weighted_recall": 0.722
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 33,
+    "weighted_recall": 0.943
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 45,
+    "weighted_recall": 0.587
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 114,
+    "weighted_recall": 0.704
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 61,
+    "weighted_recall": 0.91
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 162,
+    "weighted_recall": 0.739
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 22,
+    "weighted_recall": 0.775
+   }
+  },
+  "vocab+generic+owlbox+ridge+amg32": {
+   "all": {
+    "items": 304,
+    "found": 226,
+    "weighted_recall": 0.762
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 22,
+    "weighted_recall": 0.605
+   },
+   "size:small": {
+    "items": 227,
+    "found": 166,
+    "weighted_recall": 0.747
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 33,
+    "weighted_recall": 0.943
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 45,
+    "weighted_recall": 0.587
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 118,
+    "weighted_recall": 0.728
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 63,
+    "weighted_recall": 0.94
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 168,
+    "weighted_recall": 0.767
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 22,
+    "weighted_recall": 0.775
+   }
+  },
+  "vocab+generic+amg32c1": {
+   "all": {
+    "items": 304,
+    "found": 209,
+    "weighted_recall": 0.7
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 22,
+    "weighted_recall": 0.605
+   },
+   "size:small": {
+    "items": 227,
+    "found": 155,
+    "weighted_recall": 0.695
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 27,
+    "weighted_recall": 0.771
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 44,
+    "weighted_recall": 0.577
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 111,
+    "weighted_recall": 0.685
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 54,
+    "weighted_recall": 0.806
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 154,
+    "weighted_recall": 0.701
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 35,
+    "weighted_recall": 0.688
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 20,
+    "weighted_recall": 0.704
+   }
+  },
+  "all_but_listing": {
+   "all": {
+    "items": 304,
+    "found": 259,
+    "weighted_recall": 0.856
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 28,
+    "weighted_recall": 0.743
+   },
+   "size:small": {
+    "items": 227,
+    "found": 192,
+    "weighted_recall": 0.849
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 34,
+    "weighted_recall": 0.971
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 61,
+    "weighted_recall": 0.804
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 133,
+    "weighted_recall": 0.821
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 65,
+    "weighted_recall": 0.97
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 192,
+    "weighted_recall": 0.863
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 44,
+    "weighted_recall": 0.875
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 23,
+    "weighted_recall": 0.789
+   }
+  },
+  "pool (all + listing)": {
+   "all": {
+    "items": 304,
+    "found": 304,
+    "weighted_recall": 1.0
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 37,
+    "weighted_recall": 1.0
+   },
+   "size:small": {
+    "items": 227,
+    "found": 227,
+    "weighted_recall": 1.0
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 35,
+    "weighted_recall": 1.0
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 75,
+    "weighted_recall": 1.0
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 162,
+    "weighted_recall": 1.0
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 67,
+    "weighted_recall": 1.0
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 226,
+    "weighted_recall": 1.0
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 49,
+    "weighted_recall": 1.0
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 29,
+    "weighted_recall": 1.0
+   }
+  },
+  "vocab+generic+owlbox+ridge2": {
+   "all": {
+    "items": 304,
+    "found": 219,
+    "weighted_recall": 0.735
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 21,
+    "weighted_recall": 0.572
+   },
+   "size:small": {
+    "items": 227,
+    "found": 161,
+    "weighted_recall": 0.722
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 32,
+    "weighted_recall": 0.914
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 46,
+    "weighted_recall": 0.614
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 113,
+    "weighted_recall": 0.698
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 60,
+    "weighted_recall": 0.896
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 162,
+    "weighted_recall": 0.739
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 21,
+    "weighted_recall": 0.739
+   }
+  },
+  "vocab+generic+owlbox+labelw": {
+   "all": {
+    "items": 304,
+    "found": 216,
+    "weighted_recall": 0.724
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 21,
+    "weighted_recall": 0.572
+   },
+   "size:small": {
+    "items": 227,
+    "found": 159,
+    "weighted_recall": 0.712
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 31,
+    "weighted_recall": 0.886
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 45,
+    "weighted_recall": 0.587
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 112,
+    "weighted_recall": 0.691
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 59,
+    "weighted_recall": 0.881
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 159,
+    "weighted_recall": 0.725
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 21,
+    "weighted_recall": 0.739
+   }
+  },
+  "vocab+generic+owlbox+labelw+ridge2": {
+   "all": {
+    "items": 304,
+    "found": 220,
+    "weighted_recall": 0.739
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 21,
+    "weighted_recall": 0.572
+   },
+   "size:small": {
+    "items": 227,
+    "found": 162,
+    "weighted_recall": 0.727
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 32,
+    "weighted_recall": 0.914
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 46,
+    "weighted_recall": 0.614
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 114,
+    "weighted_recall": 0.704
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 60,
+    "weighted_recall": 0.896
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 163,
+    "weighted_recall": 0.743
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 21,
+    "weighted_recall": 0.739
+   }
+  },
+  "vocab+generic+owlbox+labelw+amg16": {
+   "all": {
+    "items": 304,
+    "found": 218,
+    "weighted_recall": 0.732
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 21,
+    "weighted_recall": 0.572
+   },
+   "size:small": {
+    "items": 227,
+    "found": 160,
+    "weighted_recall": 0.717
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 32,
+    "weighted_recall": 0.914
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 45,
+    "weighted_recall": 0.587
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 113,
+    "weighted_recall": 0.698
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 60,
+    "weighted_recall": 0.896
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 160,
+    "weighted_recall": 0.729
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 22,
+    "weighted_recall": 0.775
+   }
+  },
+  "vocab+generic+owlbox+labelw+ridge+amg16": {
+   "all": {
+    "items": 304,
+    "found": 221,
+    "weighted_recall": 0.743
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 21,
+    "weighted_recall": 0.572
+   },
+   "size:small": {
+    "items": 227,
+    "found": 162,
+    "weighted_recall": 0.727
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 33,
+    "weighted_recall": 0.943
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 45,
+    "weighted_recall": 0.587
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 115,
+    "weighted_recall": 0.71
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 61,
+    "weighted_recall": 0.91
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 163,
+    "weighted_recall": 0.743
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 22,
+    "weighted_recall": 0.775
+   }
+  },
+  "vocab+generic+owlbox+labelw_t+generic_t": {
+   "all": {
+    "items": 304,
+    "found": 227,
+    "weighted_recall": 0.761
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 25,
+    "weighted_recall": 0.704
+   },
+   "size:small": {
+    "items": 227,
+    "found": 166,
+    "weighted_recall": 0.741
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 31,
+    "weighted_recall": 0.886
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 47,
+    "weighted_recall": 0.608
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 120,
+    "weighted_recall": 0.741
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 60,
+    "weighted_recall": 0.896
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 168,
+    "weighted_recall": 0.767
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 38,
+    "weighted_recall": 0.734
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 21,
+    "weighted_recall": 0.739
+   }
+  },
+  "vocab+generic+owlbox+labelw_t+generic_t+ridge2": {
+   "all": {
+    "items": 304,
+    "found": 231,
+    "weighted_recall": 0.776
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 25,
+    "weighted_recall": 0.704
+   },
+   "size:small": {
+    "items": 227,
+    "found": 169,
+    "weighted_recall": 0.757
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 32,
+    "weighted_recall": 0.914
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 48,
+    "weighted_recall": 0.635
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 122,
+    "weighted_recall": 0.753
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 61,
+    "weighted_recall": 0.91
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 172,
+    "weighted_recall": 0.786
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 38,
+    "weighted_recall": 0.734
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 21,
+    "weighted_recall": 0.739
+   }
+  },
+  "vocab+generic+owlbox+amg32": {
+   "all": {
+    "items": 304,
+    "found": 223,
+    "weighted_recall": 0.75
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 22,
+    "weighted_recall": 0.605
+   },
+   "size:small": {
+    "items": 227,
+    "found": 164,
+    "weighted_recall": 0.737
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 32,
+    "weighted_recall": 0.914
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 45,
+    "weighted_recall": 0.587
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 117,
+    "weighted_recall": 0.722
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 61,
+    "weighted_recall": 0.91
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 165,
+    "weighted_recall": 0.753
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 36,
+    "weighted_recall": 0.703
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 22,
+    "weighted_recall": 0.775
+   }
+  },
+  "everything (all + later)": {
+   "all": {
+    "items": 304,
+    "found": 304,
+    "weighted_recall": 1.0
+   },
+   "size:tiny": {
+    "items": 37,
+    "found": 37,
+    "weighted_recall": 1.0
+   },
+   "size:small": {
+    "items": 227,
+    "found": 227,
+    "weighted_recall": 1.0
+   },
+   "size:medium": {
+    "items": 35,
+    "found": 35,
+    "weighted_recall": 1.0
+   },
+   "size:large": {
+    "items": 5,
+    "found": 5,
+    "weighted_recall": 1.0
+   },
+   "shape:thin": {
+    "items": 75,
+    "found": 75,
+    "weighted_recall": 1.0
+   },
+   "shape:small": {
+    "items": 162,
+    "found": 162,
+    "weighted_recall": 1.0
+   },
+   "shape:normal": {
+    "items": 67,
+    "found": 67,
+    "weighted_recall": 1.0
+   },
+   "kind:whole": {
+    "items": 226,
+    "found": 226,
+    "weighted_recall": 1.0
+   },
+   "kind:thin": {
+    "items": 49,
+    "found": 49,
+    "weighted_recall": 1.0
+   },
+   "kind:block": {
+    "items": 29,
+    "found": 29,
+    "weighted_recall": 1.0
+   }
+  }
+ },
+ "recall_pool_reference_by_video": {
+  "vocab": {
+   "me340": {
+    "items": 149,
+    "found": 94,
+    "weighted_recall": 0.652
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 32,
+    "weighted_recall": 0.512
+   },
+   "walmart": {
+    "items": 16,
+    "found": 7,
+    "weighted_recall": 0.438
+   },
+   "lightning": {
+    "items": 77,
+    "found": 48,
+    "weighted_recall": 0.619
+   }
+  },
+  "generic": {
+   "me340": {
+    "items": 149,
+    "found": 85,
+    "weighted_recall": 0.586
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 1,
+    "weighted_recall": 0.017
+   },
+   "walmart": {
+    "items": 16,
+    "found": 4,
+    "weighted_recall": 0.25
+   },
+   "lightning": {
+    "items": 77,
+    "found": 40,
+    "weighted_recall": 0.512
+   }
+  },
+  "ram": {
+   "me340": {
+    "items": 149,
+    "found": 46,
+    "weighted_recall": 0.368
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 14,
+    "weighted_recall": 0.232
+   },
+   "walmart": {
+    "items": 16,
+    "found": 4,
+    "weighted_recall": 0.25
+   },
+   "lightning": {
+    "items": 77,
+    "found": 20,
+    "weighted_recall": 0.268
+   }
+  },
+  "owlw": {
+   "me340": {
+    "items": 149,
+    "found": 55,
+    "weighted_recall": 0.424
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 13,
+    "weighted_recall": 0.204
+   },
+   "walmart": {
+    "items": 16,
+    "found": 5,
+    "weighted_recall": 0.312
+   },
+   "lightning": {
+    "items": 77,
+    "found": 35,
+    "weighted_recall": 0.469
+   }
+  },
+  "owlbox": {
+   "me340": {
+    "items": 149,
+    "found": 50,
+    "weighted_recall": 0.402
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 20,
+    "weighted_recall": 0.346
+   },
+   "walmart": {
+    "items": 16,
+    "found": 7,
+    "weighted_recall": 0.438
+   },
+   "lightning": {
+    "items": 77,
+    "found": 35,
+    "weighted_recall": 0.469
+   }
+  },
+  "amg16": {
+   "me340": {
+    "items": 149,
+    "found": 16,
+    "weighted_recall": 0.135
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 12,
+    "weighted_recall": 0.208
+   },
+   "walmart": {
+    "items": 16,
+    "found": 2,
+    "weighted_recall": 0.125
+   },
+   "lightning": {
+    "items": 77,
+    "found": 0,
+    "weighted_recall": 0.0
+   }
+  },
+  "amg32": {
+   "me340": {
+    "items": 149,
+    "found": 34,
+    "weighted_recall": 0.277
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 16,
+    "weighted_recall": 0.277
+   },
+   "walmart": {
+    "items": 16,
+    "found": 7,
+    "weighted_recall": 0.438
+   },
+   "lightning": {
+    "items": 77,
+    "found": 11,
+    "weighted_recall": 0.147
+   }
+  },
+  "amg16c1": {
+   "me340": {
+    "items": 149,
+    "found": 32,
+    "weighted_recall": 0.265
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 17,
+    "weighted_recall": 0.284
+   },
+   "walmart": {
+    "items": 16,
+    "found": 6,
+    "weighted_recall": 0.375
+   },
+   "lightning": {
+    "items": 77,
+    "found": 11,
+    "weighted_recall": 0.147
+   }
+  },
+  "amg32c1": {
+   "me340": {
+    "items": 149,
+    "found": 55,
+    "weighted_recall": 0.439
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 22,
+    "weighted_recall": 0.36
+   },
+   "walmart": {
+    "items": 16,
+    "found": 8,
+    "weighted_recall": 0.5
+   },
+   "lightning": {
+    "items": 77,
+    "found": 21,
+    "weighted_recall": 0.273
+   }
+  },
+  "geo": {
+   "me340": {
+    "items": 149,
+    "found": 13,
+    "weighted_recall": 0.064
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 8,
+    "weighted_recall": 0.128
+   },
+   "walmart": {
+    "items": 16,
+    "found": 1,
+    "weighted_recall": 0.062
+   },
+   "lightning": {
+    "items": 77,
+    "found": 1,
+    "weighted_recall": 0.013
+   }
+  },
+  "geosam": {
+   "me340": {
+    "items": 149,
+    "found": 18,
+    "weighted_recall": 0.106
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 8,
+    "weighted_recall": 0.128
+   },
+   "walmart": {
+    "items": 16,
+    "found": 1,
+    "weighted_recall": 0.062
+   },
+   "lightning": {
+    "items": 77,
+    "found": 2,
+    "weighted_recall": 0.027
+   }
+  },
+  "ridge": {
+   "me340": {
+    "items": 149,
+    "found": 4,
+    "weighted_recall": 0.029
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 6,
+    "weighted_recall": 0.104
+   },
+   "walmart": {
+    "items": 16,
+    "found": 6,
+    "weighted_recall": 0.375
+   },
+   "lightning": {
+    "items": 77,
+    "found": 6,
+    "weighted_recall": 0.08
+   }
+  },
+  "listing": {
+   "me340": {
+    "items": 149,
+    "found": 52,
+    "weighted_recall": 0.373
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 28,
+    "weighted_recall": 0.464
+   },
+   "walmart": {
+    "items": 16,
+    "found": 7,
+    "weighted_recall": 0.438
+   },
+   "lightning": {
+    "items": 77,
+    "found": 37,
+    "weighted_recall": 0.488
+   }
+  },
+  "ridge2": {
+   "me340": {
+    "items": 149,
+    "found": 12,
+    "weighted_recall": 0.086
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 6,
+    "weighted_recall": 0.093
+   },
+   "walmart": {
+    "items": 16,
+    "found": 4,
+    "weighted_recall": 0.25
+   },
+   "lightning": {
+    "items": 77,
+    "found": 8,
+    "weighted_recall": 0.107
+   }
+  },
+  "labelw": {
+   "me340": {
+    "items": 149,
+    "found": 12,
+    "weighted_recall": 0.096
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 1,
+    "weighted_recall": 0.017
+   },
+   "walmart": {
+    "items": 16,
+    "found": 3,
+    "weighted_recall": 0.188
+   },
+   "lightning": {
+    "items": 77,
+    "found": 7,
+    "weighted_recall": 0.094
+   }
+  },
+  "labelw_t": {
+   "me340": {
+    "items": 149,
+    "found": 12,
+    "weighted_recall": 0.101
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 1,
+    "weighted_recall": 0.017
+   },
+   "walmart": {
+    "items": 16,
+    "found": 4,
+    "weighted_recall": 0.25
+   },
+   "lightning": {
+    "items": 77,
+    "found": 6,
+    "weighted_recall": 0.08
+   }
+  },
+  "generic_t": {
+   "me340": {
+    "items": 149,
+    "found": 91,
+    "weighted_recall": 0.622
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 1,
+    "weighted_recall": 0.017
+   },
+   "walmart": {
+    "items": 16,
+    "found": 4,
+    "weighted_recall": 0.25
+   },
+   "lightning": {
+    "items": 77,
+    "found": 42,
+    "weighted_recall": 0.539
+   }
+  },
+  "vocab+generic": {
+   "me340": {
+    "items": 149,
+    "found": 96,
+    "weighted_recall": 0.659
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 33,
+    "weighted_recall": 0.529
+   },
+   "walmart": {
+    "items": 16,
+    "found": 7,
+    "weighted_recall": 0.438
+   },
+   "lightning": {
+    "items": 77,
+    "found": 50,
+    "weighted_recall": 0.646
+   }
+  },
+  "vocab+ram": {
+   "me340": {
+    "items": 149,
+    "found": 96,
+    "weighted_recall": 0.669
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 33,
+    "weighted_recall": 0.529
+   },
+   "walmart": {
+    "items": 16,
+    "found": 8,
+    "weighted_recall": 0.5
+   },
+   "lightning": {
+    "items": 77,
+    "found": 50,
+    "weighted_recall": 0.646
+   }
+  },
+  "vocab+owlw": {
+   "me340": {
+    "items": 149,
+    "found": 94,
+    "weighted_recall": 0.652
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 36,
+    "weighted_recall": 0.571
+   },
+   "walmart": {
+    "items": 16,
+    "found": 9,
+    "weighted_recall": 0.562
+   },
+   "lightning": {
+    "items": 77,
+    "found": 52,
+    "weighted_recall": 0.673
+   }
+  },
+  "vocab+owlbox": {
+   "me340": {
+    "items": 149,
+    "found": 102,
+    "weighted_recall": 0.715
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 39,
+    "weighted_recall": 0.633
+   },
+   "walmart": {
+    "items": 16,
+    "found": 10,
+    "weighted_recall": 0.625
+   },
+   "lightning": {
+    "items": 77,
+    "found": 58,
+    "weighted_recall": 0.753
+   }
+  },
+  "vocab+amg16": {
+   "me340": {
+    "items": 149,
+    "found": 95,
+    "weighted_recall": 0.66
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 36,
+    "weighted_recall": 0.581
+   },
+   "walmart": {
+    "items": 16,
+    "found": 7,
+    "weighted_recall": 0.438
+   },
+   "lightning": {
+    "items": 77,
+    "found": 48,
+    "weighted_recall": 0.619
+   }
+  },
+  "vocab+amg32": {
+   "me340": {
+    "items": 149,
+    "found": 99,
+    "weighted_recall": 0.694
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 37,
+    "weighted_recall": 0.599
+   },
+   "walmart": {
+    "items": 16,
+    "found": 9,
+    "weighted_recall": 0.562
+   },
+   "lightning": {
+    "items": 77,
+    "found": 51,
+    "weighted_recall": 0.66
+   }
+  },
+  "vocab+amg32c1": {
+   "me340": {
+    "items": 149,
+    "found": 103,
+    "weighted_recall": 0.723
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 38,
+    "weighted_recall": 0.616
+   },
+   "walmart": {
+    "items": 16,
+    "found": 10,
+    "weighted_recall": 0.625
+   },
+   "lightning": {
+    "items": 77,
+    "found": 55,
+    "weighted_recall": 0.713
+   }
+  },
+  "vocab+geosam": {
+   "me340": {
+    "items": 149,
+    "found": 108,
+    "weighted_recall": 0.73
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 39,
+    "weighted_recall": 0.623
+   },
+   "walmart": {
+    "items": 16,
+    "found": 8,
+    "weighted_recall": 0.5
+   },
+   "lightning": {
+    "items": 77,
+    "found": 50,
+    "weighted_recall": 0.646
+   }
+  },
+  "vocab+ridge": {
+   "me340": {
+    "items": 149,
+    "found": 94,
+    "weighted_recall": 0.652
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 34,
+    "weighted_recall": 0.547
+   },
+   "walmart": {
+    "items": 16,
+    "found": 11,
+    "weighted_recall": 0.688
+   },
+   "lightning": {
+    "items": 77,
+    "found": 51,
+    "weighted_recall": 0.66
+   }
+  },
+  "vocab+generic+owlbox": {
+   "me340": {
+    "items": 149,
+    "found": 104,
+    "weighted_recall": 0.721
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 40,
+    "weighted_recall": 0.651
+   },
+   "walmart": {
+    "items": 16,
+    "found": 10,
+    "weighted_recall": 0.625
+   },
+   "lightning": {
+    "items": 77,
+    "found": 60,
+    "weighted_recall": 0.78
+   }
+  },
+  "vocab+generic+ridge": {
+   "me340": {
+    "items": 149,
+    "found": 96,
+    "weighted_recall": 0.659
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 35,
+    "weighted_recall": 0.564
+   },
+   "walmart": {
+    "items": 16,
+    "found": 11,
+    "weighted_recall": 0.688
+   },
+   "lightning": {
+    "items": 77,
+    "found": 52,
+    "weighted_recall": 0.673
+   }
+  },
+  "vocab+generic+owlbox+ridge": {
+   "me340": {
+    "items": 149,
+    "found": 104,
+    "weighted_recall": 0.721
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 40,
+    "weighted_recall": 0.651
+   },
+   "walmart": {
+    "items": 16,
+    "found": 13,
+    "weighted_recall": 0.812
+   },
+   "lightning": {
+    "items": 77,
+    "found": 61,
+    "weighted_recall": 0.794
+   }
+  },
+  "vocab+generic+owlw+owlbox+ridge": {
+   "me340": {
+    "items": 149,
+    "found": 104,
+    "weighted_recall": 0.721
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 43,
+    "weighted_recall": 0.692
+   },
+   "walmart": {
+    "items": 16,
+    "found": 13,
+    "weighted_recall": 0.812
+   },
+   "lightning": {
+    "items": 77,
+    "found": 62,
+    "weighted_recall": 0.807
+   }
+  },
+  "vocab+generic+owlbox+ridge+amg16": {
+   "me340": {
+    "items": 149,
+    "found": 105,
+    "weighted_recall": 0.73
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 41,
+    "weighted_recall": 0.668
+   },
+   "walmart": {
+    "items": 16,
+    "found": 13,
+    "weighted_recall": 0.812
+   },
+   "lightning": {
+    "items": 77,
+    "found": 61,
+    "weighted_recall": 0.794
+   }
+  },
+  "vocab+generic+owlbox+ridge+amg32": {
+   "me340": {
+    "items": 149,
+    "found": 109,
+    "weighted_recall": 0.764
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 42,
+    "weighted_recall": 0.685
+   },
+   "walmart": {
+    "items": 16,
+    "found": 13,
+    "weighted_recall": 0.812
+   },
+   "lightning": {
+    "items": 77,
+    "found": 62,
+    "weighted_recall": 0.807
+   }
+  },
+  "vocab+generic+amg32c1": {
+   "me340": {
+    "items": 149,
+    "found": 104,
+    "weighted_recall": 0.726
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 39,
+    "weighted_recall": 0.633
+   },
+   "walmart": {
+    "items": 16,
+    "found": 10,
+    "weighted_recall": 0.625
+   },
+   "lightning": {
+    "items": 77,
+    "found": 56,
+    "weighted_recall": 0.727
+   }
+  },
+  "all_but_listing": {
+   "me340": {
+    "items": 149,
+    "found": 132,
+    "weighted_recall": 0.902
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 50,
+    "weighted_recall": 0.803
+   },
+   "walmart": {
+    "items": 16,
+    "found": 14,
+    "weighted_recall": 0.875
+   },
+   "lightning": {
+    "items": 77,
+    "found": 63,
+    "weighted_recall": 0.82
+   }
+  },
+  "pool (all + listing)": {
+   "me340": {
+    "items": 149,
+    "found": 149,
+    "weighted_recall": 1.0
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 62,
+    "weighted_recall": 1.0
+   },
+   "walmart": {
+    "items": 16,
+    "found": 16,
+    "weighted_recall": 1.0
+   },
+   "lightning": {
+    "items": 77,
+    "found": 77,
+    "weighted_recall": 1.0
+   }
+  },
+  "vocab+generic+owlbox+ridge2": {
+   "me340": {
+    "items": 149,
+    "found": 104,
+    "weighted_recall": 0.721
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 41,
+    "weighted_recall": 0.668
+   },
+   "walmart": {
+    "items": 16,
+    "found": 13,
+    "weighted_recall": 0.812
+   },
+   "lightning": {
+    "items": 77,
+    "found": 61,
+    "weighted_recall": 0.794
+   }
+  },
+  "vocab+generic+owlbox+labelw": {
+   "me340": {
+    "items": 149,
+    "found": 104,
+    "weighted_recall": 0.721
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 40,
+    "weighted_recall": 0.651
+   },
+   "walmart": {
+    "items": 16,
+    "found": 12,
+    "weighted_recall": 0.75
+   },
+   "lightning": {
+    "items": 77,
+    "found": 60,
+    "weighted_recall": 0.78
+   }
+  },
+  "vocab+generic+owlbox+labelw+ridge2": {
+   "me340": {
+    "items": 149,
+    "found": 104,
+    "weighted_recall": 0.721
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 41,
+    "weighted_recall": 0.668
+   },
+   "walmart": {
+    "items": 16,
+    "found": 14,
+    "weighted_recall": 0.875
+   },
+   "lightning": {
+    "items": 77,
+    "found": 61,
+    "weighted_recall": 0.794
+   }
+  },
+  "vocab+generic+owlbox+labelw+amg16": {
+   "me340": {
+    "items": 149,
+    "found": 105,
+    "weighted_recall": 0.73
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 41,
+    "weighted_recall": 0.668
+   },
+   "walmart": {
+    "items": 16,
+    "found": 12,
+    "weighted_recall": 0.75
+   },
+   "lightning": {
+    "items": 77,
+    "found": 60,
+    "weighted_recall": 0.78
+   }
+  },
+  "vocab+generic+owlbox+labelw+ridge+amg16": {
+   "me340": {
+    "items": 149,
+    "found": 105,
+    "weighted_recall": 0.73
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 41,
+    "weighted_recall": 0.668
+   },
+   "walmart": {
+    "items": 16,
+    "found": 14,
+    "weighted_recall": 0.875
+   },
+   "lightning": {
+    "items": 77,
+    "found": 61,
+    "weighted_recall": 0.794
+   }
+  },
+  "vocab+generic+owlbox+labelw_t+generic_t": {
+   "me340": {
+    "items": 149,
+    "found": 112,
+    "weighted_recall": 0.779
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 41,
+    "weighted_recall": 0.668
+   },
+   "walmart": {
+    "items": 16,
+    "found": 12,
+    "weighted_recall": 0.75
+   },
+   "lightning": {
+    "items": 77,
+    "found": 62,
+    "weighted_recall": 0.807
+   }
+  },
+  "vocab+generic+owlbox+labelw_t+generic_t+ridge2": {
+   "me340": {
+    "items": 149,
+    "found": 112,
+    "weighted_recall": 0.779
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 42,
+    "weighted_recall": 0.685
+   },
+   "walmart": {
+    "items": 16,
+    "found": 14,
+    "weighted_recall": 0.875
+   },
+   "lightning": {
+    "items": 77,
+    "found": 63,
+    "weighted_recall": 0.82
+   }
+  },
+  "vocab+generic+owlbox+amg32": {
+   "me340": {
+    "items": 149,
+    "found": 109,
+    "weighted_recall": 0.764
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 42,
+    "weighted_recall": 0.685
+   },
+   "walmart": {
+    "items": 16,
+    "found": 11,
+    "weighted_recall": 0.688
+   },
+   "lightning": {
+    "items": 77,
+    "found": 61,
+    "weighted_recall": 0.794
+   }
+  },
+  "everything (all + later)": {
+   "me340": {
+    "items": 149,
+    "found": 149,
+    "weighted_recall": 1.0
+   },
+   "samsclub": {
+    "items": 62,
+    "found": 62,
+    "weighted_recall": 1.0
+   },
+   "walmart": {
+    "items": 16,
+    "found": 16,
+    "weighted_recall": 1.0
+   },
+   "lightning": {
+    "items": 77,
+    "found": 77,
+    "weighted_recall": 1.0
+   }
+  }
+ },
+ "recall_own_look": {
+  "vocab": {
+   "all": {
+    "found": 235,
+    "of": 342,
+    "share": 0.687
+   },
+   "cable": {
+    "found": 30,
+    "of": 36,
+    "share": 0.833
+   },
+   "floor": {
+    "found": 1,
+    "of": 6,
+    "share": 0.167
+   },
+   "label": {
+    "found": 31,
+    "of": 77,
+    "share": 0.403
+   },
+   "small": {
+    "found": 135,
+    "of": 180,
+    "share": 0.75
+   },
+   "tool": {
+    "found": 38,
+    "of": 43,
+    "share": 0.884
+   }
+  },
+  "generic": {
+   "all": {
+    "found": 182,
+    "of": 342,
+    "share": 0.532
+   },
+   "cable": {
+    "found": 28,
+    "of": 36,
+    "share": 0.778
+   },
+   "floor": {
+    "found": 0,
+    "of": 6,
+    "share": 0.0
+   },
+   "label": {
+    "found": 36,
+    "of": 77,
+    "share": 0.468
+   },
+   "small": {
+    "found": 82,
+    "of": 180,
+    "share": 0.456
+   },
+   "tool": {
+    "found": 36,
+    "of": 43,
+    "share": 0.837
+   }
+  },
+  "ram": {
+   "all": {
+    "found": 132,
+    "of": 342,
+    "share": 0.386
+   },
+   "cable": {
+    "found": 9,
+    "of": 36,
+    "share": 0.25
+   },
+   "floor": {
+    "found": 1,
+    "of": 6,
+    "share": 0.167
+   },
+   "label": {
+    "found": 1,
+    "of": 77,
+    "share": 0.013
+   },
+   "small": {
+    "found": 84,
+    "of": 180,
+    "share": 0.467
+   },
+   "tool": {
+    "found": 37,
+    "of": 43,
+    "share": 0.86
+   }
+  },
+  "owlw": {
+   "all": {
+    "found": 173,
+    "of": 342,
+    "share": 0.506
+   },
+   "cable": {
+    "found": 11,
+    "of": 36,
+    "share": 0.306
+   },
+   "floor": {
+    "found": 1,
+    "of": 6,
+    "share": 0.167
+   },
+   "label": {
+    "found": 12,
+    "of": 77,
+    "share": 0.156
+   },
+   "small": {
+    "found": 113,
+    "of": 180,
+    "share": 0.628
+   },
+   "tool": {
+    "found": 36,
+    "of": 43,
+    "share": 0.837
+   }
+  },
+  "owlbox": {
+   "all": {
+    "found": 199,
+    "of": 342,
+    "share": 0.582
+   },
+   "cable": {
+    "found": 13,
+    "of": 36,
+    "share": 0.361
+   },
+   "floor": {
+    "found": 1,
+    "of": 6,
+    "share": 0.167
+   },
+   "label": {
+    "found": 15,
+    "of": 77,
+    "share": 0.195
+   },
+   "small": {
+    "found": 133,
+    "of": 180,
+    "share": 0.739
+   },
+   "tool": {
+    "found": 37,
+    "of": 43,
+    "share": 0.86
+   }
+  },
+  "amg16": {
+   "all": {
+    "found": 91,
+    "of": 342,
+    "share": 0.266
+   },
+   "cable": {
+    "found": 2,
+    "of": 36,
+    "share": 0.056
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 13,
+    "of": 77,
+    "share": 0.169
+   },
+   "small": {
+    "found": 66,
+    "of": 180,
+    "share": 0.367
+   },
+   "tool": {
+    "found": 8,
+    "of": 43,
+    "share": 0.186
+   }
+  },
+  "amg32": {
+   "all": {
+    "found": 161,
+    "of": 342,
+    "share": 0.471
+   },
+   "cable": {
+    "found": 7,
+    "of": 36,
+    "share": 0.194
+   },
+   "floor": {
+    "found": 4,
+    "of": 6,
+    "share": 0.667
+   },
+   "label": {
+    "found": 29,
+    "of": 77,
+    "share": 0.377
+   },
+   "small": {
+    "found": 101,
+    "of": 180,
+    "share": 0.561
+   },
+   "tool": {
+    "found": 20,
+    "of": 43,
+    "share": 0.465
+   }
+  },
+  "amg16c1": {
+   "all": {
+    "found": 159,
+    "of": 342,
+    "share": 0.465
+   },
+   "cable": {
+    "found": 5,
+    "of": 36,
+    "share": 0.139
+   },
+   "floor": {
+    "found": 4,
+    "of": 6,
+    "share": 0.667
+   },
+   "label": {
+    "found": 30,
+    "of": 77,
+    "share": 0.39
+   },
+   "small": {
+    "found": 101,
+    "of": 180,
+    "share": 0.561
+   },
+   "tool": {
+    "found": 19,
+    "of": 43,
+    "share": 0.442
+   }
+  },
+  "amg32c1": {
+   "all": {
+    "found": 206,
+    "of": 342,
+    "share": 0.602
+   },
+   "cable": {
+    "found": 9,
+    "of": 36,
+    "share": 0.25
+   },
+   "floor": {
+    "found": 5,
+    "of": 6,
+    "share": 0.833
+   },
+   "label": {
+    "found": 42,
+    "of": 77,
+    "share": 0.545
+   },
+   "small": {
+    "found": 121,
+    "of": 180,
+    "share": 0.672
+   },
+   "tool": {
+    "found": 29,
+    "of": 43,
+    "share": 0.674
+   }
+  },
+  "geo": {
+   "all": {
+    "found": 43,
+    "of": 342,
+    "share": 0.126
+   },
+   "cable": {
+    "found": 7,
+    "of": 36,
+    "share": 0.194
+   },
+   "floor": {
+    "found": 1,
+    "of": 6,
+    "share": 0.167
+   },
+   "label": {
+    "found": 3,
+    "of": 77,
+    "share": 0.039
+   },
+   "small": {
+    "found": 26,
+    "of": 180,
+    "share": 0.144
+   },
+   "tool": {
+    "found": 6,
+    "of": 43,
+    "share": 0.14
+   }
+  },
+  "geosam": {
+   "all": {
+    "found": 48,
+    "of": 342,
+    "share": 0.14
+   },
+   "cable": {
+    "found": 5,
+    "of": 36,
+    "share": 0.139
+   },
+   "floor": {
+    "found": 1,
+    "of": 6,
+    "share": 0.167
+   },
+   "label": {
+    "found": 3,
+    "of": 77,
+    "share": 0.039
+   },
+   "small": {
+    "found": 32,
+    "of": 180,
+    "share": 0.178
+   },
+   "tool": {
+    "found": 7,
+    "of": 43,
+    "share": 0.163
+   }
+  },
+  "ridge": {
+   "all": {
+    "found": 52,
+    "of": 342,
+    "share": 0.152
+   },
+   "cable": {
+    "found": 9,
+    "of": 36,
+    "share": 0.25
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 2,
+    "of": 77,
+    "share": 0.026
+   },
+   "small": {
+    "found": 36,
+    "of": 180,
+    "share": 0.2
+   },
+   "tool": {
+    "found": 3,
+    "of": 43,
+    "share": 0.07
+   }
+  },
+  "listing": {
+   "all": {
+    "found": 182,
+    "of": 342,
+    "share": 0.532
+   },
+   "cable": {
+    "found": 18,
+    "of": 36,
+    "share": 0.5
+   },
+   "floor": {
+    "found": 0,
+    "of": 6,
+    "share": 0.0
+   },
+   "label": {
+    "found": 24,
+    "of": 77,
+    "share": 0.312
+   },
+   "small": {
+    "found": 107,
+    "of": 180,
+    "share": 0.594
+   },
+   "tool": {
+    "found": 33,
+    "of": 43,
+    "share": 0.767
+   }
+  },
+  "ridge2": {
+   "all": {
+    "found": 79,
+    "of": 342,
+    "share": 0.231
+   },
+   "cable": {
+    "found": 13,
+    "of": 36,
+    "share": 0.361
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 4,
+    "of": 77,
+    "share": 0.052
+   },
+   "small": {
+    "found": 55,
+    "of": 180,
+    "share": 0.306
+   },
+   "tool": {
+    "found": 5,
+    "of": 43,
+    "share": 0.116
+   }
+  },
+  "labelw": {
+   "all": {
+    "found": 61,
+    "of": 342,
+    "share": 0.178
+   },
+   "cable": {
+    "found": 0,
+    "of": 36,
+    "share": 0.0
+   },
+   "floor": {
+    "found": 1,
+    "of": 6,
+    "share": 0.167
+   },
+   "label": {
+    "found": 50,
+    "of": 77,
+    "share": 0.649
+   },
+   "small": {
+    "found": 10,
+    "of": 180,
+    "share": 0.056
+   },
+   "tool": {
+    "found": 0,
+    "of": 43,
+    "share": 0.0
+   }
+  },
+  "labelw_t": {
+   "all": {
+    "found": 69,
+    "of": 342,
+    "share": 0.202
+   },
+   "cable": {
+    "found": 0,
+    "of": 36,
+    "share": 0.0
+   },
+   "floor": {
+    "found": 0,
+    "of": 6,
+    "share": 0.0
+   },
+   "label": {
+    "found": 53,
+    "of": 77,
+    "share": 0.688
+   },
+   "small": {
+    "found": 16,
+    "of": 180,
+    "share": 0.089
+   },
+   "tool": {
+    "found": 0,
+    "of": 43,
+    "share": 0.0
+   }
+  },
+  "generic_t": {
+   "all": {
+    "found": 195,
+    "of": 342,
+    "share": 0.57
+   },
+   "cable": {
+    "found": 29,
+    "of": 36,
+    "share": 0.806
+   },
+   "floor": {
+    "found": 0,
+    "of": 6,
+    "share": 0.0
+   },
+   "label": {
+    "found": 38,
+    "of": 77,
+    "share": 0.494
+   },
+   "small": {
+    "found": 91,
+    "of": 180,
+    "share": 0.506
+   },
+   "tool": {
+    "found": 37,
+    "of": 43,
+    "share": 0.86
+   }
+  },
+  "vocab+generic": {
+   "all": {
+    "found": 248,
+    "of": 342,
+    "share": 0.725
+   },
+   "cable": {
+    "found": 30,
+    "of": 36,
+    "share": 0.833
+   },
+   "floor": {
+    "found": 1,
+    "of": 6,
+    "share": 0.167
+   },
+   "label": {
+    "found": 37,
+    "of": 77,
+    "share": 0.481
+   },
+   "small": {
+    "found": 142,
+    "of": 180,
+    "share": 0.789
+   },
+   "tool": {
+    "found": 38,
+    "of": 43,
+    "share": 0.884
+   }
+  },
+  "vocab+ram": {
+   "all": {
+    "found": 243,
+    "of": 342,
+    "share": 0.711
+   },
+   "cable": {
+    "found": 30,
+    "of": 36,
+    "share": 0.833
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 31,
+    "of": 77,
+    "share": 0.403
+   },
+   "small": {
+    "found": 142,
+    "of": 180,
+    "share": 0.789
+   },
+   "tool": {
+    "found": 38,
+    "of": 43,
+    "share": 0.884
+   }
+  },
+  "vocab+owlw": {
+   "all": {
+    "found": 249,
+    "of": 342,
+    "share": 0.728
+   },
+   "cable": {
+    "found": 30,
+    "of": 36,
+    "share": 0.833
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 34,
+    "of": 77,
+    "share": 0.442
+   },
+   "small": {
+    "found": 145,
+    "of": 180,
+    "share": 0.806
+   },
+   "tool": {
+    "found": 38,
+    "of": 43,
+    "share": 0.884
+   }
+  },
+  "vocab+owlbox": {
+   "all": {
+    "found": 265,
+    "of": 342,
+    "share": 0.775
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 34,
+    "of": 77,
+    "share": 0.442
+   },
+   "small": {
+    "found": 158,
+    "of": 180,
+    "share": 0.878
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+amg16": {
+   "all": {
+    "found": 249,
+    "of": 342,
+    "share": 0.728
+   },
+   "cable": {
+    "found": 30,
+    "of": 36,
+    "share": 0.833
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 36,
+    "of": 77,
+    "share": 0.468
+   },
+   "small": {
+    "found": 143,
+    "of": 180,
+    "share": 0.794
+   },
+   "tool": {
+    "found": 38,
+    "of": 43,
+    "share": 0.884
+   }
+  },
+  "vocab+amg32": {
+   "all": {
+    "found": 262,
+    "of": 342,
+    "share": 0.766
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 4,
+    "of": 6,
+    "share": 0.667
+   },
+   "label": {
+    "found": 42,
+    "of": 77,
+    "share": 0.545
+   },
+   "small": {
+    "found": 146,
+    "of": 180,
+    "share": 0.811
+   },
+   "tool": {
+    "found": 39,
+    "of": 43,
+    "share": 0.907
+   }
+  },
+  "vocab+amg32c1": {
+   "all": {
+    "found": 274,
+    "of": 342,
+    "share": 0.801
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 5,
+    "of": 6,
+    "share": 0.833
+   },
+   "label": {
+    "found": 48,
+    "of": 77,
+    "share": 0.623
+   },
+   "small": {
+    "found": 151,
+    "of": 180,
+    "share": 0.839
+   },
+   "tool": {
+    "found": 39,
+    "of": 43,
+    "share": 0.907
+   }
+  },
+  "vocab+geosam": {
+   "all": {
+    "found": 242,
+    "of": 342,
+    "share": 0.708
+   },
+   "cable": {
+    "found": 30,
+    "of": 36,
+    "share": 0.833
+   },
+   "floor": {
+    "found": 1,
+    "of": 6,
+    "share": 0.167
+   },
+   "label": {
+    "found": 32,
+    "of": 77,
+    "share": 0.416
+   },
+   "small": {
+    "found": 141,
+    "of": 180,
+    "share": 0.783
+   },
+   "tool": {
+    "found": 38,
+    "of": 43,
+    "share": 0.884
+   }
+  },
+  "vocab+ridge": {
+   "all": {
+    "found": 243,
+    "of": 342,
+    "share": 0.711
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 32,
+    "of": 77,
+    "share": 0.416
+   },
+   "small": {
+    "found": 140,
+    "of": 180,
+    "share": 0.778
+   },
+   "tool": {
+    "found": 38,
+    "of": 43,
+    "share": 0.884
+   }
+  },
+  "vocab+generic+owlbox": {
+   "all": {
+    "found": 270,
+    "of": 342,
+    "share": 0.789
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 39,
+    "of": 77,
+    "share": 0.506
+   },
+   "small": {
+    "found": 158,
+    "of": 180,
+    "share": 0.878
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+ridge": {
+   "all": {
+    "found": 255,
+    "of": 342,
+    "share": 0.746
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 38,
+    "of": 77,
+    "share": 0.494
+   },
+   "small": {
+    "found": 146,
+    "of": 180,
+    "share": 0.811
+   },
+   "tool": {
+    "found": 38,
+    "of": 43,
+    "share": 0.884
+   }
+  },
+  "vocab+generic+owlbox+ridge": {
+   "all": {
+    "found": 272,
+    "of": 342,
+    "share": 0.795
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 3,
+    "of": 6,
+    "share": 0.5
+   },
+   "label": {
+    "found": 40,
+    "of": 77,
+    "share": 0.519
+   },
+   "small": {
+    "found": 158,
+    "of": 180,
+    "share": 0.878
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+owlw+owlbox+ridge": {
+   "all": {
+    "found": 274,
+    "of": 342,
+    "share": 0.801
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 3,
+    "of": 6,
+    "share": 0.5
+   },
+   "label": {
+    "found": 42,
+    "of": 77,
+    "share": 0.545
+   },
+   "small": {
+    "found": 158,
+    "of": 180,
+    "share": 0.878
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+owlbox+ridge+amg16": {
+   "all": {
+    "found": 276,
+    "of": 342,
+    "share": 0.807
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 4,
+    "of": 6,
+    "share": 0.667
+   },
+   "label": {
+    "found": 42,
+    "of": 77,
+    "share": 0.545
+   },
+   "small": {
+    "found": 159,
+    "of": 180,
+    "share": 0.883
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+owlbox+ridge+amg32": {
+   "all": {
+    "found": 287,
+    "of": 342,
+    "share": 0.839
+   },
+   "cable": {
+    "found": 32,
+    "of": 36,
+    "share": 0.889
+   },
+   "floor": {
+    "found": 5,
+    "of": 6,
+    "share": 0.833
+   },
+   "label": {
+    "found": 48,
+    "of": 77,
+    "share": 0.623
+   },
+   "small": {
+    "found": 161,
+    "of": 180,
+    "share": 0.894
+   },
+   "tool": {
+    "found": 41,
+    "of": 43,
+    "share": 0.953
+   }
+  },
+  "vocab+generic+amg32c1": {
+   "all": {
+    "found": 277,
+    "of": 342,
+    "share": 0.81
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 5,
+    "of": 6,
+    "share": 0.833
+   },
+   "label": {
+    "found": 48,
+    "of": 77,
+    "share": 0.623
+   },
+   "small": {
+    "found": 154,
+    "of": 180,
+    "share": 0.856
+   },
+   "tool": {
+    "found": 39,
+    "of": 43,
+    "share": 0.907
+   }
+  },
+  "all_but_listing": {
+   "all": {
+    "found": 293,
+    "of": 342,
+    "share": 0.857
+   },
+   "cable": {
+    "found": 32,
+    "of": 36,
+    "share": 0.889
+   },
+   "floor": {
+    "found": 6,
+    "of": 6,
+    "share": 1.0
+   },
+   "label": {
+    "found": 52,
+    "of": 77,
+    "share": 0.675
+   },
+   "small": {
+    "found": 162,
+    "of": 180,
+    "share": 0.9
+   },
+   "tool": {
+    "found": 41,
+    "of": 43,
+    "share": 0.953
+   }
+  },
+  "pool (all + listing)": {
+   "all": {
+    "found": 298,
+    "of": 342,
+    "share": 0.871
+   },
+   "cable": {
+    "found": 32,
+    "of": 36,
+    "share": 0.889
+   },
+   "floor": {
+    "found": 6,
+    "of": 6,
+    "share": 1.0
+   },
+   "label": {
+    "found": 53,
+    "of": 77,
+    "share": 0.688
+   },
+   "small": {
+    "found": 166,
+    "of": 180,
+    "share": 0.922
+   },
+   "tool": {
+    "found": 41,
+    "of": 43,
+    "share": 0.953
+   }
+  },
+  "vocab+generic+owlbox+ridge2": {
+   "all": {
+    "found": 278,
+    "of": 342,
+    "share": 0.813
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 3,
+    "of": 6,
+    "share": 0.5
+   },
+   "label": {
+    "found": 42,
+    "of": 77,
+    "share": 0.545
+   },
+   "small": {
+    "found": 162,
+    "of": 180,
+    "share": 0.9
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+owlbox+labelw": {
+   "all": {
+    "found": 284,
+    "of": 342,
+    "share": 0.83
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 3,
+    "of": 6,
+    "share": 0.5
+   },
+   "label": {
+    "found": 52,
+    "of": 77,
+    "share": 0.675
+   },
+   "small": {
+    "found": 158,
+    "of": 180,
+    "share": 0.878
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+owlbox+labelw+ridge2": {
+   "all": {
+    "found": 291,
+    "of": 342,
+    "share": 0.851
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 4,
+    "of": 6,
+    "share": 0.667
+   },
+   "label": {
+    "found": 54,
+    "of": 77,
+    "share": 0.701
+   },
+   "small": {
+    "found": 162,
+    "of": 180,
+    "share": 0.9
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+owlbox+labelw+amg16": {
+   "all": {
+    "found": 285,
+    "of": 342,
+    "share": 0.833
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 3,
+    "of": 6,
+    "share": 0.5
+   },
+   "label": {
+    "found": 52,
+    "of": 77,
+    "share": 0.675
+   },
+   "small": {
+    "found": 159,
+    "of": 180,
+    "share": 0.883
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+owlbox+labelw+ridge+amg16": {
+   "all": {
+    "found": 287,
+    "of": 342,
+    "share": 0.839
+   },
+   "cable": {
+    "found": 31,
+    "of": 36,
+    "share": 0.861
+   },
+   "floor": {
+    "found": 4,
+    "of": 6,
+    "share": 0.667
+   },
+   "label": {
+    "found": 53,
+    "of": 77,
+    "share": 0.688
+   },
+   "small": {
+    "found": 159,
+    "of": 180,
+    "share": 0.883
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+owlbox+labelw_t+generic_t": {
+   "all": {
+    "found": 290,
+    "of": 342,
+    "share": 0.848
+   },
+   "cable": {
+    "found": 32,
+    "of": 36,
+    "share": 0.889
+   },
+   "floor": {
+    "found": 2,
+    "of": 6,
+    "share": 0.333
+   },
+   "label": {
+    "found": 54,
+    "of": 77,
+    "share": 0.701
+   },
+   "small": {
+    "found": 162,
+    "of": 180,
+    "share": 0.9
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+owlbox+labelw_t+generic_t+ridge2": {
+   "all": {
+    "found": 295,
+    "of": 342,
+    "share": 0.863
+   },
+   "cable": {
+    "found": 32,
+    "of": 36,
+    "share": 0.889
+   },
+   "floor": {
+    "found": 3,
+    "of": 6,
+    "share": 0.5
+   },
+   "label": {
+    "found": 54,
+    "of": 77,
+    "share": 0.701
+   },
+   "small": {
+    "found": 166,
+    "of": 180,
+    "share": 0.922
+   },
+   "tool": {
+    "found": 40,
+    "of": 43,
+    "share": 0.93
+   }
+  },
+  "vocab+generic+owlbox+amg32": {
+   "all": {
+    "found": 286,
+    "of": 342,
+    "share": 0.836
+   },
+   "cable": {
+    "found": 32,
+    "of": 36,
+    "share": 0.889
+   },
+   "floor": {
+    "found": 5,
+    "of": 6,
+    "share": 0.833
+   },
+   "label": {
+    "found": 47,
+    "of": 77,
+    "share": 0.61
+   },
+   "small": {
+    "found": 161,
+    "of": 180,
+    "share": 0.894
+   },
+   "tool": {
+    "found": 41,
+    "of": 43,
+    "share": 0.953
+   }
+  },
+  "everything (all + later)": {
+   "all": {
+    "found": 307,
+    "of": 342,
+    "share": 0.898
+   },
+   "cable": {
+    "found": 33,
+    "of": 36,
+    "share": 0.917
+   },
+   "floor": {
+    "found": 6,
+    "of": 6,
+    "share": 1.0
+   },
+   "label": {
+    "found": 56,
+    "of": 77,
+    "share": 0.727
+   },
+   "small": {
+    "found": 171,
+    "of": 180,
+    "share": 0.95
+   },
+   "tool": {
+    "found": 41,
+    "of": 43,
+    "share": 0.953
+   }
+  }
+ },
+ "precision_pool_audit": {
+  "vocab": {
+   "masks_per_frame": 153.5,
+   "whole": 0.164,
+   "part": 0.529,
+   "background": 0.188,
+   "group": 0.072,
+   "unclear": 0.047
+  },
+  "generic": {
+   "masks_per_frame": 39.2,
+   "whole": 0.407,
+   "part": 0.353,
+   "background": 0.053,
+   "group": 0.109,
+   "unclear": 0.078
+  },
+  "ram": {
+   "masks_per_frame": 87.9,
+   "whole": 0.116,
+   "part": 0.722,
+   "background": 0.038,
+   "group": 0.107,
+   "unclear": 0.019
+  },
+  "owlw": {
+   "masks_per_frame": 94.7,
+   "whole": 0.144,
+   "part": 0.657,
+   "background": 0.059,
+   "group": 0.117,
+   "unclear": 0.022
+  },
+  "owlbox": {
+   "masks_per_frame": 94.0,
+   "whole": 0.232,
+   "part": 0.483,
+   "background": 0.07,
+   "group": 0.181,
+   "unclear": 0.035
+  },
+  "amg16": {
+   "masks_per_frame": 35.2,
+   "whole": 0.158,
+   "part": 0.503,
+   "background": 0.189,
+   "group": 0.102,
+   "unclear": 0.048
+  },
+  "amg32": {
+   "masks_per_frame": 69.0,
+   "whole": 0.153,
+   "part": 0.535,
+   "background": 0.208,
+   "group": 0.057,
+   "unclear": 0.048
+  },
+  "amg16c1": {
+   "masks_per_frame": 75.8,
+   "whole": 0.141,
+   "part": 0.557,
+   "background": 0.196,
+   "group": 0.068,
+   "unclear": 0.037
+  },
+  "amg32c1": {
+   "masks_per_frame": 126.8,
+   "whole": 0.124,
+   "part": 0.585,
+   "background": 0.193,
+   "group": 0.044,
+   "unclear": 0.054
+  },
+  "geo": {
+   "masks_per_frame": 42.5,
+   "whole": 0.05,
+   "part": 0.577,
+   "background": 0.243,
+   "group": 0.069,
+   "unclear": 0.061
+  },
+  "geosam": {
+   "masks_per_frame": 42.5,
+   "whole": 0.056,
+   "part": 0.595,
+   "background": 0.201,
+   "group": 0.076,
+   "unclear": 0.071
+  },
+  "ridge": {
+   "masks_per_frame": 37.9,
+   "whole": 0.097,
+   "part": 0.408,
+   "background": 0.249,
+   "group": 0.203,
+   "unclear": 0.043
+  },
+  "listing": {
+   "masks_per_frame": 120.5,
+   "whole": 0.163,
+   "part": 0.572,
+   "background": 0.136,
+   "group": 0.051,
+   "unclear": 0.077
+  },
+  "vocab+generic": {
+   "masks_per_frame": 192.7,
+   "whole": 0.215,
+   "part": 0.492,
+   "background": 0.16,
+   "group": 0.08,
+   "unclear": 0.053
+  },
+  "vocab+ram": {
+   "masks_per_frame": 241.4,
+   "whole": 0.145,
+   "part": 0.603,
+   "background": 0.13,
+   "group": 0.085,
+   "unclear": 0.036
+  },
+  "vocab+owlw": {
+   "masks_per_frame": 248.2,
+   "whole": 0.156,
+   "part": 0.58,
+   "background": 0.137,
+   "group": 0.09,
+   "unclear": 0.037
+  },
+  "vocab+owlbox": {
+   "masks_per_frame": 247.5,
+   "whole": 0.19,
+   "part": 0.511,
+   "background": 0.142,
+   "group": 0.114,
+   "unclear": 0.042
+  },
+  "vocab+amg16": {
+   "masks_per_frame": 188.7,
+   "whole": 0.163,
+   "part": 0.525,
+   "background": 0.188,
+   "group": 0.077,
+   "unclear": 0.047
+  },
+  "vocab+amg32": {
+   "masks_per_frame": 222.5,
+   "whole": 0.16,
+   "part": 0.531,
+   "background": 0.195,
+   "group": 0.067,
+   "unclear": 0.047
+  },
+  "vocab+amg32c1": {
+   "masks_per_frame": 280.3,
+   "whole": 0.145,
+   "part": 0.555,
+   "background": 0.191,
+   "group": 0.059,
+   "unclear": 0.05
+  },
+  "vocab+geosam": {
+   "masks_per_frame": 196.0,
+   "whole": 0.14,
+   "part": 0.544,
+   "background": 0.191,
+   "group": 0.073,
+   "unclear": 0.052
+  },
+  "vocab+ridge": {
+   "masks_per_frame": 191.4,
+   "whole": 0.152,
+   "part": 0.507,
+   "background": 0.199,
+   "group": 0.096,
+   "unclear": 0.046
+  },
+  "vocab+generic+owlbox": {
+   "masks_per_frame": 286.7,
+   "whole": 0.221,
+   "part": 0.489,
+   "background": 0.13,
+   "group": 0.113,
+   "unclear": 0.047
+  },
+  "vocab+generic+ridge": {
+   "masks_per_frame": 230.6,
+   "whole": 0.197,
+   "part": 0.479,
+   "background": 0.173,
+   "group": 0.098,
+   "unclear": 0.052
+  },
+  "vocab+generic+owlbox+ridge": {
+   "masks_per_frame": 324.6,
+   "whole": 0.208,
+   "part": 0.48,
+   "background": 0.143,
+   "group": 0.123,
+   "unclear": 0.047
+  },
+  "vocab+generic+owlw+owlbox+ridge": {
+   "masks_per_frame": 419.2,
+   "whole": 0.193,
+   "part": 0.522,
+   "background": 0.123,
+   "group": 0.121,
+   "unclear": 0.041
+  },
+  "vocab+generic+owlbox+ridge+amg16": {
+   "masks_per_frame": 359.8,
+   "whole": 0.203,
+   "part": 0.482,
+   "background": 0.147,
+   "group": 0.121,
+   "unclear": 0.047
+  },
+  "vocab+generic+owlbox+ridge+amg32": {
+   "masks_per_frame": 393.6,
+   "whole": 0.198,
+   "part": 0.49,
+   "background": 0.154,
+   "group": 0.111,
+   "unclear": 0.047
+  },
+  "vocab+generic+amg32c1": {
+   "masks_per_frame": 319.5,
+   "whole": 0.178,
+   "part": 0.53,
+   "background": 0.173,
+   "group": 0.065,
+   "unclear": 0.054
+  },
+  "vocab+generic+ram+owlw+owlbox+amg16+amg32+amg16c1+amg32c1+geo+geosam+ridge": {
+   "masks_per_frame": 898.9,
+   "whole": 0.153,
+   "part": 0.561,
+   "background": 0.149,
+   "group": 0.094,
+   "unclear": 0.043
+  },
+  "vocab+generic+ram+owlw+owlbox+amg16+amg32+amg16c1+amg32c1+geo+geosam+ridge+listing": {
+   "masks_per_frame": 1019.3,
+   "whole": 0.154,
+   "part": 0.562,
+   "background": 0.147,
+   "group": 0.089,
+   "unclear": 0.047
+  },
+  "vocab+generic+owlbox+amg32": {
+   "masks_per_frame": 355.7,
+   "whole": 0.207,
+   "part": 0.498,
+   "background": 0.145,
+   "group": 0.102,
+   "unclear": 0.047
+  },
+  "_rule": "share of each method's masks (weighted by the audit sample) whose cluster was labelled whole (W/T/K), part (P), background (B), group/mixture (M) or unclear (X)"
+ },
+ "time_per_frame_one_a100": {
+  "parts_median_s": {
+   "sam3_vision": 0.1166,
+   "owl": 0.051,
+   "aux": 0.0953,
+   "vocab": 0.4261,
+   "generic": 0.14,
+   "ram": 0.2681,
+   "owlw": 0.2809,
+   "amg16": 0.4101,
+   "amg32": 1.1484,
+   "amg16c1": 1.2416,
+   "amg32c1": 3.6976,
+   "geo_da3_and_planes": 0.3119,
+   "sam2_embed": 0.0771,
+   "owlbox_decode": 0.0706,
+   "ridge_filter": 0.1231,
+   "ridge_decode": 0.0514,
+   "geosam_decode": 0.0321,
+   "listing_qwen_per_frame": 16.2708,
+   "geo_da3": 0.259,
+   "geo_planes": 0.0505,
+   "ram++": 0.1879
+  },
+  "per_method": {
+   "vocab": {
+    "per_frame_s": 0.5427,
+    "added_per_frame_s": 0.4261
+   },
+   "generic": {
+    "per_frame_s": 0.2566,
+    "added_per_frame_s": 0.14
+   },
+   "ram": {
+    "per_frame_s": 0.5726,
+    "added_per_frame_s": 0.4559
+   },
+   "owlw": {
+    "per_frame_s": 0.4485,
+    "added_per_frame_s": 0.3319
+   },
+   "owlbox": {
+    "per_frame_s": 0.1987,
+    "added_per_frame_s": 0.1987
+   },
+   "amg16": {
+    "per_frame_s": 0.4101,
+    "added_per_frame_s": 0.4101
+   },
+   "amg32": {
+    "per_frame_s": 1.1484,
+    "added_per_frame_s": 1.1484
+   },
+   "amg16c1": {
+    "per_frame_s": 1.2416,
+    "added_per_frame_s": 1.2416
+   },
+   "amg32c1": {
+    "per_frame_s": 3.6976,
+    "added_per_frame_s": 3.6976
+   },
+   "geo": {
+    "per_frame_s": 0.3119,
+    "added_per_frame_s": 0.0529
+   },
+   "geosam": {
+    "per_frame_s": 0.4212,
+    "added_per_frame_s": 0.1622
+   },
+   "ridge": {
+    "per_frame_s": 0.2516,
+    "added_per_frame_s": 0.2516
+   },
+   "listing": {
+    "per_frame_s": 16.3479,
+    "added_per_frame_s": 16.3479
+   }
+  },
+  "later_methods_median_s": {
+   "labelw": 0.2047,
+   "labelw_t": 0.4269,
+   "generic_t": 0.4655,
+   "ridge2 (embed + filter + multimask decode)": 0.4136
+  },
+  "note": "median over the 36 frames per video (48 for AMG 16 / c1, listing and geometry); 'added' = minus what the core already runs on its keyframes (SAM 3 vision features, DA3 depth, the vocabulary words' detection)"
+ },
+ "stack_added_s_two_a100": {
+  "runs": [
+   {
+    "run": "stack002",
+    "video": "me340",
+    "components_added_to_core": [
+     "generic",
+     "owlbox"
+    ],
+    "keyframes": 50,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 7.99,
+    "component_gpu_thread_s": {
+     "generic": 5.36,
+     "owl": 4.41,
+     "sam2_embed": 3.43,
+     "owlbox_decode": 2.6
+    },
+    "masks_per_frame": {
+     "generic": 136.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0
+    },
+    "gpu_peak_gb": [
+     16.14,
+     37.36
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 7.13
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "me340",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "ridge"
+    ],
+    "keyframes": 50,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 12.24,
+    "component_gpu_thread_s": {
+     "generic": 6.4,
+     "owl": 5.75,
+     "sam2_embed": 3.95,
+     "owlbox_decode": 2.49,
+     "ridge": 5.75
+    },
+    "masks_per_frame": {
+     "generic": 136.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge": 40.0
+    },
+    "gpu_peak_gb": [
+     16.14,
+     37.36
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 5.2
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "me340",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "ridge",
+     "amg16"
+    ],
+    "keyframes": 50,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 21.97,
+    "component_gpu_thread_s": {
+     "generic": 5.31,
+     "owl": 3.09,
+     "sam2_embed": 3.97,
+     "owlbox_decode": 3.59,
+     "ridge": 5.4,
+     "amg16": 22.42
+    },
+    "masks_per_frame": {
+     "generic": 136.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge": 40.0,
+     "amg16": 45.4
+    },
+    "gpu_peak_gb": [
+     20.5,
+     41.72
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 5.21
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "me340",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "amg32"
+    ],
+    "keyframes": 50,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 34.03,
+    "component_gpu_thread_s": {
+     "generic": 5.85,
+     "owl": 2.94,
+     "sam2_embed": 3.77,
+     "owlbox_decode": 2.56,
+     "amg32": 52.66
+    },
+    "masks_per_frame": {
+     "generic": 136.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "amg32": 87.4
+    },
+    "gpu_peak_gb": [
+     20.61,
+     41.81
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 5.2
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "me340",
+    "components_added_to_core": [
+     "generic",
+     "owlbox"
+    ],
+    "keyframes": 150,
+    "keyframes_kind": "every 5 fps keyframe",
+    "added_s": 21.62,
+    "component_gpu_thread_s": {
+     "generic": 15.29,
+     "owl": 9.16,
+     "sam2_embed": 10.89,
+     "owlbox_decode": 7.78
+    },
+    "masks_per_frame": {
+     "generic": 135.9,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0
+    },
+    "gpu_peak_gb": [
+     22.56,
+     43.78
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 15.79
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "samsclub",
+    "components_added_to_core": [
+     "generic",
+     "owlbox"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 6.39,
+    "component_gpu_thread_s": {
+     "generic": 4.69,
+     "owl": 2.7,
+     "sam2_embed": 3.1,
+     "owlbox_decode": 2.21
+    },
+    "masks_per_frame": {
+     "generic": 13.7,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0
+    },
+    "gpu_peak_gb": [
+     19.3,
+     40.5
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.33
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "samsclub",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "ridge"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 10.12,
+    "component_gpu_thread_s": {
+     "generic": 5.53,
+     "owl": 3.48,
+     "sam2_embed": 3.52,
+     "owlbox_decode": 2.69,
+     "ridge": 4.95
+    },
+    "masks_per_frame": {
+     "generic": 13.7,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge": 40.0
+    },
+    "gpu_peak_gb": [
+     15.63,
+     36.83
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.34
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "samsclub",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "ridge",
+     "amg16"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 19.74,
+    "component_gpu_thread_s": {
+     "generic": 5.71,
+     "owl": 2.69,
+     "sam2_embed": 4.17,
+     "owlbox_decode": 2.75,
+     "ridge": 4.87,
+     "amg16": 19.18
+    },
+    "masks_per_frame": {
+     "generic": 13.7,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge": 40.0,
+     "amg16": 44.4
+    },
+    "gpu_peak_gb": [
+     19.89,
+     41.11
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.4
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "samsclub",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "amg32"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 33.91,
+    "component_gpu_thread_s": {
+     "generic": 6.28,
+     "owl": 2.65,
+     "sam2_embed": 3.43,
+     "owlbox_decode": 2.57,
+     "amg32": 52.56
+    },
+    "masks_per_frame": {
+     "generic": 13.7,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "amg32": 80.7
+    },
+    "gpu_peak_gb": [
+     20.02,
+     41.24
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.39
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "samsclub",
+    "components_added_to_core": [
+     "generic",
+     "owlbox"
+    ],
+    "keyframes": 125,
+    "keyframes_kind": "every 5 fps keyframe",
+    "added_s": 17.17,
+    "component_gpu_thread_s": {
+     "generic": 12.14,
+     "owl": 7.2,
+     "sam2_embed": 8.28,
+     "owlbox_decode": 6.51
+    },
+    "masks_per_frame": {
+     "generic": 12.9,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0
+    },
+    "gpu_peak_gb": [
+     21.04,
+     42.09
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 12.93
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "walmart",
+    "components_added_to_core": [
+     "generic",
+     "owlbox"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 5.98,
+    "component_gpu_thread_s": {
+     "generic": 4.36,
+     "owl": 2.56,
+     "sam2_embed": 2.83,
+     "owlbox_decode": 2.15
+    },
+    "masks_per_frame": {
+     "generic": 23.9,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0
+    },
+    "gpu_peak_gb": [
+     17.77,
+     38.83
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.32
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "walmart",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "ridge"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 10.26,
+    "component_gpu_thread_s": {
+     "generic": 5.33,
+     "owl": 4.77,
+     "sam2_embed": 3.29,
+     "owlbox_decode": 2.15,
+     "ridge": 4.83
+    },
+    "masks_per_frame": {
+     "generic": 23.9,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge": 37.7
+    },
+    "gpu_peak_gb": [
+     16.22,
+     36.82
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.4
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "walmart",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "ridge",
+     "amg16"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 19.15,
+    "component_gpu_thread_s": {
+     "generic": 6.07,
+     "owl": 3.05,
+     "sam2_embed": 3.55,
+     "owlbox_decode": 2.15,
+     "ridge": 4.25,
+     "amg16": 18.95
+    },
+    "masks_per_frame": {
+     "generic": 23.9,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge": 37.7,
+     "amg16": 41.4
+    },
+    "gpu_peak_gb": [
+     19.45,
+     41.14
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.39
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "walmart",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "amg32"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 34.86,
+    "component_gpu_thread_s": {
+     "generic": 4.73,
+     "owl": 2.86,
+     "sam2_embed": 3.89,
+     "owlbox_decode": 2.52,
+     "amg32": 54.18
+    },
+    "masks_per_frame": {
+     "generic": 23.9,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "amg32": 80.3
+    },
+    "gpu_peak_gb": [
+     20.19,
+     41.24
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.38
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "walmart",
+    "components_added_to_core": [
+     "generic",
+     "owlbox"
+    ],
+    "keyframes": 125,
+    "keyframes_kind": "every 5 fps keyframe",
+    "added_s": 16.56,
+    "component_gpu_thread_s": {
+     "generic": 11.61,
+     "owl": 7.01,
+     "sam2_embed": 7.86,
+     "owlbox_decode": 6.35
+    },
+    "masks_per_frame": {
+     "generic": 26.2,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0
+    },
+    "gpu_peak_gb": [
+     21.06,
+     42.09
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 12.93
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "lightning",
+    "components_added_to_core": [
+     "generic",
+     "owlbox"
+    ],
+    "keyframes": 44,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 6.12,
+    "component_gpu_thread_s": {
+     "generic": 4.61,
+     "owl": 2.66,
+     "sam2_embed": 2.7,
+     "owlbox_decode": 2.22
+    },
+    "masks_per_frame": {
+     "generic": 35.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0
+    },
+    "gpu_peak_gb": [
+     17.75,
+     38.83
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.49
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "lightning",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "ridge"
+    ],
+    "keyframes": 44,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 7.93,
+    "component_gpu_thread_s": {
+     "generic": 4.93,
+     "owl": 2.53,
+     "sam2_embed": 2.54,
+     "owlbox_decode": 2.74,
+     "ridge": 3.05
+    },
+    "masks_per_frame": {
+     "generic": 35.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge": 40.0
+    },
+    "gpu_peak_gb": [
+     15.74,
+     36.9
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.52
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "lightning",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "ridge",
+     "amg16"
+    ],
+    "keyframes": 44,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 17.63,
+    "component_gpu_thread_s": {
+     "generic": 5.62,
+     "owl": 3.49,
+     "sam2_embed": 3.84,
+     "owlbox_decode": 2.24,
+     "ridge": 2.19,
+     "amg16": 17.78
+    },
+    "masks_per_frame": {
+     "generic": 35.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge": 40.0,
+     "amg16": 20.6
+    },
+    "gpu_peak_gb": [
+     19.81,
+     41.2
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.51
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "lightning",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "amg32"
+    ],
+    "keyframes": 44,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 37.76,
+    "component_gpu_thread_s": {
+     "generic": 5.64,
+     "owl": 3.27,
+     "sam2_embed": 3.79,
+     "owlbox_decode": 2.35,
+     "amg32": 59.92
+    },
+    "masks_per_frame": {
+     "generic": 35.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "amg32": 43.0
+    },
+    "gpu_peak_gb": [
+     20.73,
+     41.47
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.5
+    }
+   },
+   {
+    "run": "stack002",
+    "video": "lightning",
+    "components_added_to_core": [
+     "generic",
+     "owlbox"
+    ],
+    "keyframes": 130,
+    "keyframes_kind": "every 5 fps keyframe",
+    "added_s": 18.33,
+    "component_gpu_thread_s": {
+     "generic": 13.18,
+     "owl": 7.88,
+     "sam2_embed": 8.81,
+     "owlbox_decode": 6.68
+    },
+    "masks_per_frame": {
+     "generic": 34.4,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0
+    },
+    "gpu_peak_gb": [
+     21.1,
+     42.26
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 13.49
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "me340",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2"
+    ],
+    "keyframes": 50,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 19.75,
+    "component_gpu_thread_s": {
+     "generic": 8.77,
+     "labelw": 5.71,
+     "owl": 5.28,
+     "sam2_embed": 6.95,
+     "owlbox_decode": 2.67,
+     "ridge2": 9.94
+    },
+    "masks_per_frame": {
+     "generic": 136.0,
+     "labelw": 50.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 59.8
+    },
+    "gpu_peak_gb": [
+     16.14,
+     37.34
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 7.68
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "me340",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2",
+     "amg16"
+    ],
+    "keyframes": 50,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 30.21,
+    "component_gpu_thread_s": {
+     "generic": 7.11,
+     "labelw": 6.51,
+     "owl": 4.58,
+     "sam2_embed": 4.79,
+     "owlbox_decode": 3.09,
+     "ridge2": 9.51,
+     "amg16": 24.42
+    },
+    "masks_per_frame": {
+     "generic": 136.0,
+     "labelw": 50.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 59.8,
+     "amg16": 45.4
+    },
+    "gpu_peak_gb": [
+     20.31,
+     41.53
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 5.22
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "me340",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2"
+    ],
+    "keyframes": 150,
+    "keyframes_kind": "every 5 fps keyframe",
+    "added_s": 53.67,
+    "component_gpu_thread_s": {
+     "generic": 23.75,
+     "labelw": 13.66,
+     "owl": 10.62,
+     "sam2_embed": 20.89,
+     "owlbox_decode": 7.57,
+     "ridge2": 30.39
+    },
+    "masks_per_frame": {
+     "generic": 135.9,
+     "labelw": 49.4,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 59.8
+    },
+    "gpu_peak_gb": [
+     22.58,
+     43.78
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 15.89
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "samsclub",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 16.71,
+    "component_gpu_thread_s": {
+     "generic": 7.88,
+     "labelw": 4.68,
+     "owl": 3.16,
+     "sam2_embed": 6.19,
+     "owlbox_decode": 2.14,
+     "ridge2": 9.23
+    },
+    "masks_per_frame": {
+     "generic": 13.7,
+     "labelw": 81.5,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 60.0
+    },
+    "gpu_peak_gb": [
+     19.3,
+     40.5
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.35
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "samsclub",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2",
+     "amg16"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 28.65,
+    "component_gpu_thread_s": {
+     "generic": 7.21,
+     "labelw": 5.28,
+     "owl": 3.15,
+     "sam2_embed": 4.85,
+     "owlbox_decode": 3.02,
+     "ridge2": 10.05,
+     "amg16": 23.03
+    },
+    "masks_per_frame": {
+     "generic": 13.7,
+     "labelw": 81.5,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 60.0,
+     "amg16": 44.4
+    },
+    "gpu_peak_gb": [
+     19.8,
+     41.01
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.47
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "samsclub",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2"
+    ],
+    "keyframes": 125,
+    "keyframes_kind": "every 5 fps keyframe",
+    "added_s": 50.3,
+    "component_gpu_thread_s": {
+     "generic": 22.69,
+     "labelw": 14.01,
+     "owl": 9.34,
+     "sam2_embed": 18.19,
+     "owlbox_decode": 7.27,
+     "ridge2": 28.42
+    },
+    "masks_per_frame": {
+     "generic": 12.9,
+     "labelw": 81.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 60.0
+    },
+    "gpu_peak_gb": [
+     21.04,
+     42.11
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 13.54
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "walmart",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 15.67,
+    "component_gpu_thread_s": {
+     "generic": 7.23,
+     "labelw": 4.8,
+     "owl": 3.14,
+     "sam2_embed": 5.65,
+     "owlbox_decode": 2.29,
+     "ridge2": 8.09
+    },
+    "masks_per_frame": {
+     "generic": 23.9,
+     "labelw": 182.5,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 53.5
+    },
+    "gpu_peak_gb": [
+     17.77,
+     38.83
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.31
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "walmart",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2",
+     "amg16"
+    ],
+    "keyframes": 42,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 24.34,
+    "component_gpu_thread_s": {
+     "generic": 6.33,
+     "labelw": 5.69,
+     "owl": 3.18,
+     "sam2_embed": 4.51,
+     "owlbox_decode": 3.27,
+     "ridge2": 7.3,
+     "amg16": 18.03
+    },
+    "masks_per_frame": {
+     "generic": 23.9,
+     "labelw": 182.5,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 53.5,
+     "amg16": 41.4
+    },
+    "gpu_peak_gb": [
+     20.58,
+     41.56
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.38
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "walmart",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2"
+    ],
+    "keyframes": 125,
+    "keyframes_kind": "every 5 fps keyframe",
+    "added_s": 44.23,
+    "component_gpu_thread_s": {
+     "generic": 19.58,
+     "labelw": 12.25,
+     "owl": 8.45,
+     "sam2_embed": 16.9,
+     "owlbox_decode": 6.63,
+     "ridge2": 24.22
+    },
+    "masks_per_frame": {
+     "generic": 26.2,
+     "labelw": 180.7,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 53.3
+    },
+    "gpu_peak_gb": [
+     21.04,
+     42.12
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 12.99
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "lightning",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2"
+    ],
+    "keyframes": 44,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 14.95,
+    "component_gpu_thread_s": {
+     "generic": 7.05,
+     "labelw": 5.93,
+     "owl": 3.12,
+     "sam2_embed": 4.56,
+     "owlbox_decode": 2.43,
+     "ridge2": 6.65
+    },
+    "masks_per_frame": {
+     "generic": 35.0,
+     "labelw": 21.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 58.1
+    },
+    "gpu_peak_gb": [
+     17.75,
+     38.83
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.67
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "lightning",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2",
+     "amg16"
+    ],
+    "keyframes": 44,
+    "keyframes_kind": "object keyframes (every 3rd 5 fps keyframe)",
+    "added_s": 28.46,
+    "component_gpu_thread_s": {
+     "generic": 6.65,
+     "labelw": 6.13,
+     "owl": 3.34,
+     "sam2_embed": 4.99,
+     "owlbox_decode": 3.18,
+     "ridge2": 7.62,
+     "amg16": 24.57
+    },
+    "masks_per_frame": {
+     "generic": 35.0,
+     "labelw": 21.0,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 58.1,
+     "amg16": 20.6
+    },
+    "gpu_peak_gb": [
+     20.36,
+     41.54
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 4.58
+    }
+   },
+   {
+    "run": "stack004",
+    "video": "lightning",
+    "components_added_to_core": [
+     "generic",
+     "owlbox",
+     "labelw",
+     "ridge2"
+    ],
+    "keyframes": 130,
+    "keyframes_kind": "every 5 fps keyframe",
+    "added_s": 41.76,
+    "component_gpu_thread_s": {
+     "generic": 18.6,
+     "labelw": 15.6,
+     "owl": 8.65,
+     "sam2_embed": 13.48,
+     "owlbox_decode": 7.27,
+     "ridge2": 19.68
+    },
+    "masks_per_frame": {
+     "generic": 34.4,
+     "labelw": 22.2,
+     "owl": 0.0,
+     "sam2_embed": 0.0,
+     "owlbox_decode": 100.0,
+     "ridge2": 58.3
+    },
+    "gpu_peak_gb": [
+     21.1,
+     42.26
+    ],
+    "flags_over_90": [],
+    "core_state_s_not_added": {
+     "core_state_s": 13.84
+    }
+   }
+  ],
+  "summary": {
+   "generic+owlbox | object keyframes (every 3rd 5 fps keyframe)": {
+    "min": 5.98,
+    "max": 7.99,
+    "videos": 4
+   },
+   "generic+owlbox+ridge | object keyframes (every 3rd 5 fps keyframe)": {
+    "min": 7.93,
+    "max": 12.24,
+    "videos": 4
+   },
+   "generic+owlbox+ridge+amg16 | object keyframes (every 3rd 5 fps keyframe)": {
+    "min": 17.63,
+    "max": 21.97,
+    "videos": 4
+   },
+   "generic+owlbox+amg32 | object keyframes (every 3rd 5 fps keyframe)": {
+    "min": 33.91,
+    "max": 37.76,
+    "videos": 4
+   },
+   "generic+owlbox | every 5 fps keyframe": {
+    "min": 16.56,
+    "max": 21.62,
+    "videos": 4
+   },
+   "generic+owlbox+labelw+ridge2 | object keyframes (every 3rd 5 fps keyframe)": {
+    "min": 14.95,
+    "max": 19.75,
+    "videos": 4
+   },
+   "generic+owlbox+labelw+ridge2+amg16 | object keyframes (every 3rd 5 fps keyframe)": {
+    "min": 24.34,
+    "max": 30.21,
+    "videos": 4
+   },
+   "generic+owlbox+labelw+ridge2 | every 5 fps keyframe": {
+    "min": 41.76,
+    "max": 53.67,
+    "videos": 4
+   }
+  },
+  "note": "t0 = the core's state ready (keyframes on their GPU, SAM 3 features, person/floor): wall seconds until both GPUs finish; 2 threads, frames alternate; no MPS"
+ },
+ "five_fps_neighbours": {
+  "vocab": {
+   "thin": {
+    "of": 75,
+    "ref_only": 42,
+    "with_5fps_neighbours": 43,
+    "gain": 1
+   },
+   "small": {
+    "of": 162,
+    "ref_only": 97,
+    "with_5fps_neighbours": 105,
+    "gain": 8
+   },
+   "normal": {
+    "of": 67,
+    "ref_only": 42,
+    "with_5fps_neighbours": 46,
+    "gain": 4
+   },
+   "all": {
+    "of": 304,
+    "ref_only": 181,
+    "with_5fps_neighbours": 194,
+    "gain": 13
+   },
+   "neighbour_masks_per_ref_frame": 317.0
+  },
+  "generic": {
+   "thin": {
+    "of": 75,
+    "ref_only": 36,
+    "with_5fps_neighbours": 37,
+    "gain": 1
+   },
+   "small": {
+    "of": 162,
+    "ref_only": 71,
+    "with_5fps_neighbours": 77,
+    "gain": 6
+   },
+   "normal": {
+    "of": 67,
+    "ref_only": 23,
+    "with_5fps_neighbours": 28,
+    "gain": 5
+   },
+   "all": {
+    "of": 304,
+    "ref_only": 130,
+    "with_5fps_neighbours": 142,
+    "gain": 12
+   },
+   "neighbour_masks_per_ref_frame": 83.3
+  },
+  "ram": {
+   "thin": {
+    "of": 75,
+    "ref_only": 6,
+    "with_5fps_neighbours": 7,
+    "gain": 1
+   },
+   "small": {
+    "of": 162,
+    "ref_only": 42,
+    "with_5fps_neighbours": 51,
+    "gain": 9
+   },
+   "normal": {
+    "of": 67,
+    "ref_only": 36,
+    "with_5fps_neighbours": 40,
+    "gain": 4
+   },
+   "all": {
+    "of": 304,
+    "ref_only": 84,
+    "with_5fps_neighbours": 98,
+    "gain": 14
+   },
+   "neighbour_masks_per_ref_frame": 176.5
+  },
+  "owlw": {
+   "thin": {
+    "of": 75,
+    "ref_only": 14,
+    "with_5fps_neighbours": 15,
+    "gain": 1
+   },
+   "small": {
+    "of": 162,
+    "ref_only": 61,
+    "with_5fps_neighbours": 67,
+    "gain": 6
+   },
+   "normal": {
+    "of": 67,
+    "ref_only": 33,
+    "with_5fps_neighbours": 37,
+    "gain": 4
+   },
+   "all": {
+    "of": 304,
+    "ref_only": 108,
+    "with_5fps_neighbours": 119,
+    "gain": 11
+   },
+   "neighbour_masks_per_ref_frame": 188.5
+  },
+  "owlbox": {
+   "thin": {
+    "of": 75,
+    "ref_only": 4,
+    "with_5fps_neighbours": 5,
+    "gain": 1
+   },
+   "small": {
+    "of": 162,
+    "ref_only": 66,
+    "with_5fps_neighbours": 77,
+    "gain": 11
+   },
+   "normal": {
+    "of": 67,
+    "ref_only": 42,
+    "with_5fps_neighbours": 47,
+    "gain": 5
+   },
+   "all": {
+    "of": 304,
+    "ref_only": 112,
+    "with_5fps_neighbours": 129,
+    "gain": 17
+   },
+   "neighbour_masks_per_ref_frame": 189.5
+  },
+  "amg32": {
+   "thin": {
+    "of": 75,
+    "ref_only": 5,
+    "with_5fps_neighbours": 5,
+    "gain": 0
+   },
+   "small": {
+    "of": 162,
+    "ref_only": 31,
+    "with_5fps_neighbours": 40,
+    "gain": 9
+   },
+   "normal": {
+    "of": 67,
+    "ref_only": 32,
+    "with_5fps_neighbours": 37,
+    "gain": 5
+   },
+   "all": {
+    "of": 304,
+    "ref_only": 68,
+    "with_5fps_neighbours": 82,
+    "gain": 14
+   },
+   "neighbour_masks_per_ref_frame": 140.4
+  },
+  "amg32c1": {
+   "thin": {
+    "of": 75,
+    "ref_only": 11,
+    "with_5fps_neighbours": 11,
+    "gain": 0
+   },
+   "small": {
+    "of": 162,
+    "ref_only": 59,
+    "with_5fps_neighbours": 69,
+    "gain": 10
+   },
+   "normal": {
+    "of": 67,
+    "ref_only": 36,
+    "with_5fps_neighbours": 40,
+    "gain": 4
+   },
+   "all": {
+    "of": 304,
+    "ref_only": 106,
+    "with_5fps_neighbours": 120,
+    "gain": 14
+   },
+   "neighbour_masks_per_ref_frame": 254.9
+  },
+  "ridge": {
+   "thin": {
+    "of": 75,
+    "ref_only": 1,
+    "with_5fps_neighbours": 4,
+    "gain": 3
+   },
+   "small": {
+    "of": 162,
+    "ref_only": 6,
+    "with_5fps_neighbours": 9,
+    "gain": 3
+   },
+   "normal": {
+    "of": 67,
+    "ref_only": 15,
+    "with_5fps_neighbours": 20,
+    "gain": 5
+   },
+   "all": {
+    "of": 304,
+    "ref_only": 22,
+    "with_5fps_neighbours": 33,
+    "gain": 11
+   },
+   "neighbour_masks_per_ref_frame": 76.2
+  },
+  "rule": "a reference item counts as found when found on its keyframe or on the 5 fps keyframe before / after, those masks warped onto the keyframe by DIS optical flow (lower bound: warping blurs thin masks)"
+ },
+ "gpu_memory_run001": {
+  "me340": {
+   "stages": [
+    {
+     "stage": "decode",
+     "s": 2.368,
+     "n": null,
+     "peak_gb": [
+      9.64,
+      30.99
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "vocab.qwen",
+     "s": 7.656,
+     "n": null,
+     "peak_gb": [
+      9.64,
+      31.4
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.vision",
+     "s": 2.053,
+     "n": 36,
+     "peak_gb": [
+      12.0,
+      33.49
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "owl",
+     "s": 0.961,
+     "n": 36,
+     "peak_gb": [
+      12.05,
+      33.68
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.aux",
+     "s": 1.956,
+     "n": 36,
+     "peak_gb": [
+      13.25,
+      34.9
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.vocab",
+     "s": 9.893,
+     "n": 36,
+     "peak_gb": [
+      32.27,
+      53.9
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.generic",
+     "s": 4.516,
+     "n": 36,
+     "peak_gb": [
+      32.28,
+      53.91
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.ram",
+     "s": 3.639,
+     "n": 36,
+     "peak_gb": [
+      32.28,
+      53.91
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.owlw",
+     "s": 5.021,
+     "n": 36,
+     "peak_gb": [
+      32.28,
+      53.91
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg16",
+     "s": 2.505,
+     "n": 12,
+     "peak_gb": [
+      32.28,
+      53.91
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg32",
+     "s": 18.238,
+     "n": 36,
+     "peak_gb": [
+      32.28,
+      53.91
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg16c1",
+     "s": 9.049,
+     "n": 12,
+     "peak_gb": [
+      32.28,
+      53.91
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg32c1",
+     "s": 78.26,
+     "n": 36,
+     "peak_gb": [
+      32.28,
+      53.91
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "da3.geo",
+     "s": 4.125,
+     "n": 12,
+     "peak_gb": [
+      32.28,
+      53.91
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.prompts",
+     "s": 7.039,
+     "n": 36,
+     "peak_gb": [
+      32.28,
+      53.91
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "listing.qwen",
+     "s": 195.394,
+     "n": 12,
+     "peak_gb": [
+      32.28,
+      54.52
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.listing",
+     "s": 0.899,
+     "n": 12,
+     "peak_gb": [
+      32.28,
+      54.52
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    }
+   ],
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 85.1,
+     "peak_gb": 32.28,
+     "at_s": 146.9,
+     "stages_active": [
+      "da3.geo"
+     ]
+    },
+    {
+     "gpu": 1,
+     "total_gb": 85.1,
+     "peak_gb": 54.52,
+     "at_s": 159.8,
+     "stages_active": [
+      "listing.qwen"
+     ]
+    }
+   ],
+   "flags": [],
+   "torch_reserved_peak_gb": [
+    31.69,
+    26.29
+   ]
+  },
+  "samsclub": {
+   "stages": [
+    {
+     "stage": "decode",
+     "s": 0.947,
+     "n": null,
+     "peak_gb": [
+      9.69,
+      32.03
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "vocab.qwen",
+     "s": 3.033,
+     "n": null,
+     "peak_gb": [
+      9.83,
+      32.16
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.vision",
+     "s": 2.211,
+     "n": 36,
+     "peak_gb": [
+      11.93,
+      34.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "owl",
+     "s": 0.967,
+     "n": 36,
+     "peak_gb": [
+      12.12,
+      34.33
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.aux",
+     "s": 2.676,
+     "n": 36,
+     "peak_gb": [
+      13.3,
+      35.54
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.vocab",
+     "s": 5.301,
+     "n": 36,
+     "peak_gb": [
+      19.53,
+      41.74
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.generic",
+     "s": 2.113,
+     "n": 36,
+     "peak_gb": [
+      19.54,
+      41.75
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.ram",
+     "s": 8.066,
+     "n": 36,
+     "peak_gb": [
+      20.97,
+      42.85
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.owlw",
+     "s": 8.444,
+     "n": 36,
+     "peak_gb": [
+      20.98,
+      42.86
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg16",
+     "s": 2.761,
+     "n": 12,
+     "peak_gb": [
+      20.98,
+      42.86
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg32",
+     "s": 22.314,
+     "n": 36,
+     "peak_gb": [
+      20.98,
+      42.86
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg16c1",
+     "s": 7.983,
+     "n": 12,
+     "peak_gb": [
+      20.98,
+      42.86
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg32c1",
+     "s": 68.029,
+     "n": 36,
+     "peak_gb": [
+      20.98,
+      42.86
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "da3.geo",
+     "s": 3.715,
+     "n": 12,
+     "peak_gb": [
+      20.98,
+      42.86
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.prompts",
+     "s": 7.885,
+     "n": 36,
+     "peak_gb": [
+      20.98,
+      42.86
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "listing.qwen",
+     "s": 195.354,
+     "n": 12,
+     "peak_gb": [
+      20.98,
+      42.86
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.listing",
+     "s": 0.996,
+     "n": 12,
+     "peak_gb": [
+      20.98,
+      42.86
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    }
+   ],
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 85.1,
+     "peak_gb": 20.98,
+     "at_s": 32.47,
+     "stages_active": [
+      "sam3.owlw"
+     ]
+    },
+    {
+     "gpu": 1,
+     "total_gb": 85.1,
+     "peak_gb": 42.86,
+     "at_s": 33.47,
+     "stages_active": [
+      "sam3.owlw"
+     ]
+    }
+   ],
+   "flags": [],
+   "torch_reserved_peak_gb": [
+    20.39,
+    14.63
+   ]
+  },
+  "walmart": {
+   "stages": [
+    {
+     "stage": "decode",
+     "s": 0.946,
+     "n": null,
+     "peak_gb": [
+      9.83,
+      31.93
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "vocab.qwen",
+     "s": 2.107,
+     "n": null,
+     "peak_gb": [
+      9.94,
+      32.07
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.vision",
+     "s": 2.181,
+     "n": 36,
+     "peak_gb": [
+      11.95,
+      34.04
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "owl",
+     "s": 0.941,
+     "n": 36,
+     "peak_gb": [
+      12.39,
+      34.52
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.aux",
+     "s": 2.111,
+     "n": 36,
+     "peak_gb": [
+      13.3,
+      35.43
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.vocab",
+     "s": 3.442,
+     "n": 36,
+     "peak_gb": [
+      18.1,
+      40.17
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.generic",
+     "s": 2.537,
+     "n": 36,
+     "peak_gb": [
+      18.11,
+      40.18
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.ram",
+     "s": 7.347,
+     "n": 36,
+     "peak_gb": [
+      21.72,
+      42.36
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.owlw",
+     "s": 8.059,
+     "n": 36,
+     "peak_gb": [
+      21.74,
+      43.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg16",
+     "s": 2.662,
+     "n": 12,
+     "peak_gb": [
+      21.74,
+      43.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg32",
+     "s": 24.696,
+     "n": 36,
+     "peak_gb": [
+      21.74,
+      43.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg16c1",
+     "s": 7.347,
+     "n": 12,
+     "peak_gb": [
+      21.74,
+      43.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg32c1",
+     "s": 66.485,
+     "n": 36,
+     "peak_gb": [
+      21.74,
+      43.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "da3.geo",
+     "s": 3.787,
+     "n": 12,
+     "peak_gb": [
+      21.74,
+      43.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.prompts",
+     "s": 7.452,
+     "n": 36,
+     "peak_gb": [
+      21.74,
+      43.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "listing.qwen",
+     "s": 195.312,
+     "n": 12,
+     "peak_gb": [
+      21.74,
+      43.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.listing",
+     "s": 1.076,
+     "n": 12,
+     "peak_gb": [
+      21.74,
+      43.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    }
+   ],
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 85.1,
+     "peak_gb": 21.74,
+     "at_s": 28.88,
+     "stages_active": [
+      "sam3.owlw"
+     ]
+    },
+    {
+     "gpu": 1,
+     "total_gb": 85.1,
+     "peak_gb": 43.15,
+     "at_s": 28.47,
+     "stages_active": [
+      "sam3.owlw"
+     ]
+    }
+   ],
+   "flags": [],
+   "torch_reserved_peak_gb": [
+    21.13,
+    14.91
+   ]
+  },
+  "lightning": {
+   "stages": [
+    {
+     "stage": "decode",
+     "s": 0.361,
+     "n": null,
+     "peak_gb": [
+      9.79,
+      31.95
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "vocab.qwen",
+     "s": 7.818,
+     "n": null,
+     "peak_gb": [
+      9.81,
+      31.97
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.vision",
+     "s": 1.916,
+     "n": 36,
+     "peak_gb": [
+      12.08,
+      34.21
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "owl",
+     "s": 0.854,
+     "n": 36,
+     "peak_gb": [
+      12.43,
+      34.56
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.aux",
+     "s": 1.968,
+     "n": 36,
+     "peak_gb": [
+      13.34,
+      35.47
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.vocab",
+     "s": 9.067,
+     "n": 36,
+     "peak_gb": [
+      32.01,
+      54.13
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.generic",
+     "s": 3.099,
+     "n": 36,
+     "peak_gb": [
+      32.01,
+      54.14
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.ram",
+     "s": 7.091,
+     "n": 36,
+     "peak_gb": [
+      32.02,
+      54.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam3.owlw",
+     "s": 5.917,
+     "n": 36,
+     "peak_gb": [
+      32.02,
+      54.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg16",
+     "s": 2.636,
+     "n": 12,
+     "peak_gb": [
+      32.02,
+      54.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg32",
+     "s": 25.194,
+     "n": 36,
+     "peak_gb": [
+      32.02,
+      54.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg16c1",
+     "s": 7.114,
+     "n": 12,
+     "peak_gb": [
+      32.02,
+      54.15
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.amg32c1",
+     "s": 62.372,
+     "n": 36,
+     "peak_gb": [
+      32.02,
+      54.16
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "da3.geo",
+     "s": 3.334,
+     "n": 12,
+     "peak_gb": [
+      32.03,
+      54.16
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.prompts",
+     "s": 5.405,
+     "n": 36,
+     "peak_gb": [
+      32.03,
+      54.16
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "listing.qwen",
+     "s": 191.919,
+     "n": 12,
+     "peak_gb": [
+      32.03,
+      54.16
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    },
+    {
+     "stage": "sam2.listing",
+     "s": 1.057,
+     "n": 12,
+     "peak_gb": [
+      32.03,
+      54.16
+     ],
+     "over_90": [
+      false,
+      false
+     ]
+    }
+   ],
+   "gpu_peak": [
+    {
+     "gpu": 0,
+     "total_gb": 85.1,
+     "peak_gb": 32.03,
+     "at_s": 135.98,
+     "stages_active": [
+      "da3.geo"
+     ]
+    },
+    {
+     "gpu": 1,
+     "total_gb": 85.1,
+     "peak_gb": 54.16,
+     "at_s": 76.3,
+     "stages_active": [
+      "sam2.amg32c1"
+     ]
+    }
+   ],
+   "flags": [],
+   "torch_reserved_peak_gb": [
+    31.41,
+    25.91
+   ]
+  }
+ },
+ "spend_usd_upper": {
+  "run000_trial_lightning": 1.559,
+  "run001_all_methods": 3.103,
+  "stack002_times_ridge2": 1.214,
+  "words003_label_and_tiles": 0.438,
+  "stack004_recommended_stack": 1.87,
+  "setup_and_ram_probes_estimated": 0.45,
+  "total_usd_upper": 8.63
+ },
+ "summary": {
+  "answer": "No: SAM 2.1 automatic masks do not cut out 'everything'. On 48 keyframes of 4 videos, against an audited reference, AMG 16x16 found 11% of the things (own look 27%), 32x32 25% (47%), 32x32 with one crop layer 38% (60%) at 3.7 s a frame; thin things 3-16%; only 12-16% of its masks are one whole thing (50-59% parts, 19-21% background). What works is a union: the core's vocabulary + SAM 3 catch-all words + OWLv2 objectness boxes into SAM 2.1 + a label word set + ridge points for cables.",
+  "recommended_stack": {
+   "add_to_core": [
+    "SAM 3 catch-all words on the kept features (generic: object, item, tool, cable, hose, debris, container, equipment, sign)",
+    "SAM 3 label words on the kept features (label, sticker, tag, sign, placard, price tag, warning label)",
+    "OWLv2-L objectness: top 100 boxes -> SAM 2.1-L box prompts (one image embedding per keyframe)",
+    "ridge2: Hessian ridges, straight ones dropped, 5 points along each -> SAM 2.1 multimask, the thinnest good mask (same embedding)"
+   ],
+   "added_s": "15.0-19.8 s measured on the object keyframes (42-50 per 30 s video), 2 A100-80GB, models resident; per-GPU peak 19.3 / 40.5 GB of 80 (every stack run: 22.58 / 43.78 GB; nothing over 90%)",
+   "recall": "pool reference 0.60 -> 0.74 (thin 0.56 -> 0.61, tiny 0.46 -> 0.57, medium 0.57 -> 0.91); own look 0.69 -> 0.85 (labels 0.40 -> 0.70, small 0.75 -> 0.90, cables 0.83 -> 0.86)",
+   "optional_small_items": "the same two SAM 3 word sets on 2x2 tiles (labelw_t + generic_t) lift tiny things 0.57 -> 0.70 on the pool reference, but own look only 0.85 -> 0.86 and ~0.9 s a frame: inferred ~35-45 s, over the budget",
+   "not_recommended": {
+    "SAM 2.1 AMG": "amg16 adds 1 own-look item for +9-10 s; amg32 +3-5 points for +28-30 s; one crop layer 3.7 s a frame",
+    "RAM++ tags -> SAM 3": "0.30 / 0.39 alone, +2 points on the vocabulary, 0.46 s a frame; tags are scene words (pillar, shirt, subway)",
+    "OWLv2 words -> SAM 3": "+4 points on the vocabulary for 0.33 s a frame; OWLv2's boxes carry the gain, not its words",
+    "3D geometry (planes + residual clusters)": "6-9% alone; residuals are mostly parts and noise at DA3's 504x280 grid; cables on the floor are within the depth noise",
+    "Qwen3-VL-8B tiled listing": "0.43 / 0.53 at 16 s a frame: a reference tool, not a stage",
+    "5 fps object keyframes": "thin items +0 to +3 of 75 per method (flow-warped lower bound), all items +3.6 to +5.6 points; the recommended stack at 5 fps is 42-54 s"
+   }
+  },
+  "what_still_gets_missed": [
+   "small labels and price tags on beams and hooks (own look: 23 of 77 labels missed by the stack, 21 by every method)",
+   "pallets under a loaded stack (outlined together with the load)",
+   "tiny far things: fire-alarm strobes, e-stop buttons, a shoe on the floor far away (< 0.1% of the frame)",
+   "thin low-contrast or occluded cables: white cables under a bench, a red hose against a red machine, conduit on a white wall",
+   "floor tape lines and barrier tape (outlined as floor)",
+   "a box leaning out of a shelf, open boxes (merged into the shelf contents)",
+   "things a person partly hides (people masks are cut out first)"
+  ],
+  "table_single_methods": [
+   {
+    "set": "vocab",
+    "pool_recall_all": 0.6,
+    "pool_thin": 0.556,
+    "pool_small": 0.599,
+    "pool_normal": 0.627,
+    "pool_tiny": 0.461,
+    "pool_medium": 0.571,
+    "own_look_all": 0.687,
+    "own_look_cable": 0.833,
+    "own_look_tool": 0.884,
+    "own_look_label": 0.403,
+    "own_look_small": 0.75,
+    "masks_per_frame": 153.5,
+    "whole_part_background_group": [
+     0.164,
+     0.529,
+     0.188,
+     0.072
+    ],
+    "added_s_per_frame_one_a100": 0.0
+   },
+   {
+    "set": "generic",
+    "pool_recall_all": 0.422,
+    "pool_thin": 0.492,
+    "pool_small": 0.438,
+    "pool_normal": 0.343,
+    "pool_tiny": 0.362,
+    "pool_medium": 0.229,
+    "own_look_all": 0.532,
+    "own_look_cable": 0.778,
+    "own_look_tool": 0.837,
+    "own_look_label": 0.468,
+    "own_look_small": 0.456,
+    "masks_per_frame": 39.2,
+    "whole_part_background_group": [
+     0.407,
+     0.353,
+     0.053,
+     0.109
+    ],
+    "added_s_per_frame_one_a100": 0.14
+   },
+   {
+    "set": "ram",
+    "pool_recall_all": 0.304,
+    "pool_thin": 0.079,
+    "pool_small": 0.259,
+    "pool_normal": 0.537,
+    "pool_tiny": 0.099,
+    "pool_medium": 0.486,
+    "own_look_all": 0.386,
+    "own_look_cable": 0.25,
+    "own_look_tool": 0.86,
+    "own_look_label": 0.013,
+    "own_look_small": 0.467,
+    "masks_per_frame": 87.9,
+    "whole_part_background_group": [
+     0.116,
+     0.722,
+     0.038,
+     0.107
+    ],
+    "added_s_per_frame_one_a100": 0.4559
+   },
+   {
+    "set": "owlw",
+    "pool_recall_all": 0.382,
+    "pool_thin": 0.212,
+    "pool_small": 0.377,
+    "pool_normal": 0.493,
+    "pool_tiny": 0.197,
+    "pool_medium": 0.457,
+    "own_look_all": 0.506,
+    "own_look_cable": 0.306,
+    "own_look_tool": 0.837,
+    "own_look_label": 0.156,
+    "own_look_small": 0.628,
+    "masks_per_frame": 94.7,
+    "whole_part_background_group": [
+     0.144,
+     0.657,
+     0.059,
+     0.117
+    ],
+    "added_s_per_frame_one_a100": 0.3319
+   },
+   {
+    "set": "owlbox",
+    "pool_recall_all": 0.411,
+    "pool_thin": 0.042,
+    "pool_small": 0.407,
+    "pool_normal": 0.627,
+    "pool_tiny": 0.132,
+    "pool_medium": 0.686,
+    "own_look_all": 0.582,
+    "own_look_cable": 0.361,
+    "own_look_tool": 0.86,
+    "own_look_label": 0.195,
+    "own_look_small": 0.739,
+    "masks_per_frame": 94.0,
+    "whole_part_background_group": [
+     0.232,
+     0.483,
+     0.07,
+     0.181
+    ],
+    "added_s_per_frame_one_a100": 0.1987
+   },
+   {
+    "set": "amg16",
+    "pool_recall_all": 0.112,
+    "pool_thin": 0.026,
+    "pool_small": 0.056,
+    "pool_normal": 0.299,
+    "pool_tiny": 0.0,
+    "pool_medium": 0.371,
+    "own_look_all": 0.266,
+    "own_look_cable": 0.056,
+    "own_look_tool": 0.186,
+    "own_look_label": 0.169,
+    "own_look_small": 0.367,
+    "masks_per_frame": 35.2,
+    "whole_part_background_group": [
+     0.158,
+     0.503,
+     0.189,
+     0.102
+    ],
+    "added_s_per_frame_one_a100": 0.4101
+   },
+   {
+    "set": "amg32",
+    "pool_recall_all": 0.25,
+    "pool_thin": 0.101,
+    "pool_small": 0.191,
+    "pool_normal": 0.478,
+    "pool_tiny": 0.066,
+    "pool_medium": 0.514,
+    "own_look_all": 0.471,
+    "own_look_cable": 0.194,
+    "own_look_tool": 0.465,
+    "own_look_label": 0.377,
+    "own_look_small": 0.561,
+    "masks_per_frame": 69.0,
+    "whole_part_background_group": [
+     0.153,
+     0.535,
+     0.208,
+     0.057
+    ],
+    "added_s_per_frame_one_a100": 1.1484
+   },
+   {
+    "set": "amg16c1",
+    "pool_recall_all": 0.243,
+    "pool_thin": 0.074,
+    "pool_small": 0.185,
+    "pool_normal": 0.478,
+    "pool_tiny": 0.066,
+    "pool_medium": 0.486,
+    "own_look_all": 0.465,
+    "own_look_cable": 0.139,
+    "own_look_tool": 0.442,
+    "own_look_label": 0.39,
+    "own_look_small": 0.561,
+    "masks_per_frame": 75.8,
+    "whole_part_background_group": [
+     0.141,
+     0.557,
+     0.196,
+     0.068
+    ],
+    "added_s_per_frame_one_a100": 1.2416
+   },
+   {
+    "set": "amg32c1",
+    "pool_recall_all": 0.379,
+    "pool_thin": 0.164,
+    "pool_small": 0.364,
+    "pool_normal": 0.537,
+    "pool_tiny": 0.23,
+    "pool_medium": 0.571,
+    "own_look_all": 0.602,
+    "own_look_cable": 0.25,
+    "own_look_tool": 0.674,
+    "own_look_label": 0.545,
+    "own_look_small": 0.672,
+    "masks_per_frame": 126.8,
+    "whole_part_background_group": [
+     0.124,
+     0.585,
+     0.193,
+     0.044
+    ],
+    "added_s_per_frame_one_a100": 3.6976
+   },
+   {
+    "set": "geo",
+    "pool_recall_all": 0.064,
+    "pool_thin": 0.159,
+    "pool_small": 0.031,
+    "pool_normal": 0.09,
+    "pool_tiny": 0.039,
+    "pool_medium": 0.086,
+    "own_look_all": 0.126,
+    "own_look_cable": 0.194,
+    "own_look_tool": 0.14,
+    "own_look_label": 0.039,
+    "own_look_small": 0.144,
+    "masks_per_frame": 42.5,
+    "whole_part_background_group": [
+     0.05,
+     0.577,
+     0.243,
+     0.069
+    ],
+    "added_s_per_frame_one_a100": 0.0529
+   },
+   {
+    "set": "geosam",
+    "pool_recall_all": 0.086,
+    "pool_thin": 0.132,
+    "pool_small": 0.056,
+    "pool_normal": 0.134,
+    "pool_tiny": 0.039,
+    "pool_medium": 0.114,
+    "own_look_all": 0.14,
+    "own_look_cable": 0.139,
+    "own_look_tool": 0.163,
+    "own_look_label": 0.039,
+    "own_look_small": 0.178,
+    "masks_per_frame": 42.5,
+    "whole_part_background_group": [
+     0.056,
+     0.595,
+     0.201,
+     0.076
+    ],
+    "added_s_per_frame_one_a100": 0.1622
+   },
+   {
+    "set": "ridge",
+    "pool_recall_all": 0.08,
+    "pool_thin": 0.011,
+    "pool_small": 0.037,
+    "pool_normal": 0.224,
+    "pool_tiny": 0.0,
+    "pool_medium": 0.343,
+    "own_look_all": 0.152,
+    "own_look_cable": 0.25,
+    "own_look_tool": 0.07,
+    "own_look_label": 0.026,
+    "own_look_small": 0.2,
+    "masks_per_frame": 37.9,
+    "whole_part_background_group": [
+     0.097,
+     0.408,
+     0.249,
+     0.203
+    ],
+    "added_s_per_frame_one_a100": 0.2516
+   },
+   {
+    "set": "ridge2",
+    "pool_recall_all": 0.103,
+    "pool_thin": 0.069,
+    "pool_small": 0.074,
+    "pool_normal": 0.194,
+    "pool_tiny": 0.0,
+    "pool_medium": 0.2,
+    "own_look_all": 0.231,
+    "own_look_cable": 0.361,
+    "own_look_tool": 0.116,
+    "own_look_label": 0.052,
+    "own_look_small": 0.306,
+    "masks_per_frame": null,
+    "whole_part_background_group": null,
+    "added_s_per_frame_one_a100": 0.4136
+   },
+   {
+    "set": "labelw",
+    "pool_recall_all": 0.084,
+    "pool_thin": 0.011,
+    "pool_small": 0.123,
+    "pool_normal": 0.03,
+    "pool_tiny": 0.145,
+    "pool_medium": 0.0,
+    "own_look_all": 0.178,
+    "own_look_cable": 0.0,
+    "own_look_tool": 0.0,
+    "own_look_label": 0.649,
+    "own_look_small": 0.056,
+    "masks_per_frame": null,
+    "whole_part_background_group": null,
+    "added_s_per_frame_one_a100": 0.0881
+   },
+   {
+    "set": "labelw_t",
+    "pool_recall_all": 0.086,
+    "pool_thin": 0.0,
+    "pool_small": 0.123,
+    "pool_normal": 0.045,
+    "pool_tiny": 0.132,
+    "pool_medium": 0.0,
+    "own_look_all": 0.202,
+    "own_look_cable": 0.0,
+    "own_look_tool": 0.0,
+    "own_look_label": 0.688,
+    "own_look_small": 0.089,
+    "masks_per_frame": null,
+    "whole_part_background_group": null,
+    "added_s_per_frame_one_a100": 0.4269
+   },
+   {
+    "set": "generic_t",
+    "pool_recall_all": 0.445,
+    "pool_thin": 0.497,
+    "pool_small": 0.469,
+    "pool_normal": 0.358,
+    "pool_tiny": 0.559,
+    "pool_medium": 0.2,
+    "own_look_all": 0.57,
+    "own_look_cable": 0.806,
+    "own_look_tool": 0.86,
+    "own_look_label": 0.494,
+    "own_look_small": 0.506,
+    "masks_per_frame": null,
+    "whole_part_background_group": null,
+    "added_s_per_frame_one_a100": 0.4655
+   },
+   {
+    "set": "listing",
+    "pool_recall_all": 0.429,
+    "pool_thin": 0.354,
+    "pool_small": 0.444,
+    "pool_normal": 0.433,
+    "pool_tiny": 0.355,
+    "pool_medium": 0.571,
+    "own_look_all": 0.532,
+    "own_look_cable": 0.5,
+    "own_look_tool": 0.767,
+    "own_look_label": 0.312,
+    "own_look_small": 0.594,
+    "masks_per_frame": 120.5,
+    "whole_part_background_group": [
+     0.163,
+     0.572,
+     0.136,
+     0.051
+    ],
+    "added_s_per_frame_one_a100": 16.3479
+   }
+  ],
+  "table_stacks": [
+   {
+    "set": "vocab+generic+owlbox",
+    "pool_recall_all": 0.717,
+    "pool_thin": 0.587,
+    "pool_small": 0.685,
+    "pool_normal": 0.866,
+    "pool_tiny": 0.572,
+    "pool_medium": 0.886,
+    "own_look_all": 0.789,
+    "own_look_cable": 0.861,
+    "own_look_tool": 0.93,
+    "own_look_label": 0.506,
+    "own_look_small": 0.878,
+    "masks_per_frame": 286.7,
+    "whole_part_background_group": [
+     0.221,
+     0.489,
+     0.13,
+     0.113
+    ],
+    "added_s_per_frame_one_a100": null,
+    "added_s_video_2_a100": "6.0-8.0 s measured"
+   },
+   {
+    "set": "vocab+generic+owlbox+ridge",
+    "pool_recall_all": 0.732,
+    "pool_thin": 0.587,
+    "pool_small": 0.698,
+    "pool_normal": 0.896,
+    "pool_tiny": 0.572,
+    "pool_medium": 0.914,
+    "own_look_all": 0.795,
+    "own_look_cable": 0.861,
+    "own_look_tool": 0.93,
+    "own_look_label": 0.519,
+    "own_look_small": 0.878,
+    "masks_per_frame": 324.6,
+    "whole_part_background_group": [
+     0.208,
+     0.48,
+     0.143,
+     0.123
+    ],
+    "added_s_per_frame_one_a100": null,
+    "added_s_video_2_a100": "7.9-12.2 s measured"
+   },
+   {
+    "set": "vocab+generic+owlbox+labelw+ridge2",
+    "pool_recall_all": 0.739,
+    "pool_thin": 0.614,
+    "pool_small": 0.704,
+    "pool_normal": 0.896,
+    "pool_tiny": 0.572,
+    "pool_medium": 0.914,
+    "own_look_all": 0.851,
+    "own_look_cable": 0.861,
+    "own_look_tool": 0.93,
+    "own_look_label": 0.701,
+    "own_look_small": 0.9,
+    "masks_per_frame": null,
+    "whole_part_background_group": null,
+    "added_s_per_frame_one_a100": null,
+    "added_s_video_2_a100": "15.0-19.8 s measured"
+   },
+   {
+    "set": "vocab+generic+owlbox+labelw+ridge+amg16",
+    "pool_recall_all": 0.743,
+    "pool_thin": 0.587,
+    "pool_small": 0.71,
+    "pool_normal": 0.91,
+    "pool_tiny": 0.572,
+    "pool_medium": 0.943,
+    "own_look_all": 0.839,
+    "own_look_cable": 0.861,
+    "own_look_tool": 0.93,
+    "own_look_label": 0.688,
+    "own_look_small": 0.883,
+    "masks_per_frame": null,
+    "whole_part_background_group": null,
+    "added_s_per_frame_one_a100": null,
+    "added_s_video_2_a100": "24.3-30.2 s measured (with ridge2 in place of ridge)"
+   },
+   {
+    "set": "vocab+generic+owlbox+amg32",
+    "pool_recall_all": 0.75,
+    "pool_thin": 0.587,
+    "pool_small": 0.722,
+    "pool_normal": 0.91,
+    "pool_tiny": 0.605,
+    "pool_medium": 0.914,
+    "own_look_all": 0.836,
+    "own_look_cable": 0.889,
+    "own_look_tool": 0.953,
+    "own_look_label": 0.61,
+    "own_look_small": 0.894,
+    "masks_per_frame": 355.7,
+    "whole_part_background_group": [
+     0.207,
+     0.498,
+     0.145,
+     0.102
+    ],
+    "added_s_per_frame_one_a100": null,
+    "added_s_video_2_a100": "33.9-37.8 s measured"
+   },
+   {
+    "set": "vocab+generic+owlbox+labelw_t+generic_t+ridge2",
+    "pool_recall_all": 0.776,
+    "pool_thin": 0.635,
+    "pool_small": 0.753,
+    "pool_normal": 0.91,
+    "pool_tiny": 0.704,
+    "pool_medium": 0.914,
+    "own_look_all": 0.863,
+    "own_look_cable": 0.889,
+    "own_look_tool": 0.93,
+    "own_look_label": 0.701,
+    "own_look_small": 0.922,
+    "masks_per_frame": null,
+    "whole_part_background_group": null,
+    "added_s_per_frame_one_a100": null,
+    "added_s_video_2_a100": "inferred ~35-45 s: 15-20 s measured stack + (0.43 + 0.47 s per frame x 42-50 keyframes / 2 GPUs)"
+   },
+   {
+    "set": "vocab+amg32c1",
+    "pool_recall_all": 0.691,
+    "pool_thin": 0.566,
+    "pool_small": 0.679,
+    "pool_normal": 0.791,
+    "pool_tiny": 0.559,
+    "pool_medium": 0.743,
+    "own_look_all": 0.801,
+    "own_look_cable": 0.861,
+    "own_look_tool": 0.907,
+    "own_look_label": 0.623,
+    "own_look_small": 0.839,
+    "masks_per_frame": 280.3,
+    "whole_part_background_group": [
+     0.145,
+     0.555,
+     0.191,
+     0.059
+    ],
+    "added_s_per_frame_one_a100": null,
+    "added_s_video_2_a100": "inferred ~80-95 s: 3.7 s per frame x 42-50 keyframes / 2 GPUs"
+   },
+   {
+    "set": "all_but_listing",
+    "pool_recall_all": 0.856,
+    "pool_thin": 0.804,
+    "pool_small": 0.821,
+    "pool_normal": 0.97,
+    "pool_tiny": 0.743,
+    "pool_medium": 0.971,
+    "own_look_all": 0.857,
+    "own_look_cable": 0.889,
+    "own_look_tool": 0.953,
+    "own_look_label": 0.675,
+    "own_look_small": 0.9,
+    "masks_per_frame": null,
+    "whole_part_background_group": null,
+    "added_s_per_frame_one_a100": null,
+    "added_s_video_2_a100": "minutes (inferred)"
+   },
+   {
+    "set": "everything (all + later)",
+    "pool_recall_all": 1.0,
+    "pool_thin": 1.0,
+    "pool_small": 1.0,
+    "pool_normal": 1.0,
+    "pool_tiny": 1.0,
+    "pool_medium": 1.0,
+    "own_look_all": 0.898,
+    "own_look_cable": 0.917,
+    "own_look_tool": 0.953,
+    "own_look_label": 0.727,
+    "own_look_small": 0.95,
+    "masks_per_frame": null,
+    "whole_part_background_group": null,
+    "added_s_per_frame_one_a100": null,
+    "added_s_video_2_a100": "minutes (inferred; the Qwen listing alone 16 s per frame)"
+   }
+  ],
+  "caveats": [
+   "pool reference = union of the methods' own masks, audited on a stratified sample (2,835 of 19,575 clusters): recall is relative to what some method outlined; the own look (342 boxes on 25 frames) is the independent check, box-matched leniently",
+   "agent-labelled throughout (Claude), not a human; retail shelves were labelled at block level (K), single products as parts",
+   "lightning is 640x480 (task's source-rgb.mp4), the others 1280x720",
+   "stack times start from the core's state (features, person/floor, depth) and exclude the vocabulary itself; no MPS in these runs",
+   "the summary text was written by hand from the numbers in this file"
+  ]
+ }
+}

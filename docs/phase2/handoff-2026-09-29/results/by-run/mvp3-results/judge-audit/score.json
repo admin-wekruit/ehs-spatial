@@ -1,0 +1,122 @@
+{
+ "me340 first": {
+  "of_pass": 11,
+  "of_fail": 0,
+  "checks": {
+   "J5": {
+    "pass_audited": 5,
+    "pass_right": 5
+   },
+   "J1": {
+    "pass_audited": 5,
+    "pass_right": 5
+   },
+   "J4": {
+    "pass_audited": 1,
+    "pass_right": 1
+   }
+  },
+  "all": {
+   "pass_audited": 11,
+   "pass_right": 11
+  }
+ },
+ "me340 warm": {
+  "of_pass": 11,
+  "of_fail": 0,
+  "checks": {
+   "J5": {
+    "pass_audited": 5,
+    "pass_right": 5
+   },
+   "J1": {
+    "pass_audited": 5,
+    "pass_right": 5
+   },
+   "J4": {
+    "pass_audited": 1,
+    "pass_right": 1
+   }
+  },
+  "all": {
+   "pass_audited": 11,
+   "pass_right": 11
+  }
+ },
+ "samsclub first": {
+  "of_pass": 87,
+  "of_fail": 0,
+  "checks": {
+   "J5": {
+    "pass_audited": 10,
+    "pass_right": 10
+   },
+   "J1": {
+    "pass_audited": 8,
+    "pass_right": 8
+   },
+   "J2": {
+    "pass_audited": 1,
+    "pass_right": 1
+   }
+  },
+  "all": {
+   "pass_audited": 19,
+   "pass_right": 19
+  }
+ },
+ "samsclub warm": {
+  "of_pass": 89,
+  "of_fail": 0,
+  "checks": {
+   "J1": {
+    "pass_audited": 8,
+    "pass_right": 8
+   },
+   "J5": {
+    "pass_audited": 12,
+    "pass_right": 12
+   }
+  },
+  "all": {
+   "pass_audited": 20,
+   "pass_right": 20
+  }
+ },
+ "walmart first": {
+  "of_pass": 64,
+  "of_fail": 0,
+  "checks": {
+   "J5": {
+    "pass_audited": 19,
+    "pass_right": 19
+   },
+   "J1": {
+    "pass_audited": 1,
+    "pass_right": 1
+   }
+  },
+  "all": {
+   "pass_audited": 20,
+   "pass_right": 20
+  }
+ },
+ "walmart warm": {
+  "of_pass": 64,
+  "of_fail": 0,
+  "checks": {
+   "J5": {
+    "pass_audited": 19,
+    "pass_right": 19
+   },
+   "J1": {
+    "pass_audited": 1,
+    "pass_right": 1
+   }
+  },
+  "all": {
+   "pass_audited": 20,
+   "pass_right": 20
+  }
+ }
+}
