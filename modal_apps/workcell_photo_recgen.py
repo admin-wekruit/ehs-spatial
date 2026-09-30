@@ -36,8 +36,11 @@ def generate(payload: bytes, jobs: list[str]):
             env.update(CUDA_VISIBLE_DEVICES=str(device), ATTN_BACKEND="xformers",
                        SPCONV_ALGO="native", HF_HUB_OFFLINE="1",
                        PYTHONPATH="/repo:/opt/recgen")
+            plan = Path(directory) / f"plan-{device}.json"
+            parsed = [[name, [int(i) for i in indices.split(',')]] for name, indices in (part.split(':',1) for part in groups.split(';'))]
+            plan.write_text(json.dumps([{"kind":"object", "source":str(source), "target":str(target), "groups":parsed}]))
             argv = ["/opt/recgen-venv/bin/python", "/repo/scripts/workcell_recgen_worker.py",
-                    str(source), str(target), groups]
+                    str(plan)]
             calls.append((target, subprocess.Popen(argv, env=env, stdout=subprocess.PIPE,
                                                            stderr=subprocess.PIPE, text=True)))
         z = np.load(io.BytesIO(payload))
@@ -47,7 +50,7 @@ def generate(payload: bytes, jobs: list[str]):
             if proc.returncode:
                 raise RuntimeError(f"RecGen failed: {stderr[-1500:]}")
             worker = json.loads(stdout.strip().splitlines()[-1])
-            for name, stats in worker["models"].items():
+            for name, stats in worker["jobs"]["object"]["models"].items():
                 mesh_data = np.load(f"{target}-{name}.npz")
                 mesh = trimesh.Trimesh(vertices=mesh_data["vertices"], faces=mesh_data["faces"],
                                        vertex_colors=mesh_data["colors"], process=False)

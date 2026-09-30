@@ -13,7 +13,7 @@ from scripts.import_report_evidence import canonical_measurements
 LABELS = {'robot': '工业机器人', 'cart': '载料运输车', 'floor': '地面参考面',
           'emergency stop button': '红黄急停按钮', 'emergency_button': '红黄急停按钮',
           'yellow safety post': '黄色光幕立柱', 'black bollard': '黑色防撞柱',
-          'fence': '安全围栏', 'safety fence': '安全围栏', 'sign': '标识牌', 'signal light': '信号灯', 'stack light': '信号灯',
+          'v guard': 'V 型黑黄护板', 'fence': '安全围栏', 'safety fence': '安全围栏', 'sign': '标识牌', 'signal light': '信号灯', 'stack light': '信号灯',
           'warning sign': '警示牌', 'workcell sign': '工位标识牌', 'folding safety barrier': '折叠防护板',
           'cable tray': '线缆托架', 'instruction poster': '作业指导海报',
           'transparent safety panel': '透明护板', 'floor marking': '地面标线',
@@ -144,8 +144,15 @@ def build(root):
                 'documentSha256': hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest(),
                 'label': '四张照片 oneshot', 'document': doc}
     Revision.model_validate(revision)
+    from ehs_spatial.platform.scene_measurements import analyze_bends, analyze_inclinations
+    guard_revision = {**revision, 'document': {**doc, 'entities': [e for e in doc['entities'] if e['id'] == 'v-guard']}}
+    def load_asset(asset_id):
+        return (root / urls[asset_id]).read_bytes()
+    bend_analysis = analyze_bends(guard_revision, load_asset)
+    inclination_analysis = analyze_inclinations(guard_revision, load_asset)
     result = {'schemaVersion': 1, 'revision': revision, 'assetURLs': urls, 'objects': catalog['objects'],
               'coverage': catalog['coverage'], 'geometry': geometry, 'sceneTransformNative': transform.tolist(),
-              'nativeToMetersDefault': scale, 'timing': {}}
+              'nativeToMetersDefault': scale, 'timing': {},
+              'bendAnalysis': bend_analysis, 'inclinationAnalysis': inclination_analysis}
     (root / 'scene-report.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
     return result

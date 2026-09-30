@@ -19,8 +19,8 @@ const server = http.createServer((req, res) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const browser = await chromium.launch({ args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] });
 try {
-  const page = await browser.newPage({ viewport: { width: 1600, height: 1200 }, acceptDownloads: true });
-  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1200 }, acceptDownloads: true, hasTouch: true });
+  const errors = [], apiRequests = []; page.on('pageerror', e => errors.push(e.message)); page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) apiRequests.push(request.url()); });
   await page.goto(`http://127.0.0.1:${server.address().port}/photo.html`);
   const expectedModels = payload.revision.document.entities.filter(entity => entity.representations.length).length;
   await page.waitForFunction(expected => { const n = document.querySelector('[data-model-loaded]'); return n && +n.dataset.modelLoaded === expected && +n.dataset.modelCoverage === expected; }, expectedModels);
@@ -31,6 +31,25 @@ try {
     if (!payload.revision.document.entities.find(entity => entity.id === item.id).observedExtentAvailable && item.id !== 'emergency-button') assert.equal(await page.locator('[data-height-native]').textContent(), '未知');
   }
   const slider = page.getByRole('slider', { name: '照片与模型对比位置' });
+  await slider.fill('50');
+  const divider = page.locator('.report-comparison-divider');
+  await divider.scrollIntoViewIfNeeded();
+  const stageBox = await page.locator('.report-comparison-stage').boundingBox(), handleBox = await divider.boundingBox();
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(stageBox.x + stageBox.width * .8, handleBox.y + handleBox.height / 2, { steps: 12 });
+  await page.mouse.up();
+  assert.ok(Number(await slider.inputValue()) > 75, 'dragging the center handle must move the wipe, not only the lower range input');
+  await slider.fill('50');
+  const touch = await page.context().newCDPSession(page), touchBox = await divider.boundingBox();
+  const touchY = touchBox.y + touchBox.height / 2;
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: touchBox.x + touchBox.width / 2, y: touchY }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: stageBox.x + stageBox.width * .7, y: touchY }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  assert.ok(Number(await slider.inputValue()) > 65, 'touch drag must move center wipe handle');
+  await divider.focus(); await page.keyboard.press('Home'); assert.equal(await slider.inputValue(), '0');
+  await page.keyboard.press('End'); assert.equal(await slider.inputValue(), '100');
+  await slider.fill('50');
   let canvasBox;
   for (const value of ['0', '50', '100']) {
     await slider.fill(value);
@@ -95,10 +114,51 @@ try {
   assert.equal(await page.locator('.report-comparison-stage').getAttribute('data-camera-id'), 'camera-1');
   await page.locator('.report-matched-comparison .report-scene-photo-switch button').filter({ hasText: '照片 4' }).click();
   await page.screenshot({ path: path.join(out, 'desktop.png'), fullPage: true });
-  await page.getByRole('button', { name: '场景 3D', exact: true }).first().click();
+  await page.getByRole('button', { name: /可旋转 3D/ }).click();
   await page.waitForSelector('[data-pane="spatial"] canvas');
   await page.waitForFunction(expected => +document.querySelector('[data-model-loaded]').dataset.modelLoaded === expected, expectedModels);
+  await page.locator('[data-pane="spatial"] .stage-status').waitFor({ state: 'detached' });
+  const freeCanvas = page.locator('[data-pane="spatial"] canvas');
+  await freeCanvas.scrollIntoViewIfNeeded();
+  const orbitBox = await freeCanvas.boundingBox(), beforeOrbit = await freeCanvas.evaluate(canvas => canvas.toDataURL());
+  const selectedBeforeOrbit = await page.locator('[data-selected-object]').getAttribute('data-selected-object');
+  await page.mouse.move(orbitBox.x + orbitBox.width / 2, orbitBox.y + orbitBox.height / 2);
+  await page.mouse.down(); await page.mouse.move(orbitBox.x + orbitBox.width / 2 + 110, orbitBox.y + orbitBox.height / 2 - 65, { steps: 15 }); await page.mouse.up();
+  const afterOrbit = await freeCanvas.evaluate(canvas => canvas.toDataURL());
+  assert.notEqual(afterOrbit, beforeOrbit, 'actual free-3D canvas render must change after orbit drag');
+  assert.equal(await page.locator('[data-selected-object]').getAttribute('data-selected-object'), selectedBeforeOrbit, 'orbit does not select an object');
+  fs.writeFileSync(path.join(out, 'orbit-before.png'), Buffer.from(beforeOrbit.split(',')[1], 'base64'));
+  fs.writeFileSync(path.join(out, 'orbit-after.png'), Buffer.from(afterOrbit.split(',')[1], 'base64'));
   await page.screenshot({ path: path.join(out, 'free-3d.png'), fullPage: true });
+  if (payload.inclinationAnalysis) {
+    const analyzed = payload.inclinationAnalysis.items.find(row => row.surfaces.length);
+    assert.ok(analyzed, 'current report analysis must include a measured plane');
+    const surface = analyzed.surfaces[0], value = `${analyzed.entityId}:${surface.surfaceId}`;
+    await page.getByLabel('全部已测平面').check();
+    await page.locator('[aria-label="已保存的平面倾角"] select').selectOption(value);
+    assert.equal(await page.locator('[data-selected-object]').getAttribute('data-selected-object'), analyzed.entityId);
+    assert.equal(await page.locator("[data-inclination-surface]").count(), 1, "inspector must show only the chosen local plane, not every fitted surface");
+    const angleCard = page.locator(`[data-inclination-surface="${surface.surfaceId}"]`);
+    assert.ok((await angleCard.textContent()).includes(`${surface.inclinationDeg.toFixed(1)}°`));
+    assert.ok((await angleCard.textContent()).includes(`${surface.deviationFromVerticalDeg.toFixed(1)}°`));
+    const angleText = `${Number(surface.result.value.toPrecision(4))}°`;
+    await page.locator('[data-pane="spatial"] .native-stage svg text').filter({ hasText: angleText }).waitFor();
+    const color = surface.result.lines[0].color;
+    assert.ok(await page.locator(`[data-pane="spatial"] .native-stage svg line[stroke="${color}"]`).count() > 0, 'selected saved surface must draw actual reference lines');
+    assert.equal(await page.locator('.measure-calculate').count(), 0, 'offline snapshots must not expose API calculation actions');
+    await page.screenshot({ path: path.join(out, 'inclination.png'), fullPage: true });
+    const surfaceSelect = page.locator('[aria-label="已保存的平面倾角"] select');
+    assert.equal(await surfaceSelect.locator('option').count(), 1 + payload.inclinationAnalysis.items.reduce((sum, row) => sum + row.surfaces.length, 0), 'full measured-plane list remains available');
+    const lastSurface = analyzed.surfaces.at(-1);
+    await surfaceSelect.selectOption(`${analyzed.entityId}:${lastSurface.surfaceId}`);
+    assert.equal(await page.locator('[data-inclination-surface]').count(), 1);
+    assert.equal(await page.locator('[data-inclination-surface]').getAttribute('data-inclination-surface'), lastSurface.surfaceId, 'inspector follows existing plane selection');
+  } else assert.equal(await page.locator('[aria-label="已保存的平面倾角"]').count(), 0, 'older reports without saved analysis remain usable');
+  if (payload.bendAnalysis?.items.some(row => row.status === 'measured')) {
+    const row = payload.bendAnalysis.items.find(row => row.status === 'measured' && row.result);
+    await page.locator('[aria-label="已保存的折弯分析"] select').selectOption(row.entityId);
+    await page.locator('[data-pane="spatial"] .native-stage svg text').filter({ hasText: `${Number(row.result.value.toPrecision(4))}°` }).waitFor();
+  }
   await page.getByLabel('标尺轴').selectOption('width');
   const widthScale = Number(await page.locator('[data-native-to-meters]').getAttribute('data-native-to-meters'));
   assert.ok(Math.abs(widthScale - .2 / payload.geometry.anchor.nativeWidth) < 1e-10);
@@ -113,6 +173,7 @@ try {
   await page.locator('.report-scene-section-tabs button').filter({ hasText: '对象详情' }).click();
   assert.equal(await page.locator('[data-selected-object]').isVisible(), true);
   await page.screenshot({ path: path.join(out, 'mobile.png'), fullPage: true });
+  assert.deepEqual(apiRequests, [], 'offline saved analyses must not call remote APIs');
   assert.deepEqual(errors, [], 'no browser runtime errors');
-  console.log(JSON.stringify({ pass: true, objects: payload.objects.length, checks: ['list and inspector', 'single-view dimensions unknown', 'slider 0/50/100 stable viewport', 'photo and model selection', 'photo camera switch', '20/40 cm geometry export', 'free 3D scene', 'width scale and mismatch', 'mobile list and inspector'], screenshot: path.join(out, 'desktop.png') }));
+  console.log(JSON.stringify({ pass: true, objects: payload.objects.length, checks: ['list and inspector', 'single-view dimensions unknown', 'center-handle mouse/touch/keyboard drag', 'slider 0/50/100 stable viewport', 'photo and model selection', 'photo camera switch', '20/40 cm geometry export', 'free 3D actual orbit changes canvas', 'width scale and mismatch', 'mobile list and inspector', payload.inclinationAnalysis ? 'saved plane card and actual SVG annotation' : 'missing analysis remains usable', 'zero API requests'], screenshot: path.join(out, 'desktop.png') }));
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

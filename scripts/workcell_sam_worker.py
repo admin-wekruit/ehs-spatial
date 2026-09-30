@@ -69,13 +69,17 @@ def main(root):
         base = processor(images=image, return_tensors="pt").to("cuda")
         with torch.inference_mode():
             vision = model.get_vision_features(pixel_values=base["pixel_values"])
-        pick = max((row for row in box_rows if row["word"] in ("cart", "work platform")), key=lambda x: x["score"])
-        kwargs = processor(input_boxes=[[pick["box"]]], original_sizes=base["original_sizes"], return_tensors="pt").to("cuda")
-        kwargs["input_boxes"] = kwargs["input_boxes"].to(model.dtype)
-        with torch.inference_mode():
-            output = model(vision_embeds=vision, **kwargs)
-        masks, scores = _response(processor.post_process_instance_segmentation(
-            output, threshold=.4, mask_threshold=.5, target_sizes=[(image.height, image.width)])[0])
+        # Evaluate all object proposals: the highest-scoring "work platform"
+        # can be the folded guard rather than the cart itself.
+        masks, scores = [], []
+        for pick in box_rows:
+            kwargs = processor(input_boxes=[[pick["box"]]], original_sizes=base["original_sizes"], return_tensors="pt").to("cuda")
+            kwargs["input_boxes"] = kwargs["input_boxes"].to(model.dtype)
+            with torch.inference_mode():
+                output = model(vision_embeds=vision, **kwargs)
+            candidate_masks, candidate_scores = _response(processor.post_process_instance_segmentation(
+                output, threshold=.4, mask_threshold=.5, target_sizes=[(image.height, image.width)])[0])
+            masks.extend(candidate_masks); scores.extend(candidate_scores)
         cart_results.append({"rle": masks, "scores": scores})
     (root / "cart-masks.json").write_text(json.dumps({"results": cart_results}))
     (root / "sam-timing.json").write_text(json.dumps({"containerSeconds": time.monotonic() - started}))

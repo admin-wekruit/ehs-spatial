@@ -80,37 +80,64 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
                 options = [x for x in row if x["word"] in ("cart", "work platform")]
                 if not options:
                     raise ValueError("OWLv2 found no cart proposal")
-                picks.append(max(options, key=lambda x: x["score"]))
-            (root / "cart-boxes.json").write_text(json.dumps({"results": [[x] for x in picks]}))
+                picks.append(options)
+            (root / "cart-boxes.json").write_text(json.dumps({"results": picks}))
             _finish(sam_proc, "SAM 3")
             sam_end = time.monotonic()
             seg = json.loads((root / "sam3.json").read_text())
             cart = json.loads((root / "cart-masks.json").read_text())
-            report._prepare_inputs(root, seg, cart)
-            prepare_end = time.monotonic()
             geometry_proc = _start([
                 "python", "-c",
                 "import sys; from pathlib import Path; from scripts.workcell_photo_geometry import build; "
                 "build(Path(sys.argv[1]), [Path(p) for p in sys.argv[2:6]], float(sys.argv[6]), float(sys.argv[7]))",
                 str(root), *sources, str(diameter_m), str(height_m)], "")
-            plans = ((0, "robot", "v1:1;v2:2;v3:3;v4:4;multi:1,2,3"), (1, "cart", "single:1"))
-            for gpu, kind, groups in plans:
-                source = root / f"{kind}-input.npz"
-                target = root / kind
-                proc = _start(["/opt/recgen-venv/bin/python", "/repo/scripts/workcell_recgen_worker.py", str(source), str(target), groups], gpu)
-                active.append((kind, source, target, proc))
+            while not (root / "floor-reference.json").exists():
+                if geometry_proc.poll() is not None:
+                    _finish(geometry_proc, "floor reference")
+                    raise ValueError("Geometry completed without its ground reference")
+                time.sleep(.05)
+            report._prepare_inputs(root, seg, cart)
+            prepare_end = time.monotonic()
+            guard_views = report._guard_views(json.loads((root / "guard-mask-selection.json").read_text()))
+            if len(guard_views) < 2:
+                raise ValueError("V-guard lacks independent support in at least two views")
+            plans = [[("robot", [["v1",[1]],["v2",[2]],["v3",[3]],["v4",[4]],["multi",[1,2,3]]])],
+                     [("cart", [["single",[1]]]), ("guard", [["multi",guard_views]])]]
+            for gpu, jobs in enumerate(plans):
+                plan = [{"kind":kind, "source":str(root/f"{kind}-input.npz"), "target":str(root/kind), "groups":groups} for kind, groups in jobs]
+                plan_path = root / f"recgen-plan-{gpu}.json"
+                plan_path.write_text(json.dumps(plan))
+                proc = _start(["/opt/recgen-venv/bin/python", "/repo/scripts/workcell_recgen_worker.py", str(plan_path)], gpu)
+                active.append((gpu, proc))
             timing = {}
-            for kind, source, target, proc in active:
-                output = _finish(proc, f"{kind} RecGen")
+            for gpu, proc in active:
+                output = _finish(proc, f"GPU {gpu} RecGen")
                 worker = json.loads(output.strip().splitlines()[-1])
-                z = np.load(source)
-                for name, stats in worker["models"].items():
-                    mesh_data = np.load(f"{target}-{name}.npz")
-                    mesh = trimesh.Trimesh(vertices=mesh_data["vertices"], faces=mesh_data["faces"],
-                                           vertex_colors=mesh_data["colors"], process=False)
-                    mesh.apply_transform(z[f"v{stats['views'][0]}_c2w"])
-                    (root / f"{kind}-{name}.glb").write_bytes(mesh.export(file_type="glb"))
-                    timing[f"{kind}-{name}"] = {**stats, "modelLoadSeconds": worker["modelLoadSeconds"]}
+                for kind, job in worker["jobs"].items():
+                    z = np.load(root / f"{kind}-input.npz")
+                    for name, stats in job["models"].items():
+                        mesh_data = np.load(root / f"{kind}-{name}.npz")
+                        mesh = trimesh.Trimesh(vertices=mesh_data["vertices"], faces=mesh_data["faces"],
+                                               vertex_colors=mesh_data["colors"], process=False)
+                        mesh.apply_transform(z[f"v{stats['views'][0]}_c2w"])
+                        if kind == "guard":
+                            from fast_report.x7 import light, rays, refine, Caster, score_view
+                            v, f, _ = light(mesh.vertices, mesh.faces, mesh.visual.vertex_colors[:, :3])
+                            views = []
+                            for i in range(1, 5):
+                                depth = z[f"v{i}_depth"][::2, ::2]
+                                K = z[f"v{i}_K"].copy(); K[:2] /= 2
+                                views.append({"rays": rays(K, z[f"v{i}_c2w"], depth.shape[1], depth.shape[0]),
+                                              "target": z[f"v{i}_mask"][::2, ::2] > 0, "depth": depth})
+                            transform, placement = refine(v, f, [views[i-1] for i in stats['views']])
+                            mesh.apply_transform(transform)
+                            caster = Caster(v, f)
+                            placement.update(generationViews=stats['views'], transform=transform.tolist(),
+                                             sourceChecks=[score_view(caster, transform, view) for view in views],
+                                             basis="source masks and estimated depth; not surveyed physical accuracy")
+                            (root / "guard-placement.json").write_text(json.dumps(placement, indent=2))
+                        (root / f"{kind}-{name}.glb").write_bytes(mesh.export(file_type="glb"))
+                        timing[f"{kind}-{name}"] = {**stats, "modelLoadSeconds": worker["modelLoadSeconds"]}
             model_end = time.monotonic()
             _finish(geometry_proc, "metric geometry")
             from scripts.workcell_photo_objects import build as build_objects
@@ -136,7 +163,7 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
                     archive.add(path, arcname=path.name)
             return {"archive": payload.getvalue(), "containerWallSeconds": time.monotonic() - started}
         finally:
-            for proc in (map_proc, sam_proc, geometry_proc, *(job[3] for job in active)):
+            for proc in (map_proc, sam_proc, geometry_proc, *(job[1] for job in active)):
                 if proc is not None and proc.poll() is None:
                     proc.terminate()
                     proc.wait(timeout=10)

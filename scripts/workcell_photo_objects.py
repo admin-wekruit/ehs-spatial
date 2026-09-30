@@ -173,6 +173,13 @@ def build(root, sources):
     add('cart', 'Work cart', 'cart', 'cart-single.glb', nodes,
         [observe(cart_masks[f'v{i}_mask'] > 0, i, 'Selected cart mask; cart-mask-selection.json') for i in frames],
         'generated from RecGen photo 1; linked silhouette observations from four photos')
+    guard_masks = np.load(root / 'guard-input.npz')
+    _, guard_nodes = _nodes(root, 'guard-multi.glb')
+    guard_obs = [observe(guard_masks[f'v{i}_mask'] > 0, i, 'Independent SAM guard mask; excluded from cart generation') for i in frames]
+    add('v-guard', 'V 型黑黄护板', 'v guard', 'guard-multi.glb', guard_nodes,
+        [o for o in guard_obs if o], 'independent multiview RecGen guard',
+        ['Generated only from independently segmented guard pixels, never the whole cart.',
+         'Model surface angles use the current estimated ground; they are not independently surveyed physical angles.'])
     posts, nodes = _nodes(root, 'posts.glb')
     for node in sorted(nodes):
         word = 'yellow safety post' if node.startswith('box') else 'black bollard'
@@ -257,6 +264,13 @@ def build(root, sources):
     groups, aliases = [], []
     for word in EXTRA_WORDS:
         for detection in detections.get(word, []):
+            if word == 'work platform':
+                i = detection['photo']
+                assembly = (cart_masks[f'v{i}_mask'] > 0) | (guard_masks[f'v{i}_mask'] > 0)
+                if (detection['mask'] & assembly).sum() / max(1, detection['mask'].sum()) > .5:
+                    aliases.append({'category':word, 'photo':i, 'instance':detection['instance'],
+                                    'objectId':'cart', 'reason':'Assembly covered by independent cart and V-guard masks'})
+                    continue
             existing = next((item for item, rows in represented_posts
                              if word == 'light curtain' and any(r['photo']==detection['photo'] and _same(detection,r,frames) for r in rows)), None)
             if existing:

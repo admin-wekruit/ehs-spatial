@@ -24,11 +24,12 @@ import trimesh
 REPO = Path(__file__).resolve().parents[1]
 MODAL = Path("/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/modal")
 TEMPLATE = Path("/Users/adam/Desktop/panoptes-public/panoptes-workcell-pages/workcell-photo-direct/index.html")
+GUARD_WORD = "yellow and black striped panel"
 WORDS = ("industrial robot arm", "safety fence", "yellow safety post", "black bollard",
          "emergency stop button", "red emergency stop switch", "light curtain",
          "work platform", "cart", "control cabinet", "signal light", "stack light",
          "warning sign", "workcell sign", "folding safety barrier", "cable tray",
-         "instruction poster", "transparent safety panel", "floor marking")
+         "instruction poster", "transparent safety panel", "floor marking", GUARD_WORD)
 
 
 def _array(spec):
@@ -88,7 +89,10 @@ def _foreground(root, seg, index, word, minimum=300):
 
 
 def _prepare_inputs(root, seg, cart_seg):
-    robot, cart, cart_picks = {}, {}, []
+    robot, cart, guard, cart_picks, guard_picks = {}, {}, {}, [], []
+    floor = json.loads((root / "floor-reference.json").read_text())
+    ground_n = np.asarray(floor["normal"])
+    ground_d = floor["offset"]
     for i in range(1, 5):
         frame, robot_mask = _foreground(root, seg, i, "industrial robot arm", 500)
         rgb, points = _array(frame["image"]).copy(), _array(frame["pts3d"])
@@ -102,25 +106,56 @@ def _prepare_inputs(root, seg, cart_seg):
         if np.nanmedian(np.hypot(u[good] - xx[good], v[good] - yy[good])) >= 3:
             raise ValueError(f"photo {i}: camera/point projection mismatch")
         robot_mask &= good
+        guard_response = _response(seg, i, GUARD_WORD)
+        panels = []
+        for encoded, confidence in zip(guard_response['rle'], guard_response['scores']):
+            candidate = _mask(frame, {'rle':[encoded]}) & good
+            if confidence < .6 or not candidate.any():
+                continue
+            heights = points[candidate] @ ground_n + ground_d
+            if np.median(heights) <= 3 * floor['residualP95Native']:
+                continue  # Floor hazard stripes are a separate physical object.
+            panels.append(candidate)
+        # ponytail: retain substantial supported faces; tiny striped fittings are
+        # not evidence for the large folded guard. Instance-level routing can
+        # replace this relative-area gate when smaller guards are in scope.
+        largest = max((int(m.sum()) for m in panels), default=0)
+        panels = [m for m in panels if m.sum() >= .2 * largest]
+        guard_mask = np.logical_or.reduce(panels) if panels else np.zeros_like(good)
         cart_response = cart_seg["results"][i - 1]
         choices = []
         for k, (rle, score) in enumerate(zip(cart_response["rle"], cart_response["scores"])):
             mask = _mask(frame, {"rle": [rle]}) & good
+            retained = mask & ~guard_mask
+            guard_fraction = (mask & guard_mask).sum() / max(1, mask.sum())
+            mask = retained
             overlap = (mask & robot_mask).sum() / max(1, mask.sum())
-            if mask.sum() > 2500 and overlap < .25:
-                choices.append((score, k, mask, overlap))
+            if mask.sum() > 2500 and guard_fraction < .5 and overlap < .25:
+                choices.append((score, k, mask, overlap, guard_fraction))
         if not choices:
             raise ValueError(f"photo {i}: no cart mask separate from robot")
-        score, picked, cart_mask, overlap = max(choices, key=lambda row: row[0])
+        score, picked, cart_mask, overlap, guard_fraction = max(choices, key=lambda row: row[0])
+        guard_picks.append({"photo": i, "supportedPixels": int(guard_mask.sum()),
+                            "source": GUARD_WORD, "selectedPanels": len(panels), "routing": "score >= .6; above floor residual; area >= .2 largest supported panel", "excludedFromCartFraction": float(guard_fraction)})
         cart_picks.append({"photo": i, "instance": picked, "score": score,
                            "robotOverlap": round(float(overlap), 3), "supportedPixels": int(cart_mask.sum())})
         shared = {f"v{i}_rgb": rgb, f"v{i}_depth": np.where(good, depth, 0),
                   f"v{i}_K": K, f"v{i}_c2w": pose}
         robot.update(shared | {f"v{i}_mask": robot_mask.astype(np.uint8) * 255})
         cart.update(shared | {f"v{i}_mask": cart_mask.astype(np.uint8) * 255})
+        guard.update(shared | {f"v{i}_mask": guard_mask.astype(np.uint8) * 255})
     np.savez_compressed(root / "robot-input.npz", **robot)
     np.savez_compressed(root / "cart-input.npz", **cart)
+    np.savez_compressed(root / "guard-input.npz", **guard)
+    (root / "guard-mask-selection.json").write_text(json.dumps(guard_picks, indent=2) + "\n")
     (root / "cart-mask-selection.json").write_text(json.dumps(cart_picks, indent=2) + "\n")
+
+
+def _guard_views(rows):
+    # RecGen's shape/appearance conditioning uses the first pair. Occluded
+    # capture-order views erased the connecting face; rank actual mask support.
+    return [r['photo'] for r in sorted(rows, key=lambda r: (-r['supportedPixels'], r['photo']))
+            if r['supportedPixels'] >= 100][:2]
 
 
 def _surface(root, seg, name, index, word, mask_override=None):
@@ -293,7 +328,7 @@ def _build_page(root, metrics):
     shutil.copytree(TEMPLATE.parent.parent / "observed/viewer-assets", page / "viewer-assets")
     shutil.copytree(TEMPLATE.parent / "viewer-assets", page / "viewer-assets", dirs_exist_ok=True)
     assets = ("robot-v1.glb", "robot-v2.glb", "robot-v3.glb", "robot-v4.glb", "robot-multi.glb",
-              "cart-single.glb", "cart-observed.glb", "posts.glb", "fence-observed.glb",
+              "cart-single.glb", "guard-multi.glb", "cart-observed.glb", "posts.glb", "fence-observed.glb",
               "mask-contact-sheet.jpg", "extra-mask-contact-sheet.jpg", "cart-mask-sheet.jpg",
               "fence-fitted.glb", "floor-fitted.glb", "workcell-metric.glb", "geometry.json",
               "objects.json", "object-extras.glb", "scene-report.json")

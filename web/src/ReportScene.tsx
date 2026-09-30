@@ -1,11 +1,11 @@
 import type { SurfacePick } from "./viewer/native-math";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type PointerEvent } from "react";
 import { SpatialView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { ComparisonVideo, VideoMemory, VideoView, videoReplay } from "./VideoView";
 import { request } from "./api";
 import { useSceneResources } from "./SceneResources";
-import { SpatialMeasurements, type BendAnalysis, type InclinationAnalysis, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
+import { SpatialMeasurements, type BendAnalysis, type InclinationAnalysis, type InclinationSurface, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
 import { CadView } from "./CadView";
 import { splatAnnotation } from "./viewer/splat-layer";
 import { useI18n } from "./i18n";
@@ -226,7 +226,7 @@ export function ReportScene({
   draw?: boolean;
   onBox?: (box: number[] | null) => void;
   onOpenSourceCad?: () => void;
-  inspector?: ReactNode;
+  inspector?: ReactNode | ((surface: InclinationSurface | undefined) => ReactNode);
   newerReport?: { href: string; title: string };
   objectListRequest?: number;
   onFeedback?: (entityId: string) => void;
@@ -248,7 +248,7 @@ export function ReportScene({
     [modelLoads, setModelLoads] = useState<{ revisionId: string; states: RepresentationLoadState[] } | null>(null),
     [expandedEntities, setExpandedEntities] = useState<Set<string>>(() => new Set());
   const [comparing, setComparing] = useState(matchedComparison), [wipe, setWipe] = useState(50);
-  const { analysisAvailable } = useSceneResources();
+  const { analysisAvailable, bendAnalysis: savedBendAnalysis, inclinationAnalysis: savedInclinationAnalysis } = useSceneResources();
   const document = revision.document,
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
@@ -259,7 +259,7 @@ export function ReportScene({
   const hasVideo = !!videoReplay(document), [videoMode, setVideoMode] = useState(true), showVideo = hasVideo && videoMode && !draw;  // drawing a missed object needs the still keyframe
   const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || (!imageId ? document.coordinateFrames[0]?.id : "") || "", showCandidates: true, imageId, observations: document.observations };
   const [rawMeasurement, setMeasurement] = useState<SceneMeasurement | null>(null), [measureRegion, setMeasureRegion] = useState<MeasureRegion | null>(null), [drawingRegion, setDrawingRegion] = useState(false);
-  const [bendAnalysis, setBendAnalysis] = useState<BendAnalysis | null>(null), [bendError, setBendError] = useState(false), [showAngles, setShowAngles] = useState(true);
+  const [remoteBendAnalysis, setBendAnalysis] = useState<BendAnalysis | null>(null), [bendError, setBendError] = useState(false), [showAngles, setShowAngles] = useState(true);
   useEffect(() => {
     if (!analysisAvailable) return;
     const controller = new AbortController(); setBendAnalysis(null); setBendError(false);
@@ -268,7 +268,7 @@ export function ReportScene({
       .catch(() => { if (!controller.signal.aborted) setBendError(true); });
     return () => controller.abort();
   }, [revision.id]);
-  const [inclinationAnalysis,setInclinationAnalysis]=useState<InclinationAnalysis|null>(null), [inclinationError,setInclinationError]=useState(false), [surfaceKey,setSurfaceKey]=useState(""), [allPlanes,setAllPlanes]=useState(false);
+  const [remoteInclinationAnalysis,setInclinationAnalysis]=useState<InclinationAnalysis|null>(null), [inclinationError,setInclinationError]=useState(false), [surfaceKey,setSurfaceKey]=useState(""), [allPlanes,setAllPlanes]=useState(false);
   useEffect(()=>{
     if (!analysisAvailable) return;
     const controller=new AbortController();setInclinationAnalysis(null);setInclinationError(false);setSurfaceKey("");
@@ -277,6 +277,7 @@ export function ReportScene({
       .catch(()=>{if(!controller.signal.aborted)setInclinationError(true);});
     return ()=>controller.abort();
   },[revision.id]);
+  const bendAnalysis = analysisAvailable ? remoteBendAnalysis : savedBendAnalysis, inclinationAnalysis = analysisAvailable ? remoteInclinationAnalysis : savedInclinationAnalysis;
   const inclinationRows=inclinationAnalysis?.revisionId===revision.id?inclinationAnalysis.items:[];
   const incompleteInclinations=inclinationRows.filter(row=>row.status==="failed" || row.status==="partial").length;
   const allSurfaces=inclinationRows.flatMap(row=>row.surfaces.map(surface=>({entityId:row.entityId,surface,key:row.entityId+":"+surface.surfaceId})));
@@ -405,6 +406,10 @@ export function ReportScene({
     if (row.top < viewport.top) list.scrollTop -= viewport.top - row.top;
     else if (row.bottom > viewport.bottom) list.scrollTop += row.bottom - viewport.bottom;
   }, [selection.entityId, search, isFullscreen, mobileSection, expandedEntities]);
+  function moveComparison(event: PointerEvent<HTMLDivElement>) {
+    const bounds = event.currentTarget.parentElement!.getBoundingClientRect();
+    setWipe(Math.round(Math.max(0, Math.min(100, (event.clientX - bounds.left) / bounds.width * 100))));
+  }
   function chooseView(pane: Pane | null) { setComparing(false); setFocused(pane); setMobileSection("views"); }
   async function fullscreen() {
     setFullscreenError(false);
@@ -463,17 +468,17 @@ export function ReportScene({
           <button className="report-scene-fullscreen" onClick={fullscreen} aria-pressed={isFullscreen} aria-label={t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}>⛶ <span>{t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}</span></button>
         </div>
       </header>
-      {analysisAvailable && <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的折弯分析" : "Saved bend analysis"}>
+      {(analysisAvailable || bendAnalysis) && <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的折弯分析" : "Saved bend analysis"}>
         <span>{language === "zh" ? bendError ? "折弯分析加载失败，请刷新重试" : !bendAnalysis ? "读取已保存的折弯分析…" : `已计算 ${detectedBends.length} 处折弯角度${incompleteBends ? ` · ${incompleteBends} 个对象计算未完成` : ""}` : bendError ? "Could not load bend analysis; refresh to retry" : !bendAnalysis ? "Loading saved bend analysis…" : `${detectedBends.length} bend angles calculated${incompleteBends ? ` · ${incompleteBends} objects incomplete` : ""}`}</span>
-        <label>{language === "zh" ? "已识别折弯" : "Detected bend"}<select value={detectedBends.some(row => row.entityId === selected?.id) ? selected!.id : ""} onChange={e => { if(e.target.value) { selectEntity(e.target.value); setLayer("model"); } }}>
+        <label>{language === "zh" ? "已识别折弯" : "Detected bend"}<select value={detectedBends.some(row => row.entityId === selected?.id) ? selected!.id : ""} onChange={e => { if(e.target.value) { selectEntity(e.target.value); setLayer("model"); if (!analysisAvailable) { setMeasurement(detectedBends.find(row => row.entityId === e.target.value)?.result || null); setShowAngles(true); chooseView("spatial"); } } }}>
           <option value="">{language === "zh" ? "选择有折弯结果的对象" : "Choose an object with a detected bend"}</option>
           {detectedBends.map(row => <option key={row.entityId} value={row.entityId}>{document.entities.find(entity => entity.id === row.entityId)?.label || row.entityId} · {row.result!.value.toFixed(1)}°</option>)}
         </select></label>
         <label className="report-scene-check"><input type="checkbox" checked={showAngles} onChange={e => setShowAngles(e.target.checked)} />{language === "zh" ? "显示角度标注" : "Show angle annotations"}</label>
       </div>}
-      {analysisAvailable && <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的平面倾角" : "Saved plane inclinations"}>
+      {(analysisAvailable || inclinationAnalysis) && <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的平面倾角" : "Saved plane inclinations"}>
         <span>{inclinationError ? (language === "zh" ? "平面分析加载失败，请刷新重试" : "Plane analysis could not load") : !inclinationAnalysis ? (language === "zh" ? "读取已保存的平面倾角…" : "Loading saved planes…") : language === "zh" ? `已计算 ${allSurfaces.length} 个平面倾角（${inclinationRows.filter(row=>row.surfaces.length>0).length} 个对象）${incompleteInclinations ? ` · ${incompleteInclinations} 个对象计算未完成` : ""}` : `${allSurfaces.length} plane inclinations calculated (${inclinationRows.filter(row=>row.surfaces.length>0).length} objects)${incompleteInclinations ? ` · ${incompleteInclinations} objects incomplete` : ""}`}</span>
-        <label>{language === "zh" ? "倾斜平面（含待确认估计）" : "Inclined surface (includes unverified estimates)"}<select value={surfaceKey} onChange={e=>{const row=allSurfaces.find(r=>r.key===e.target.value);if(row){selectEntity(row.entityId);setSurfaceKey(row.key);setLayer("model");setPreviewMode("free");}else{setSurfaceKey("");setMeasurement(null);}}}>
+        <label>{language === "zh" ? "倾斜平面（含待确认估计）" : "Inclined surface (includes unverified estimates)"}<select value={surfaceKey} onChange={e=>{const row=allSurfaces.find(r=>r.key===e.target.value);if(row){selectEntity(row.entityId);setSurfaceKey(row.key);setLayer("model");setPreviewMode("free");if(!analysisAvailable){setShowAngles(true);chooseView("spatial");}}else{setSurfaceKey("");setMeasurement(null);}}}>
           <option value="">{language === "zh" ? "选择局部面与地面倾角" : "Select a local surface"}</option>
           {visibleSurfaces.map(row=><option key={row.key} value={row.key}>{document.entities.find(e=>e.id===row.entityId)?.label || row.entityId} · {language === "zh" ? "面" : "surface"} {row.surface.surfaceId} · {row.surface.inclinationDeg.toFixed(1)}°{row.surface.classification==="direction_unverified" ? (language === "zh" ? "（估计）" : " (estimate)") : ""}</option>)}
         </select></label>
@@ -523,13 +528,15 @@ export function ReportScene({
           </footer>
         </aside>
         <div className="report-scene-center" id={`${panePrefix}-views`}>
+          {matchedComparison && <nav className="report-scene-primary-views" aria-label="照片对比与自由旋转">
+            <button aria-pressed={comparing} onClick={() => { setComparing(true); setLayer("model"); setMobileSection("views"); }}><strong>照片 / 模型对比</strong><small>拖动分界线核对 · 相机固定</small></button>
+            <button aria-pressed={!comparing && focused === "spatial"} onClick={() => { setLayer("model"); chooseView("spatial"); }}><strong>可旋转 3D</strong><small>拖动旋转 · 滚轮缩放</small></button>
+          </nav>}
           <nav className="report-scene-view-switch" aria-label={t("sceneViews")}>
-            {matchedComparison && <button aria-pressed={comparing} onClick={() => { setComparing(true); setLayer("model"); setMobileSection("views"); }}>照片 / 模型对比</button>}
             <button className="report-scene-quad" aria-pressed={!focused && !comparing} onClick={() => chooseView(null)}>{t("sceneQuad")}</button>
             {paneOrder.map((pane) => <button key={pane} aria-pressed={!comparing && focused === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(viewNames[pane])}</button>)}
           </nav>
           <nav className="report-scene-view-switch report-scene-mobile-views" aria-label={t("sceneViews")}>
-            {matchedComparison && <button aria-pressed={comparing} onClick={() => { setComparing(true); setLayer("model"); setMobileSection("views"); }}>照片 / 模型</button>}
             {paneOrder.map((pane) => <button key={pane} aria-pressed={(focused || "photo") === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(viewNames[pane])}</button>)}
           </nav>
           {layer === "model" && <p className="report-scene-notice" data-geometry-coverage={modelObjects.length + referenceSurfaces.length + compositePreviews.length} data-model-coverage={modelObjects.length} data-model-loaded={readyModels.length} data-reference-surfaces={referenceSurfaces.length} data-composite-previews={compositePreviews.length} data-missing-models={missingModels}><strong>{modelObjects.length + referenceSurfaces.length + compositePreviews.length} / {visibleObjects.length} {t("sceneGeometryCoverage")}</strong> · {modelObjects.length} {t("sceneIndependentModelCount")}{referenceSurfaces.length > 0 && <> · {referenceSurfaces.length} {t("sceneReferenceSurfaceCount")}</>}{compositePreviews.length > 0 && <> · {compositePreviews.length} {t("sceneCompositePreviewCount")}</>} · {missingModels} {t("sceneMissingModelCount")} · {readyModels.length} / {modelObjects.length} {t("sceneModelLoaded")}{pendingModels > 0 && <> · {pendingModels} {t("sceneModelLoading")}</>}{failedModels.length > 0 && <> · {failedModels.length} {t("sceneModelLoadFailed")}</>}{modelCandidates > 0 && <> · {modelCandidates} {t("sceneModelCandidateCount")}</>} · {t("sceneModelCoverageMeaning")}{excludedObjects.length > 0 && <> · {t("sceneExcludedObjects")}: {excludedObjects.length}</>}</p>}
@@ -540,9 +547,14 @@ export function ReportScene({
               <div className="report-comparison-model" style={{ clipPath: `inset(0 0 0 ${wipe}%)` }}>
                 <SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="photo" cameraId={camera?.id || null} showSourcePhoto={false}
                   onAssetStates={(revisionId, states) => setModelLoads({ revisionId, states })}
-                  layers={{ modelOnly: true, generated_mesh: true, primitive: true, showCandidates: true, editable: false, opacity: 1, imageId, observations: document.observations, showBounds: allBounds, cameraPath: false }} />
+                  layers={{ measurement, modelOnly: true, generated_mesh: true, primitive: true, showCandidates: true, editable: false, opacity: 1, imageId, observations: document.observations, showBounds: allBounds, cameraPath: false }} />
               </div>
-              <span className="report-comparison-divider" style={{ left: `${wipe}%` }} aria-hidden="true"><b>↔</b></span>
+              <div className="report-comparison-divider" style={{ left: `${wipe}%` }} role="slider" tabIndex={0} aria-label="拖动照片模型分界线" aria-valuemin={0} aria-valuemax={100} aria-valuenow={wipe}
+                onPointerDown={event => { event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); event.currentTarget.setPointerCapture(event.pointerId); moveComparison(event); }}
+                onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveComparison(event); }}
+                onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) { moveComparison(event); event.currentTarget.releasePointerCapture(event.pointerId); } }}
+                onPointerCancel={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
+                onKeyDown={event => { const key = event.key; if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(key)) { event.preventDefault(); setWipe(value => key === "Home" ? 0 : key === "End" ? 100 : Math.max(0, Math.min(100, value + (["ArrowRight", "ArrowUp"].includes(key) ? 1 : -1)))); } }}><b aria-hidden="true">↔</b></div>
               <span className="report-comparison-photo-label">原始照片</span><span className="report-comparison-model-label">同相机模型</span>
             </div>
             <label className="report-comparison-control"><span>模型</span><input aria-label="照片与模型对比位置" type="range" min="0" max="100" value={wipe} onChange={event => setWipe(Number(event.target.value))} /><span>照片</span><output>{wipe}%</output></label>
@@ -600,7 +612,7 @@ export function ReportScene({
           <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>
           <div className="report-scene-inspector-content">{selected && (selected as any).motionSummary && <section className="report-motion-summary">
             <h4>{language === "zh" ? "怎么走动的" : "How it moved"}</h4><p>{(selected as any).motionSummary.text}</p>
-            <small>{language === "zh" ? "依据：每个采样视图可见表面的中心投到地面；只用于回答“去了哪、多快、停在哪”，不是逐关节测量。" : "From the visible surface centre per sampled view, on the floor plane."}</small></section>}{analysisAvailable && selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} savedBend={savedBend} savedSurface={activeSurface} inclinationOutcome={inclinationRows.find(r=>r.entityId===selected.id)} onClearSurface={()=>setSurfaceKey("")} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{inspector ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
+            <small>{language === "zh" ? "依据：每个采样视图可见表面的中心投到地面；只用于回答“去了哪、多快、停在哪”，不是逐关节测量。" : "From the visible surface centre per sampled view, on the floor plane."}</small></section>}{analysisAvailable && selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} savedBend={savedBend} savedSurface={activeSurface} inclinationOutcome={inclinationRows.find(r=>r.entityId===selected.id)} onClearSurface={()=>setSurfaceKey("")} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{(typeof inspector === "function" ? inspector(activeSurface) : inspector) ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
         </aside>
       </div>
     </section>

@@ -217,6 +217,8 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2):
              'residualP95Native': float(np.percentile(abs(floor_support @ up + d), 95)),
              'sourcePhotos': list(range(1, 5)), 'method': 'automatic lower-image unsegmented horizontal plane consensus',
              'status': 'observed fit; floor identity inferred from orientation and lower-image support'}
+    # Publish the same fitted ground early so semantic panel routing need not wait for fence fitting.
+    (root / 'floor-reference.json').write_text(json.dumps(floor) + '\n')
     groups = []
     for candidate in candidates:
         group = next((g for g in groups if all(c['photo'] != candidate['photo'] for c in g) and
