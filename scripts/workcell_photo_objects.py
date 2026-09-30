@@ -88,6 +88,55 @@ def _same(a, b, frames):
     return np.linalg.norm(ca-cb) < max(.03, extent*.6) and min(_inside(a['points'], b, frames), _inside(b['points'], a, frames)) >= .4
 
 
+def _guard_parts(root, detections, frames, masks):
+    """Exhaustive source-face partition by the three observed board instances."""
+    from workcell_photo_oneshot import GUARD_WORD
+    from scipy.optimize import linear_sum_assignment
+    candidates = {}
+    for photo in frames:
+        rows = []
+        for row in detections[GUARD_WORD]:
+            if row['photo'] != photo or row['score'] < .6:
+                continue
+            mask = row['mask'] & (masks[f'v{photo}_mask'] > 0)
+            if mask.any():
+                rows.append({**row, 'mask': mask, 'points': frames[photo]['points'][mask]})
+        largest = max((r['mask'].sum() for r in rows), default=0)
+        candidates[photo] = [r for r in rows if r['mask'].sum() >= .2 * largest]
+    complete = [p for p, rows in candidates.items() if len(rows) == 3]
+    if not complete:
+        raise ValueError('Three independent guard-board masks are required for a three-part report')
+    anchor = max(complete, key=lambda p: sum(r['mask'].sum() for r in candidates[p]))
+    rows = sorted(candidates[anchor], key=lambda r: np.where(r['mask'])[1].mean())
+    mesh = trimesh.load(root / 'guard-multi.glb', force='mesh')
+    uv, depth = _project(mesh.triangles_center, frames[anchor])
+    if np.any(depth <= 0):
+        raise ValueError('Guard mesh crosses its partition camera')
+    xy = np.rint(uv).astype(int); h, w = rows[0]['mask'].shape
+    xy[:, 0] = xy[:, 0].clip(0, w-1); xy[:, 1] = xy[:, 1].clip(0, h-1)
+    distances = np.stack([cv2.distanceTransform((~r['mask']).astype(np.uint8), cv2.DIST_L2, 5)[xy[:, 1], xy[:, 0]] for r in rows])
+    owners = distances.argmin(0)
+    parts = []
+    for index, side in enumerate(('left', 'center', 'right')):
+        indices = np.flatnonzero(owners == index)
+        part = mesh.submesh([indices], append=True, repair=False)
+        file = f'guard-{side}.glb'; part.export(root / file)
+        parts.append({'side': side, 'file': file, 'mesh': part, 'observations': [rows[index]],
+                      'sourceFaceIndices': indices.tolist()})
+    for photo, other in candidates.items():
+        if photo == anchor or not other:
+            continue
+        support = np.array([[_inside(part['mesh'].vertices, row, frames) for row in other] for part in parts])
+        a, b = linear_sum_assignment(-support)
+        for i, j in zip(a, b):
+            if support[i, j] >= .2:
+                parts[i]['observations'].append(other[j])
+    (root / 'guard-partition.json').write_text(json.dumps({'sourceFile': 'guard-multi.glb',
+        'anchorPhoto': anchor, 'method': 'source-mask triangle ownership; no coordinate cuts or mesh deformation',
+        'parts': [{k: p[k] for k in ('side', 'file', 'sourceFaceIndices')} for p in parts]}, indent=2))
+    return parts
+
+
 def build(root, sources):
     from workcell_photo_oneshot import _array, _frame, _mask
     root = Path(root)
@@ -174,12 +223,13 @@ def build(root, sources):
         [observe(cart_masks[f'v{i}_mask'] > 0, i, 'Selected cart mask; cart-mask-selection.json') for i in frames],
         'generated from RecGen photo 1; linked silhouette observations from four photos')
     guard_masks = np.load(root / 'guard-input.npz')
-    _, guard_nodes = _nodes(root, 'guard-multi.glb')
-    guard_obs = [observe(guard_masks[f'v{i}_mask'] > 0, i, 'Independent SAM guard mask; excluded from cart generation') for i in frames]
-    add('v-guard', 'V 型黑黄护板', 'v guard', 'guard-multi.glb', guard_nodes,
-        [o for o in guard_obs if o], 'independent multiview RecGen guard',
-        ['Generated only from independently segmented guard pixels, never the whole cart.',
-         'Model surface angles use the current estimated ground; they are not independently surveyed physical angles.'])
+    for part in _guard_parts(root, detections, frames, guard_masks):
+        _, nodes = _nodes(root, part['file'])
+        add('v-guard-'+part['side'], {'left':'左侧折弯护板', 'center':'中间折弯护板', 'right':'右侧折弯护板'}[part['side']],
+            'folded guard board', part['file'], nodes, observations(part['observations']),
+            'source-mask partition of the generated guard; unchanged source triangles',
+            ['Each board contains its own two adjoining sheet faces; bend means their interior angle (flat = 180 degrees).',
+             'Triangle ownership is recorded in guard-partition.json; model-derived angles are not surveyed physical measurements.'])
     posts, nodes = _nodes(root, 'posts.glb')
     for node in sorted(nodes):
         word = 'yellow safety post' if node.startswith('box') else 'black bollard'

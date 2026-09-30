@@ -103,7 +103,8 @@ def check(root):
     with tempfile.TemporaryDirectory(prefix='photo-object-retention-') as temporary:
         output=Path(temporary)
         for path in root.iterdir():
-            if path.is_file() and path.name not in ('sam3.json','objects.json','object-extras.glb'):
+            if path.is_file() and path.name not in ('sam3.json','objects.json','object-extras.glb',
+                                                   'guard-left.glb','guard-center.glb','guard-right.glb','guard-partition.json'):
                 (output/path.name).symlink_to(path.resolve())
         segmentation=json.loads((root/'sam3.json').read_text())
         words=[p['text'] for p in segmentation['prompts']]

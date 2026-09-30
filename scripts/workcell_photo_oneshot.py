@@ -328,7 +328,8 @@ def _build_page(root, metrics):
     shutil.copytree(TEMPLATE.parent.parent / "observed/viewer-assets", page / "viewer-assets")
     shutil.copytree(TEMPLATE.parent / "viewer-assets", page / "viewer-assets", dirs_exist_ok=True)
     assets = ("robot-v1.glb", "robot-v2.glb", "robot-v3.glb", "robot-v4.glb", "robot-multi.glb",
-              "cart-single.glb", "guard-multi.glb", "cart-observed.glb", "posts.glb", "fence-observed.glb",
+              "cart-single.glb", "guard-multi.glb", "guard-left.glb", "guard-center.glb", "guard-right.glb",
+              "guard-partition.json", "cart-observed.glb", "posts.glb", "fence-observed.glb",
               "mask-contact-sheet.jpg", "extra-mask-contact-sheet.jpg", "cart-mask-sheet.jpg",
               "fence-fitted.glb", "floor-fitted.glb", "workcell-metric.glb", "geometry.json",
               "objects.json", "object-extras.glb", "scene-report.json")

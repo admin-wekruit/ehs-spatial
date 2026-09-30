@@ -140,8 +140,9 @@ export function primitive(spec:any):Mesh {
 export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   const stage=document.createElement('div');stage.className='native-stage';Object.assign(stage.style,{position:'relative',width:'100%',height:'100%',minHeight:'260px',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#111b21'});
   const photo=document.createElement('img');photo.alt='';Object.assign(photo.style,{position:'absolute',objectFit:'contain',pointerEvents:'none'});photo.hidden=true;
+  const groundSVG=document.createElementNS('http://www.w3.org/2000/svg','svg');groundSVG.setAttribute('class','native-ground-datum');Object.assign(groundSVG.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});
   const canvas=document.createElement('canvas');canvas.setAttribute('aria-label',options.locale==='en'?'Interactive scene':'交互场景');canvas.tabIndex=0;Object.assign(canvas.style,{position:'relative',touchAction:'none'});
-  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');Object.assign(svg.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});stage.append(photo,canvas,svg);container.append(stage);
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');Object.assign(svg.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});stage.append(photo,groundSVG,canvas,svg);container.append(stage);
   const gl=canvas.getContext('webgl2',{alpha:true,antialias:true,preserveDrawingBuffer:true});if(!gl){stage.remove();throw Error('webgl_unavailable');}
   let disposed=false,epoch=0,photoEpoch=0,doc:any={entities:[],cameras:[],coordinateFrames:[]},revisionId='',selection:any={},camera:Camera|null=null,radius=1,center:Vec=[0,0,0],frameId:string|null=null,gpu:GPU[]=[],stale=new Set<GPU>(),abort=new AbortController(),preview=new Map<string,Transform>(),drag:any=null,axisDrag:any=null,hoverId:string|null=null;
   let sceneAssetsSignature='',loadedLayerKey='',viewMode='free',backgroundOnly=false;let pickCursor:Vec|null=null;let navigationVersion=0,autoFit=true;let photoAbort=new AbortController(),photoObjectURL:string|null=null;
@@ -212,8 +213,9 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   }
   function drawNow(pick=false,captureCanvas?:HTMLCanvasElement){
     if(disposed||!camera||gl!.isContextLost())return;const {w,h,cw,ch}=viewSize();if(!(cw>0&&ch>0))return;const dpr=Math.min(devicePixelRatio||1,2);canvas.style.width=photo.style.width=cw+'px';canvas.style.height=photo.style.height=ch+'px';const pw=Math.max(1,Math.round(cw*dpr)),ph=Math.max(1,Math.round(ch*dpr));if(canvas.width!==pw||canvas.height!==ph){canvas.width=pw;canvas.height=ph;}
+    const datumEnabled=layers.groundDatum&&!camera.exact&&!layers.studio&&!captureCanvas;
     const background=layers.studio?[237/255,240/255,238/255]:[17/255,27/255,33/255];
-    gl!.viewport(0,0,pw,ph);gl!.clearColor(pick||camera.exact?0:background[0],pick||camera.exact?0:background[1],pick||camera.exact?0:background[2],camera.exact&&!pick?0:1);gl!.depthMask(true);gl!.clear(gl!.COLOR_BUFFER_BIT|gl!.DEPTH_BUFFER_BIT);
+    gl!.viewport(0,0,pw,ph);gl!.clearColor(pick||camera.exact?0:background[0],pick||camera.exact?0:background[1],pick||camera.exact?0:background[2],(camera.exact||datumEnabled)&&!pick?0:1);gl!.depthMask(true);gl!.clear(gl!.COLOR_BUFFER_BIT|gl!.DEPTH_BUFFER_BIT);
     const {projection,view}=cameraMatrices(camera,cw/ch,radius),vp=matmul(projection,view);
     // Photo-real splats (never over the source photo) are laid over the photo-coloured observed surfaces: the room's, and
     // every object's but the selected one's (moving objects keep theirs). Where the splats are thin those surfaces show
@@ -239,6 +241,25 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     splatsNow();gl!.depthMask(true);gl!.disable(gl!.POLYGON_OFFSET_FILL);
     if(pick)return;const overlay=captureCanvas?.getContext('2d');if(overlay&&captureCanvas){captureCanvas.width=canvas.width;captureCanvas.height=canvas.height;overlay.drawImage(canvas,0,0);overlay.scale(canvas.width/w,canvas.height/h);}svg.setAttribute('viewBox',`0 0 ${w} ${h}`);svg.replaceChildren();const project=(p:Vec)=>{const q=projected(vp,p,cw,ch);return q?add(q,[(w-cw)/2,(h-ch)/2]):null;};
     const line=(a:Vec|null,b:Vec|null,color:string,width=1.5)=>{if(!a||!b)return null;const el=document.createElementNS(svg.namespaceURI,'line');for(const[k,v]of Object.entries({x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:color,'stroke-width':width}))el.setAttribute(k,String(v));svg.append(el);if(overlay){overlay.beginPath();overlay.moveTo(a[0],a[1]);overlay.lineTo(b[0],b[1]);overlay.strokeStyle='#ffffff';overlay.lineWidth=width+2;overlay.stroke();overlay.strokeStyle=color;overlay.lineWidth=width;overlay.stroke();}return el;};
+    groundSVG.setAttribute('viewBox',`0 0 ${w} ${h}`);groundSVG.replaceChildren();
+    const ground=doc.coordinateFrames.find((f:any)=>f.id===frameId)?.ground,n=ground?.normal;
+    if(datumEnabled&&Array.isArray(n)&&n.length===3&&n.every(Number.isFinite)&&Math.hypot(...n)>1e-8&&Number.isFinite(ground.offset)){
+      const origin=add(center,scale(n,-(dot(n,center)+ground.offset)/dot(n,n))),up=unit(n),reference=Math.abs(up[0])<.9?[1,0,0]:[0,1,0];
+      const a=unit(add(reference,scale(up,-dot(reference,up)))),b=cross(up,a),step=radius/6,span=step*8;
+      groundSVG.setAttribute('data-native-origin',JSON.stringify(origin));
+      // ponytail: 34 cosmetic grid lines stay on the saved floor; no new geometry or measurement asset.
+      for(let i=-8;i<=8;i++)for(const [along,across] of [[a,b],[b,a]]){
+        const mid=add(origin,scale(across,i*step)),start=add(mid,scale(along,-span)),end=add(mid,scale(along,span));
+        const grid=line(project(start),project(end),'#728f97',i===0?1.1:.6);if(grid){grid.setAttribute('opacity',i===0?'.7':'.4');grid.setAttribute('data-native-start',JSON.stringify(start));grid.setAttribute('data-native-end',JSON.stringify(end));groundSVG.append(grid);}
+      }
+      const labels=['X','Y','Z'],colors=['#ff7272','#76dfa0','#79b9ff'];
+      for(let k=0;k<3;k++){
+        const direction=[0,0,0];direction[k]=1;const end=add(origin,scale(direction,radius*.22)),p=project(end),axis=line(project(origin),p,colors[k],3);
+        if(axis){axis.setAttribute('data-ground-axis',labels[k]);axis.setAttribute('data-native-start',JSON.stringify(origin));axis.setAttribute('data-native-end',JSON.stringify(end));}
+        if(p){const label=document.createElementNS(svg.namespaceURI,'text');label.textContent=labels[k];for(const[name,value]of Object.entries({x:p[0]+5,y:p[1]-5,fill:colors[k],stroke:'#111b21','stroke-width':3,'paint-order':'stroke','font-size':16,'font-weight':700,'data-ground-axis-label':labels[k]}))label.setAttribute(name,String(value));svg.append(label);}
+      }
+      const p=project(origin);if(p){const label=document.createElementNS(svg.namespaceURI,'text');label.textContent=options.locale==='en'?'Estimated ground · world XYZ':'地面估计 · 世界 XYZ';for(const[name,value]of Object.entries({x:p[0]+7,y:p[1]+18,fill:'#bacdd3',stroke:'#111b21','stroke-width':3,'paint-order':'stroke','font-size':12}))label.setAttribute(name,String(value));svg.append(label);}
+    }
     const measurement=layers.measurement;
     if(measurement?.revisionId===revisionId&&measurement.coordinateFrameId===frameId){
       for(const path of measurement.lines)for(let i=1;i<path.points.length;i++)line(project(path.points[i-1]),project(path.points[i]),path.color,2.5);

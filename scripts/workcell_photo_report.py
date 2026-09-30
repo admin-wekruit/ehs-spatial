@@ -144,15 +144,14 @@ def build(root):
                 'documentSha256': hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest(),
                 'label': '四张照片 oneshot', 'document': doc}
     Revision.model_validate(revision)
-    from ehs_spatial.platform.scene_measurements import analyze_bends, analyze_inclinations
-    guard_revision = {**revision, 'document': {**doc, 'entities': [e for e in doc['entities'] if e['id'] == 'v-guard']}}
+    from ehs_spatial.platform.scene_measurements import analyze_bends
+    guard_revision = {**revision, 'document': {**doc, 'entities': [e for e in doc['entities'] if e['id'].startswith('v-guard-')]}}
     def load_asset(asset_id):
         return (root / urls[asset_id]).read_bytes()
     bend_analysis = analyze_bends(guard_revision, load_asset)
-    inclination_analysis = analyze_inclinations(guard_revision, load_asset)
     result = {'schemaVersion': 1, 'revision': revision, 'assetURLs': urls, 'objects': catalog['objects'],
               'coverage': catalog['coverage'], 'geometry': geometry, 'sceneTransformNative': transform.tolist(),
               'nativeToMetersDefault': scale, 'timing': {},
-              'bendAnalysis': bend_analysis, 'inclinationAnalysis': inclination_analysis}
+              'bendAnalysis': bend_analysis}
     (root / 'scene-report.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
     return result

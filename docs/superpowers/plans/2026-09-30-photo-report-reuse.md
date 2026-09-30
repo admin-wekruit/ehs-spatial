@@ -61,3 +61,24 @@ Ledger: final run estimated container window$0.254, call window$0.304, actual in
 Site commit1ce3c54 updates only workcell-photo-direct/. Live validation to be appended after Pages completes.
 
 Live verified: Pages run36785242848 succeeded for1ce3c54. URL ?v=1ce3c54-verified loaded50/50models and185s timing. Center drag60→53; free-orbit canvas changed; V-guard local face5 card84.7deg toground/5.3deg fromvertical matched3Dannotation; GLBdownload workcell-photo-4-height-20cm.glb succeeded; browser console0errors. Screenshot browser-check/live-angle.png. This is model-derived orientation, not independently measured ground-angle accuracy.
+
+
+## Three physical boards, intrinsic bends and grounded scene — 2026-09-30
+
+User clarified that each of the three guard boards contains two folded faces. Ground inclination of arbitrary local patches was the wrong output. Reuse existing fitted_bend/analyze_bends and isolated model annotations: flat is180deg, right angle90deg. Split the current generated guard using three independently segmented instances in the best complete source view, then uniquely associate observations across views. Every original triangle belongs to exactly one board, with unchanged coordinates. No manual coordinate cuts, historic masks or models. Saved floor defines the free-view grid and world XYZ; cosmetic grid does not alter meshes or exported measurements.
+
+Fresh raw-photo oneshot: research-notes/workcell-three-boards-complete-2026-09-30-a, Modal ap-IJ9Pnx5wL3K33Q9t2GysX4, one ephemeral2xA100-80GB. End-to-end334.60s; container180.32s; call including cold start317.28s. 52 records,97 observations,136 linked nodes; not ground-truth identity count. Left intrinsic bend144.9939deg, right141.5282deg; center unsupported. Angles are inferred from generated surfaces, not independent physical measurements.
+
+Center investigation retained under workcell-center-probe-2026-09-30: independent multiview3/4 generation had no stable bend; single-view numerical fit77.8696deg failed source consistency (mask IoU~0.456/0.459), so it was rejected and not injected into the final report. Modal ap-9nPY6NQsnECqxyeaYZQik5,63.319s container,246.698s wall; separate estimated spend ledger retained. Observed depth and previous DEFAULT/FAST meshes also did not establish a stable center bend. This limitation remains open.
+
+Checks passed: check_workcell_vguard.py (exhaustive disjoint unchanged triangles and angle references), check_workcell_photo_objects.py, check_workcell_photo_report.py --require-lights, browser check (all3 selections, left/right fold annotations, unsupported center without stale value, ground grid/camera orbit, drag, source/model clicks,20/40cm exports,mobile,noAPI). Typecheck/build/existing frontend checks passed. Independent review found and verified fixes for missing child-GLB page assets and regression-fixture symlink write-through; no remaining blocker reported.
+
+Spend estimates: final container window$0.320; call window$0.563 including possible scheduling; actual invoice unknown. Center diagnostic separate, estimated container$0.112/call$0.438. These are development/run estimates, not actual charges.
+
+Site commit19f08d9 changes only workcell-photo-direct/. Live verification follows.
+
+
+Live validation caught browser cache mixing new hashed JS with old scene-report.json (50records/185s) and same-name GLBs. Fixed the shared photo-report resolver: JSON fetch revalidates with cache:no-cache; photo/model/export URLs carry the report document hash, which includes asset content hashes. Regression checks assert revalidation headers and revision query values. Independent review confirmed no blocker. Build/typecheck and full browser regression rerun passed. UI-only publication correction is75b0b5c; original frozen inference UI remains report-ui, actual published UI snapshot report-ui-published. No inference rerun or new latency claim for this UI correction.
+
+
+Live verified75b0b5c: Pages run36788836954 succeeded. Existing browser with cached prior data now loaded52/52 models and335s timing after ordinary navigation/reload. Three board source GLBs loaded; left145.0deg/right141.5deg cards matched annotation, center explicitly unsupported. Saved bend opens isolated rotatable model. Free scene shows saved-ground grid/worldXYZ and orbit changes actual canvas; divider dragged to75. Every requested GLB URL carries report revision. Console0errors. Actual live screenshots: browser-check/live-right-fold.png and browser-check/live-ground.png. Final URL: https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/?v=75b0b5c-verified . Center reliable bend remains unresolved.

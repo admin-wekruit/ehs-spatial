@@ -36,3 +36,5 @@ body:has(.photo-report) { background: #f7f8f3; color: #243c31; }
 .photo-report-angles { border-bottom: 1px solid #cdd5cc; padding-bottom: 12px; margin-bottom: 15px; }
 .photo-report-angles h3 { font-size: 14px; margin: 0 0 12px; }.photo-report-angles h4 { font-size: 12px; margin: 12px 0 5px; }
 .photo-report-angles p { font-size: 11px; line-height: 1.65; margin: 5px 0; }.photo-report-angles strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+
+.photo-report-bend { margin-top: 14px; padding: 12px; background: #e8efe2; border: 1px solid #bdcdb6; }.photo-report-bend h4 { margin-top: 0; }.photo-report-bend output { font-size: 30px; color: #315a45; font-variant-numeric: tabular-nums; }

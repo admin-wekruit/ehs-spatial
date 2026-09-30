@@ -10,7 +10,11 @@ const web = path.resolve(new URL('..', import.meta.url).pathname), payload = JSO
 const viewerAssets = process.env.VIEWER_ASSETS || '/Users/adam/Desktop/panoptes-public/panoptes-workcell-pages/workcell-photo-direct/viewer-assets';
 fs.mkdirSync(out, { recursive: true });
 const mime = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.json': 'application/json', '.png': 'image/png', '.glb': 'model/gltf-binary' };
+const reportRequests = [], modelRequests = [];
 const server = http.createServer((req, res) => {
+  const requestURL = new URL(req.url, 'http://local');
+  if (requestURL.pathname === '/scene-report.json') reportRequests.push(req.headers);
+  if (requestURL.pathname.endsWith('.glb')) modelRequests.push(requestURL);
   const name = decodeURIComponent(new URL(req.url, 'http://local').pathname).replace(/^\//, '');
   const file = name.startsWith('viewer-assets/') ? path.join(viewerAssets, name.slice(14)) : path.join(name === '' || name === 'photo.html' || name.startsWith('assets/') ? path.join(web, 'dist-photo') : assets, name || 'photo.html');
   if (!fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404).end(); return; }
@@ -25,6 +29,8 @@ try {
   const expectedModels = payload.revision.document.entities.filter(entity => entity.representations.length).length;
   await page.waitForFunction(expected => { const n = document.querySelector('[data-model-loaded]'); return n && +n.dataset.modelLoaded === expected && +n.dataset.modelCoverage === expected; }, expectedModels);
   assert.equal(await page.locator('.report-scene-object-row').count(), payload.objects.length);
+  assert.ok(reportRequests.some(headers => /no-cache|max-age=0/.test(headers['cache-control'] || '')), 'updated report must revalidate cached JSON');
+  assert.ok(modelRequests.length && modelRequests.every(url => url.searchParams.get('revision') === payload.revision.documentSha256), 'same-name models must be bound to the report revision');
   for (const item of payload.objects) {
     await page.locator(`[data-entity-id="${item.id}"] > button`).first().click();
     assert.equal(await page.locator('[data-selected-object]').getAttribute('data-selected-object'), item.id);
@@ -57,6 +63,8 @@ try {
     const box = await page.locator('.report-comparison-model canvas').boundingBox();
     if (canvasBox) assert.deepEqual(box, canvasBox, 'wipe must not change canvas or camera viewport'); canvasBox = box;
   }
+  assert.equal(await page.locator('.report-comparison-model .native-ground-datum line').count(), 0, 'photo comparison must not draw a ground grid');
+  assert.equal(await page.locator('.report-comparison-model [data-ground-axis]').count(), 0, 'photo comparison must not draw world axes');
   await slider.fill('100');
   const buttonEntity = payload.revision.document.entities.find(entity => entity.id === 'emergency-button');
   const photoTarget = payload.revision.document.observations.find(o => o.imageId === 'photo-4' && buttonEntity.observationRefs.includes(o.id));
@@ -118,6 +126,14 @@ try {
   await page.waitForSelector('[data-pane="spatial"] canvas');
   await page.waitForFunction(expected => +document.querySelector('[data-model-loaded]').dataset.modelLoaded === expected, expectedModels);
   await page.locator('[data-pane="spatial"] .stage-status').waitFor({ state: 'detached' });
+  const groundGrid = page.locator('[data-pane="spatial"] .native-ground-datum');
+  assert.ok(await groundGrid.locator('line').count() > 0, 'free scene shows estimated ground grid');
+  assert.equal(await page.locator('[data-pane="spatial"] [data-ground-axis]').count(), 3, 'free scene has world X Y Z at ground');
+  const ground = payload.revision.document.coordinateFrames[0].ground;
+  const gridSegments = await groundGrid.locator('line').evaluateAll(lines => lines.map(line => [JSON.parse(line.dataset.nativeStart), JSON.parse(line.dataset.nativeEnd)]));
+  for (const segment of gridSegments) for (const p of segment) assert.ok(Math.abs(p.reduce((sum,n,k)=>sum+n*ground.normal[k],ground.offset)) < 1e-8, 'datum grid lies on saved estimated floor');
+  const worldAxes = await page.locator('[data-pane="spatial"] [data-ground-axis]').evaluateAll(lines => lines.map(line => ({axis:line.dataset.groundAxis,start:JSON.parse(line.dataset.nativeStart),end:JSON.parse(line.dataset.nativeEnd)})));
+  for (const axis of worldAxes) for(let k=0;k<3;k++) if(k!== 'XYZ'.indexOf(axis.axis)) assert.ok(Math.abs(axis.end[k]-axis.start[k])<1e-8, 'world axis direction cannot rotate with selected object');
   const freeCanvas = page.locator('[data-pane="spatial"] canvas');
   await freeCanvas.scrollIntoViewIfNeeded();
   const orbitBox = await freeCanvas.boundingBox(), beforeOrbit = await freeCanvas.evaluate(canvas => canvas.toDataURL());
@@ -154,10 +170,33 @@ try {
     assert.equal(await page.locator('[data-inclination-surface]').count(), 1);
     assert.equal(await page.locator('[data-inclination-surface]').getAttribute('data-inclination-surface'), lastSurface.surfaceId, 'inspector follows existing plane selection');
   } else assert.equal(await page.locator('[aria-label="已保存的平面倾角"]').count(), 0, 'older reports without saved analysis remain usable');
+  for (const id of ['v-guard-left','v-guard-center','v-guard-right'].filter(id => payload.revision.document.entities.some(entity => entity.id === id))) {
+    const outcome = payload.bendAnalysis?.items.find(row => row.entityId === id);
+    assert.ok(outcome, 'each physical guard board retains its own bend outcome');
+    await page.locator(`[data-entity-id="${id}"] > button`).first().click();
+    const card = page.locator(`[data-bend-entity="${id}"]`);
+    assert.equal(await card.count(), 1);
+    if(outcome.status === 'measured') {
+      assert.equal(await card.locator('output').textContent(), `${outcome.result.value.toFixed(1)}°`);
+      await page.locator('[data-pane="spatial"] .native-stage svg text').filter({hasText:`${Number(outcome.result.value.toPrecision(4))}°`}).waitFor();
+      assert.equal(await page.locator(`[data-entity-id="${id}"] [data-model-state]`).getAttribute('data-model-state'), 'sceneModelLoaded', 'physical board source GLB must load through native viewer');
+      await page.getByRole('button', {name:'所选对象模型',exact:true}).first().click();
+      await page.locator('[data-pane="plan"] .native-stage svg text').filter({hasText:`${Number(outcome.result.value.toPrecision(4))}°`}).waitFor();
+      await page.locator('[data-pane="plan"] .stage-status').waitFor({state:'detached'});
+      const boardCanvas = page.locator('[data-pane="plan"] canvas'); await boardCanvas.scrollIntoViewIfNeeded();
+      const boardBox = await boardCanvas.boundingBox();
+      await page.mouse.move(boardBox.x+boardBox.width/2,boardBox.y+boardBox.height/2);await page.mouse.down();
+      await page.mouse.move(boardBox.x+boardBox.width/2+100,boardBox.y+boardBox.height/2-20,{steps:12});await page.mouse.up();
+      await page.locator('[data-pane="plan"] .native-stage svg text').filter({hasText:`${Number(outcome.result.value.toPrecision(4))}°`}).waitFor();
+      await page.locator('[data-pane="plan"] .report-model-image').screenshot({path:path.join(out, `${id}-fold-arc.png`)});
+      await page.screenshot({path:path.join(out, `${id}-inspector.png`),fullPage:true});
+      await page.getByRole('button', {name:/可旋转 3D/}).click();
+    } else assert.ok((await card.textContent()).includes('不可用'), 'unsupported physical board cannot get invented bend');
+  }
   if (payload.bendAnalysis?.items.some(row => row.status === 'measured')) {
     const row = payload.bendAnalysis.items.find(row => row.status === 'measured' && row.result);
     await page.locator('[aria-label="已保存的折弯分析"] select').selectOption(row.entityId);
-    await page.locator('[data-pane="spatial"] .native-stage svg text').filter({ hasText: `${Number(row.result.value.toPrecision(4))}°` }).waitFor();
+    await page.locator('[data-pane="plan"] .native-stage svg text').filter({ hasText: `${Number(row.result.value.toPrecision(4))}°` }).waitFor();
   }
   await page.getByLabel('标尺轴').selectOption('width');
   const widthScale = Number(await page.locator('[data-native-to-meters]').getAttribute('data-native-to-meters'));
@@ -175,5 +214,5 @@ try {
   await page.screenshot({ path: path.join(out, 'mobile.png'), fullPage: true });
   assert.deepEqual(apiRequests, [], 'offline saved analyses must not call remote APIs');
   assert.deepEqual(errors, [], 'no browser runtime errors');
-  console.log(JSON.stringify({ pass: true, objects: payload.objects.length, checks: ['list and inspector', 'single-view dimensions unknown', 'center-handle mouse/touch/keyboard drag', 'slider 0/50/100 stable viewport', 'photo and model selection', 'photo camera switch', '20/40 cm geometry export', 'free 3D actual orbit changes canvas', 'width scale and mismatch', 'mobile list and inspector', payload.inclinationAnalysis ? 'saved plane card and actual SVG annotation' : 'missing analysis remains usable', 'zero API requests'], screenshot: path.join(out, 'desktop.png') }));
+  console.log(JSON.stringify({ pass: true, objects: payload.objects.length, checks: ['list and inspector', 'single-view dimensions unknown', 'center-handle mouse/touch/keyboard drag', 'slider 0/50/100 stable viewport', 'photo and model selection', 'photo camera switch', '20/40 cm geometry export', 'free 3D actual orbit changes canvas', 'ground-plane grid and world XYZ', 'per-board saved bend and isolated fold arcs', 'width scale and mismatch', 'mobile list and inspector', payload.inclinationAnalysis ? 'saved plane card and actual SVG annotation' : 'missing analysis remains usable', 'zero API requests'], screenshot: path.join(out, 'desktop.png') }));
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
