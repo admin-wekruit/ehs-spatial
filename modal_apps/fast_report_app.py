@@ -54,7 +54,7 @@ VOLUMES = {"/v/da3": modal.Volume.from_name("moge3-hf-cache"), "/v/sam3": modal.
            "/v/r4": modal.Volume.from_name("panoptes-r4-naming")}  # r4/naming: YOLOE-26L with the taxonomy baked in (modal_apps/r4_naming.py)
 
 
-def build_image():
+def build_image(with_mapanything=False):
     """CUDA devel base (nvcc for SAM 3D's pytorch3d); E9's main environment, pinned to the versions E9 ran (torch
     2.14.0+cu130, transformers 5.17.0, open3d 0.19.0), vLLM in its own venv as in E9; then B's venvs (/opt/sam3d,
     /opt/gate, /opt/splat); the repo's code mounted at /repo (the SAM 3D, gate and splat processes run it from there)."""
@@ -72,6 +72,13 @@ def build_image():
     # without its opencv-python dependency (the image has opencv-python-headless: two cv2 packages would overwrite each other)
     out = (out.pip_install("open_clip_torch==3.3.0", "matplotlib", "pyyaml", "requests", "psutil", "polars", "ultralytics-thop")
            .run_commands("python -m pip install --no-deps ultralytics==8.4.165"))
+    if with_mapanything:
+        from modal_apps.mapanything_app import CODE_REV
+        out = out.run_commands(
+            "uv venv --python 3.11 /opt/mapanything",
+            "uv pip install --python /opt/mapanything/bin/python torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121",
+            f"uv pip install --python /opt/mapanything/bin/python numpy pillow trimesh huggingface_hub modal 'protobuf>=5,<7' 'git+https://github.com/facebookresearch/map-anything.git@{CODE_REV}'",
+            "/opt/mapanything/bin/python -c 'from mapanything.models import MapAnything; print(\"MapAnything import ready\")'")
     for d in ("fast_report", "scripts", "modal_apps", "ehs_spatial"):
         out = out.add_local_dir(REPO / d, f"/repo/{d}", ignore=["**/__pycache__/**", "**/*.pyc"])
     return out
