@@ -151,6 +151,16 @@ class Pool:
                         if future is not None and not future.done():
                             future.set_exception(RuntimeError(f"every {self.name} process died"))
 
+    def add(self, argv, env):
+        """r5b integrate: one more process on the same queue (RecGen's GPU 1 pair, spawned once vLLM has sized its share)."""
+        with self.lock:
+            i = len(self.procs)
+            self.boot.append(Future())
+            self.logs.append(f"/tmp/fb-{self.name}-{i}.log")
+            self.procs.append(subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open(self.logs[i], "wb"), env=env, cwd=str(ROOT)))
+            self.live += 1
+        threading.Thread(target=self._serve, args=(i,), daemon=True).start()
+
     def ready(self, timeout=None):
         return [f.result(timeout) for f in self.boot]
 
@@ -617,10 +627,12 @@ def rank(objs, vocab=(), eligible=None):
     import complete_video_objects as cvo
     order, terms = {w: i for i, w in enumerate(vocab)}, [t for ts in cvo.RELEVANT.values() for t in ts]
     ehs = lambda w: w in CORE or cvo.matches(w, terms) is not None
-    keep = [o for o in objs if not cvo.matches(o["word"], cvo.EXCLUDED) and len(o["masks_lr"]) >= cvo.FIT_GATE["min_agreeing_views"]
-            and (eligible is None or o["id"] in eligible)]
+    keep = [o for o in objs if not cvo.matches(o["word"], cvo.EXCLUDED) and (eligible is None or o["id"] in eligible)
+            and len(o["masks_lr"]) >= (1 if eligible is not None else cvo.FIT_GATE["min_agreeing_views"])]  # r5b integrate: cards seen once too
     key = (lambda o: (-eligible[o["id"]], str(o["id"]))) if eligible is not None else \
         (lambda o: (not ehs(o["word"]), order.get(o["word"], len(order)), -len(o["masks_lr"]), str(o["id"])))
+    if eligible is not None:  # r5b integrate: the cards are already one object each (merged): no box-overlap dedupe
+        return sorted(keep, key=key)
     taken = []
     for o in sorted(keep, key=key):
         box = np.array([o["box_min_m"], o["box_max_m"]], float)

@@ -18,6 +18,17 @@ import numpy as np
 STRIDE, GRID_HW = 2, (280, 504)  # the lift's pixel stride on DA3's grid
 VOXEL_M, MAX_TRIANGLES, MIN_COMPONENT = (.01, .04), 20000, .05
 PART_SAMPLE, MAX_PARTS, NORMAL_AGREE_DEG, MIN_PART_SHARE, MIN_PART_POINTS, MIN_PART_SIDE_M = 5000, 6, 30., .05, 40, .05
+# r5b integrate (round 5's false tilts: 26 of 27 parts read 15-75 deg on ME340 were not tilted by eye, part u median 12-17 deg): an
+# angle is shown only when >= TILT_MIN_SETS view sets measured it and its u <= TILT_U_MAX_DEG; otherwise 'not measurable' with both
+TILT_MIN_SETS, TILT_U_MAX_DEG = 3, 5.
+
+
+def _gated(v, sets):
+    """A part's or a bend's angle value -> itself, or 'not measurable' (too few view sets, or u too wide) keeping the reading."""
+    if "value" not in v or (sets >= TILT_MIN_SETS and v.get("u", 1e9) <= TILT_U_MAX_DEG):
+        return v
+    return {"status": "not measurable", "reason": f"measured from {sets} view set(s), u {v.get('u', float('nan')):.0f} deg: an angle needs "
+            f">= {TILT_MIN_SETS} agreeing view sets and u <= {TILT_U_MAX_DEG:g} deg", "value_if_measurable": v["value"], "u_if_measurable": v.get("u")}
 TOUCH_PAIRS, MIN_FOLD_DEG, SUBSET_POINTS = 5, 5., 30
 # u's k for a part's angle (r5 bench 001, ground truth: 265 parts of ARKitScenes 42445448 / 47333932 and TUM fr1 room matched to
 # GT parts; k = 1 covered 78 %, 1.75 covers 90 %; left-one-sequence-out k 1.55-2.05); a fit term over FIT_MAX_DEG: a curved patch
@@ -202,6 +213,8 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
                         "angle", k, vals if len(vals) >= 2 else None, unit="deg", scale=cards.SCALE_FREE)
         if fit(p) > FIT_MAX_DEG:  # the cards' rule for any angle: a patch this rough is curved, no angle
             v = {"status": "not measurable", "reason": f"a curved patch: fit term {fit(p):.0f} deg > {FIT_MAX_DEG:g}", "value_if_flat": v["value"]}
+        else:
+            v = _gated(v, len(vals))
         rows.append({"name": chr(65 + len(rows)), "tilt_deg": v, "area_m2": round(float(np.prod(p["ext"])), 3), "centre_m": np.round(p["c"], 3).tolist(),
                      "normal": np.round(p["n"], 4).tolist(), "sides_m": np.round(p["ext"], 3).tolist(), "axes": np.round(p["ax"], 4).tolist(),
                      "share": round(len(p["ix"]) / n, 3)})
@@ -220,6 +233,7 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
             v = cards.value(180 - fold, {"views": cards.spread(subs) if len(subs) >= 2 else None, "fit": float(np.hypot(fit(parts[a]), fit(parts[b])))},
                             "angle", k, [180 - s for s in subs] if len(subs) >= 2 else None, unit="deg", scale=cards.SCALE_FREE,
                             note="the angle between the two parts (180 = flat)")
+            v = _gated(v, len(subs))
             bends.append({"parts": [a, b], "names": [chr(65 + a), chr(65 + b)], "angle_deg": v})
     out = {"parts": rows, "bends": bends, "points": n, "tolerance_m": round(tau, 4), "s": round(time.perf_counter() - t0, 4),
            "note": "planar parts of the observed points (the video's own surface), each to the floor: 0 = horizontal, 90 = vertical"}
@@ -451,8 +465,10 @@ def self_check():
                           _sheet(np.array([.6, 0, 0]), np.array([0, .4, 0]), np.array([0, 0, .5]), 1200, rng),
                           _sheet(np.array([0, 0, .5]), np.array([.6, 0, 0]), np.array([0, .4, 0]), 1200, rng)])
     o2 = planar_parts(box, np.tile([0, 1], 1800), [[0], [1]], np.array([[2, -2, 1.6], [2.5, -1, 1.2]]))
-    assert sorted(round(p["tilt_deg"]["value"] / 45) * 45 for p in o2["parts"]) == [0, 90, 90], [p["tilt_deg"]["value"] for p in o2["parts"]]
-    assert all(abs(b_["angle_deg"]["value"] - 90) < 3 for b_ in o2["bends"]) and len(o2["bends"]) == 3
+    raw = lambda v: v.get("value", v.get("value_if_measurable"))  # noqa: E731
+    assert sorted(round(raw(p["tilt_deg"]) / 45) * 45 for p in o2["parts"]) == [0, 90, 90], [raw(p["tilt_deg"]) for p in o2["parts"]]
+    assert all(abs(raw(b_["angle_deg"]) - 90) < 3 for b_ in o2["bends"]) and len(o2["bends"]) == 3
+    assert all(p["tilt_deg"]["status"] == "not measurable" for p in o2["parts"])  # 2 view sets: shown as not measurable (r5b integrate)
     assert planar_parts(box[:30], np.zeros(30, int), [], np.zeros((1, 3)))["status"] == "not measurable"
     # observed mesh: the box's front face seen by 3 cameras; the mesh stays on the seen face, the back is not invented
     K = np.array([[250., 0, 252], [0, 250., 140], [0, 0, 1]])

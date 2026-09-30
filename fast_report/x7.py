@@ -430,6 +430,10 @@ def select(src, key, obj, min_sep=MIN_SEP_DEG):
     centre = np.asarray(obj["centroid_m"], float)
     cam = lambda m: np.asarray(src.rows[m["frame"]]["c2w"])[:3, 3]  # noqa: E731
     gen, held = spread_views(good, centre, cam, min_sep=min_sep)
+    if held is None and min_sep == 0 and (good or metrics):  # r5b integrate: a one-sided object still gets a model from its best view;
+        pool = good or sorted(metrics, key=lambda m: -m["score"])  # its check view is that view (no held-out view exists)
+        gen, held = pool[:MAX_GEN_VIEWS], pool[0]
+        out["held_out"] = False
     out["directions_at_deg"] = {str(d): len(sum(spread_views(good, centre, cam, min_sep=d)[0:1], []) + ([1] if spread_views(good, centre, cam, min_sep=d)[1] else []))
                                 for d in (5, 10, 15)}  # sensitivity of the rule: views a looser separation would take
     brief = lambda m: {k: (round(v, 4) if isinstance(v, float) else v) for k, v in m.items() if k in  # noqa: E731

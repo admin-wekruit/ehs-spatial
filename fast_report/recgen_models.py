@@ -11,7 +11,8 @@ come out as sam3d.gate's do ({object, glb, transform, bounds, gate}). Generated 
 import queue
 import time
 
-SEPARATIONS = (15., 8.)  # deg: X7's held-out rule, then its looser arm where a walk-past gives no 15 deg set
+SEPARATIONS = (15., 8., 0.)  # deg: X7's held-out rule, its looser arm where a walk-past gives no 15 deg set, then (r5b integrate) any
+# views: a one-sided object's best view (x7.select, min_sep 0), its unseen side the generator's guess (translucent in the GLB)
 FAST = {"ss_steps": 12, "ss_cfg": None, "slat_steps": 8, "slat_cfg": 0, "formats": ("mesh",), "fusion": "fused", "max_views": 4, "cache_cond": True,
         "fast_out": True}  # recgen_fast.setting(**recgen_fast.FAST): 2.5 s an object vs 8.2 (runs/recgen-fast-002..005), same held-out IoU
 LICENCE = "RecGen (TRI): non-commercial licence, internal profile only"
@@ -51,8 +52,8 @@ def gate(objs, shots, frames_host, clock, recgen, cpu, eligible, records, deadli
         if kind == "selected":
             sam3d._external(clock, "recgen.select", None, res["start_unix"], res["end_unix"], object=o["id"])
             if not res.get("eligible"):
-                if sep == SEPARATIONS[0]:
-                    select(r, SEPARATIONS[1])
+                if sep != SEPARATIONS[-1]:
+                    select(r, SEPARATIONS[SEPARATIONS.index(sep) + 1])
                 else:
                     records.append({**base, "stage": "prepare", "rejected": res.get("reason") or "no held-out view"})
                 continue
@@ -60,12 +61,12 @@ def gate(objs, shots, frames_host, clock, recgen, cpu, eligible, records, deadli
                 records.append({**base, "stage": "prepare", "rejected": "no generation view keeps mask pixels with depth" if not late() else "deadline"})
                 continue
             sel[r] = {"src": src, "shot": int(o["shot"]), "key": keys[o["id"]], "gen": [g["frame"] for g in res["gen"]], "held": res["held"]["frame"],
-                      "crop": res["held_crop"], "anchor": res["recgen_views"][0], "sep": sep}
+                      "crop": res["held_crop"], "anchor": res["recgen_views"][0], "sep": sep, "held_out": res.get("held_out", True)}
             submit(recgen, {**res["recgen_job"], "op": "run", "setting": FAST}, (0, r), "generated", r)  # r5b: recgen/fast's FAST setting
         elif kind == "generated":
             sam3d._external(clock, "recgen.generate", None, res["start_unix"], res["end_unix"], object=o["id"])
             s = sel[r]
-            submit(cpu, {"op": "gate", **s, "kind": "recgen", "source_frame": s["anchor"], "tile": False, "glb": True,
+            submit(cpu, {"op": "gate", **s, "kind": "recgen", "source_frame": s["anchor"], "tile": False, "glb": True, "always": True,
                          "mesh": {k: res[k] for k in ("vertices", "faces", "colors")}}, (0, r), "gated", r)
             sel[r]["generate_s"] = res["seconds"]
         else:
@@ -75,13 +76,14 @@ def gate(objs, shots, frames_host, clock, recgen, cpu, eligible, records, deadli
                                                                        f"{g.get('relative_depth_median') or 0:.3f}"]
             records.append({**base, "stage": "assess", "accepted": bool(g.get("accepted_source_consistency")), "reasons": reasons,
                             "iou": g.get("silhouette_iou"), "view": sel[r]["held"], "attempt": 1, "generate_s": sel[r].get("generate_s")})
-            if g.get("accepted_source_consistency") and res.get("glb"):
+            if res.get("glb"):  # r5b integrate: every generated model is shown; the check's verdict rides along (display only)
                 import numpy as np
                 t = np.eye(4)
                 t[:3, 3] = res["centre"]
                 yield {"object": o["id"], "glb": res["glb"], "transform": t, "bounds": res["bounds"],
                        "gate": {**{k: g.get(k) for k in ("silhouette_iou", "relative_depth_median", "relative_depth_p95", "supported_pixels")},
-                                "accepted_source_consistency": True, "separation_deg": sel[r]["sep"], "views": len(sel[r]["gen"]),
+                                "accepted_source_consistency": bool(g.get("accepted_source_consistency")), "held_out": sel[r]["held_out"],
+                                "separation_deg": sel[r]["sep"], "views": len(sel[r]["gen"]),
                                 "held_out_view": sel[r]["held"], "generator": "RecGen", "licence": LICENCE, "faces": res.get("faces"),
                                 "observed_vertex_share": res.get("observed_vertex_share"), "status": "generated display model: never used for measurement"}}
 
@@ -119,7 +121,9 @@ def self_check():
                                                                      "seconds": 7.}), FakePool(cpu_fn), None, records))
     finally:
         s3.stage, s3.rank = stage, rank
-    assert [x["object"] for x in got] == ["obj-0", "obj-1"] and got[1]["gate"]["separation_deg"] == 8. and got[0]["transform"][0, 3] == 1.
+    by = {x["object"]: x for x in got}
+    assert sorted(by) == ["obj-0", "obj-1", "obj-2"] and by["obj-1"]["gate"]["separation_deg"] == 8. and by["obj-0"]["transform"][0, 3] == 1.
+    assert by["obj-2"]["gate"]["accepted_source_consistency"] is False  # r5b integrate: shown with its check's verdict
     assert sorted(r["object"] for r in records if r["stage"] == "assess") == ["obj-0", "obj-1", "obj-2"]
     assert next(r for r in records if r["object"] == "obj-2")["accepted"] is False
     print("recgen_models self-check ok: select (15, then 8 deg), generate, gate, yields and records")

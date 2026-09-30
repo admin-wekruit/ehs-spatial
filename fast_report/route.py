@@ -1,11 +1,11 @@
 """r5b (models): which display model an object card gets (route/jev's recommended rule, moved here from scripts/route_jev.py so
 the report runs it; that script imports it back).
 
-  route()      1) a card no generator takes (display_model.well_observed fails) keeps its observed surface or primitive, no
-               question; 2) a class that fixes the shape decides (FIXED_SHAPE_POST_HOC: machines, tools, carts, furniture,
-               cables -> generated; boxes, pallets, shelves, racks, signs, pipes, boards -> primitive); 3) Jev-Omni Q5 for the
+  route()      (r5b integrate, the user 2026-09-29: every non-simple object gets a generated model, one-sided ones too: no view
+               gate) 1) a class that fixes the shape decides (FIXED_SHAPE_POST_HOC: machines, tools, carts, furniture,
+               cables -> generated; boxes, pallets, shelves, racks, signs, pipes, boards -> primitive); 2) Jev-Omni Q5 for the
                rest: P(none of the simple shapes) > P_COMPLEX_CUT -> generated. No VLM.
-  soft()       bags and soft goods: never generated (their shape is the moment's), the observed surface stays.
+  soft()       bags and soft goods (recorded on the plan; r5b integrate: generated like any non-simple object).
   groups()     look-alike groups: the same type (the shown name, or a type-only card's type) and every sorted box
                extent within LOOK_ALIKE of the group's first (best-seen) card: one generated model per group, reused by the rest.
 
@@ -13,7 +13,7 @@ the report runs it; that script imports it back).
 """
 import numpy as np
 
-from fast_report import cards, display_model
+from fast_report import cards
 
 # Written from the user's definition before any object was labelled (route/jev 1b61ed1); POST HOC: minus the classes the labels
 # showed to be shape-ambiguous (route-jev-001: bag -> pet-food bags are boxes; tool box / tool tray: boxes and trays; crate,
@@ -62,9 +62,6 @@ def route(card, q5=None, cut=P_COMPLEX_CUT):
     """-> (display model, why): 'primitive', 'generated' or 'ask jev' (then call again with Jev-Omni's Q5 probabilities: raw,
     one question on the card's outlined best view). 'primitive' means 'no generated model': display_model.for_card decides
     between the primitive and the observed surface."""
-    score, why = display_model.well_observed(card)
-    if score is None:
-        return "primitive", f"no generator takes it ({why})"
     cls = card_class(card)
     r = class_route(cls)
     if r:
@@ -124,14 +121,14 @@ def self_check():
     named = lambda n, **kw: {**card, "identity": {"name": n, "canonical": cards.canonical(n)}, **kw}  # noqa: E731
     assert route(named("milling machine"))[0] == "generated" and route(named("cardboard box"))[0] == "primitive"
     assert route(named("sneaker"))[0] == "ask jev" and route(named("sneaker"), [.1, .1, .1, .1, .6])[0] == "generated"
-    assert route({**named("milling machine"), "views": {"n": 1}})[0] == "primitive"  # not well observed: no generator
+    assert route({**named("milling machine"), "views": {"n": 1}})[0] == "generated"  # r5b integrate: seen once still gets one
     assert soft(named("plastic bag")) and soft(named("dog bed pillow")) and not soft(named("milling machine")) and not soft(named("shoe hanger"))
     a, b, c_, d = named("sneaker"), named("sneaker"), named("sneaker"), named("box sensor (type only)")
     b = {**b, "physical": {**b["physical"], "box": {"size_m": [.52, .41, .58]}}}
     c_ = {**c_, "physical": {**c_["physical"], "box": {"size_m": [1., .4, .6]}}}
     g = groups([a, b, c_, d, d, named("unidentified object")])
     assert [len(x) for x in g] == [2, 1, 2, 1], [len(x) for x in g]  # a type-only pair of one size groups; an unnamed card never
-    print("route self-check ok: class tier, Jev tier, view gate, soft goods, look-alike groups")
+    print("route self-check ok: class tier, Jev tier, no view gate, soft goods, look-alike groups")
 
 
 if __name__ == "__main__":

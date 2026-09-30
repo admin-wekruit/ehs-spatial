@@ -354,7 +354,7 @@ def bench(a):
                            "bank_exclude_site": a.bank_exclude_site, **({"bank": a.bank} if a.bank else {}),
                            "coverage": a.coverage and kind != "warm-off", "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {}),
                            "coverage_debug": json.loads(a.coverage_debug.read_text()).get(site, []) if a.coverage_debug else [],
-                           "judge": a.judge == "on", **({} if a.display == "on" else {"display": False}),
+                           "judge": a.judge == "on", **({} if a.display == "on" else {"display": False}), "splat": a.splat,
                            "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm, "naming": a.naming}  # r4: the VLMs only when asked
                 options.update({k: False for k in ("judge", "identity", "display") if k in a.off} | ({"dump": True} if a.dump else {}))
                 if a.jev:  # r5b: the display-model router's Jev-Omni, awake before the call (its cold start is never analysis time)
@@ -417,7 +417,7 @@ def vocab_options(source, site, words_file):
         return {}
     if source in words_file:
         return {"vocab": "words", "vocab_words": list(words_file[source].get(site) or []), "vocab_list": source}
-    assert source in ("ram", "pe", "ram+pe", "taxonomy", "qwen"), f"unknown word source {source}"
+    assert source in ("ram", "pe", "ram+pe", "taxonomy", "qwen", "qwen+ram"), f"unknown word source {source}"
     return {"vocab": source}
 
 
@@ -561,8 +561,9 @@ if __name__ == "__main__":
     p.add_argument("--naming", default="cascade", choices=("cascade", "decider"), help="r4/naming: the cascade (the VLM last), or round 3's Qwen decider for every object")
     p.add_argument("--jev", action=argparse.BooleanOptionalAction, default=True,
                    help="r5b (models): wake the Jev-Omni router (its own GPU) before each call, off the clock (the service is up in production)")
-    p.add_argument("--profile", default="commercial", choices=("commercial", "internal"),
+    p.add_argument("--profile", default="internal", choices=("commercial", "internal"),
                    help="r5 (models): internal = RecGen (non-commercial licence) for the complete models in SAM 3D's place")
+    p.add_argument("--splat", action="store_true", help="r5b integrate: the scene splat (off: GPU 1 is RecGen's after the facts)")
     p.add_argument("--serve", action="store_true")
     p.add_argument("--off", default="", help="r4: comma list of judge,identity,display to switch off (judgement paused; no VLM identity)")
     p.add_argument("--dump", action="store_true", help="r4/instances: the instance layer's inputs to the layers Volume (reports/<id>/r4-instances-dump.pkl.gz)")

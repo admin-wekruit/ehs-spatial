@@ -17,7 +17,9 @@ import numpy as np
 from fast_report import cards
 
 FRAMES, N_WORDS, PER_CLASS, MIN_SCORE, TILE_TOP = 16, 40, 2, .5, 5
-DEFAULT = "ram"  # r5b: the comparison's pick (runs/r5b-vocab-results/compare.md); 'qwen' only when options ask
+DEFAULT = "qwen+ram"  # r5b integrate: the user accepted ONE Qwen scene-vocabulary request a video: RAM++'s words, then Qwen's (the
+# union of the two best sources, runs/r5b-results/summary.md's comparison); without the VLM, RAM++'s alone. r5b/vocab's pick was 'ram'
+N_UNION = 60  # the union's words at most (SAM 3's wave 2 is warmed at 58 words)
 RAM_PY, RAM_HF = "/opt/ram/bin/python", "/v/models/hf-r5b"  # the RAM++ venv; its weights and BERT tokenizer (modal_apps/r5b_vocab.py cached them)
 RAM_REPO, RAM_CKPT = "xinyu1205/recognize-anything-plus-model", "ram_plus_swin_large_14m.pth"
 TEXT = "/v/layers/label-bank/r5b/pe-text-173c4bb37cb3.npz"  # modal_apps/r5b_vocab.py: the word list's PE-Core text (x13's templates)

@@ -360,7 +360,7 @@ def gate_mesh(src, fx, card, msg):
     if msg.get("tile", True):
         out["tile"] = tile(src, held, msg["crop"], vertices, faces, colors, obs)
     out["faces"] = int(len(faces))
-    if out["gate"]["accepted_source_consistency"]:
+    if out["gate"]["accepted_source_consistency"] or msg.get("always"):  # r5b integrate: the report shows every generated model
         if msg.get("glb"):  # the report's display copy: seen vertices opaque, the rest translucent (complete_video_objects' alphas)
             import complete_video_objects as cvo
             from fast_report.surface import mesh_glb
@@ -369,7 +369,7 @@ def gate_mesh(src, fx, card, msg):
             rgba = np.c_[np.asarray(colors, float)[:, :3], np.where(obs, cvo.OBSERVED_ALPHA, cvo.INFERRED_ALPHA)].clip(0, 255)
             out["glb"], out["centre"] = mesh_glb(V - centre, faces, rgba), centre.tolist()
             out["bounds"] = {"min": V.min(0).tolist(), "max": V.max(0).tolist()}
-        if fx is not None and card is not None:
+        if fx is not None and card is not None and out["gate"]["accepted_source_consistency"]:
             out["measure"] = measure_against_parts(src, fx, card, vertices, faces, obs)
     out["gate_s"] = round(time.time() - t0, 3)
     return out

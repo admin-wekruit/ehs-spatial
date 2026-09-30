@@ -358,10 +358,22 @@ def recgen_worker():
     from fast_report.sam3d import serve
     state = {}
 
+    def place(device):  # r5b integrate: the whole pipeline's modules (p.models, DINOv2 included) to a device
+        for m in state["p"].models.values():
+            if hasattr(m, "to"):
+                m.to(device)
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
     def boot():
         t = time.time()
         p = state["p"] = x7.load_recgen()
         torch.cuda.synchronize()
+        if os.environ.get("RECGEN_PARK") == "1":  # r5b integrate: GPU 1's pair waits in host memory until SAM 3 has left GPU 1 (its
+            instrument(p)  # first job wakes it: models_job dispatches only after the facts), no warm-up beside GPU 1's boot
+            place("cpu")
+            state["parked"] = True
+            return {"ready": True, "parked": True, "load_s": round(time.time() - t, 1), "gpu": os.environ.get("CUDA_VISIBLE_DEVICES")}
         info = {"load_s": round(time.time() - t, 1), "gpu": os.environ.get("CUDA_VISIBLE_DEVICES"),
                 "attn": {k: os.environ.get(k) for k in ("ATTN_BACKEND", "SPARSE_ATTN_BACKEND", "COMPILE_SS")},
                 "samplers": [type(p.sparse_structure_sampler).__name__, type(p.slat_sampler).__name__],
@@ -383,8 +395,11 @@ def recgen_worker():
         return {"ready": True, **info}
 
     def handle(message, _):
+        start, woke = time.time(), None
+        if state.get("parked"):
+            place("cuda")
+            state["parked"], woke = False, round(time.time() - start, 2)
         torch.cuda.reset_peak_memory_stats()
-        start = time.time()
         if message["op"] == "micro":
             return {"micro": micro(state["p"]), "start_unix": start, "end_unix": time.time()}
         if message["op"] == "x7":  # X7's own call (recgen_inference.generate / generate_multiview): run()'s default must match it
@@ -393,7 +408,7 @@ def recgen_worker():
             out = run(state["p"], message["views"], message["seed"], message["setting"], message.get("export_dir"), message.get("check_out", False))
         peak = round(torch.cuda.max_memory_reserved() / 2 ** 30, 2)
         torch.cuda.empty_cache()  # r5b (804a4ca's fix): the call's cache back to the device, beside the report's core on the same GPU
-        return {**out, "start_unix": start, "end_unix": time.time(), "max_reserved_gib": peak}
+        return {**out, "start_unix": start, "end_unix": time.time(), "max_reserved_gib": peak, "woke_s": woke}
     serve(handle, boot)
 
 

@@ -680,8 +680,9 @@ def tried_rows(records):
     return list(out.values())
 
 
-TIER1_CAP, TIER1_UNTIL_S = 60, 135.  # r5b: generated models per video (best-seen and largest first); no new generation after this (analysis s:
-# the queued ones finish after it; r5b-models-commercial-001's ME340 first call, deadline 150 s: tier 1 done at 203 s)
+TIER1_CAP, TIER1_UNTIL_S = 100000, 900.  # r5b integrate (the user 2026-09-29): every non-simple object gets a generated model: no cap;
+# the deadline only guards a stuck generator (the app's call timeout); look-alike groups share one model
+MODELS_PUT_S = 3.  # progressive 'models' versions at most this often (each version lists every model so far; the blobs are content-addressed)
 JEV_SIDE = 448  # the outlined view Jev-Omni sees (route/jev's crops)
 
 
@@ -695,12 +696,11 @@ def tier1_plan(cs, jev_ask, clock):
     routes, cand, rec = {}, [], {"cards": len(obj)}
     for c in obj:
         r, why = route.route(c)
-        if r != "primitive" and route.soft(c):
-            r, why = "primitive", "a bag or soft good: its observed surface stays (a generated shape would be invented)"
         routes[c["id"]] = [r, why]
         if r != "primitive":
             cand.append(c)
-    score = {c["id"]: display_model.well_observed(c)[0] for c in cand}
+    rec["soft_goods"] = sum(route.soft(c) for c in cand)  # r5b integrate: generated like any non-simple object (recorded)
+    score = {c["id"]: display_model.well_observed(c)[0] or 0. for c in cand}  # not well observed: 0, still generated (last)
     cand.sort(key=lambda c: -score[c["id"]])
     gs = route.groups(cand)
     ask = [g[0] for g in gs if routes[g[0]["id"]][0] == "ask jev"]
@@ -722,14 +722,16 @@ def tier1_plan(cs, jev_ask, clock):
         for c in g[1:]:
             routes[c["id"]] = [routes[rid][0], f"a look-alike of {rid} ({routes[rid][1]})"]
     size = lambda c: float(max(((c.get("physical") or {}).get("box") or {}).get("size_m") or [0]))  # noqa: E731
-    gen = sorted([g for g in gs if routes[g[0]["id"]][0] == "generated"], key=lambda g: -(score[g[0]["id"]] * max(size(g[0]), .05)))
+    # large / well-seen / complex first (the user's order): a machine-sized, well-seen group before a small one-sided part
+    gen = sorted([g for g in gs if routes[g[0]["id"]][0] == "generated"], key=lambda g: -(max(score[g[0]["id"]], .05) * max(size(g[0]), .05)))
     for g in gen[TIER1_CAP:]:
         for c in g:
             routes[c["id"]] = ["primitive", f"over the video's cap of {TIER1_CAP} generated models (best-seen and largest first)"]
     kept = gen[:TIER1_CAP]
     rec.update(generated_groups=len(gen), kept=len(kept), members=sum(len(g) - 1 for g in kept),
                by_route={k: sum(r[0] == k for r in routes.values()) for k in ("primitive", "generated", "ask jev")})
-    return {g[0]["id"]: score[g[0]["id"]] for g in kept}, {g[0]["id"]: g[1:] for g in kept}, routes, rec
+    prio = lambda g: max(score[g[0]["id"]], .05) * max(size(g[0]), .05)  # noqa: E731  the generation order (sam3d.rank reads it)
+    return {g[0]["id"]: prio(g) for g in kept}, {g[0]["id"]: g[1:] for g in kept}, routes, rec
 
 
 def jev_crops(cs, outlines, frames):
@@ -754,13 +756,15 @@ def jev_crops(cs, outlines, frames):
     return out
 
 
-def reuse_placement(rep, member, model, shot):
+def reuse_placement(rep, member, model, shot, shot_m=None):
     """A look-alike member's copy of its group's generated model: turned about the floor normal from the rep's footprint axis to
     the member's (the nearer of the two rectangle directions), scaled by their longest extents, moved rep box centre -> member's.
-    -> transform {position, quaternion, scale} of the rep's centred GLB, in the shot frame."""
+    r5b integrate: the member may stand in another shot (shot_m): the rep's floor frame to the member's.
+    -> transform {position, quaternion, scale} of the rep's centred GLB, in the member's shot frame."""
     from scipy.spatial.transform import Rotation
     from fast_report import cards
     fr = cards.floor_frame(shot["c2w"][0], shot["normal"], shot["point_m"])
+    fm = fr if shot_m is None or shot_m is shot else cards.floor_frame(shot_m["c2w"][0], shot_m["normal"], shot_m["point_m"])
 
     def pose(c):
         ph = c["physical"]
@@ -771,12 +775,48 @@ def reuse_placement(rep, member, model, shot):
     (cr, yr, sr), (cm, ym, sm) = pose(rep), pose(member)
     d = (ym - yr + np.pi / 2) % np.pi - np.pi / 2  # a rectangle's axis: +-90 deg
     Rf = Rotation.from_euler("z", d).as_matrix()
-    Rw = fr["R"].T @ Rf @ fr["R"]  # about the floor normal, in the shot frame
+    Rw = fm["R"].T @ Rf @ fr["R"]  # rep's shot -> its floor frame, about the floor normal, -> the member's shot frame
     k = float(np.clip(sm / max(sr, 1e-3), 1 / 1.25, 1.25))
-    cr_w, cm_w = cr @ fr["R"] + fr["origin"], cm @ fr["R"] + fr["origin"]
     mc = np.asarray(model["transform"]["position"], float)
-    pos = cm_w + k * Rw @ (mc - cr_w)
+    local = fr["R"] @ (mc - fr["origin"]) - cr  # the model's centre about the rep's box centre, rep floor frame
+    pos = fm["R"].T @ (k * Rf @ local + cm) + fm["origin"]
     return {"position": np.round(pos, 4).tolist(), "quaternion": np.round(Rotation.from_matrix(Rw).as_quat(), 6).tolist(), "scale": [round(k, 4)] * 3}
+
+
+def outline_inputs(cs, outlines, have, wh):
+    """r5b integrate: generation inputs for cards the wave objects lack (densify's): each keyframe's outline polygons (source px)
+    as SAM 3-style low-res logits (segment.LR square over the whole frame, +-8), the card's box and name."""
+    import cv2
+    from fast_report import segment
+    wh = (outlines or {}).get("width") and (outlines["width"], outlines["height"]) or wh  # the polygons' own raster
+    if not outlines or not wh:
+        return []
+    polys = {}
+    for f in outlines.get("frames", []):
+        for o in f.get("objects", []):
+            if o.get("polygons"):
+                polys.setdefault(o["entityId"], {}).setdefault(int(f["sourceFrame"]), []).extend(o["polygons"])
+    sx, sy = segment.LR / wh[0], segment.LR / wh[1]
+    out = []
+    for c in cs:
+        ph = c.get("physical") or {}
+        if c["id"] in have or "box_min_m" not in ph:
+            continue
+        mine = {}
+        for i in [c["id"], *(ph.get("merged_from") or [])]:
+            for q, ps in polys.get(i, {}).items():
+                mine.setdefault(q, []).extend(ps)
+        masks = {}
+        for q, ps in mine.items():
+            lr = np.zeros((segment.LR, segment.LR), np.uint8)
+            for poly in ps:
+                cv2.fillPoly(lr, [np.round(np.asarray(poly, float).reshape(-1, 2) * [sx, sy]).astype(np.int32)], 1)
+            if lr.any():
+                masks[q] = np.where(lr > 0, 8., -8.).astype(np.float16)
+        if masks:
+            out.append({"id": c["id"], "shot": c["shot"], "word": (c.get("identity") or {}).get("name") or "object", "box_min_m": ph["box_min_m"],
+                        "box_max_m": ph["box_max_m"], "masks_lr": masks})
+    return out
 
 
 def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None, until_s=None, ctx=None):
@@ -793,28 +833,31 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
     ctx = ctx or {}
     if ctx.get("names") is not None:
         ctx["names"].wait(150)  # the first names (the identity pass's cards v2), or its end without any
+    if ctx.get("gpu0_free") is not None:
+        ctx["gpu0_free"].wait(300)  # the facts first (click MVP section 7): densify's GPU 0 work and the cards v3 build
+    # r5b integrate: planned on the newest cards (densify's objects included: every non-simple object gets a model)
     cs = [c for c in ((cards_now() or {}).get("cards") or []) if c.get("kind") == "object"] if cards_now else []
     by_id = {c["id"]: c for c in cs}
     t_plan = time.perf_counter()
     reps, members, routes, plan = tier1_plan(cs, ctx.get("jev_ask") or (lambda _: {}), clock)
     plan["plan_s"] = round(time.perf_counter() - t_plan, 3)
     internal = getattr(m, "recgen", None) is not None
-    base = {"eligible": len(reps), "rule": "r5b tier 1: " + display_model.WELL_OBSERVED + "; fast_report.route (fixed-shape classes, Jev-Omni Q5), "
-            f"one model per look-alike group, at most {TIER1_CAP}", "plan": plan, "routes": routes,
+    base = {"eligible": len(reps), "rule": "r5b tier 1 (integrate): every non-simple object; fast_report.route (fixed-shape classes, Jev-Omni Q5), "
+            "one model per look-alike group (each member's copy posed on it), large / well-seen / complex first", "plan": plan, "routes": routes,
             "generator": "RecGen FAST (internal profile: non-commercial licence)" if internal else "SAM 3D s1cfg12"}
     records, models, blobs = [], [], {}
     judged = lambda: sum(r.get("stage") == "assess" for r in records)  # noqa: E731
     writer.put("models", {**base, "models": [], "attempted": 0, "final": False, "tried": []}, None, "generated", GENERATED)  # the routes, at once
-    if ctx.get("gpu0_free") is not None:
-        ctx["gpu0_free"].wait(300)  # the facts first (click MVP section 7): densify's GPU 0 work and the cards v3 build
     with torch.cuda.device(dev):
         torch.cuda.empty_cache()  # the core's cached blocks back to the device before the generator's processes run beside it
     clock.mark("tier1_generating")
     objs = inputs()
+    objs += outline_inputs([by_id[i] for i in reps if i in by_id], ctx.get("outlines") and ctx["outlines"](), {o["id"] for o in objs}, ctx.get("frame_wh"))
     shots = [{k: gg[k] for k in ("index", "keys", "depth_m", "c2w_m", "K", "person")} for gg in geo]
     deadline = clock.t0_unix + (until_s or TIER1_UNTIL_S)
     shots_in = {s["index"]: s for s in ((ctx.get("shots_in") or (lambda: None))() or [])}
     reuse = {"kept": 0, "rejected": 0}
+    last_put = [0.]
     try:
         if not reps:
             models_iter = iter(())
@@ -834,19 +877,24 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
                 T, _ = r4_models.glb_tris(x["glb"], row["transform"]["position"])
                 for mc in members[x["object"]]:
                     s = shots_in.get(mc["shot"])
-                    if s is None or mc["shot"] != rep["shot"]:
+                    if s is None or shots_in.get(rep["shot"]) is None:
                         continue
-                    tr = reuse_placement(rep, mc, row, s)
-                    ok, why = reuse_check(T, row, tr, mc, s, ctx)
+                    try:  # r5b integrate: across shots too (floor frame to floor frame); a card without a footprint keeps its surface
+                        tr = reuse_placement(rep, mc, row, shots_in[rep["shot"]], s)
+                        ok, why = reuse_check(T, row, tr, mc, s, ctx)
+                    except Exception as error:  # noqa: BLE001
+                        ok, why = False, f"no placement: {error!r:.100}"
                     reuse["kept" if ok else "rejected"] += 1
                     if ok:
                         models.append({"object": mc["id"], "reuse_of": x["object"], "transform": tr, "gate": {"reused": True, "check": why,
                                        "status": "a look-alike's generated model, placed on this object: display only"}})
                     else:
                         routes[mc["id"]] = ["primitive", f"a look-alike of {x['object']}, but its model does not fit this one ({why}): the observed surface stays"]
-            writer.put("models", {**base, "models": list(models), "attempted": judged(), "final": False, "tried": tried_rows(records), "reuse": reuse},
-                       dict(blobs), "generated", GENERATED)
-            clock.mark("first_model_put")
+            if time.perf_counter() - last_put[0] >= MODELS_PUT_S:  # progressive, batched (every version lists every model so far)
+                last_put[0] = time.perf_counter()
+                writer.put("models", {**base, "models": list(models), "attempted": judged(), "final": False, "tried": tried_rows(records), "reuse": reuse},
+                           dict(blobs), "generated", GENERATED)
+                clock.mark("first_model_put")
     finally:
         summary = {"eligible": len(reps), "attempted": judged(), "accepted": sum("reuse_of" not in r for r in models), "reused": reuse,
                    "prepare_rejected": sum("rejected" in r for r in records), "errors": [r for r in records if "error" in r][:5], "plan": plan}
@@ -1013,10 +1061,26 @@ def analyse(m, mp4, opts, clock, writer, log):
             with clock.stage("vlm.vocab", n={"frames": len(vlm_frames)}):
                 pngs = [cv2.imencode(".png", raster_rgb(img))[1].tobytes() for img in seeked]
                 return vlm.vocab(pngs)
-        if vocab_src in ("ram", "ram+pe"):
+        if vocab_src in ("ram", "ram+pe", "qwen+ram"):
+            qf = None
+            if vocab_src == "qwen+ram":  # r5b integrate (the user's decision): the ONE accepted Qwen scene-vocabulary request, beside RAM++
+
+                def qwen_words():
+                    idx = np.linspace(0, len(seeked) - 1, vlm.VOCAB_FRAMES).round().astype(int)
+                    with clock.stage("vlm.vocab", n={"frames": len(idx)}):
+                        return vlm.vocab([cv2.imencode(".png", raster_rgb(seeked[i]))[1].tobytes() for i in idx])
+                qf = m.vlm_pool.submit(qwen_words)
             with clock.stage("vocab.ram", n={"frames": len(seeked)}):
                 r = m.ram.tags(seeked)
             got = vocab.rank(vocab.object_tags(r["per_frame"], m.vocab["words"]), skip=wave1)
+            if qf is not None:  # RAM++'s words first, then Qwen's new ones; no VLM (an error): RAM++'s alone (the VLM-free fallback)
+                try:
+                    qw, qrec = qf.result(60)
+                except Exception as error:  # noqa: BLE001
+                    qw, qrec = [], {"error": repr(error)[:300]}
+                got = vocab.union(got, [(w, 0.) for w in qw if vocab.cards.norm(w) not in {vocab.cards.norm(x) for x in wave1}], n=vocab.N_UNION)
+                return [w for w, _ in got], {"scores": got, "ram_s": r["s"], "qwen": {"words": qw, **{k: v for k, v in (qrec or {}).items() if k != "words"}},
+                                             "rule": f"RAM++ tags (object nouns), then the Qwen scene vocabulary's other words (vocab.union, <= {vocab.N_UNION})"}
             if vocab_src == "ram+pe":  # r5b follow-up: RAM++'s object tags first, then PE-Core's scene-specific words
                 with torch.inference_mode(), clock.stage("vocab.pe", gpu=m.namer_enc.dev, n={"frames": len(seeked), "words": len(m.vocab["words"])}):
                     per = vocab.pe_scores(m.namer_enc, seeked, m.vocab["text"], m.vocab["words"], m.vocab["scale"])
@@ -1200,7 +1264,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     release = m.release = threading.Event()  # run() sets it too if this run fails before the SAM 3 queue empties
     display_on = opts.get("display", True)  # mvp2 accuracy runs: no SAM 3D and no splat (display layers measure nothing)
     splat_future = m.cpu_pool.submit(splat_job, m, geo[longest], shots[longest], shared, opts, clock, writer, release) \
-        if longest is not None and display_on else None
+        if longest is not None and display_on and opts.get("splat", True) else None  # r5b integrate: the benches run it off (GPU 1 is RecGen's)
 
     def people_layer():  # CPU work: runs beside GPU 0's share of the SAM 3 queue
         try:
@@ -1911,6 +1975,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                                                   lambda: next((cards_out[v] for v in ("v4", "v3", "v2", "v1") if v in cards_out), None),
                                                   TIER1_UNTIL_S, {"gpu0_free": facts_in, "names": facts_done["identity"],
                                                                   "shots_in": lambda: cards_out.get("shots_in"), "points_of": points_of,
+                                                                  "outlines": lambda: results.get("outlines_v2") or results.get("outlines"),
+                                                                  "frame_wh": (frames[0].shape[1], frames[0].shape[0]) if frames else None,
                                                                   "jev_ask": jev_ask if getattr(m, "jev_decide", None) else None})
             clock.mark("tier1_started")
 

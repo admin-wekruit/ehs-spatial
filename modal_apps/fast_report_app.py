@@ -165,7 +165,7 @@ from fast_report.layers import Writer  # noqa: E402  C
 @modal.concurrent(max_inputs=4)  # mvp3: an on-demand click is answered beside a running analysis (run() itself stays one at a time)
 class FastReport:
     # r5 (models): 'internal' runs RecGen (non-commercial licence: internal use only) in SAM 3D's place on GPU 0; 'commercial' as before
-    profile: str = modal.parameter(default="commercial")
+    profile: str = modal.parameter(default="internal")  # r5b integrate: the user 2026-09-29: RecGen (internal) is the default
 
     @modal.enter()
     def boot(self):
@@ -228,6 +228,12 @@ class FastReport:
         from fast_report import vocab
         self.vocab = vocab.load(vocab.TEXT, self.dev_seg)  # r5b: the VLM-free wave-2 words' text (PE-Core zero-shot, 5 MB on GPU 1)
         lap("naming_encoders_gpu1_s")
+        if self.recgen is not None:  # r5b integrate: RecGen's second pair on GPU 1 (2 a GPU), parked in host memory until its first job
+            from fast_report import x7
+            env1 = sam3d.worker_env(x7.RECGEN_PY, CUDA_VISIBLE_DEVICES=1, ATTN_BACKEND="xformers", SPCONV_ALGO="native", HF_HUB_OFFLINE=1, RECGEN_PARK=1)
+            env1["PYTHONPATH"] += os.pathsep + x7.RECGEN_DIR
+            for _ in range(2):
+                self.recgen.add([x7.RECGEN_PY, "-c", "from fast_report.recgen_fast import recgen_worker; recgen_worker()"], env1)
         self.splat = splat.Worker(gpu=1, torch_home="/ckpt/torch")  # after vLLM sized its cache from GPU 1's free memory (B)
         b["sam3d"] = self.sam3d.ready() if self.sam3d is not None else None  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
         b["recgen"] = self.recgen.ready(900) if self.recgen is not None else None
