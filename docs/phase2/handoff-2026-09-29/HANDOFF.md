@@ -140,7 +140,18 @@ RecGen GPU time: view selection 658 s + generation 666 s (129 models, ~5 s each)
 selection and checks first. VLM: 1 scene-vocabulary request + 50 medoid names; 0 hazard. GPU peak 69.3 GiB.
 Files: `runs/r5b-int-me340-001/`, `runs/r5b-results/me340/quick-run001.json`, `runs/r5b-results/viewer/me340/`.
 
-**Round 5 integration: IN PROGRESS when this was written.** Workflow run `wf_401bb21d-ec8` (script
+**ME340 on the merged code, run 2 (r5b-int-me340-002, 23:25, warm; the current state):** first 3D 15.9 s, cards 37.4 s,
+observed surfaces 39.5 s, all types 89.6 s, first RecGen model 105.7 s, all RecGen models 266.5 s (target 150 s).
+274 cards: 75 RecGen shown, 192 observed surface, 7 primitives, 0 boxes. RecGen attempted 149; a model is shown only
+when it lines up (size 0.25-3x the card box, centre within half its diagonal + 0.1 m, best-view IoU >= 0.5): 74 shown,
+75 fall back to the observed surface. Shown RecGen IoU median 0.54 / 7.0 cm; surfaces 0.46 / 6.6 cm; primitives
+0.76 / 1.5 cm. RecGen GPU time: selection 328 s, generation 624 s (~4 s each), checks 252 s. Angles only from >= 2
+view sets with u <= 12°. VLM: 1 scene vocabulary + 51 medoid names. GPU peak 70.2 GiB. The 3D pane has no boxes and
+no always-on names; an overlay mode draws models on the video frame. Files: `runs/r5b-int-me340-002/`,
+`runs/r5b-results/me340/{quick.json,alignment.json}`, `runs/r5b-results/viewer/me340/` (3d-before-r4b / 3d-after,
+click cards, overlays, worst generated). Round-5 report (ME340 section): https://claude.ai/artifact/86jUzcrvntqFAgXPQiUnuC
+
+**Round 5 integration: IN PROGRESS when this was written** (Sam's Club, Walmart, GT and one visit pair were running at 23:40). Workflow run `wf_401bb21d-ec8` (script
 `workflows/r5d.js`) on branch `r5b/integrate` (merge of the four builders done at 854e3e7). It implements RecGen for all
 non-simple objects (FAST, 2 processes per GPU, look-alike reuse), the clean 3D pane (models in place, no boxes/labels),
 an overlay alignment metric + overlay view, and the false-tilt fix; runs ME340 first and writes
