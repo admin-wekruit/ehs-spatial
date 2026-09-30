@@ -78,7 +78,7 @@ line, and report results. Only ask when truly blocked (secrets, deletions, money
 | what | where |
 |---|---|
 | code repo (base, never modify) | `/Users/adam/.codex/worktrees/panoptes-phase2-video` (branch `codex/phase2-video`) |
-| code worktrees (one per branch) | `/Users/adam/.codex/worktrees/panoptes-phase2-video-<name>` |
+| code worktrees | `/Users/adam/.codex/worktrees/panoptes-phase2-video-<name>`. **Cleaned up on 2026-09-30**: only the base, `-r6-correct`, `-r5b-integrate` and `-handoff-docs` remain (94 clean, pushed worktrees were removed, ~6 GB freed; every branch is still in the repo and on GitHub). Create others with `git -C <base> worktree add <base>-<name> <branch>`. Uncommitted work found in the `rules/library`, `t2/*` and `t3/*` worktrees was committed as WIP commits first |
 | research notes, results, ledger | `/Users/adam/Desktop/panoptes-public/research-notes/phase2/` (`runs/<run>/`, `video-mvp/cost-ledger.json`) |
 | this handoff + saved plans/scripts | `research-notes/phase2/handoff-2026-09-29/` (`scratch/` session plans and dossiers, `workflows/` workflow scripts) |
 | Python / Modal CLI | `/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/python`, `.../.venv/bin/modal` |
