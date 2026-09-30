@@ -68,5 +68,7 @@ branch r5b/integrate (worktree panoptes-phase2-video-r6-correct, branch r6/corre
 decide instead of asking, VLM last, RecGen internal only, ephemeral `modal run` on 2x A100 only, heavy compute on Modal
 (the Mac is weak), no secrets, never SendMessage to workflow agents, builders -> integrator -> adversarial review, log
 spend in the ledger. Report in short Chinese messages with pictures; the first table of every report says whether
-positions are right or wrong per video.
+positions are right or wrong per video. The user views results as claude.ai artifact pages (one per video: the 3D
+follows the video camera, click an object for its card) made with docs/phase2/handoff-2026-09-29/artifact-report/
+(README there); regenerate and republish them in place after every round.
 ```
