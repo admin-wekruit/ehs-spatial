@@ -330,9 +330,11 @@ def bench(a):
                            "coverage": a.coverage and kind != "warm-off", "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {}),
                            "coverage_debug": json.loads(a.coverage_debug.read_text()).get(site, []) if a.coverage_debug else [],
                            **({} if a.judge == "on" else {"judge": False}), **({} if a.display == "on" else {"display": False}),
-                           "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm, "naming": a.naming,  # r4: the VLMs only when asked
-                           **({"surface": True} if a.surface else {})}  # r5: tier 0 (observed surfaces, planar-part angles)
+                           "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm, "naming": a.naming}  # r4: the VLMs only when asked
                 options.update({k: False for k in ("judge", "identity", "display") if k in a.off} | ({"dump": True} if a.dump else {}))
+                if a.jev:  # r5b: the display-model router's Jev-Omni, awake before the call (its cold start is never analysis time)
+                    from modal_apps.fast_report_app import Jev
+                    meta.setdefault("jev_pings", []).append(Jev().ping.remote())
                 if queues is not None:
                     hazard.workspace_container()  # awake before the call (the report service is up in production): off the analysis clock
                     options["hazard_queues"] = queues
@@ -472,7 +474,8 @@ if __name__ == "__main__":
     p.add_argument("--coverage-debug", type=Path, help="r4 dev: {site: [{id, frame, x, y}]} points whose box masks' fates the run records")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
     p.add_argument("--naming", default="cascade", choices=("cascade", "decider"), help="r4/naming: the cascade (the VLM last), or round 3's Qwen decider for every object")
-    p.add_argument("--surface", action="store_true", help="r5 (models): every card's planar-part angles and observed-surface display model")
+    p.add_argument("--jev", action=argparse.BooleanOptionalAction, default=True,
+                   help="r5b (models): wake the Jev-Omni router (its own GPU) before each call, off the clock (the service is up in production)")
     p.add_argument("--profile", default="commercial", choices=("commercial", "internal"),
                    help="r5 (models): internal = RecGen (non-commercial licence) for the complete models in SAM 3D's place")
     p.add_argument("--serve", action="store_true")

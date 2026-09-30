@@ -33,40 +33,15 @@ WARM = {"me340": "mvp-me340-e84efffd-1790713300", "samsclub-a2": "mvp-samsclub-a
 K_VIEWS, SIDE, PAD, PER_SITE = 2, 384, .1, 100
 
 # ---------------------------------------------------------------- (a) the rules' class prior
-# Written from the user's definition (SIMPLE: walls, floor, ceiling, doors, plain panels / boards, beams, poles / pipes, plain
-# boxes / cartons, shelf / rack frames; COMPLEX: machines, carts, shaped guards / fences, equipment, tools, furniture, anything
-# irregular) over cards.TAXONOMY, before any object was labelled. A class in neither set (or no class) is left to geometry.
-SIMPLE_CLASSES = {"shelf", "rack", "display rack", "cabinet", "locker", "refrigerator", "box", "stacked boxes", "pallet", "crate", "drum",
-                  "can", "trash can", "first aid kit", "exit sign", "safety sign", "sign", "label", "floor marking", "bollard", "pipe", "duct",
-                  "cable tray", "control panel", "electrical outlet", "switch", "door", "window", "column", "wall panel", "floor drain", "vent",
-                  "wooden board", "metal sheet", "whiteboard", "paper", "clipboard", "book", "spill"}
-COMPLEX_FAMILIES = {"machine", "tool", "handling", "furniture", "ppe"}
-COMPLEX_CLASSES = {"bag", "ladder", "step stool", "work platform", "stairs", "fire extinguisher", "eyewash station", "emergency stop button",
-                   "fire alarm", "guard", "railing", "safety cone", "cable", "hose", "fan", "keyboard", "printer", "phone", "rag", "cup",
-                   "mannequin", "wrap"}
-
-
-# POST HOC (written after the labels, flagged wherever used): the pre-registered table minus the classes the labels showed to be
-# shape-ambiguous (bag: pet-food bags are boxes; tool box / tool tray: boxes and trays; crate, display rack: mixed)
-FIXED_SHAPE_POST_HOC = {"simple": SIMPLE_CLASSES - {"crate", "display rack"}, "drop": {"bag", "tool box", "tool tray"}}
+# r5b: the lists and the rule live in fast_report.route (the report runs them); the pre-registered table stays the default here
+from fast_report.route import (COMPLEX_CLASSES, COMPLEX_FAMILIES, FIXED_SHAPE_POST_HOC, JEV_STATE, P_COMPLEX_CUT, Q5,  # noqa: E402,F401
+                               Q5_KIND, SIMPLE_CLASSES, card_class, route)
+from fast_report import route as _route  # noqa: E402
 
 
 def class_route(cls, post_hoc=False):
     """'simple' | 'complex' | None (no prior: geometry, or the decider, decides)."""
-    if not cls or (post_hoc and cls in FIXED_SHAPE_POST_HOC["drop"]):
-        return None
-    if cls in (FIXED_SHAPE_POST_HOC["simple"] if post_hoc else SIMPLE_CLASSES):
-        return "simple"
-    if cls in COMPLEX_CLASSES or cards.FAMILY.get(cls) in COMPLEX_FAMILIES:
-        return "complex"
-    return None
-
-
-def card_class(card):
-    """The naming cascade's canonical class (identity.canonical, else the detector word's), or None."""
-    idn = card.get("identity") or {}
-    c = idn.get("canonical") or cards.canonical(idn.get("proposed") or idn.get("name") or "")
-    return None if c in (None, cards.NOT_OBJECT) else c
+    return _route.class_route(cls, post_hoc)
 
 
 def geometry(card):
@@ -212,15 +187,9 @@ PROMPTS = {  # zero-shot phrases per primitive / route (the user's words and pla
     "generic simple": {"route": "simple", "phrases": ["a simple geometric object such as a box, a panel, a pipe or a shelf"]},
     "generic complex": {"route": "complex", "phrases": ["a complex irregular object such as a machine, a tool, a cart or furniture"]},
 }
-JEV_STATE = ("This image is cropped from a video walk-through of a workplace (a workshop, warehouse or store). A white outline "
-             "with a black edge, tagged 1, marks one region.")  # X13 naming's state
 Q2 = ("Can the outlined object be shown well as one simple geometric shape, or does it need a detailed 3D model?",
       ["one simple shape: a flat panel, board, wall or door; a plain box or carton; a pipe or pole; or a shelf or rack frame",
        "a detailed 3D model: a machine, cart, tool, equipment, furniture, a shaped guard or fence, or any irregular object"])
-Q5 = ("Which shape best represents the outlined object in a 3D model of the place?",
-      ["a flat panel, board, sign, wall or door", "a plain box, carton, block or stack of boxes", "a cylinder: a pipe, pole, drum or roll",
-       "an open frame: a shelf or rack", "none of these simple shapes: a machine, cart, tool, equipment, furniture or an irregular object"])
-Q5_KIND = ["plane", "box", "cylinder", "open frame", None]
 QYN = ("Is the outlined object a simple geometric shape, such as a panel, a box, a pipe or a shelf frame?", ["yes", "no"])
 
 
@@ -605,27 +574,6 @@ def latency(D):
 
 
 # ---------------------------------------------------------------- the recommended rule (results.md)
-
-P_COMPLEX_CUT = .5  # the cost knob: generate when P(complex) > cut = cost(wasted generation) / (cost(wasted) + cost(ugly primitive))
-
-
-def route(card, q5=None, cut=P_COMPLEX_CUT):
-    """-> (display model, why): 'primitive', 'generated' or 'ask jev' (then call again with Jev-Omni's Q5 probabilities: raw,
-    one question on the card's outlined best view). 1) A card no generator takes (display_model.well_observed fails) keeps its
-    primitive, no question. 2) A class that fixes the shape decides (FIXED_SHAPE_POST_HOC: machines, tools, carts, furniture,
-    cables -> generated; boxes, pallets, shelves, racks, signs, pipes, boards -> primitive). 3) Jev-Omni Q5 for the rest:
-    P(none of the simple shapes) > cut -> generated. No VLM."""
-    score, why = display_model.well_observed(card)
-    if score is None:
-        return "primitive", f"no generator takes it ({why})"
-    cls = card_class(card)
-    r = class_route(cls, post_hoc=True)
-    if r:
-        return ("generated" if r == "complex" else "primitive"), f"the class fixes the shape ({cls})"
-    if q5 is None:
-        return "ask jev", f"no class fixes the shape ({cls}): Q5 on the outlined best view"
-    return ("generated" if q5[4] > cut else "primitive"), f"jev q5: P(none of the simple shapes) {q5[4]:.2f} vs {cut}"
-
 
 # ---------------------------------------------------------------- results.json / results.md
 

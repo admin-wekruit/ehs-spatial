@@ -41,7 +41,8 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   const layers = useMemo(() => latest(state.patches), [state.patches]);
   const docKey = Object.values(layers).filter(p => p.layer !== "timing").map(p => p.seq).sort((a, b) => a - b).join(",");
   const [cardsLayer, setCardsLayer] = useState<any>(null);  // declared here: the document draws each card's display model (r4)
-  const document = useMemo(() => liveDocument(reportId, layers, cardsLayer?.cards), [reportId, docKey, cardsLayer]);
+  const [od, setOd] = useState<any>(null), odKey = useRef(0);  // mvp3: the on-demand card of the last click on no entity
+  const document = useMemo(() => liveDocument(reportId, layers, cardsLayer?.cards, od?.status === "card" ? [od] : []), [reportId, docKey, cardsLayer, od?.id]);  // r5b: its surface too
   const docRef = useRef(document); docRef.current = document;
   const sceneId = docKey + (cardsLayer ? ":cards" + cardsLayer.version : "");
   // For the headless checks: an asset fetched twice was reloaded; ready = when each asset was first on the GPU (unix s); clicks = ms
@@ -99,6 +100,8 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   const resolve = async (id: string) => {  // blobs from the endpoint; a small inline layer (outlines under 1 MB) as an object URL
     const url = assetURL(id), inline = (docRef.current.assets.find(a => a.id === id) as any)?.inline;
     if (url) return url;
+    const glb = (docRef.current.assets.find(a => a.id === id) as any)?.inlineGlb;  // r5b: an on-demand card's surface (base64 GLB)
+    if (glb) return URL.createObjectURL(new Blob([Uint8Array.from(atob(glb), c => c.charCodeAt(0))], { type: "model/gltf-binary" }));
     if (inline) return URL.createObjectURL(new Blob([JSON.stringify(inline)], { type: "application/json" }));
     throw Error("unknown_asset");
   };
@@ -106,7 +109,6 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   const host = useRef<HTMLDivElement>(null), viewer = useRef<SceneViewer | undefined>(undefined), opened = useRef(false), follow = useRef(false);
   const [selected, setSelected] = useState<string | null>(null), [frame, setFrame] = useState<string | null>(null), [following, setFollowing] = useState(false);
   const [clicked, setClicked] = useState<Clicked | null>(null), [tab, setTab] = useState<"card" | "objects" | "memory">("card");
-  const [od, setOd] = useState<any>(null), odKey = useRef(0);  // mvp3: the on-demand card of the last click on no entity
   const choose = (id: string | null) => { odKey.current++; setOd(null); setSelected(id); setClicked(null); if (id) setTab("card"); };  // from 3D, the list, a card link
   const onPick = (p: VideoPick) => {  // a video click: the pick layer decides; before it lands, the smallest outline under the point
     let use = pick, hit = pick ? pickAt(pick, p.t, p.x, p.y) : null;
@@ -291,45 +293,48 @@ const PHYSICAL: [string, string, string][] = [["top_above_floor", "顶部离地"
   ["principal_axis_tilt_deg", "主轴倾斜", "principal axis tilt"], ["planar_slope_deg", "平面坡度", "planar slope"]];
 const SIZE_FIELDS = new Set(["top_above_floor", "base_above_floor", "height", "width", "depth", "visible_length", "footprint_m2", "position_xy", "nearest_walked_path"]);
 
-/** r4 (models): SAM 3D's word on a card (the models layer's 'tried' rows and accepted models; merged-away ids follow the aliases). */
+/** r5b (models): the generator's word on a card: its accepted model (or a look-alike's copy), its 'tried' row, and the router's reason
+ *  (models.data.routes: why the card has, or has not, a generated model). Merged-away ids follow the aliases. */
 function samFor(models: Patch | undefined, aliases: Record<string, string> | undefined, id: string | null) {
   if (!models || !id) return null;
   const mine = (o: string) => o === id || aliases?.[o] === id, got = (models.data.models || []).find((m: any) => mine(m.object));
-  const generator = models.data.generator || "SAM 3D s1cfg12";  // r5: the internal profile's RecGen names itself
-  return got ? { accepted: true, iou: got.gate?.silhouette_iou, final: models.data.final, generator }
-    : { ...(models.data.tried || []).find((t: any) => mine(t.object)), final: models.data.final, generator };
+  const generator = models.data.generator || "SAM 3D s1cfg12", route = models.data.routes?.[id];
+  return got ? { accepted: true, iou: got.gate?.silhouette_iou, reuse_of: got.reuse_of, check: got.gate?.check, final: models.data.final, generator, route }
+    : { ...(models.data.tried || []).find((t: any) => mine(t.object)), final: models.data.final, generator, route };
 }
 
-/** r4 (models): the card's display model in one line: its kind, where it comes from, how it was chosen, what SAM 3D did. */
+const KIND: Record<string, [string, string]> = { box: ["长方体", "box"], cylinder: ["圆柱", "cylinder"], plane: ["平板", "plane"], "open frame": ["开放框架", "open frame"],
+  "observed surface": ["观测到的表面", "observed surface"] };
+
+/** r5b (models): the card's display model in a few lines: which tier is drawn (a generated mesh, a checked primitive, or the observed
+ *  surface), why, and what the video saw of it. A person has none. */
 function ModelLine({ model, sam, surface, tr }: { model: any; sam?: any; surface?: any; tr: Tr }) {
   if (!model) return null;
-  const pct = (v: number) => `${Math.round(v * 100)}%`;
-  const s3 = !sam ? tr("未尝试（报告没有 SAM 3D 层）", "not tried (no SAM 3D layer in this report)")
-    : sam.accepted ? tr(`通过（留出视角 IoU ${fmt(sam.iou, 2)}）：显示网格`, `accepted (held-out IoU ${fmt(sam.iou, 2)}): its mesh is shown`)
-    : sam.reasons ? `${tr("未通过，保留基本形状", "rejected, the primitive stays")}: ${sam.reasons.slice(0, 2).join("; ")}`
-    : sam.why ? `${tr("未生成", "not generated")}: ${sam.why}`
-    : sam.final ? `${tr("未尝试", "not tried")}: ${model.sam3d_eligibility === "well observed" ? tr("首轮已满", "the first pass was full") : model.sam3d_eligibility || "—"}`
-    : tr("进行中", "pending");
-  return <section className="mvp-block mvp-model"><h4>{tr("模型", "Model")} <Tag>{tr("生成的，仅供显示", "generated, display only")}</Tag></h4>
-    {sam?.accepted && <p>{tr("生成的完整网格", "generated complete mesh")} · {tr("来源", "source")}: {sam.generator} · {tr("它替换了下面的基本形状", "it replaces the primitive below")}</p>}
-    {surface && !sam?.accepted && <p>{tr("观测到的表面", "observed surface")} · {surface.observed_triangles} {tr("个三角形", "triangles")} · {tr("视频看到的部分（不透明，按视频着色），没看到的部分由下面的基本形状（半透明）表示", "what the video saw (opaque, the video's colours); the unseen bulk is the primitive below (translucent)")}
-      {surface.voxel_m && <small> · {fmt(surface.voxel_m * 100, 1)} cm {tr("体素", "voxels")} · {surface.views} {tr("个视角", "views")}</small>}</p>}
-    {model.kind ? <p>{sam?.accepted ? tr("基本形状（已被替换）", "primitive (replaced)") + ": " : ""}{({ box: tr("长方体", "box"), cylinder: tr("圆柱", "cylinder"), plane: tr("平板", "plane"), "open frame": tr("开放框架", "open frame") } as any)[model.kind] || model.kind}
-      {" · "}{tr("来源", "source")}: {tr("拟合观测点的基本形状", "primitive fitted to the observed points")}
-      {" · "}{tr("选择", "chosen by")} {model.chosen_by} · {tr("残差", "residual")} {fmt(model.residual_m * 100, 1)} cm
-      {" · "}{tr("看到的面", "seen")} {pct(model.seen_share ?? 0)} <small>({tr("其余是猜的，画得淡", "the rest is guessed, drawn faint")})</small>
-      {model.depth && <><br /><small>{model.depth}</small></>}</p>
-      : <p><small>{model.reason}</small></p>}
-    <p><small>{sam?.generator || "SAM 3D"}: {s3}</small></p></section>;
+  const pct = (v: number) => `${Math.round(v * 100)}%`, kind = (k: string) => (KIND[k] ? tr(KIND[k][0], KIND[k][1]) : k);
+  const shown = sam?.accepted ? "generated" : model.tier === "primitive" ? "primitive" : model.tier === 0 ? "observed" : "none";
+  return <section className="mvp-block mvp-model" data-tier={shown}><h4>{tr("模型", "Model")} <Tag>{tr("仅供显示，从不用于测量", "display only, never a measurement")}</Tag></h4>
+    {shown === "generated" && <p>{tr("生成的完整网格", "generated complete mesh")} · {sam.generator}
+      {sam.reuse_of ? <> · {tr("外观相同的", "a look-alike's model, from")} {sam.reuse_of} <small>({sam.check})</small></> : <> · {tr("留出视角 IoU", "held-out IoU")} {fmt(sam.iou, 2)}</>}
+      <br /><small>{tr("看到的部分不透明，没看到的（猜的）半透明", "what a camera saw is opaque, the guessed rest translucent")}</small></p>}
+    {shown === "primitive" && <p>{kind(model.kind)} · {model.chosen_by}{" · "}{tr("看到的面", "seen")} {pct(model.seen_share ?? 0)}
+      <small> ({tr("其余是猜的，画得淡", "the rest is guessed, drawn faint")})</small>{model.depth && <><br /><small>{model.depth}</small></>}</p>}
+    {shown === "observed" && <p>{tr("观测到的表面", "observed surface")}{surface?.triangles ? ` · ${surface.triangles} ${tr("个三角形", "triangles")}` : ` · ${tr("还在路上", "on its way")}`}
+      {" · "}{tr("视频自己的深度融合而成，按视频着色；没看到的地方不画", "the video's own depth fused, in its colours; nothing drawn where no view looked")}
+      <br /><small>{model.chosen_by}</small>{model.depth && <><br /><small>{model.depth}</small></>}</p>}
+    {shown === "none" && <p><small>{model.reason}</small></p>}
+    {sam?.route && !sam.accepted && <p><small>{tr("生成模型", "generated model")}: {sam.route[0] === "generated" ? (sam.reasons ? `${tr("未通过", "rejected")}: ${sam.reasons.slice(0, 2).join("; ")}`
+      : sam.why ? `${tr("未生成", "not generated")}: ${sam.why}` : sam.final ? tr("未完成", "not done") : tr("进行中", "pending")) : sam.route[1]}</small></p>}
+  </section>;
 }
 
 /** r5 (models): the observed points' planar parts (fast_report.surface.planar_parts): each part's angle to the floor and the angle
- *  between touching parts, measured on what the video saw (never on a generated model). */
+ *  between touching parts, measured on what the video saw (never on a generated model). r5b: parts are lettered (A, B, ...). */
 function SurfaceParts({ sp, tr }: { sp: any; tr: Tr }) {
   if (!sp.parts) return <tr><th>{tr("表面角度", "surface angles")}</th><td><span className="mvp-status">{sp.status}</span> <small>{sp.reason}</small></td></tr>;
-  return <>{sp.parts.map((p: any, i: number) => <tr key={"p" + i}><th>{tr(`平面 ${i + 1} 对地面`, `part ${i + 1} to the floor`)}</th>
+  const name = (i: number) => sp.parts[i]?.name || String.fromCharCode(65 + i);
+  return <>{sp.parts.map((p: any, i: number) => <tr key={"p" + i} data-part={name(i)}><th>{tr(`平面 ${name(i)} 对地面`, `part ${name(i)} to the floor`)}</th>
     <td><Quantity q={p.tilt_deg} tr={tr} /> <small>· {fmt(p.area_m2, 2)} m² · {Math.round(p.share * 100)}% {tr("的点", "of the points")}</small></td></tr>)}
-    {sp.bends.map((b: any, i: number) => <tr key={"b" + i}><th>{tr(`平面 ${b.parts[0] + 1}–${b.parts[1] + 1} 夹角`, `parts ${b.parts[0] + 1}–${b.parts[1] + 1} angle`)}</th>
+    {(sp.bends || []).map((b: any, i: number) => <tr key={"b" + i}><th>{tr(`平面 ${name(b.parts[0])}–${name(b.parts[1])} 夹角`, `parts ${name(b.parts[0])}–${name(b.parts[1])} angle`)}</th>
       <td><Quantity q={b.angle_deg} tr={tr} /></td></tr>)}</>;
 }
 
@@ -363,7 +368,7 @@ function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, dur
         {PHYSICAL.filter(([k]) => ph[k]).map(([k, zh, en]) => <tr key={k} data-implausible={(bad || ph.fragmented_support) && SIZE_FIELDS.has(k) || undefined}><th>{tr(zh, en)}</th><td><Quantity q={ph[k]} tr={tr} /></td></tr>)}
         {ph.primitive && <tr><th>{tr("参数化形状", "primitive")}</th><td>{ph.primitive.kind}: {ph.primitive.accepted ? tr("通过留出检验（显示用，不替代观测值）", "passed the held-out gate (beside the observed values, never replacing them)") : tr("未采用", "not accepted")}
           {ph.primitive.reason && <small> ({ph.primitive.reason})</small>}</td></tr>}
-        {ph.surface_parts && <SurfaceParts sp={ph.surface_parts} tr={tr} />}
+        {(ph.surface_parts || surface?.parts) && <SurfaceParts sp={ph.surface_parts || surface.parts} tr={tr} />}
         {ph.walkway && <tr><th>{tr("通道", "walkway")}</th><td><span className="mvp-status">{ph.walkway.status}</span></td></tr>}
         {ph.size_check && <tr><th>{tr("尺寸检查", "size check")}</th><td>{ph.size_check.status}{ph.size_check.class_range_m && <small> ({ph.size_check.class || tr("其他词", "other word")}: {ph.size_check.class_range_m.join("–")} m{tr("（先验）", " (a prior)")}{ph.size_check.measured_m != null ? `, measured ${fmt(ph.size_check.measured_m, 2)}${ph.size_check.measured_u_m != null ? ` ± ${fmt(ph.size_check.measured_u_m, 2)}` : ""} m` : ""})</small>}</td></tr>}
       </tbody></table>
@@ -373,7 +378,7 @@ function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, dur
         <p><small>{tr("u = √(各项平方和) × k；k 由验证校准，未校准时为 1", "u = k × √(sum of squared parts); k comes from D's calibration, 1 until then")}</small></p>
       </details>
     </section>}
-    {card.kind === "object" && <ModelLine model={card.model} sam={sam} surface={surface} tr={tr} />}
+    {(card.kind === "object" || card.model) && <ModelLine model={card.model} sam={sam} surface={surface} tr={tr} />}
     <Time card={card} duration={duration} patch={cardsPatch} tr={tr} />
     <Judgements info={info!} patch={judgementsPatch} tr={tr} />
     <Under under={under} names={names} onSelect={onSelect} tr={tr} />
@@ -474,7 +479,7 @@ function OnDemand({ od, tr }: { od: any; tr: Tr }) {
       {ph.size_check && <tr><th>{tr("尺寸检查", "size check")}</th><td>{ph.size_check.status}{ph.size_check.reason ? <small> ({ph.size_check.reason})</small> : null}</td></tr>}
     </tbody></table>
     <p><small>{od.note}</small></p>
-    <ModelLine model={od.model} sam={{ why: tr("按需卡片只有一个视角", "an on-demand card has one view") }} tr={tr} />
+    <ModelLine model={od.model} surface={od.model?.triangles ? { triangles: od.model.triangles } : undefined} tr={tr} />
     <p>{took}</p>
   </section>;
 }

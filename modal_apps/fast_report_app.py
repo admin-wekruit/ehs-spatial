@@ -83,6 +83,42 @@ def gpu_listing():
     return subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True).stdout.splitlines()
 
 
+# r5b (models): Jev-Omni, the display-model router's decider, on its OWN A100 (never on the report's two): route/jev's image and volumes
+def jev_image():
+    """route/jev's image (X13's line, its layers cached) with the repo at /repo, as the report's own image mounts it: this module
+    imports sam3_app and fast_report at the top, in every container of the app."""
+    from modal_apps import route_jev  # (scripts/route_jev.py is the scoring side, same module name)
+    out = route_jev.image
+    for d in ("fast_report", "scripts", "modal_apps"):
+        out = out.add_local_dir(REPO / d, f"/repo/{d}", ignore=["**/__pycache__/**", "**/*.pyc"])
+    return out
+
+
+JEV_IMAGE = jev_image() if modal.is_local() else modal.Image.debian_slim()
+
+
+@app.cls(image=JEV_IMAGE, gpu="A100-80GB", cpu=4, memory=49152, timeout=3600, retries=0, max_containers=1, scaledown_window=600,
+         volumes={"/v/x8": modal.Volume.from_name("panoptes-x8-models"), "/v/x13": modal.Volume.from_name("panoptes-x13-models")})
+class Jev:
+    """fast_report.jev on its own GPU: the report's container asks it Q5 for the cards no class routes (fast_report.route)."""
+
+    @modal.enter()
+    def load(self):
+        from fast_report import jev
+        self.entered = time.time()
+        self.st = jev.load()
+
+    @modal.method()
+    def ping(self):
+        """The bench wakes it before each call (the service is up in production): cold start, never analysis time."""
+        return {"load_s": self.st["load_s"], "entered_unix": self.entered, "now_unix": time.time()}
+
+    @modal.method()
+    def decide(self, qs):
+        from fast_report import jev
+        return jev.decide(self.st, qs)
+
+
 @app.function(image=image, gpu="A100-80GB", timeout=1200, retries=0, volumes=VOLUMES)
 def setup():
     """The image imports and sees CUDA; r4/naming: the cascade's encoders load from their volumes and give the signals of a
@@ -152,13 +188,14 @@ class FastReport:
             env = sam3d.worker_env(x7.RECGEN_PY, CUDA_VISIBLE_DEVICES=0, ATTN_BACKEND="xformers", SPCONV_ALGO="native", HF_HUB_OFFLINE=1)
             env["PYTHONPATH"] += os.pathsep + x7.RECGEN_DIR
             self.sam3d = None
-            self.recgen = sam3d.Pool([x7.RECGEN_PY, "-c", "from fast_report.x7 import recgen_worker; recgen_worker()"], 2, env, "recgen")
+            self.recgen = sam3d.Pool([x7.RECGEN_PY, "-c", "from fast_report.recgen_fast import recgen_worker; recgen_worker()"], 2, env, "recgen")  # r5b: FAST
             self.gate_pool = sam3d.Pool([sam3d.GATE_PY, "-c", "from fast_report.r5_bench import cpu_worker; cpu_worker()"], GATE_PROCS,
                                         sam3d.worker_env(sam3d.GATE_PY, OMP_NUM_THREADS=1, OPENBLAS_NUM_THREADS=1, MKL_NUM_THREADS=1), "gate")
         else:
             self.sam3d = sam3d.Workers(gpu=0, n=2)  # B: two SAM 3D processes under MPS on GPU 0 (~60 s load + 16 s warm-up, beside vLLM's load)
             self.gate_pool = sam3d.GatePool(GATE_PROCS)  # the gate's prepare/assess processes (niced)
         b["profile"] = self.profile
+        self.jev_decide = self._jev_decide  # r5b: the router's decider (Jev-Omni on its own GPU: the Jev class)
         self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"), initializer=core.single_threaded)
         self.proc_pool.map(core.warm_worker, range(PROCS))
         import torch
@@ -278,6 +315,16 @@ class FastReport:
     @modal.method()
     def boot_info(self):
         return self.boot_record
+
+    @staticmethod
+    def _jev_decide(qs, per_request=64):
+        """r5b: Jev-Omni's answers for qs [(key, jpeg, state, question, options)], requests of per_request in parallel."""
+        chunks = [qs[i:i + per_request] for i in range(0, len(qs), per_request)]
+        t = time.perf_counter()
+        with ThreadPoolExecutor(4) as ex:
+            got = list(ex.map(lambda c: Jev().decide.remote(c), chunks))
+        return {"probs": {k: v for g in got for k, v in g["probs"].items()}, "round_trip_s": round(time.perf_counter() - t, 3),
+                "compute_s": [g["compute_s"] for g in got], "peak_gib": max((g["peak_gib"] for g in got), default=None), "requests": len(chunks)}
 
     @modal.method()
     def click(self, report_id: str, i: int, x: float, y: float, style: str = "outline"):

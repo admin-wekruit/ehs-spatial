@@ -391,7 +391,9 @@ def recgen_worker():
             out = x7.run_recgen(state["p"], message["views"], message["seed"])
         else:
             out = run(state["p"], message["views"], message["seed"], message["setting"], message.get("export_dir"), message.get("check_out", False))
-        return {**out, "start_unix": start, "end_unix": time.time(), "max_reserved_gib": round(torch.cuda.max_memory_reserved() / 2 ** 30, 2)}
+        peak = round(torch.cuda.max_memory_reserved() / 2 ** 30, 2)
+        torch.cuda.empty_cache()  # r5b (804a4ca's fix): the call's cache back to the device, beside the report's core on the same GPU
+        return {**out, "start_unix": start, "end_unix": time.time(), "max_reserved_gib": peak}
     serve(handle, boot)
 
 

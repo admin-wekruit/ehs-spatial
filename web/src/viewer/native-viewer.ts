@@ -4,7 +4,7 @@ import {activeModel,compositeModelEvidence,modelPreviewEntities,modelPreviewGeom
 import type {SceneDocument,RepresentationLoadState} from '../types';
 import {createSplatLayer,type SplatSource} from './splat-layer.ts';
 
-export type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;material?:{baseColorFactor:number[];alphaMode:'OPAQUE'|'MASK'|'BLEND';alphaCutoff:number};bounds:{min:Vec;max:Vec}};
+export type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;material?:{baseColorFactor:number[];alphaMode:'OPAQUE'|'MASK'|'BLEND';alphaCutoff:number};bounds:{min:Vec;max:Vec};name?:string};
 type GPU={mesh:Mesh;vertex:WebGLBuffer;index:WebGLBuffer;texture:WebGLTexture;entityId:string;representation:any};
 export type ViewerEvent={type:string;[key:string]:any};
 export type ViewerOptions={resolveAsset:(id:string)=>Promise<string|{url:string}>;locale?:string;onEvent?:(event:ViewerEvent)=>void;layers?:Record<string,any>;showSourcePhoto?:boolean};
@@ -114,7 +114,7 @@ export function readGLB(buffer:ArrayBuffer):Mesh[] {
       }
       let texture:Blob|undefined;const textureIndex=pbr?.baseColorTexture?.index;
       if(textureIndex!==undefined){if(!uv||pbr.baseColorTexture.texCoord||pbr.baseColorTexture.extensions)throw Error('unsupported_texture_coordinates');const img=doc.images?.[doc.textures?.[textureIndex]?.source];if(!img||img.uri||!['image/png','image/jpeg'].includes(img.mimeType))throw Error('unsupported_glb_texture');const v=view(img.bufferView);texture=new Blob([buffer.slice(binOffset+(v.byteOffset||0),binOffset+(v.byteOffset||0)+v.byteLength)],{type:img.mimeType});}
-      result.push({vertices:data,indices,mode:p.mode??4,matrix,texture,material:{baseColorFactor:factor,alphaMode,alphaCutoff},bounds});
+      result.push({vertices:data,indices,mode:p.mode??4,matrix,texture,material:{baseColorFactor:factor,alphaMode,alphaCutoff},bounds,name:node.name});
     }
     for(const child of node.children||[])walk(child,matrix);visiting.delete(id);
   }
@@ -277,6 +277,9 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     }
   }
   async function url(id:string){const r=await options.resolveAsset(id);return typeof r==='string'?r:r.url;}
+  // r5b: a shot's observed surfaces come as one GLB (a node per object): fetched and parsed once, each object's representation takes its node
+  const glbNodes=new Map<string,Promise<Mesh[]>>();
+  function nodeMeshes(id:string){if(!glbNodes.has(id))glbNodes.set(id,url(id).then(src=>fetch(src)).then(res=>{if(!res.ok)throw Error('asset_download_failed');return res.arrayBuffer();}).then(readGLB).catch(e=>{glbNodes.delete(id);throw e;}));return glbNodes.get(id)!;}
   async function setPhoto(){const n=++photoEpoch;photoAbort.abort();photoAbort=new AbortController();photo.hidden=true;if(photoObjectURL){URL.revokeObjectURL(photoObjectURL);photoObjectURL=null;}if(!camera?.exact||options.showSourcePhoto===false)return;const f=camera.frame;let objectURL:string|null=null;try{const src=await url(f.imageId);if(disposed||n!==photoEpoch)return;const response=await fetch(src,{signal:photoAbort.signal});if(!response.ok)throw Error('photo_load_failed');objectURL=URL.createObjectURL(await response.blob());const img=new Image();img.src=objectURL;await img.decode();if(disposed||n!==photoEpoch){URL.revokeObjectURL(objectURL);return;}photoObjectURL=objectURL;photo.src=objectURL;photo.hidden=false;emit('renderReady',{phase:'photo',cameraId:f.id});}catch(error:any){if(objectURL&&objectURL!==photoObjectURL)URL.revokeObjectURL(objectURL);if(n===photoEpoch&&error.name!=='AbortError')emit('loadError',{code:'photo_load_failed',assetId:f.imageId});}}
   function setCamera(value:any){
     if(disposed)return;viewMode=typeof value==='string'?value:value?.mode||'free';const f=currentCameras(doc).find((c:any)=>c.id===(typeof value==='string'?value:value?.cameraId));if(f){frameId=f.coordinateFrameId;layers.imageId=f.imageId;layers.observations=doc.observations;}if(f&&(typeof value==='string'||value?.mode==='photo')){camera=sourceCamera(f,radius,center);setPhoto();draw();return;}
@@ -355,6 +358,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     const next=revision.document||revision;if(!next||!Array.isArray(next.entities)||!Array.isArray(next.cameras))throw Error('invalid_scene_document');const nextFrame=layers.imageId?cameraForImage(next,layers.imageId)?.coordinateFrameId||null:currentCameras(next).find((c:any)=>c.id===selection.cameraId)?.coordinateFrameId||currentCameras(next)[0]?.coordinateFrameId||next.coordinateFrames?.[0]?.id||null;const tasks=sceneRepresentationTasks(next,nextFrame,layers),layerKey=taskKey(tasks);const signature=JSON.stringify([layerKey,next.entities.map((e:any)=>[e.id,e.activeModelRepresentationId,(e.representations||[]).map((r:any)=>[r.id,r.assetId,r.kind,r.primitive,r.placementState,r.placementReason,r.sourceValidity])]),next.assets]);
     if(signature===sceneAssetsSignature&&doc.captureId===next.captureId){doc=next;layers.observations=doc.observations;if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;revisionId=revision.id||'';preview.clear();for(const g of gpu){const r=entity(g.entityId)?.representations?.find((r:any)=>r.id===g.representation.id);if(r)g.representation=r;}dimensions();draw();loadProgress();return;}
     if(doc.captureId!==next.captureId)streamedMeshes.clear();
+    for(const id of [...glbNodes.keys()])if(!(next.assets||[]).some((a:any)=>a.id===id))glbNodes.delete(id);  // r5b: a replaced shot GLB
     sceneAssetsSignature=signature;loadedLayerKey=layerKey;const n=++epoch;abort.abort();abort=new AbortController();preview.clear();
     // A new layer (a live report grows while it is open) keeps what is already on the GPU: an unchanged (entity,
     // representation, asset) is neither fetched nor uploaded again. A representation whose asset changed (a quick room,
@@ -382,6 +386,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
       try{
         let meshes:Mesh[];
         if(r.kind==='primitive')meshes=[primitive(r.primitive)];
+        else if(r.node){if(!r.assetId)throw Error('missing_mesh_asset');meshes=(await nodeMeshes(r.assetId)).filter(m=>m.name===r.node);if(n!==epoch||disposed)return;}  // r5b: one GLB a shot, a node per object
         else{if(!r.assetId)throw Error('missing_mesh_asset');const src=await url(r.assetId);if(n!==epoch||disposed)return;const res=await fetch(src,{signal:abort.signal});if(!res.ok)throw Error('asset_download_failed');const bytes=await res.arrayBuffer();if(n!==epoch||disposed)return;emit('loadProgress',{phase:'gpu_upload',entityId:e.id,representationId:r.id,assetId:r.assetId,bytes:bytes.byteLength});const meta=doc.assets.find((a:any)=>a.id===r.assetId);meshes=(meta?.format||meta?.metadata?.format)==='panoptes-mesh-v1'?readPacked(bytes,meta):readGLB(bytes);}
         if(!meshes.length)throw Error('empty_mesh');
         for(const source of meshes){const mesh=r.streamed&&streamedMeshes.has(e.id)?streamedMeshes.get(e.id)!:source;const uploaded=await upload(mesh,e.id,r,n);if(uploaded)staged.push(uploaded);}

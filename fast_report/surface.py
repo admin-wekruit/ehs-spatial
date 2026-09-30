@@ -192,7 +192,7 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
                         "angle", k, vals if len(vals) >= 2 else None, unit="deg", scale=cards.SCALE_FREE)
         if fit(p) > FIT_MAX_DEG:  # the cards' rule for any angle: a patch this rough is curved, no angle
             v = {"status": "not measurable", "reason": f"a curved patch: fit term {fit(p):.0f} deg > {FIT_MAX_DEG:g}", "value_if_flat": v["value"]}
-        rows.append({"tilt_deg": v, "area_m2": round(float(np.prod(p["ext"])), 3), "centre_m": np.round(p["c"], 3).tolist(),
+        rows.append({"name": chr(65 + len(rows)), "tilt_deg": v, "area_m2": round(float(np.prod(p["ext"])), 3), "centre_m": np.round(p["c"], 3).tolist(),
                      "normal": np.round(p["n"], 4).tolist(), "sides_m": np.round(p["ext"], 3).tolist(), "share": round(len(p["ix"]) / n, 3)})
     bends = []
     from scipy.spatial import cKDTree
@@ -209,7 +209,7 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
             v = cards.value(180 - fold, {"views": cards.spread(subs) if len(subs) >= 2 else None, "fit": float(np.hypot(fit(parts[a]), fit(parts[b])))},
                             "angle", k, [180 - s for s in subs] if len(subs) >= 2 else None, unit="deg", scale=cards.SCALE_FREE,
                             note="the angle between the two parts (180 = flat)")
-            bends.append({"parts": [a, b], "angle_deg": v})
+            bends.append({"parts": [a, b], "names": [chr(65 + a), chr(65 + b)], "angle_deg": v})
     out = {"parts": rows, "bends": bends, "points": n, "tolerance_m": round(tau, 4), "s": round(time.perf_counter() - t0, 4),
            "note": "planar parts of the observed points (the video's own surface), each to the floor: 0 = horizontal, 90 = vertical"}
     if keep:
@@ -228,7 +228,6 @@ def decided(rec, threshold):
 
 
 # ---------------------------------------------------------------- the report's display model (fast_report.core.surfaces_job)
-DISPLAY_TRIANGLES, OBSERVED_ALPHA, PRIMITIVE_ALPHA, PRIMITIVE_RGB = 8000, 255, 60, (255, 184, 77)
 
 
 def mesh_glb(V, F, rgba):
@@ -257,54 +256,91 @@ def mesh_glb(V, F, rgba):
             + struct.pack("<II", len(blob), 0x004E4942) + blob)
 
 
-def display_glb(V, F, C, model=None):
-    """The card's display model as one GLB about its own centre: the observed mesh opaque (decimated to DISPLAY_TRIANGLES), the
-    card's primitive (display_model's record: its shape, seen faces too) translucent for the unseen bulk. -> (bytes, centre, info)."""
+TIER0_TRIANGLES = 3000  # r5b: a card's observed surface in the shot's one GLB (ME340: 254 x <= 3000 triangles, ~5 MB a shot)
+
+
+def shot_glb(nodes):
+    """r5b: one GLB for a shot's observed surfaces (the viewer fetches one blob a shot: ~600 small GLBs cost 10-13 s of Volume
+    commit in r5): nodes [(name, V (n, 3) shot frame, F (m, 3), rgb (n, 3) uint8)] -> one node + mesh each, named by the card,
+    translated to its centre (vertices relative to it), float32 POSITION, normalised uint8 RGBA COLOR_0 (opaque), uint32
+    indices, one material. -> (bytes, {name: {"centre", "min", "max", "triangles"}})."""
+    import json
+    import struct
+    blob, views, accessors, meshes, gnodes, info = bytearray(), [], [], [], [], {}
+
+    def add(arr, target):
+        nonlocal blob
+        blob += b"\0" * (-len(blob) % 4)
+        views.append({"buffer": 0, "byteOffset": len(blob), "byteLength": arr.nbytes, "target": target})
+        blob += arr.tobytes()
+        return len(views) - 1
+    for name, V, F, C in nodes:
+        V, F = np.asarray(V, np.float64), np.asarray(F, np.int64)
+        if not len(F):
+            continue
+        lo, hi = V.min(0), V.max(0)
+        c = (lo + hi) / 2
+        Vl = np.ascontiguousarray(V - c, "<f4")
+        rgba = np.ascontiguousarray(np.c_[np.asarray(C, np.uint8)[:, :3], np.full(len(V), 255, np.uint8)])
+        iv = add(Vl, 34962)
+        accessors.append({"bufferView": iv, "componentType": 5126, "count": len(Vl), "type": "VEC3", "min": Vl.min(0).astype(float).tolist(),
+                          "max": Vl.max(0).astype(float).tolist()})
+        ic = add(rgba, 34962)
+        accessors.append({"bufferView": ic, "componentType": 5121, "normalized": True, "count": len(rgba), "type": "VEC4"})
+        ii = add(np.ascontiguousarray(F, "<u4"), 34963)
+        accessors.append({"bufferView": ii, "componentType": 5125, "count": int(F.size), "type": "SCALAR"})
+        meshes.append({"primitives": [{"attributes": {"POSITION": len(accessors) - 3, "COLOR_0": len(accessors) - 2}, "indices": len(accessors) - 1,
+                                       "material": 0, "mode": 4}]})
+        gnodes.append({"name": str(name), "mesh": len(meshes) - 1, "translation": c.tolist()})
+        info[str(name)] = {"centre": np.round(c, 4).tolist(), "min": np.round(lo, 4).tolist(), "max": np.round(hi, 4).tolist(), "triangles": int(len(F))}
+    if not gnodes:
+        return None, {}
+    gltf = {"asset": {"version": "2.0", "generator": "panoptes fast_report.surface (r5b tier 0)"}, "scene": 0,
+            "scenes": [{"nodes": list(range(len(gnodes)))}], "nodes": gnodes, "meshes": meshes,
+            "materials": [{"pbrMetallicRoughness": {"baseColorFactor": [1, 1, 1, 1], "metallicFactor": 0, "roughnessFactor": 1}, "doubleSided": True}],
+            "buffers": [{"byteLength": len(blob)}], "bufferViews": views, "accessors": accessors}
+    head = json.dumps(gltf, separators=(",", ":")).encode()
+    head += b" " * (-len(head) % 4)
+    blob += b"\0" * (-len(blob) % 4)
+    raw = (struct.pack("<III", 0x46546C67, 2, 28 + len(head) + len(blob)) + struct.pack("<II", len(head), 0x4E4F534A) + head
+           + struct.pack("<II", len(blob), 0x004E4942) + bytes(blob))
+    return raw, info
+
+
+def decimate(V, F, C, target=TIER0_TRIANGLES):
     import open3d as o3d
-    parts_v, parts_f, parts_c, n_obs = [], [], [], 0
-    if len(F):
-        if len(F) > DISPLAY_TRIANGLES:
-            m = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(np.asarray(V, np.float64)), o3d.utility.Vector3iVector(np.asarray(F, np.int32)))
-            m.vertex_colors = o3d.utility.Vector3dVector(np.asarray(C, np.float64) / 255)
-            m = m.simplify_quadric_decimation(DISPLAY_TRIANGLES)
-            V, F, C = np.asarray(m.vertices), np.asarray(m.triangles), (np.asarray(m.vertex_colors) * 255).round()
-        parts_v.append(np.asarray(V, float))
-        parts_f.append(np.asarray(F, np.int64))
-        parts_c.append(np.c_[np.asarray(C, float)[:, :3], np.full(len(V), OBSERVED_ALPHA)])
-        n_obs = int(len(F))
-    if model and model.get("kind"):
-        import r4_models
-        T, _ = r4_models.model_tris(model)
-        PV = T.reshape(-1, 3)
-        parts_f.append(np.arange(len(PV)).reshape(-1, 3) + sum(len(v) for v in parts_v))
-        parts_v.append(PV)
-        parts_c.append(np.tile([*PRIMITIVE_RGB, PRIMITIVE_ALPHA], (len(PV), 1)))
-    if not parts_v:
-        return None, None, {"reason": "no observed surface and no primitive"}
-    V, F, C = np.concatenate(parts_v), np.concatenate(parts_f), np.concatenate(parts_c)
-    centre = (V.min(0) + V.max(0)) / 2
-    half = (V.max(0) - V.min(0)) / 2
-    return mesh_glb(V - centre, F, C.clip(0, 255)), centre, {"triangles": int(len(F)), "observed_triangles": n_obs,
-                                                           "bounds": {"min": np.round(-half, 4).tolist(), "max": np.round(half, 4).tolist()}}
+    if len(F) <= target:
+        return V, F, C
+    m = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(np.asarray(V, np.float64)), o3d.utility.Vector3iVector(np.asarray(F, np.int32)))
+    m.vertex_colors = o3d.utility.Vector3dVector(np.asarray(C, np.float64) / 255)
+    m = m.simplify_quadric_decimation(target)
+    return np.asarray(m.vertices), np.asarray(m.triangles), (np.asarray(m.vertex_colors) * 255).round().clip(0, 255).astype(np.uint8)
 
 
-def card_display(job):
-    """A worker's card: (id, world points, their local keyframes, c2w, K, frames .npy path, the shot's source keys, the card's model
-    record) -> (id, GLB bytes or None, centre, info). The card's main cluster is the cards' own (cards.prepare)."""
-    cid, world, frame, c2w, K, frames_path, keys, fr, fx, model = job
+def card_tier0(job):
+    """r5b tier 0, a worker's card: (id, world points, their local keyframes, c2w, K, frames .npy path, the shot's source keys, floor
+    frame, fx, subsets (local keyframe lists), plumb {usable, u_deg, reading}) -> (id, V (shot frame), F, rgb, planar parts, info).
+    The card's main cluster is the cards' own (cards.prepare); its planar parts are measured on the same observed points."""
+    cid, world, frame, c2w, K, frames_path, keys, fr, fx, subsets, plumb = job
     from fast_report import cards
     t0 = time.perf_counter()
-    world = np.asarray(world, float)
-    frame = np.asarray(frame)
+    world, frame = np.asarray(world, float), np.asarray(frame)
     if len(world) < 10:
-        return cid, None, None, {"reason": "too few points", "s": 0.}
+        return cid, None, None, None, {"status": "not measurable", "reason": f"{len(world)} points: too few"}, {"reason": "too few points", "s": 0.}
     z = np.einsum("ni,ni->n", world - c2w[frame, :3, 3], c2w[frame, :3, 2])
     x = cards.prepare({"world": world, "frame": frame, "z": z}, fr, fx)
     Pw = x["P"] @ fr["R"] + fr["origin"]
     frames = np.load(frames_path, mmap_mode="r") if frames_path else None
     V, F, C, info = observed_mesh(Pw, x["frame"], c2w, K, rgb=(lambda v: frames[keys[v]]) if frames is not None else None)
-    glb, centre, dinfo = display_glb(V, F, C, model)
-    return cid, glb, None if centre is None else np.round(centre, 4).tolist(), {**info, **dinfo, "s": round(time.perf_counter() - t0, 4)}
+    V, F, C = decimate(V, F, C)
+    t1 = time.perf_counter()
+    if not plumb.get("usable"):
+        parts = {"status": "not measurable", "reason": "plumb check failed: the room's walls read "
+                 f"{'n/a' if plumb.get('reading') is None else round(plumb['reading'], 1)} deg off vertical (limit {cards.PLUMB_MAX_DEG:g})"}
+    else:
+        parts = planar_parts(x["P"], x["frame"], subsets if len(subsets) >= 2 else [], cards.to_floor(c2w[:, :3, 3], fr), plumb.get("u_deg"))
+    info.update(mesh_s=round(t1 - t0, 4), parts_s=round(time.perf_counter() - t1, 4), triangles=int(len(F)), s=round(time.perf_counter() - t0, 4))
+    return cid, V, F, C, parts, info
 
 
 # ---------------------------------------------------------------- self-check (synthetic)
@@ -361,13 +397,15 @@ def self_check():
     _, F1, _, i1 = observed_mesh(face, fr, c2ws, np.repeat(K[None], 3, 0), views=[1])
     assert i1["views"] == 1 and 0 < len(F1) and observed_mesh(face[:5], fr[:5], c2ws, np.repeat(K[None], 3, 0))[3]["reason"] == "too few points"
     import struct
-    rec = {"kind": "box", "size_m": [.6, .1, .5], "faces": {f: "seen" for f in ("-x", "+x", "-y", "+y", "-z", "+z")}, "position": [.3, 0, .25],
-           "quaternion": [0, 0, 0, 1]}
-    import sys
-    sys.path.append(str(__import__("pathlib").Path(__file__).resolve().parents[1] / "scripts"))
-    glb, centre, dinfo = display_glb(V, F, C, rec)
-    assert glb[:4] == b"glTF" and struct.unpack("<I", glb[8:12])[0] == len(glb) and dinfo["triangles"] == len(F) + 12 and dinfo["observed_triangles"] == len(F)
-    assert np.allclose(centre, [.3, 0, .25], atol=.06), centre
+    glb, nodes = shot_glb([("obj-0-1", V, F, C), ("obj-0-2", V + [2, 0, 0], F, C), ("empty", V[:0], F[:0], C[:0])])
+    assert glb[:4] == b"glTF" and struct.unpack("<I", glb[8:12])[0] == len(glb) and sorted(nodes) == ["obj-0-1", "obj-0-2"]
+    assert np.allclose(nodes["obj-0-2"]["centre"], np.add(nodes["obj-0-1"]["centre"], [2, 0, 0]), atol=1e-4) and nodes["obj-0-1"]["triangles"] == len(F)
+    import json
+    doc = json.loads(glb[20:20 + struct.unpack("<I", glb[12:16])[0]])
+    assert [n["name"] for n in doc["nodes"]] == ["obj-0-1", "obj-0-2"] and len(doc["meshes"]) == 2
+    Vd, Fd, Cd = decimate(V, F, C, 50)
+    assert len(Fd) <= 50 and len(Cd) == len(Vd)
+    assert [p["name"] for p in out["parts"]] == ["A", "B"] and out["bends"][0]["names"] == ["A", "B"]
     print(f"surface self-check ok: a bent guard (30 / 90 deg parts, 120 deg between them, u {p30['u']}), a box (0 / 90 / 90, 90 deg edges), "
           f"the observed mesh on the seen face only ({len(F)} triangles, {info['voxel_m'] * 100:.1f} cm voxels, {info['s'] * 1000:.0f} ms)")
 

@@ -326,7 +326,6 @@ def align_free(src, key, gen, up, mesh, yaws=24):
 def gate_mesh(src, fx, card, msg):
     """Place (posed: the source camera; pose-free: align_free), X7's bounded refine on the generation views, the held-out gate,
     colours, a tile, and the workcell measurement against (d)."""
-    from fast_report import sam3d
     from fast_report.x7 import held_gate, light, rays, refine, transformed, view_data
     import complete_video_objects as cvo
     t0 = time.time()
@@ -355,7 +354,8 @@ def gate_mesh(src, fx, card, msg):
     out["gate"] = gate_row(held_gate(src, key, held, vertices, faces))
     if msg["kind"] in ("trellis", "triposr"):
         colors, _ = paint(src, key, gen, vertices, faces, colors if msg["kind"] == "triposr" else None)
-    obs = observed_flags(src, key, gen, vertices, sam3d.VOXEL_M)
+    from fast_report import observed
+    obs = observed.gate_seen(src, key, vertices, faces)  # r5b: faced, clear sight, points on it (was: near an observed point)
     out["observed_vertex_share"] = round(float(obs.mean()), 3)
     if msg.get("tile", True):
         out["tile"] = tile(src, held, msg["crop"], vertices, faces, colors, obs)

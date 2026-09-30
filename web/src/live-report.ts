@@ -39,7 +39,7 @@ export function modelPrimitive(m: any) {
   return { kind: "faces", parts: [{ center: [0, 0, 0], size: m.size_m.map(pos), alpha: FACES.map(f => a(m.faces?.[f] === "seen")) }] };
 }
 
-export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null): SceneDocument {
+export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null, onDemand: any[] = []): SceneDocument {
   const doc: any = { schemaVersion: 2, target: "scene", captureId: report, coordinateFrames: [], cameras: [], observations: [], entities: [],
     assets: [], annotations: [], geometryBindings: {} };
   const asset = (ref: BlobRef) => {
@@ -70,32 +70,47 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
         points && { id: "room-points:" + s.index, kind: "point_cloud", assetId: asset(points), coordinateFrameId: frame, transform: identity(frame), placementState: "confirmed", sourceRefs: [] },
       ].filter(Boolean) });
   }
+  // r5b (models): one model per object card, in this order: its generated model (tier 1, or a look-alike's copy placed on it), the
+  // primitive its fixed-shape class fits (card.model.tier 'primitive'), its observed surface (tier 0: a node of the shot's one GLB), and
+  // only without any of those the see-through box. The 3D label is the card's shown name (or its type), never the objects layer's word.
   const accepted = new Map<string, any>((models?.data.models || []).map((m: any) => [m.object, m]));
-  const drawn = new Map<string, any>((cards || []).filter((c: any) => c.kind === "object" && c.model?.kind).map((c: any) => [c.id, c.model]));
-  const seen = new Map<string, any>((surfaces?.data.surfaces || []).map((r: any) => [r.object, r]));  // r5: the observed surface + primitive (one GLB)
+  const byCard = new Map<string, any>((cards || []).filter((c: any) => c.kind === "object").map((c: any) => [c.id, c]));
+  const seen = new Map<string, any>((surfaces?.data.surfaces || []).map((r: any) => [r.object, r]));
   for (const o of objects?.data.objects || []) {
-    const frame = frameOf(o.shot), min = o.box_min_m, max = o.box_max_m, model = accepted.get(o.id), glb = model && models.blobs["model-" + o.id];
-    const dm = drawn.get(o.id);  // r4: the card's display model; SAM 3D's mesh replaces it when its gate accepted one
-    const sf = seen.get(o.id), sglb = sf && surfaces.blobs["surface-" + o.id];  // r5: what the video saw, drawn over the primitive
-    // Detected words are names to check, never verified: a see-through box, the model when SAM 3D's gate took one.
+    if (o.merged_into && byCard.has(o.merged_into)) continue;  // its points are the card it merged into (drawn there)
+    const card = byCard.get(o.id), frame = frameOf(o.shot), min = o.box_min_m, max = o.box_max_m, model = accepted.get(o.id);
+    const glb = model && models.blobs["model-" + (model.reuse_of || o.id)];
+    const dm = card?.model?.tier === "primitive" ? card.model : null;
+    const sf = seen.get(o.id), sglb = sf?.blob && surfaces.blobs[sf.blob];
     const box = { id: "box:" + o.id, kind: "primitive", primitive: { kind: "box", dimensions: [0, 1, 2].map(k => Math.max(max[k] - min[k], .01)) },
       coordinateFrameId: frame, transform: { ...identity(frame), position: [0, 1, 2].map(k => (min[k] + max[k]) / 2) }, placementState: "confirmed",
       material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .05], color: [.45, .9, .8] } };
-    // one model per object (the viewer's preview and bounds read every model representation): SAM 3D's accepted mesh, else the card's
-    // display model, else the see-through box
     const half = dm && (dm.kind === "cylinder" ? [dm.radius_m, dm.radius_m, dm.length_m / 2] : dm.size_m.map((v: number) => v / 2));
-    // SAM 3D's bounds are in the shot frame (fast_report.sam3d.judge); the viewer reads a representation's bounds about its own pose
-    const local = glb && model.bounds?.min && [model.bounds.min, model.bounds.max].map((b: number[]) => b.map((v, k) => v - model.transform.position[k]));
+    // a generated model's bounds are in the shot frame (sam3d.judge / r5_bench.gate_mesh); the viewer reads them about the pose
+    const local = glb && !model.reuse_of && model.bounds?.min && [model.bounds.min, model.bounds.max].map((b: number[]) => b.map((v, k) => v - model.transform.position[k]));
     const rep: any = glb ? { id: "model:" + o.id, kind: "generated_mesh", assetId: asset(glb), coordinateFrameId: frame,
       transform: { ...identity(frame), ...model.transform }, placementState: "confirmed", bounds: local ? { min: local[0], max: local[1] } : undefined }
-      : sglb && sf.position ? { id: "surface:" + o.id, kind: "generated_mesh", sourceKind: "observed_surface_model", assetId: asset(sglb), coordinateFrameId: frame,
-        transform: { ...identity(frame), position: sf.position }, placementState: "confirmed", bounds: sf.bounds }
       : dm ? { id: "prim:" + o.id, kind: "primitive", primitive: modelPrimitive(dm), coordinateFrameId: frame,
         transform: { ...identity(frame), position: dm.position, quaternion: dm.quaternion }, placementState: "confirmed",
         bounds: { min: half.map((v: number) => -Math.max(v, .0025)), max: half.map((v: number) => Math.max(v, .0025)) },
-        material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .1], selectedFactor: [1, 1, 1, 1], color: [1, .72, .3] } } : box;
-    doc.entities.push({ id: o.id, label: o.label || o.word, associationState: "association_pending", visible: true, observationRefs: [],
-      activeModelRepresentationId: rep.id, representations: [rep], fast: { kind: "object", ...o, model: model || null, display_model: dm || null, surface: sf || null } });
+        material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .1], selectedFactor: [1, 1, 1, 1], color: [1, .72, .3] } }
+      : sglb ? { id: "surface:" + o.id, kind: "generated_mesh", sourceKind: "observed_surface_model", assetId: asset(sglb), node: o.id, coordinateFrameId: frame,
+        transform: identity(frame), placementState: "confirmed", bounds: sf.min && { min: sf.min, max: sf.max } }
+      : box;
+    const idn = card?.identity || {};
+    doc.entities.push({ id: o.id, label: idn.name || idn.type?.label || o.label || o.word, associationState: "association_pending", visible: true, observationRefs: [],
+      activeModelRepresentationId: rep.id, representations: [rep],
+      fast: { kind: "object", ...o, model: model || null, display_model: card?.model || null, surface: sf || null, tier: glb ? 1 : dm ? "primitive" : sglb ? 0 : null } });
+  }
+  for (const c of onDemand) {  // r5b: an on-demand card's observed surface (fast_report.ondemand.surface_model: an inline one-node GLB)
+    const m = c.model;
+    if (!m?.glb_b64 || c.shot == null) continue;
+    const id = "inline-glb:" + c.id, frame = frameOf(c.shot);
+    doc.assets.push({ id, inlineGlb: m.glb_b64, format: "glb", mediaType: "model/gltf-binary", metadata: { format: "glb" } });
+    doc.entities.push({ id: c.id, label: c.identity?.name || "on demand", associationState: "association_pending", visible: true, observationRefs: [],
+      activeModelRepresentationId: "surface:" + c.id, fast: { kind: "object", on_demand: true, shot: c.shot, display_model: m, tier: 0 },
+      representations: [{ id: "surface:" + c.id, kind: "generated_mesh", sourceKind: "observed_surface_model", assetId: id, node: m.node || c.id,
+        coordinateFrameId: frame, transform: identity(frame), placementState: "confirmed", bounds: m.bounds }] });
   }
   for (const t of people?.data.tracks || []) {
     const ref = people.blobs["track-" + t.id];

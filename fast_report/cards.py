@@ -1063,7 +1063,6 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
     objects, points = inp["objects"], inp["points"]
     shots = {s["index"]: dict(s) for s in inp["shots"]}
     for s in shots.values():
-        s["surface_parts"] = bool(inp.get("surface_parts"))  # r5 (models)
         s["frame"] = floor_frame(s["c2w"][0], s["normal"], s["point_m"])
         s["cam_floor"] = to_floor(s["c2w"][:, :3, 3], s["frame"])
         s["fx"] = float(np.median(s["K"][:, 0, 0]))
@@ -1452,8 +1451,6 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     # angles (section 4.5)
     for name in ("principal_axis_tilt_deg", "planar_slope_deg"):
         phys[name] = angle(name, sub, s, k)
-    if s.get("surface_parts"):  # r5 (models): the observed points' planar parts, each to the floor and to each other
-        phys["surface_parts"] = surface_parts(P, frame, bl, s, k)
     longest = float(max(pooled["sides"].max(), h))
     fragmented = x["dropped_share"] > 1 - MAIN_SHARE
     phys["dropped_share"] = x["dropped_share"]
@@ -1505,7 +1502,8 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     # mvp2/identity (R1): everything a name decides is derived from these name-free measurements by apply_name, at build time
     # and on every identity update (class, size check, the review marks, deformable angles, primitive, time state)
     t_model = time.perf_counter()
-    model_fits = display_model.raw_fields(P, cam_f[views], s["frame"], depth_seen)  # r4 (models): the display model's fits
+    model_fits = display_model.raw_fields(P, cam_f[views], s["frame"], depth_seen, (frame, views, best_views, s))  # r4 (models): the display
+    # model's fits; r5b: each checked against the object's outline in its best views, its faces 'seen' by fast_report.observed's rule
     diag["model_s"] = round(time.perf_counter() - t_model, 4)
     card["raw"] = {"size": None if no_floor else {"longest": longest, "footprint_longest": float(pooled["sides"].max()), "height": float(h), "base": float(pooled["base"]),
                             "observed_all": bool(not (top_cut or bottom_cut or lr_cut or long_part) and depth_seen)},
@@ -1650,17 +1648,6 @@ def angle(name, sub, s, k):
     return value(float(np.median(vals)), {"views": max(vals) - min(vals), "fit": u_fit, "plumb": s.get("plumb_u_deg", s["plumb_deg"])}, "angle", k, vals,
                  unit="deg",
                  scale=SCALE_FREE)
-
-
-def surface_parts(P, frame, bl, s, k):
-    """r5 (models): fast_report.surface.planar_parts on the card's points, its view subsets (blocks) giving the spread; the shot's
-    plumb check gates it like every angle (section 4.5)."""
-    from fast_report import surface
-    if not s["angles_usable"]:
-        return {"status": "not measurable", "reason": "plumb check failed: the room's walls read "
-                f"{'n/a' if s.get('plumb_deg') is None else round(s['plumb_deg'], 1)} deg off vertical (limit {PLUMB_MAX_DEG:g})"}
-    return surface.planar_parts(P, frame, bl if len(bl) >= 2 else [], s["cam_floor"], s.get("plumb_u_deg", s.get("plumb_deg")),
-                                {"angle": k.get("surface_angle", surface.SURFACE_K)})  # its own GT k (surface.SURFACE_K)
 
 
 def strike(cands, measured):
@@ -2058,6 +2045,10 @@ def people_frame(items, hw, K, c2w, up, p0, u_floor, up_deg):
     return out
 
 
+PERSON_MODEL = {"status": display_model.STATUS, "kind": None, "tier": None,
+                "reason": "person: no model (a person is tracked: the viewer draws the track's path on the floor, never a body)"}
+
+
 def people_cards(people, shots, object_cards, k=None):
     """kind person: track time, path length, the R1-R3 rows of its track, its nearest objects (section 4.9); person:untracked;
     mvp2 (R4, R7): stature and feet height (medians over the detections whose whole body was in view), how far it moved (a
@@ -2178,7 +2169,7 @@ def people_cards(people, shots, object_cards, k=None):
                                                                                                   "person": float(np.median(u_xy)), "scale": SCALE_REL * d},
                                                                                         "position", k, None, views_term=False,
                                                                                         note="footprint to the track's path on the floor"))} for c, d in near[:3]],
-                    "ppe": None, "observed": ["masks", "track"], "estimated": ["physical", "positions"], "inferred": [] if moving else ["unconfirmed"],
+                    "model": PERSON_MODEL, "ppe": None, "observed": ["masks", "track"], "estimated": ["physical", "positions"], "inferred": [] if moving else ["unconfirmed"],
                     "walked_path": {"used": not gate, "why_not": gate, "rule": "a walked path for the checks only when walk_gate passes"}})
     out.append({"id": "person:untracked", "kind": "person", "identity": {"name": "person, not tracked", "label": "observed"},
                 "class": {"category": "other", "mobility": "agent", "mobility_source": "class prior"},
@@ -2428,13 +2419,13 @@ def self_check():
     out = build({"shots": [shot], "objects": objects, "points": points, "counts": lambda: counts, "people": people, "calibration": {}})
     by = {c["id"]: c for c in out["cards"]}
     pc = by["person:0-1"]
-    # r5 (models): with surface_parts on, 3D cards carry the observed points' planar parts (or why not); off, no field
-    sp = build({"shots": [shot], "objects": objects[:2], "points": points[:2], "counts": None, "people": None, "calibration": {}, "surface_parts": True})
-    assert all("parts" in c["physical"]["surface_parts"] or c["physical"]["surface_parts"].get("status") for c in sp["cards"] if c["kind"] == "object")
+    # r5b (models): the planar parts come from the tier-0 job (core.tier0_job), never from the build
     assert not any("surface_parts" in c["physical"] for c in out["cards"])
-    # r4 (models): every object card has a display model (generated, display only), none on a person
+    # r4 (models): every object card has a display model (generated, display only); r5b: tier 0 (the observed surface) or a checked
+    # primitive; a person says it has none
     assert all(c["model"]["status"] == display_model.STATUS and (c["model"]["kind"] or c["physical"]["level"] == "2d only")
-               for c in out["cards"] if c["kind"] == "object") and "model" not in pc
+               and c["model"].get("tier") in (0, "primitive", None) for c in out["cards"] if c["kind"] == "object")
+    assert pc["model"]["kind"] is None and pc["model"]["reason"].startswith("person: no model")
     assert len(pc["rules"]) == 1 and pc["nearest_objects"][0]["id"] == "obj-0-0" and pc["physical"]["path_length"]["value"] > .5, pc
     f0 = floor_frame(cams[0], [0, -1., 0], [0, 1.6, 3])
     assert people_cards({"tracks": [dict(people["tracks"][0], points=[{"t": i * .2, "xyz": [.2 + .01 * i, 1.6, 3.6]} for i in range(5)])]},

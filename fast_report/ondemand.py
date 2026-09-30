@@ -372,9 +372,30 @@ def card(st, point, i, x, y, namer=name, style="outline"):
     ans, tm["name_s"] = namer(frame, mask, style, hints) if namer is name else namer(frame, mask)
     base["hints"] = hints or None
     out = assemble(base, f, L, mask, shot, st["k"], ans)
+    if L is not None and out.get("status") == "card":  # r5b: its observed surface (tier 0), drawn in the viewer's 3D pane
+        out["model"] = {**(out.get("model") or {}), **surface_model(out["id"], L, cam["c2w"][key], cam["K"][key], cam["wh"], frame)}
+        lap("model_s")
     tm["total_s"] = round(time.perf_counter() - t0, 3)
     out["timing"] = tm
     return out
+
+
+def surface_model(cid, L, c2w, K, wh, frame):
+    """r5b tier 0 for an on-demand card: the lifted points of its one keyframe fused into a surface (fast_report.surface) in the
+    frame's colours, as a one-node GLB inline (base64) the viewer draws; the card's primitive is not drawn (one view: no fit check)."""
+    import base64
+    from fast_report import display_model, surface
+    world = L["P"] @ L["fr"]["R"] + L["fr"]["origin"]
+    grid = (int(wh[1]), int(wh[0]))
+    V, F, C, info = surface.observed_mesh(world, np.zeros(len(world), int), np.asarray(c2w, float)[None], np.asarray(K, float)[None],
+                                          rgb=lambda v: frame, hw=grid)
+    glb, nodes = surface.shot_glb([(cid, *surface.decimate(V, F, C))]) if len(F) else (None, {})
+    rec = {"status": display_model.STATUS, "kind": "observed surface", "tier": 0, "source": display_model.TIER0 + " (one keyframe: on demand)",
+           "chosen_by": "on demand: one view, no primitive is checked"}
+    if glb is None:
+        return {**rec, "kind": None, "reason": f"no surface from its {len(world)} points ({info.get('reason') or 'too few'})"}
+    return {**rec, "glb_b64": base64.b64encode(glb).decode(), "node": cid, "bounds": {"min": nodes[cid]["min"], "max": nodes[cid]["max"]},
+            "triangles": nodes[cid]["triangles"], "voxel_m": info.get("voxel_m")}
 
 
 def assemble(base, f, L, mask, shot, k, ans):
@@ -453,7 +474,10 @@ def self_check():
     got = assemble(base, f, L, mask, {"u_floor_m": .03}, k, {"name": "screwdriver", "status": "object", "p": 0.7})
     assert got["status"] == "card" and got["identity"]["name"] == "screwdriver" and got["physical"]["size_check"]["status"] == "implausible"
     assert got["physical"]["height"]["status"] == "needs review" and cards.contract(got) == [] and got["physical"]["level"] == "coarse (one view)"
-    assert got["model"]["kind"] and "lower bound" in got["model"]["depth"], got["model"]  # r4: one view, one side
+    assert got["model"]["tier"] == 0 and "one side" in got["model"]["depth"], got["model"]  # r5b: one view, one side: its observed surface
+    sm = surface_model("ondemand:7:640:400", L, np.eye(4), np.array([[250., 0, 252], [0, 250., 140], [0, 0, 1]]), (504, 280),
+                       np.full((720, 1280, 3), 90, np.uint8))
+    assert sm["tier"] == 0 and (sm.get("glb_b64") or sm.get("reason")), sm
     assert assemble(base, f, None, mask, {}, k, {"name": "floor", "status": "surface", "p": 0.9})["kind"] == "surface"
     assert assemble(base, f, L, mask, {}, k, parse("no idea"))["identity"]["name"] == cards.UNIDENTIFIED
     # the floor rule: a floor region Qwen names after the cart beside it is the floor; a cable on the floor keeps its card

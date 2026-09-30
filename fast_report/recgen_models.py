@@ -12,6 +12,8 @@ import queue
 import time
 
 SEPARATIONS = (15., 8.)  # deg: X7's held-out rule, then its looser arm where a walk-past gives no 15 deg set
+FAST = {"ss_steps": 12, "ss_cfg": None, "slat_steps": 8, "slat_cfg": 0, "formats": ("mesh",), "fusion": "fused", "max_views": 4, "cache_cond": True,
+        "fast_out": True}  # recgen_fast.setting(**recgen_fast.FAST): 2.5 s an object vs 8.2 (runs/recgen-fast-002..005), same held-out IoU
 LICENCE = "RecGen (TRI): non-commercial licence, internal profile only"
 
 
@@ -59,7 +61,7 @@ def gate(objs, shots, frames_host, clock, recgen, cpu, eligible, records, deadli
                 continue
             sel[r] = {"src": src, "shot": int(o["shot"]), "key": keys[o["id"]], "gen": [g["frame"] for g in res["gen"]], "held": res["held"]["frame"],
                       "crop": res["held_crop"], "anchor": res["recgen_views"][0], "sep": sep}
-            submit(recgen, res["recgen_job"], (0, r), "generated", r)
+            submit(recgen, {**res["recgen_job"], "op": "run", "setting": FAST}, (0, r), "generated", r)  # r5b: recgen/fast's FAST setting
         elif kind == "generated":
             sam3d._external(clock, "recgen.generate", None, res["start_unix"], res["end_unix"], object=o["id"])
             s = sel[r]

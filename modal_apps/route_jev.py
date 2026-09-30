@@ -10,24 +10,19 @@ embeddings and option probabilities; everything is scored locally.
   modal run modal_apps/route_jev.py --data SCRATCH/dataset.pkl --questions OUT/questions.json --prompts OUT/prompts.json \
       --out SCRATCH/answers.pkl [--limit N]
 """
-import io
 import json
 import os
 import pickle
 import subprocess
-import sys
 import time
 from pathlib import Path
 
 import modal
 
-JEV = "akhilaaa3/Jev-Omni"
-JEV_FILES = ["config.json", "generation_config.json", "model*.safetensors*", "processor_config.json", "tokenizer.json", "tokenizer_config.json",
-             "chat_template.jinja", "decision_config.json", "head.pt", "jev_omni.py", "sha256.json", "verification.json", "README.md"]
 ENCODERS = {"pe-core-l": "timm/PE-Core-L-14-336", "siglip2-so400m": "google/siglip2-so400m-patch16-384"}
 X13_HF = "/v/x13/hf"
 TEMPLATES = ("a photo of {}.", "a photo of {} in a workplace.")
-BATCH, JEV_BATCH = 256, 8
+BATCH = 256
 
 app = modal.App("panoptes-route-jev")
 VOLUMES = {"/v/x8": modal.Volume.from_name("panoptes-x8-models"), "/v/x13": modal.Volume.from_name("panoptes-x13-models")}
@@ -154,55 +149,22 @@ def embed(items, phrases):
 
 # ---------------------------------------------------------------- (c) Jev-Omni as a service on its own GPU (X13 naming's)
 
-@app.cls(image=image, gpu="A100-80GB", cpu=4, memory=49152, timeout=1800, retries=0, volumes=VOLUMES, max_containers=1)
+@app.cls(image=image.add_local_python_source("fast_report"), gpu="A100-80GB", cpu=4, memory=49152, timeout=1800, retries=0, volumes=VOLUMES,
+         max_containers=1)
 class JevService:
+    """r5b: fast_report.jev's loader and forward (the report's app runs the same on its own GPU)."""
+
     @modal.enter()
     def load(self):
-        import torch
-        t = time.perf_counter()
-        from huggingface_hub import snapshot_download
-        path = snapshot_download(JEV, allow_patterns=JEV_FILES)
-        sys.path.insert(0, path)
-        import jev_omni
-        self.mod, self.torch, self.path = jev_omni, torch, path
-        self.clf = jev_omni.load_jev_omni()
-        self.full = {}
-        _, decoder = jev_omni._find_backbone(self.clf.model)
-        decoder.register_forward_hook(lambda _m, _a, out: self.full.__setitem__("h", out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]))
-        self.load_s = round(time.perf_counter() - t, 2)
-
-    def _batch(self, reqs):
-        """X8's batched forward (right padding, each row's last real token, the card's head). reqs: [(PIL, state, q, options)]."""
-        torch, clf = self.torch, self.clf
-        convs = [[{"role": "user", "content": [{"type": "image", "image": im}, {"type": "text", "text": self.mod._prompt(st, q, opts)}]}]
-                 for im, st, q, opts in reqs]
-        proc = clf.processor
-        proc.tokenizer.padding_side = "right"
-        inputs = proc.apply_chat_template(convs, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt", padding=True,
-                                          enable_thinking=False)
-        inputs = {k: v.to("cuda", dtype=torch.bfloat16) if torch.is_floating_point(v) else v.to("cuda") for k, v in inputs.items()}
-        last = inputs["attention_mask"].sum(1) - 1
-        clf._capture.clear()
-        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-            clf.model(**inputs, use_cache=False, **clf._extra)
-            hidden = self.full["h"][torch.arange(len(reqs), device=last.device), last].float()
-            logits = clf.head(hidden, torch.tensor([len(r[3]) for r in reqs], device="cuda"))
-        return [logits[i, :len(r[3])].float().softmax(-1).cpu().tolist() for i, r in enumerate(reqs)]
+        from fast_report import jev
+        self.st = jev.load()
+        self.load_s = self.st["load_s"]
 
     @modal.method()
     def decide(self, qs):
         """qs: [(key, jpeg, state, question, options)] -> {"probs": {key: [p]}, "compute_s", "load_s", "peak_gib"}."""
-        from PIL import Image
-        t = time.perf_counter()
-        reqs = [(Image.open(io.BytesIO(j)).convert("RGB"), st, q, o) for _, j, st, q, o in qs]
-        out = {}
-        for s in range(0, len(reqs), JEV_BATCH):
-            for (k, *_), p in zip(qs[s:s + JEV_BATCH], self._batch(reqs[s:s + JEV_BATCH])):
-                out[k] = [round(v, 6) for v in p]
-        self.torch.cuda.synchronize()
-        return {"probs": out, "compute_s": round(time.perf_counter() - t, 4), "load_s": self.load_s,
-                "peak_gib": round(self.torch.cuda.max_memory_reserved() / 2 ** 30, 2),
-                "gpu": subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True).stdout.strip()}
+        from fast_report import jev
+        return jev.decide(self.st, qs)
 
 
 @app.function(image=image, cpu=2, memory=8192, timeout=1800, retries=0)
