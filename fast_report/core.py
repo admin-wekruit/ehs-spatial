@@ -301,6 +301,22 @@ def shot_windows(grays):
     return ws, round(time.perf_counter() - t, 3)
 
 
+def shot_labels(maps, geo):
+    """r5b: the pick maps (object index + 1 per pixel, 0 none) per shot keyframe on DA3's raster (nearest): what the camera saw
+    where a place is judged free (the cards' look-alike test). maps: [(entry, label map, sx, sy, keyframe index)]."""
+    import cv2
+    by_q = {x[4]: x[1] for x in maps}
+    out = {}
+    for si, gg in enumerate(geo):
+        arr = np.zeros((len(gg["pos"]), *DA3_HW), np.int16)
+        for j, q in enumerate(gg["pos"]):
+            lab = by_q.get(q)
+            if lab is not None:
+                arr[j] = lab if lab.shape == DA3_HW else cv2.resize(np.asarray(lab, np.int16), (DA3_HW[1], DA3_HW[0]), interpolation=cv2.INTER_NEAREST)
+        out[si] = arr
+    return out
+
+
 def floor_plane(depth, K, c2w, floor, stride=4):
     """Least-squares plane through the floor-masked points, trimmed three times; camera height above it (DA3 units). E9."""
     import torch
@@ -1119,6 +1135,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         with clock.stage("cards.v1", n={"objects": len(objects)}):  # the pick maps' counts are read only for the time fields
             out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": obj_points,
                                "counts": lambda: (pick_ready.wait(120), pick_counts)[1], "appearance": appearance(),
+                               "labels": lambda: shot_labels(results.get("maps_v1") or [], geo) if win_futures else None,
                                "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
         cards_out["v1"], cards_out["shots_in"] = out, shots_in
         cards_ready.set()
@@ -1944,6 +1961,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         with clock.stage("cards.v3", n={"objects": len(objects)}):
             shots_in = cards_out.get("shots_in")
             out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": points_v3, "counts": counts_v2,
+                               "labels": (lambda: shot_labels(maps_v2, geo)) if win_futures else None,
                                "appearance": appearance(), "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
         with cards_lock:  # the identities known now (v2's, else v1's words); a later decider pass merges in as v4
             prev = cards_out.get("identities") or {c["id"]: c["identity"] for c in cards_out.get("v1", {}).get("cards", []) if c["kind"] == "object"}

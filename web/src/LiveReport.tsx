@@ -5,7 +5,7 @@ import { splatAnnotation } from "./viewer/splat-layer";
 import { VideoMemory, VideoView, videoClock, type VideoPick } from "./VideoView";
 import { cameraPath, cameraView, currentCameras } from "./core";
 import { assetURL, chunkOrder, clickClock, emptyPick, entityInfo, fillChunk, gunzip, latest, liveDocument, onDemand, pickAt, pickChunks, pickIndexAt, pickMask, poll, readPick,
-  runsMask, SEVERITY, unknownRegion, worstVerdict, type PickChunk,
+  runsMask, SEVERITY, stateAt, STATE_COLOR, unknownRegion, worstVerdict, type PickChunk,
   type Info, type Patch, type Pick, type Poll } from "./live-report";
 import "./report-scene.css";
 
@@ -17,6 +17,18 @@ const blobURL = (patch: Patch | undefined, role: string) => patch?.blobs?.[role]
 const seek = (t: unknown) => { if (typeof t === "number" && Number.isFinite(t)) window.dispatchEvent(new CustomEvent("panoptes:seek", { detail: t + 1e-3 })); };
 const quantile = (xs: number[], q: number) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))] : undefined; };
 type Clicked = VideoPick & { id: string | null; miss: ReturnType<typeof unknownRegion> | null };
+/** r5b: the report's video time, at most 5 updates a second (the cards' time lines and the objects list follow the scrubber). */
+function useVideoTime() {
+  const [t, setT] = useState(videoClock.time);
+  useEffect(() => {
+    let last = 0;
+    const on = (e: Event) => { const now = performance.now(); if (now - last > 200) { last = now; setT((e as CustomEvent<number>).detail); } };
+    window.addEventListener("panoptes:video-time", on);
+    return () => window.removeEventListener("panoptes:video-time", on);
+  }, []);
+  return t;
+}
+const STATE_CSS = (st: string) => { const c = STATE_COLOR[st]; return c ? `rgb(${c.map(v => Math.round(v * 255)).join(",")})` : st === "not observed" || st === "not seen yet" ? "#8a8f98" : "#5fb3a3"; };
 
 /** #/live/<reportId>: a fast report as its layers arrive (fast_report/layers.py serves them on /fast). */
 export default function LiveReport({ reportId }: { reportId: string }) {
@@ -41,7 +53,7 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   const layers = useMemo(() => latest(state.patches), [state.patches]);
   const docKey = Object.values(layers).filter(p => p.layer !== "timing").map(p => p.seq).sort((a, b) => a - b).join(",");
   const [cardsLayer, setCardsLayer] = useState<any>(null);  // declared here: the document draws each card's display model (r4)
-  const document = useMemo(() => liveDocument(reportId, layers, cardsLayer?.cards), [reportId, docKey, cardsLayer]);
+  const document = useMemo(() => liveDocument(reportId, layers, cardsLayer?.cards, cardsLayer?.shots), [reportId, docKey, cardsLayer]);
   const docRef = useRef(document); docRef.current = document;
   const sceneId = docKey + (cardsLayer ? ":cards" + cardsLayer.version : "");
   // For the headless checks: an asset fetched twice was reloaded; ready = when each asset was first on the GPU (unix s); clicks = ms
@@ -240,6 +252,8 @@ export default function LiveReport({ reportId }: { reportId: string }) {
               {({ observed_surface: tr("房间网格", "room mesh"), point_cloud: tr("点云", "points"), primitive: tr("物体框", "boxes"), labels: tr("名字", "names"), splats: tr("泼溅（相机附近）", "splats (near the path)") } as any)[k]}</label>)}
             {!!shots.length && <label><input type="checkbox" checked={following} onChange={e => { follow.current = e.target.checked; setFollowing(e.target.checked); }} />{tr("跟随视频相机", "follow the video camera")}</label>}
             <small>{load.total ? `${load.loaded}/${load.total}` : ""}</small>
+            <small className="live-report-legend" title={tr("视频时间下的对象状态（只画有变化的对象）", "objects' state at the video's time (only objects with a change are drawn per interval)")}>
+              {(["appeared", "moved", "moved away", "disappeared"] as const).map(k => <span key={k} style={{ color: STATE_CSS(k), marginLeft: 6 }}>■ {k}</span>)}</small>
           </div>
           <div ref={host} className="live-report-viewer" />
           {inset && <figure className="live-report-model-inset"><img src={inset} alt={tr("所选对象的模型", "the selected object's model")} />
@@ -398,17 +412,39 @@ function PersonFacts({ card, names, onSelect, tr }: { card: any; names: (id: str
 function Time({ card, duration, patch, tr }: { card: any; duration: number; patch?: Patch; tr: Tr }) {
   const t = card.time || {}, intervals: number[][] = t.intervals || (t.first_seen_s != null ? [[t.first_seen_s, t.last_seen_s ?? t.first_seen_s]] : []);
   const span = duration || Math.max(1, ...intervals.map(i => i[1]));
+  const now = useVideoTime(), at = stateAt(card, now), tl = t.timeline;
   const thumb = (e: any, label: string) => e && <button className="mvp-thumb" onClick={() => seek(e.t)}>
     {blobURL(patch, e.image) ? <img src={blobURL(patch, e.image)!} alt={label} /> : null}<span>{label} {fmt(e.t)} s</span></button>;
-  return <section className="mvp-block"><h4>{tr("时间", "Time")}</h4>
+  const q = (v: any, d = 2) => Array.isArray(v) ? `${Array.isArray(v[0]) ? "(" + v[0].map((x: number) => fmt(x, d)).join(", ") + ")" : fmt(v[0], d)} ± ${fmt(v[1], d)}` : "—";
+  return <section className="mvp-block" data-state-at={at.state}><h4>{tr("时间", "Time")}</h4>
     <p>{tr("首次", "first seen")} {fmt(t.first_seen_s)} s · {tr("最后", "last seen")} {fmt(t.last_seen_s)} s{t.detected_keyframes && <> · {t.detected_keyframes.length} {tr("个检测关键帧", "detected keyframes")}</>}</p>
     <div className="mvp-bar" title={tr("点一下跳到那一刻", "click to seek")} onClick={e => { const b = e.currentTarget.getBoundingClientRect(); seek((e.clientX - b.left) / b.width * span); }}>
-      {intervals.map(([a, b], i) => <span key={i} style={{ left: `${a / span * 100}%`, width: `${Math.max((b - a) / span * 100, .6)}%` }} />)}
+      {(tl?.intervals || []).length ? tl.intervals.map((iv: any, i: number) => <span key={i} data-state={iv.state} title={`${iv.state} ${fmt(iv.t[0])}–${fmt(iv.t[1])} s${iv.reason ? ": " + iv.reason : ""}`}
+        style={{ left: `${iv.t[0] / span * 100}%`, width: `${Math.max((iv.t[1] - iv.t[0]) / span * 100, .6)}%`, background: STATE_CSS(iv.state === "moved" && String(iv.reason || "").startsWith("moved to") ? "moved away" : iv.state),
+          opacity: iv.state === "not observed" ? .45 : 1 }} />)
+        : intervals.map(([a, b], i) => <span key={i} style={{ left: `${a / span * 100}%`, width: `${Math.max((b - a) / span * 100, .6)}%` }} />)}
+      <i className="mvp-bar-now" style={{ left: `${Math.min(now / span, 1) * 100}%`, position: "absolute", top: 0, bottom: 0, width: 2, background: "#fff" }} />
     </div>
+    <p>{tr("此刻", "At")} {fmt(now)} s: <strong>{at.state}</strong>{at.reason && <small> ({at.reason})</small>}
+      {at.interval?.v && <small> · {tr("位置", "position")} {q(at.interval.v.position_xy)} m · {tr("高", "height")} {q(at.interval.v.height)} m</small>}</p>
     <p>{tr("状态", "State")}: <strong>{t.state || "—"}</strong>{t.state === "last seen at t" && t.t != null && <> {fmt(t.t)} s</>}
-      {(t.last_seen_reason || t.reason) && <small> ({t.last_seen_reason || t.reason})</small>}</p>
+      {(t.last_seen_reason || t.reason) && <small> ({t.last_seen_reason || t.reason})</small>}
+      {t.moved && <small> · {t.moved.to ? tr("移到", "moved to") + " " + t.moved.to : tr("从", "moved from") + " " + t.moved.from}</small>}</p>
     {t.note && <p><small>{t.note}</small></p>}
     {(t.state === "moved" || t.state === "disappeared") && t.evidence && <div className="mvp-evidence">{thumb(t.evidence.before, tr("之前", "before"))}{thumb(t.evidence.after, tr("之后", "after"))}</div>}
+    {tl && <details className="mvp-parts" open={!!tl.changes?.length}><summary>{tr("每段时间的数值（值 ± u）", "Values per interval (value ± u)")} · {tl.intervals.length} {tr("段", "intervals")} · {tl.windows.length} {tr("个内容窗口", "content windows")}</summary>
+      <table><thead><tr><th>{tr("时段", "interval")}</th><th>{tr("状态", "state")}</th><th>{tr("位置 x, y", "position x, y")}</th><th>{tr("顶", "top")}</th><th>{tr("底", "base")}</th><th>{tr("高", "height")}</th><th>{tr("宽", "width")}</th></tr></thead>
+        <tbody>{tl.intervals.map((iv: any, i: number) => <tr key={i} data-state={iv.state} onClick={() => seek(iv.t[0])}>
+          <td>{fmt(iv.t[0])}–{fmt(iv.t[1])} s</td><td>{iv.state}{iv.reason ? <small> · {iv.reason}</small> : null}</td>
+          <td>{q(iv.v?.position_xy)}</td><td>{q(iv.v?.top_above_floor)}</td><td>{q(iv.v?.base_above_floor)}</td><td>{q(iv.v?.height)}</td><td>{q(iv.v?.width)}</td></tr>)}</tbody></table>
+      {!!tl.changes?.length && <ul>{tl.changes.map((c: any, i: number) => <li key={i}><button className="mvp-link" onClick={() => seek(c.t_after)}>{c.kind}</button>
+        {" "}{fmt(c.t_before)} → {fmt(c.t_after)} s · {tr("证据帧", "evidence keyframes")} {c.before_key} / {c.after_key}{c.new_place_key != null ? ` / ${c.new_place_key}` : ""}
+        {c.distance_m != null && <> · {fmt(c.distance_m, 2)} ± {fmt(c.distance_u_m, 2)} m</>}{c.to && <> · → {c.to}</>}{c.from && <> · ← {c.from}</>}</li>)}</ul>}
+      <p><small>{tl.rule}</small></p>
+      <details><summary>{tr("每个内容窗口", "Per content window")}</summary><table><tbody>{tl.windows.map((w: any) => <tr key={w.w}>
+        <td>{fmt(w.t[0])}–{fmt(w.t[1])} s</td><td>{w.state}{w.reason ? <small> · {w.reason}</small> : null}</td><td>{q(w.v?.position_xy)}</td>
+        <td>{w.d ? Object.entries(w.d).filter(([, d]: any) => d[3]).map(([f, d]: any) => `${f} Δ${fmt(d[0], 2)} > u ${fmt(d[1], 2)}/${fmt(d[2], 2)}`).join("; ") || tr("无超出 u 的变化", "no change beyond both u") : ""}</td></tr>)}</tbody></table></details>
+    </details>}
   </section>;
 }
 
@@ -483,11 +519,14 @@ function UnknownCard({ r, od, under, names, onSelect, tr }: { r: NonNullable<Cli
 }
 
 function ObjectList({ cards, infos, selected, onSelect, tr }: { cards: any[]; infos: Map<string, Info>; selected: string | null; onSelect: (id: string) => void; tr: Tr }) {
-  const [verdict, setVerdict] = useState("all"), [kind, setKind] = useState("all"), [query, setQuery] = useState("");
+  const [verdict, setVerdict] = useState("all"), [kind, setKind] = useState("all"), [query, setQuery] = useState(""), [changed, setChanged] = useState(false);
+  const now = useVideoTime();  // r5b: every card's state at the video's time
   const kindOf = (c: any) => c.kind === "person" ? "person" : c.class?.category || "other", v = (c: any) => infos.get(c.id)?.verdict ?? "none";
   const rank = (c: any) => { const i = SEVERITY.indexOf(v(c) as any); return i < 0 ? SEVERITY.length : i; };
   const counts = cards.reduce((n: Record<string, number>, c) => ({ ...n, [v(c)]: (n[v(c)] || 0) + 1 }), {});
-  const shown = cards.filter(c => (verdict === "all" || v(c) === verdict) && (kind === "all" || kindOf(c) === kind) && (!query || (c.identity?.name || c.id).toLowerCase().includes(query.toLowerCase())))
+  const nChanged = cards.filter(c => c.time?.timeline?.changes?.length).length;
+  const shown = cards.filter(c => (verdict === "all" || v(c) === verdict) && (kind === "all" || kindOf(c) === kind) && (!query || (c.identity?.name || c.id).toLowerCase().includes(query.toLowerCase()))
+    && (!changed || c.time?.timeline?.changes?.length))
     .sort((a, b) => rank(a) - rank(b) || (a.time?.first_seen_s ?? 1e9) - (b.time?.first_seen_s ?? 1e9));
   if (!cards.length) return <p className="mvp-empty">{tr("对象卡片还没到", "The object cards have not arrived yet")}</p>;
   return <div className="mvp-list">
@@ -499,11 +538,13 @@ function ObjectList({ cards, infos, selected, onSelect, tr }: { cards: any[]; in
       <select value={kind} onChange={e => setKind(e.target.value)} aria-label={tr("类别", "Kind")}>
         <option value="all">{tr("所有类别", "every kind")}</option>{[...new Set(cards.map(kindOf))].sort().map(k => <option key={k} value={k}>{k}</option>)}</select>
       <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={tr("按名字找", "Search names")} aria-label={tr("按名字找", "Search names")} />
-      <small>{shown.length}</small>
+      <label><input type="checkbox" checked={changed} onChange={e => setChanged(e.target.checked)} />{tr("有变化的", "with a change")} {nChanged}</label>
+      <small>{shown.length} · {tr("此刻", "at")} {fmt(now)} s</small>
     </div>
     <ol>{shown.map(c => <li key={c.id}><button data-id={c.id} aria-current={c.id === selected || undefined} onClick={() => { onSelect(c.id); if (c.kind === "person") seek(c.time?.first_seen_s); }}>
       <Chip v={infos.get(c.id)?.verdict} tr={tr} /><strong>{c.kind === "person" ? `${tr("人", "person")} ${c.id.slice(7)}` : c.identity?.name}</strong>
-      <small>{kindOf(c)} · {fmt(c.time?.first_seen_s)} s{c.physical?.size_check?.status === "implausible" ? ` · ${tr("尺寸不合理", "implausible size")}` : ""}</small></button></li>)}</ol>
+      <small>{kindOf(c)} · {fmt(c.time?.first_seen_s)} s{c.physical?.size_check?.status === "implausible" ? ` · ${tr("尺寸不合理", "implausible size")}` : ""}
+        {" · "}<span className="mvp-state" data-state={stateAt(c, now).state} style={{ color: STATE_CSS(stateAt(c, now).state) }}>{stateAt(c, now).state}</span></small></button></li>)}</ol>
   </div>;
 }
 

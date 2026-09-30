@@ -77,7 +77,7 @@ def near_min(w):
     return w["_dmin"], w["_person"]
 
 
-def place(points, w, idx=None, min_views=MIN_VIEWS, min_pix=MIN_PIX, min_judged=MIN_JUDGED, rel_margin=REL_MARGIN):
+def place(points, w, idx=None, min_views=MIN_VIEWS, min_pix=MIN_PIX, min_judged=MIN_JUDGED, rel_margin=REL_MARGIN, free_px=False):
     """How window w sees the place `points` occupied. -> {state, views: [per judged keyframe], best_key}. r5b: idx = the
     keyframes of w to read (default all: a card's shot dict is read in place, never copied per window); min_* = the width
     ends' test (cards) judges its small probes on fewer pixels and in the object's own keyframes (one depth map: no
@@ -99,7 +99,8 @@ def place(points, w, idx=None, min_views=MIN_VIEWS, min_pix=MIN_PIX, min_judged=
         free, front = valid & (dmin[j][vi, ui] > zz * (1 + rel_margin) + m), valid & (d < zz - m)
         pix = len(np.unique(vi[valid] * wd + ui[valid]))
         views.append({"key": int(key), "judged": int(valid.sum()) if pix >= min_pix else 0, "free": int(free.sum()), "front": int(front.sum() + person.sum()),
-                      "occupied": int((valid & ~free & ~front).sum()), "inside": int(inside.sum()), "pixels": pix})
+                      "occupied": int((valid & ~free & ~front).sum()), "inside": int(inside.sum()), "pixels": pix,
+                      **({"j": j, "px": (vi[free], ui[free])} if free_px else {})})
     judged = [x for x in views if x["judged"] >= max(min_judged, .3 * len(points))]
     n_free = sum(x["free"] >= FREE_SHARE * x["judged"] for x in judged)
     n_occ = sum(x["occupied"] >= .5 * x["judged"] for x in judged)
@@ -114,8 +115,11 @@ def place(points, w, idx=None, min_views=MIN_VIEWS, min_pix=MIN_PIX, min_judged=
     else:
         state = "unjudged"
     best = max(judged, key=lambda x: x["free"] / x["judged"], default=None)
-    return {"state": state, "views": len(judged), "free_views": int(n_free), "occupied_views": int(n_occ),
-            "best_key": best["key"] if best else None, "best_free_share": round(best["free"] / best["judged"], 3) if best else None}
+    out = {"state": state, "views": len(judged), "free_views": int(n_free), "occupied_views": int(n_occ),
+           "best_key": best["key"] if best else None, "best_free_share": round(best["free"] / best["judged"], 3) if best else None}
+    if free_px:  # r5b: where the camera saw through the place, per free view (the look-alike test reads what is there)
+        out["free_px"] = [(x["j"], x["px"]) for x in judged if x["free"] >= FREE_SHARE * x["judged"]]
+    return out
 
 
 class Tracker:
@@ -325,15 +329,41 @@ def _compact(vals):
     return None if not vals else {f: [vals[f]["value"], vals[f]["u"]] for f in TL_FIELDS if isinstance(vals.get(f), dict) and "value" in vals[f]}
 
 
+LOOKALIKE_SHARE = .3  # r5b: a place seen through onto a same-word object on this share of its free pixels is no claim
+
+
+def lookalike(s, p, word, own):
+    """What the camera saw through a place judged free (p from place(..., free_px=True)): the share of its free pixels that
+    the pick maps (s['labels'], per local keyframe on DA3's raster, object index + 1) give to another object detected with the
+    same word (s['label_words'], s['label_ids']). A static object lifted twice from far and near views (a depth estimate that
+    drifts along a walk: Walmart's planted boxes, 1-2 m) is seen through its first place onto its second card: that is no
+    change. -> (share, the look-alike's id or None)."""
+    labels, words, ids = s.get("labels"), s.get("label_words"), s.get("label_ids")
+    if labels is None or not words or not word or not p.get("free_px"):
+        return 0., None
+    head = lambda w: str(w or "").lower().split()[-1:]  # noqa: E731  'cardboard box' and 'box' are one kind
+    hit, n, other = 0, 0, {}
+    for j, (vi, ui) in p["free_px"]:
+        codes = np.asarray(labels[j])[vi, ui].astype(int)
+        n += len(codes)
+        for c in codes[codes > 0]:
+            if c - 1 < len(words) and ids[c - 1] not in own and head(words[c - 1]) == head(word):
+                hit += 1
+                other[ids[c - 1]] = other.get(ids[c - 1], 0) + 1
+    return (hit / n if n else 0.), (max(other, key=other.get) if other else None)
+
+
 NOT_SEEN = {"occupied": "its place is occupied: there, not detected", "occluded": "occluded", "out-of-view": "out of view",
             "unjudged": "not judged (too few pixels of its place)", "free": "its place seen empty"}
 
 
-def card_timeline(s, observed, frame, world, measure, compare):
+def card_timeline(s, observed, frame, world, measure, compare, word=None, own=()):
     """One card over its shot's content windows (s['windows'], cards' shot dict, read in place).
     observed: local keyframes the object was seen on (pick-map detections or lifted points); frame, world: its points'
     local keyframe and shot-frame position; measure(local keys) -> {field: value dict with u_rel} or None (too few points);
-    compare(a, b) -> {field: {delta, u, flagged}} for two windows' values. -> {windows, intervals, changes, rule} or None."""
+    compare(a, b) -> {field: {delta, u, flagged}} for two windows' values; word, own: the object's detected word and its ids (its
+    card and the objects merged into it) for the look-alike test on every place seen free. -> {windows, intervals, changes, rule} or None."""
+    alike = lambda p: lookalike(s, p, word, set(own)) if p["state"] == "free" else (0., None)  # noqa: E731
     if not s.get("windows"):
         return None
     rows = window_rows(s["windows"], s["times"], float(s["times"][-1]) + .2)
@@ -363,7 +393,7 @@ def card_timeline(s, observed, frame, world, measure, compare):
                 changes[:] = [c for c in changes if not (c["kind"] == "disappeared" and c["window"] == out[gone]["w"])]
                 gone = None
             if i == first:  # the keyframes before its first sighting, this window's too (a change inside a window is still seen)
-                row.update(_appeared(s, [j for x in rows[:first + 1] for j in x["keys"] if j < ks[0]], first_pts, ks))
+                row.update(_appeared(s, [j for x in rows[:first + 1] for j in x["keys"] if j < ks[0]], first_pts, ks, alike))
                 if row["state"] == "appeared":
                     changes.append({"kind": "appeared", "window": r["w"], **row["evidence"]})
             else:
@@ -377,7 +407,10 @@ def card_timeline(s, observed, frame, world, measure, compare):
                         from scipy.spatial import cKDTree
                         cam = s["c2w"][ks[0]][:3, 3]
                         old = old[cKDTree(now).query(old)[0] > TL_MOVE_SIGMA * sigma(np.linalg.norm(old - cam, axis=1))]
-                    p = place(_sample(old), s, _spread_keys(r["keys"])) if len(old) >= MIN_JUDGED else {"state": "unjudged"}
+                    p = place(_sample(old), s, _spread_keys(r["keys"]), free_px=True) if len(old) >= MIN_JUDGED else {"state": "unjudged"}
+                    share, other = alike(p)
+                    if p["state"] == "free" and share >= LOOKALIKE_SHARE:
+                        p = {**p, "state": f"seen through onto a look-alike ({other})"}
                     if p["state"] == "free":
                         j0 = seen[last[0]][-1]
                         row.update(state="moved", evidence={"t_before": _t(s, j0), "t_after": _t(s, ks[0]), "before_key": int(s["keys"][j0]),
@@ -393,9 +426,13 @@ def card_timeline(s, observed, frame, world, measure, compare):
             if gone is not None:
                 row.update(state="disappeared", reason=f"gone since window {out[gone]['w']}")
             else:
-                p = place(_sample(enough(last[2])), s, _spread_keys(unseen))
+                p = place(_sample(enough(last[2])), s, _spread_keys(unseen), free_px=True)
                 row["place"] = _brief(p)
-                if p["state"] == "free":
+                share, other = alike(p)
+                if p["state"] == "free" and share >= LOOKALIKE_SHARE:
+                    row.update(state="not observed", reason=f"its place was seen through onto a look-alike ({other}, {share:.0%} of the pixels): "
+                                                            "likely this object placed apart by the depth estimate, not a disappearance")
+                elif p["state"] == "free":
                     gone, j0 = i, seen[last[0]][-1]
                     ev = {"t_before": _t(s, j0), "t_after": _t_key(s, p["best_key"]), "before_key": int(s["keys"][j0]), "after_key": p["best_key"],
                           "free_views": p["free_views"]}
@@ -411,11 +448,16 @@ def card_timeline(s, observed, frame, world, measure, compare):
     return {"windows": out, "intervals": ivs, "changes": changes, "rule": TL_RULE}
 
 
-def _appeared(s, before, pts, ks):
+def _appeared(s, before, pts, ks, alike=lambda p: (0., None)):
     """'appeared' when the keyframes before its first sighting (the latest 2 x TL_PLACE_KEYS of them, <= LOOKBACK windows' worth)
-    saw its place empty; 'first seen' when they saw it occupied or occluded (there before, not detected) or never saw it."""
+    saw its place empty; 'first seen' when they saw it occupied or occluded (there before, not detected), saw through it onto a
+    look-alike (the same object placed apart), or never saw it."""
     if before:
-        p = place(pts, s, _spread_keys(before[-2 * TL_PLACE_KEYS:]))
+        p = place(pts, s, _spread_keys(before[-2 * TL_PLACE_KEYS:]), free_px=True)
+        share, other = alike(p)
+        if p["state"] == "free" and share >= LOOKALIKE_SHARE:
+            return {"state": "first seen", "reason": f"its place was seen through onto a look-alike ({other}, {share:.0%} of the pixels): "
+                                                     "likely this object placed apart by the depth estimate, not an appearance"}
         if p["state"] == "free":
             return {"state": "appeared", "evidence": {"t_before": _t_key(s, p["best_key"]), "t_after": _t(s, ks[0]), "before_key": p["best_key"],
                                                       "after_key": int(s["keys"][ks[0]]), "free_views": p["free_views"]}}
@@ -489,11 +531,19 @@ def interval_at(tl, t):
     return None
 
 
-def link_moves(cards, emb=None, tau=None, max_gap=2):
+def _u_rel(f):
+    """A position's u without its shared-scale part (both places are in one shot: the scale scales their distance, it does not
+    make one)."""
+    return float(np.sqrt(max(float(f["u"]) ** 2 - float((f.get("parts") or {}).get("scale", 0.)) ** 2, 0.)))
+
+
+def link_moves(cards, emb=None, tau=None, max_gap=1):
     """r5b: across cards of one shot, a card that 'disappeared' and one that 'appeared' within max_gap windows of it, never
-    seen at the same time, sizes within SIZE_RATIO, places apart by more than both positions' u, and the same kind of thing
-    (appearance cos >= tau when both have a vector, else the same detected word) are one object that moved: both cards say
-    so, each with the other's id; a card joins one pair at most (the closest in time). -> the pairs [(from id, to id, record)]."""
+    seen at the same time, sizes within SIZE_RATIO, places apart by more than both positions' u (without the shared scale),
+    and the same kind of thing (appearance cos >= tau when both have a vector, else the same detected word) are one object
+    that moved: both cards say so, each with the other's id; a card joins one pair at most, the nearest in windows, then in
+    place (Walmart planted: two identical boxes, one gone at 19.6 s, one moved 0.5 m at 23.9 s: the move is the near pair).
+    -> the pairs [(from id, to id, record)]."""
     by_shot = {}
     for c in cards:
         tl = (c.get("time") or {}).get("timeline")
@@ -520,7 +570,7 @@ def link_moves(cards, emb=None, tau=None, max_gap=2):
                 if "value" not in pa or "value" not in pb:
                     continue
                 d = float(np.linalg.norm(np.subtract(pa["value"], pb["value"])))
-                if d <= pa["u"] or d <= pb["u"]:
+                if d <= _u_rel(pa) or d <= _u_rel(pb):
                     continue
                 va, vb = (emb or {}).get(a["id"]), (emb or {}).get(b["id"])
                 if va is not None and vb is not None and tau is not None:
@@ -533,14 +583,14 @@ def link_moves(cards, emb=None, tau=None, max_gap=2):
                     if not (wa and wb and wa[0] == wb[0]):
                         continue
                     how, cos = f"the same detected word '{wa[0]}'", None
-                cand.append((abs(cb["window"] - ca["window"]), -(cos or 0.), a, ca, b, cb, d, how))
+                cand.append((abs(cb["window"] - ca["window"]), d, a, ca, b, cb, d, how))
         for _, _, a, ca, b, cb, d, how in sorted(cand, key=lambda x: (x[0], x[1])):
             if a["id"] in used or b["id"] in used:
                 continue
             used |= {a["id"], b["id"]}
             rec = {"from": a["id"], "to": b["id"], "t_before": ca["t_before"], "t_after": cb["t_after"], "old_place_empty_key": ca["after_key"],
                    "before_key": ca["before_key"], "new_place_key": cb["after_key"], "distance_m": round(d, 3),
-                   "distance_u_m": round(float(max(a["physical"]["position_xy"]["u"], b["physical"]["position_xy"]["u"])), 3), "same_object_by": how}
+                   "distance_u_m": round(float(max(_u_rel(a["physical"]["position_xy"]), _u_rel(b["physical"]["position_xy"]))), 3), "same_object_by": how}
             ca.update(kind="moved", to=b["id"], link=rec)
             cb.update(kind="moved", **{"from": a["id"]}, link=rec)
             pairs.append((a["id"], b["id"], rec))
@@ -713,8 +763,33 @@ def self_check_cards():
     tl2 = run([("C", range(4))])
     no_claims(tl2, "overlay")
     assert not tl2["changes"] and tl2["claims"] == "overlay"
+    # a static box lifted twice (its first card placed 0.6 m too near by a drifting depth estimate): the camera later sees through
+    # the first card's place onto the box itself, which the pick maps give to its second card with the same word: no claim
+    box["A0"] = ([.8, -.3, 2.2], [1.2, .3, 2.6])  # where the first card's points are (the true box C stands at z 2.8-3.2)
+    still = [["A", "C"]] * 12
+    s["depth"] = np.stack([_render([box[b] for b in sc], c, K, hw) for sc, c in zip(still, c2w)])
+    bare = np.stack([_render([box["A"]], c, K, hw) for c in c2w])
+    s["labels"], s["label_words"], s["label_ids"] = np.where(s["depth"] < bare - .01, 2, 0).astype(np.int16), ["box", "cardboard box"], ["obj-a", "obj-b"]
+    W, F = card("A0", range(4))[0], np.zeros(0, int)
+    W = np.concatenate([W] * 4)
+    F = np.repeat(np.arange(4), len(W) // 4)
+    drift = card_timeline(s, list(range(4)), F, W, lambda ks: measure(ks, W, F), compare, "box", {"obj-a"})
+    assert not drift["changes"] and "look-alike" in drift["windows"][1]["reason"], drift["windows"][1]
+    bare_s = {k: v for k, v in s.items() if k not in ("labels",)}
+    assert card_timeline(bare_s, list(range(4)), F, W, lambda ks: measure(ks, W, F), compare, "box", {"obj-a"})["changes"][0]["kind"] == "disappeared", \
+        "without the pick maps the drifted place reads as gone (the failure the look-alike test stops)"
+    # two identical boxes: one gone in window 1, one moved 0.5 m in window 3 (its new place appeared then): the move pairs the near two
+    def fake(cid, kind, w, xy, first, last):
+        return {"id": cid, "kind": "object", "shot": 0, "raw": {"size": {"longest": .8}}, "identity": {"detector_words": ["box"]},
+                "physical": {"position_xy": {"value": xy, "u": .9, "parts": {"scale": .8}}},
+                "time": {"first_seen_s": first, "last_seen_s": last, "timeline": {"changes": [{"kind": kind, "window": w, "t_before": 1., "t_after": 2.,
+                                                                                               "before_key": 1, "after_key": 2}]}}}
+    cs = [fake("gone", "disappeared", 1, [6.9, .2], 0., 4.), fake("old", "disappeared", 3, [9.8, .1], 5., 8.), fake("new", "appeared", 3, [10.4, .6], 8.5, 9.)]
+    pairs = link_moves(cs)
+    assert [(a, b) for a, b, _ in pairs] == [("old", "new")] and cs[0]["time"]["timeline"]["changes"][0]["kind"] == "disappeared", pairs
     print("timeline card self-check ok: static, disappeared with evidence keys, appeared inside a window, moved (one lifted object), "
-          "a missed detection, the scrubber's interval at t, deformable and overlay claims dropped")
+          "a missed detection, the scrubber's interval at t, deformable and overlay claims dropped, a drifted second lift is no claim, "
+          "the move pairs the nearest look-alike")
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import {latest,liveDocument,frameOf,type Patch} from '../src/live-report.ts';
-import {readPick,gunzip,pickAt,pickMask,frameIndexAt,pickIndexAt,pickChunks,emptyPick,fillChunk,chunkOrder,unknownRegion,entityInfo,worstVerdict,pointInPolygon,runsMask} from '../src/live-report.ts';
+import {readPick,gunzip,pickAt,pickMask,frameIndexAt,pickIndexAt,pickChunks,emptyPick,fillChunk,chunkOrder,unknownRegion,entityInfo,worstVerdict,pointInPolygon,runsMask,stateAt,timeReps} from '../src/live-report.ts';
 
 // ---------------- click MVP: a synthetic pick layer (CLICK-MVP-SPEC 3.3)
 const rle=(m:Uint16Array)=>{const o:number[]=[];let v=m[0],n=0;for(const x of m){if(x===v&&n<65535){n++;continue;}o.push(v,n);v=x;n=1;}o.push(v,n);return o;};
@@ -110,6 +110,26 @@ import {modelPrimitive} from '../src/live-report.ts';
     [{id:'o',kind:'object',model:{kind:'box',size_m:[1,1,1],faces:{},position:[.5,.5,.5],quaternion:[0,0,0,1]}}]).entities[0] as any;
   assert.equal(one({}).activeModelRepresentationId,'prim:o');
   assert.equal(one({models:{layer:'models',seq:2,data:{models:[{object:'o',transform:{position:[0,0,0]},bounds:{}}]},blobs:{'model-o':{sha256:'ab',bytes:1}}}}).activeModelRepresentationId,'model:o');
+  // r5b: a card with a change is drawn per interval (the scrubber): the model at each interval's place, a coloured box where it moved
+  const ff={origin_m:[0,0,0],x:[1,0,0],z:[0,0,1]};
+  const moved={id:'o',kind:'object',shot:0,model:{kind:'box',size_m:[1,1,1],faces:{},position:[.5,.5,.5],quaternion:[0,0,0,1]},
+    time:{timeline:{centre_xy:[.5,.5],changes:[{kind:'moved'}],intervals:[{state:'not observed',t:[0,2],reason:'not seen yet'},{state:'first seen',t:[2,5],v:{position_xy:[[.5,.5],.1]}},
+      {state:'moved',t:[5,9],v:{position_xy:[[2.5,.5],.1]}},{state:'not observed',t:[9,10],reason:'out of view'}]}}};
+  const doc2=liveDocument('r',{objects:{layer:'objects',seq:1,data:{objects:[{id:'o',shot:0,word:'box',box_min_m:[0,0,0],box_max_m:[1,1,1]}]},blobs:{}} as any},
+    [moved],[{index:0,floor_frame:ff}]).entities[0] as any;
+  const reps=doc2.representations;
+  assert.ok(reps.every((r:any)=>r.timeRange),'every representation of a changed card is timed');
+  const models=reps.filter((r:any)=>r.id.startsWith('prim:o@'));
+  assert.deepEqual(models.map((r:any)=>r.timeRange),[[2,5],[5,9],[9,10]],'no model before its first sighting; one per interval after');
+  assert.ok(Math.abs(models[1].transform.position[0]-2.5)<1e-9&&Math.abs(models[0].transform.position[0]-.5)<1e-9,'posed at the interval that moved');
+  const marker=reps.find((r:any)=>r.id==='state:o@2');
+  assert.ok(marker&&Math.abs(marker.transform.position[0]-2.5)<1e-9&&Math.abs(marker.transform.position[2]-.5)<1e-9,'the moved box at its new place, at its height');
+  assert.equal(stateAt(moved,1).state,'not observed');assert.equal(stateAt(moved,6).state,'moved');assert.equal(stateAt(moved,11).state,'outside its shot');
+  const gone={...moved,time:{timeline:{centre_xy:[.5,.5],changes:[{kind:'disappeared'}],intervals:[{state:'first seen',t:[0,3],v:{position_xy:[[.5,.5],.1]}},{state:'disappeared',t:[3,9]}]}}};
+  const r3=timeReps(gone,'shot-0',ff,{id:'prim:o',transform:{position:[.5,.5,.5]}},{min:[0,0,0],max:[1,1,1]});
+  assert.deepEqual(r3.map((r:any)=>r.id),['prim:o@0','state:o@1'],'the model until it went; a red box at its place after');
+  assert.equal(timeReps({...moved,time:{timeline:{changes:[],intervals:[]}}},'shot-0',ff,{id:'x',transform:{position:[0,0,0]}},{min:[0,0,0],max:[1,1,1]}).length,0,'no change: static');
+  assert.equal(stateAt({kind:'person',time:{first_seen_s:1,positions:[{t:1},{t:1.2}]}},1.1).state,'present');
 }
 import {splatAnnotation} from '../src/viewer/splat-layer.ts';
 import {currentCameras,cameraPath} from '../src/core.ts';

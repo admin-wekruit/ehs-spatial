@@ -1025,7 +1025,7 @@ def cards_chunk(shots, items, k):
     out = []
     for o, pts, merged_from, counts, marking in items:
         s = dict(shots[o["shot"]])
-        for key in ("depth", "person", "_dmin", "_person"):
+        for key in ("depth", "person", "_dmin", "_person", "labels"):
             if s.get(key) is not None:
                 s[key] = _arr(s[key])
         joined = {"world": np.concatenate([p["world"] for p in pts]), "frame": np.concatenate([p["frame"] for p in pts]),
@@ -1061,6 +1061,7 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
     k = {"height": 1., "extent": 1., "position": 1., "angle": 1., **(cal.get("k") or {})}
     k_pose = float(cal.get("k_pose", 1.))
     objects, points = inp["objects"], inp["points"]
+    objects_all = inp.get("label_objects") or objects  # r5b: the pick maps' codes (object index + 1) index this list
     shots = {s["index"]: dict(s) for s in inp["shots"]}
     for s in shots.values():
         s["frame"] = floor_frame(s["c2w"][0], s["normal"], s["point_m"])
@@ -1126,6 +1127,19 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
     markings = {si: any(head_match(o.get("word"), FLOOR_MARKING) for o in objects if o["shot"] == si) for si in shots}
     all_counts = inp.get("counts")
     all_counts = (all_counts() if callable(all_counts) else all_counts) or {}  # a callable waits for the pick maps only now
+    t_labels = time.perf_counter()
+    labels = inp.get("labels")  # r5b: the pick maps per shot keyframe on DA3's raster (the timelines' look-alike test), after the counts
+    labels = (labels() if callable(labels) else labels) or {}
+    for si, s in shots.items():
+        if labels.get(si) is not None:
+            s["label_words"], s["label_ids"] = [o.get("word") for o in objects_all], [o["id"] for o in objects_all]
+            if pool is not None:
+                path = os.path.join(shm_dir or "/dev/shm", f"fb-cards-{os.getpid()}-{time.time_ns()}-{si}-labels.npy")
+                np.save(path, np.ascontiguousarray(labels[si]))
+                paths.append(path)
+                s["labels"] = path
+            else:
+                s["labels"] = labels[si]
     t_counts = time.perf_counter()
     items = []
     for i, bs in members.items():
@@ -1156,6 +1170,7 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
                 by_id[cid]["part_of"] = rec
                 by_id[rec["id"]].setdefault("parts", []).append({"id": cid, "kind": rec["kind"]})
     model_s = sum(r.pop("model_s", 0.) for r in rims.values())  # r4 (models): CPU seconds the display models' fits took (all processes)
+    r5b_cpu = [r.pop("r5b_s", {}) for r in rims.values()]  # r5b: CPU seconds of the timelines and width ends (all processes)
     moves = link_moves(cards, all_counts, inp.get("appearance"))  # r5b: a disappeared and an appeared card that are one moved object
     t_link = time.perf_counter()
     cards += people_cards(inp.get("people"), shots, cards, k)
@@ -1176,6 +1191,8 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
              "implausible": sum(c["physical"]["size_check"].get("status") == "implausible" for c in shown),
              "s": {"merge": round(t_merge - t0, 3), "shots": round(t_shots - t_merge, 3), "wait_counts": round(t_counts - t_shots, 3),
                    "cards": round(t_cards - t_counts, 3), "models_cpu": round(model_s, 3), "moves_link": round(t_link - t_cards, 3),
+                   "timeline_cpu": round(sum(r.get("timeline", 0.) for r in r5b_cpu), 3), "ends_cpu": round(sum(r.get("ends", 0.) for r in r5b_cpu), 3),
+                   "labels_wait": round(t_counts - t_labels, 3),
                    "people": round(time.perf_counter() - t_link, 3)},
              "timeline": timeline_stats(shown, moves)}
     return {"cards": cards, "shots": shot_rows, "aliases": aliases, "stats": stats, "diagnostics": {"rim": rims},
@@ -1529,6 +1546,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
                        "time": _time_raw(card["time"])}
         fill_required(card, f"seen in 2D only: {len(P)} lifted points after cleaning (fewer than 8), no 3D measurement")
         return apply_name(card)
+    r5b_s = {}
     axes = footprint_axes(P[:, :2])
     pooled = box_of(P, axes)
     centroid = np.median(P, 0)
@@ -1608,7 +1626,9 @@ def object_card(o, x, s, k, marking, merged_from, counts):
         if name == "width" and lr_cut:
             rec.update(status="at least", reason="cut by the frame edge in every view")
         if name == "width" and s.get("r5b", True):  # r5b: its ends' free-space evidence, and its extent seen as a lower bound (unresolved() decides)
+            t_ends = time.perf_counter()
             rec["ends"] = ends(P, views, axes[wi], s, z_med)
+            r5b_s["ends"] = time.perf_counter() - t_ends
             # the extent seen: the median over single views (pooled views smear a pose or depth error into width: on the GT runs
             # 14 of 144 pooled lower bounds were above the true width, the largest 2.1x)
             per = [float(np.subtract(*np.percentile(P[frame == vv, :2] @ axes[wi], [98, 2]))) for vv in views if (frame == vv).sum() >= 8]
@@ -1692,20 +1712,22 @@ def object_card(o, x, s, k, marking, merged_from, counts):
                       "distance_m": [round(min(dist.values()), 2), round(max(dist.values()), 2)], "azimuth_spread_deg": round(az_spread, 1),
                       "subsets": [[int(keys[v]) for v in q["views"]] for q in sub]},
             "observed": ["masks", "views", "time"], "estimated": ["physical"], "inferred": ["identity", "class"]}
-    tl = None
+    tl, t_tl = None, time.perf_counter()
     if s.get("windows") and s.get("depth") is not None:  # r5b: the card's timeline over its shot's content windows
         from fast_report import timeline
         observed = sorted({int(j) for j, c in counts.items() if c[0] >= MIN_PX} | set(views))
         rows = timeline.window_rows(s["windows"], s["times"], float(s["times"][-1]) + .2)
         measure, compare = window_measure(P, frame, x, s, axes, wi, k, cam_f, s["u_pose_m"], u_floor, up_rad,
                                           [sorted(set(observed) & set(r["keys"])) for r in rows])
-        tl = timeline.card_timeline(s, observed, frame, P @ s["frame"]["R"] + s["frame"]["origin"], measure, compare)
+        tl = timeline.card_timeline(s, observed, frame, P @ s["frame"]["R"] + s["frame"]["origin"], measure, compare, o.get("word"),
+                                    {o["id"], *[x for x in merged_from or [] if isinstance(x, str)]})
         if tl is not None:
             tl["centre_xy"] = np.round(pooled["centre_xy"], 3).tolist()  # the model's pose per interval moves by (interval - this)
             band = in_band(P, frame, views, s)
             if tl["changes"] and band >= BAND_VIEWS:
                 timeline.no_claims(tl, f"seen in the frame's top or bottom band in {band:.0%} of its views (a caption, a logo or the camera's "
                                        "own cart moves with the frame): no change claims")
+    r5b_s["timeline"] = time.perf_counter() - t_tl
     card["time"] = time_card(o, s, counts, sub, views, P, frame, tl)
     # observed behaviour over the class prior (section 4.8): extents that change > 2x between subsets at a static place
     ext_change = None
@@ -1718,6 +1740,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     t_model = time.perf_counter()
     model_fits = display_model.raw_fields(P, cam_f[views], s["frame"], depth_seen)  # r4 (models): the display model's fits
     diag["model_s"] = round(time.perf_counter() - t_model, 4)
+    diag["r5b_s"] = {k: round(v, 4) for k, v in r5b_s.items()}  # r5b: CPU seconds of the width ends' test and the timeline, this card
     card["raw"] = {"size": None if no_floor else {"longest": longest, "footprint_longest": float(pooled["sides"].max()), "height": float(h), "base": float(pooled["base"]),
                             "observed_all": bool(not (top_cut or bottom_cut or lr_cut or long_part) and depth_seen)},
                    "size_u_m": round(max(ext_u), 3),  # mvp2/physical (R7): the size check's measured size carries its u

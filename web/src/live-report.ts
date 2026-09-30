@@ -39,7 +39,61 @@ export function modelPrimitive(m: any) {
   return { kind: "faces", parts: [{ center: [0, 0, 0], size: m.size_m.map(pos), alpha: FACES.map(f => a(m.faces?.[f] === "seen")) }] };
 }
 
-export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null): SceneDocument {
+// ---------------------------------------------------------------- r5b: time (fast_report.timeline's card timelines)
+export const STATE_COLOR: Record<string, number[]> = { appeared: [.2, .85, .3], moved: [.25, .55, 1], disappeared: [1, .3, .25], "moved away": [1, .55, .15] };
+const CHANGED = new Set(["appeared", "moved", "disappeared"]);
+
+/** A card's state at video time t from its timeline: the interval holding t (its state, reason, values), else 'not seen yet' before
+ *  its first interval or 'outside its shot' after its last. People: 'present' while their track has a detection within 0.4 s. */
+export function stateAt(card: any, t: number): { state: string; reason?: string; interval?: any } {
+  if (card?.kind === "person") {
+    const pts = card.time?.positions || [];
+    const near = pts.some((q: any) => Math.abs((q.t ?? -1e9) - t) <= .4);
+    return near ? { state: "present" } : { state: t < (card.time?.first_seen_s ?? 0) ? "not seen yet" : "not observed" };
+  }
+  const ivs: any[] = card?.time?.timeline?.intervals || [];
+  if (!ivs.length) return { state: card?.time?.state || "—" };
+  const iv = ivs.find(x => x.t[0] <= t && t < x.t[1]);
+  if (iv) return { state: iv.state === "moved" && String(iv.reason || "").startsWith("moved to") ? "moved away" : iv.state, reason: iv.reason, interval: iv };
+  return t < ivs[0].t[0] ? { state: "not seen yet" } : { state: "outside its shot" };
+}
+
+/** Shot frame position of a floor-frame (x, y) at height z (the cards layer's floor frame of that shot). */
+export function floorToShot(ff: any, xy: number[], z: number) {
+  const o = ff.origin_m, x = ff.x, n = ff.z, y = [n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]];
+  return [0, 1, 2].map(k => o[k] + xy[0] * x[k] + xy[1] * y[k] + z * n[k]);
+}
+
+/** r5b: the time-scrubber representations of a card whose timeline has a change: per interval, the model (`still`, the card's
+ *  static representation) at that interval's place while the object is there (moved by the interval's position minus the card's),
+ *  none while it is gone or not seen yet; a coloured box where it appeared, moved to, moved away from or disappeared. -> [] for a
+ *  card without a change (its model stays static). box: the object's shot-frame bounds (the marker's size and height). */
+export function timeReps(card: any, frame: string, ff: any, still: any, box: { min: number[]; max: number[] }): any[] {
+  const tl = card?.time?.timeline;
+  if (!tl?.changes?.length || !ff || !still) return [];
+  const n = ff.z, o = ff.origin_m, c = [0, 1, 2].map(k => (box.min[k] + box.max[k]) / 2);
+  const h = (c[0] - o[0]) * n[0] + (c[1] - o[1]) * n[1] + (c[2] - o[2]) * n[2];  // the box centre's height above the floor
+  const dims = [0, 1, 2].map(k => Math.max(box.max[k] - box.min[k], .05)), c0 = tl.centre_xy;
+  const out: any[] = [];
+  let lastXY: number[] | null = null;
+  (tl.intervals || []).forEach((iv: any, i: number) => {
+    const xy = iv.v?.position_xy?.[0] ?? null, away = iv.state === "moved" && String(iv.reason || "").startsWith("moved to");
+    const gone = iv.state === "disappeared" || away, notYet = String(iv.reason || "").startsWith("not seen yet"), at = xy ?? lastXY;
+    if (!gone && !notYet && at) {
+      const shift = c0 ? floorToShot({ ...ff, origin_m: [0, 0, 0] }, [at[0] - c0[0], at[1] - c0[1]], 0) : [0, 0, 0];
+      out.push({ ...still, id: `${still.id}@${i}`, timeRange: iv.t, transform: { ...still.transform, position: still.transform.position.map((v: number, k: number) => v + shift[k]) } });
+    }
+    const col = STATE_COLOR[away ? "moved away" : iv.state], where = gone ? (lastXY ?? at) : at;
+    if (col && where)
+      out.push({ id: `state:${card.id}@${i}`, kind: "primitive", primitive: { kind: "box", dimensions: dims }, coordinateFrameId: frame, timeRange: iv.t,
+        transform: { coordinateFrameId: frame, position: floorToShot(ff, where, h), quaternion: [0, 0, 0, 1], scale: [1, 1, 1] }, placementState: "confirmed",
+        material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .35], color: col } });
+    if (xy) lastXY = xy;
+  });
+  return out;
+}
+
+export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null, cardShots?: any[] | null): SceneDocument {
   const doc: any = { schemaVersion: 2, target: "scene", captureId: report, coordinateFrames: [], cameras: [], observations: [], entities: [],
     assets: [], annotations: [], geometryBindings: {} };
   const asset = (ref: BlobRef) => {
@@ -72,9 +126,14 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
   }
   const accepted = new Map<string, any>((models?.data.models || []).map((m: any) => [m.object, m]));
   const drawn = new Map<string, any>((cards || []).filter((c: any) => c.kind === "object" && c.model?.kind).map((c: any) => [c.id, c.model]));
+  const timed = new Map<string, any>((cards || []).filter((c: any) => c.kind === "object" && c.time?.timeline?.changes?.length).map((c: any) => [c.id, c]));
+  const timedSource = new Map<string, string>((cards || []).filter((c: any) => c.model_source && c.model_source !== c.id).map((c: any) => [c.id, c.model_source]));
+  const shotFrames = new Map<number, any>((cardShots || []).map((x: any) => [x.index, x.floor_frame]));
   for (const o of objects?.data.objects || []) {
     const frame = frameOf(o.shot), min = o.box_min_m, max = o.box_max_m, model = accepted.get(o.id), glb = model && models.blobs["model-" + o.id];
-    const dm = drawn.get(o.id);  // r4: the card's display model; SAM 3D's mesh replaces it when its gate accepted one
+    // r4: the card's display model; SAM 3D's mesh replaces it when its gate accepted one. r5b: a moved object seen as two cards has
+    // one model (the better-seen card's shape, cards.link_moves' model_source), posed where each card is
+    const own = drawn.get(o.id), src = timedSource.get(o.id), dm = src && drawn.get(src) && own ? { ...drawn.get(src), position: own.position, quaternion: own.quaternion } : own;
     // Detected words are names to check, never verified: a see-through box, the model when SAM 3D's gate took one.
     const box = { id: "box:" + o.id, kind: "primitive", primitive: { kind: "box", dimensions: [0, 1, 2].map(k => Math.max(max[k] - min[k], .01)) },
       coordinateFrameId: frame, transform: { ...identity(frame), position: [0, 1, 2].map(k => (min[k] + max[k]) / 2) }, placementState: "confirmed",
@@ -90,18 +149,25 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
         transform: { ...identity(frame), position: dm.position, quaternion: dm.quaternion }, placementState: "confirmed",
         bounds: { min: half.map((v: number) => -Math.max(v, .0025)), max: half.map((v: number) => Math.max(v, .0025)) },
         material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .1], selectedFactor: [1, 1, 1, 1], color: [1, .72, .3] } } : box;
+    // r5b: a card with a change in its timeline is drawn per interval (the time scrubber shows its state at t); the others stay static
+    const card = timed.get(o.id), ff = card && shotFrames.get(card.shot), reps = card ? timeReps(card, frame, ff, rep, { min, max }) : [];
     doc.entities.push({ id: o.id, label: o.label || o.word, associationState: "association_pending", visible: true, observationRefs: [],
-      activeModelRepresentationId: rep.id, representations: [rep], fast: { kind: "object", ...o, model: model || null, display_model: dm || null } });
+      activeModelRepresentationId: reps.length ? reps[0].id : rep.id, representations: reps.length ? reps : [rep],
+      fast: { kind: "object", ...o, model: model || null, display_model: dm || null, timed: reps.length > 0 } });
   }
   for (const t of people?.data.tracks || []) {
     const ref = people.blobs["track-" + t.id];
     if (!ref) continue;
     const frame = frameOf(t.shot), rules = (people.data.rules || []).filter((r: any) => r.track === undefined || r.track === t.id);
     // The viewer's model class draws it and lets it be picked; its status stays observed+estimated (fast.kind).
+    // r5b: where the person is at the video's time (PeopleLoop's positions per 5 fps keyframe), beside the whole track
+    const pts: any[] = t.points || [], at = pts.map((q: any, i: number) => ({ id: `person-at:${t.id}:${i}`, kind: "primitive",
+      primitive: { kind: "box", dimensions: [.4, .4, .4] }, coordinateFrameId: frame, timeRange: [q.t, Math.min(pts[i + 1]?.t ?? q.t + .2, q.t + .4)],
+      transform: { ...identity(frame), position: q.xyz }, placementState: "confirmed", material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .6], color: [1, .8, .1] } }));
     doc.entities.push({ id: "person:" + t.id, label: "person " + t.id, associationState: "association_pending", visible: true, observationRefs: [],
       activeModelRepresentationId: "track:" + t.id, fast: { kind: "person", ...t, points: undefined, rules },
       representations: [{ id: "track:" + t.id, kind: "generated_mesh", sourceKind: "people_track", assetId: asset(ref), coordinateFrameId: frame,
-        transform: identity(frame), placementState: "confirmed" }] });
+        transform: identity(frame), placementState: "confirmed" }, ...at] });
   }
   if (splat?.blobs.splat)
     doc.annotations.push({ id: "splat", kind: "gaussian_splats", format: splat.data.format, assetId: asset(splat.blobs.splat), count: splat.data.count,
