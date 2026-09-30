@@ -44,6 +44,9 @@ line, and report results. Only ask when truly blocked (secrets, deletions, money
 - **The Mac is weak and on battery**: heavy compute goes to Modal; run one local workstream at a time; start the local
   viewer only when needed and stop it after. The user wants results quickly and in stages ("先做一个就行 ME340").
 - The user wants a report with **latency and visible effect** (screenshots, before/after) after each round.
+- **Correctness before speed (2026-09-29 23:50):** "267s还可以接受，问题不大，先解决正确性问题" — ~267 s until all RecGen
+  models are in is acceptable for now; fix wrong positions/sizes/misaligned models first. Every report must state
+  whether positions are right or wrong (GT errors + overlay alignment per video).
 
 ## 3. Hard rules (security and operations)
 
@@ -151,7 +154,18 @@ no always-on names; an overlay mode draws models on the video frame. Files: `run
 `runs/r5b-results/me340/{quick.json,alignment.json}`, `runs/r5b-results/viewer/me340/` (3d-before-r4b / 3d-after,
 click cards, overlays, worst generated). Round-5 report (ME340 section): https://claude.ai/artifact/86jUzcrvntqFAgXPQiUnuC
 
-**Round 5 integration: IN PROGRESS when this was written** (Sam's Club, Walmart, GT and one visit pair were running at 23:40). Workflow run `wf_401bb21d-ec8` (script
+**Sam's Club on the merged code (r5b-int-samsclub-a2-002, warm):** first 3D 17.6 s, cards 36.8 s, surfaces 40.1 s, all
+types 106.4 s, first RecGen 132.8 s, all RecGen 161.6 s. 935 cards: 713 observed surface, 210 primitives, 12 RecGen
+shown (32 attempted, 20 not lined up), 0 boxes. Overlay alignment, all objects: IoU median 0.67, 75 % >= 0.5, centre
+offset 3.7 cm (p90 31 cm); 6 objects without a model are 53 cm off. The shopping cart's width reads 2.56 m from one
+view set (flagged needs review). **GT position accuracy on the merged code (r5b-int-gt-001):** floor position error
+median 12.5 cm ARKit47 / 9.0 cm TUM at the true camera height (23.6 / 20.0 cm at the assumed 1.6 m), p90 23-35 cm;
+height 2.4-3.1 cm; top above floor 3.0-3.3 cm (6.3-7.9 assumed); width 2.3-3.0 cm; angle gate (>= 2 view sets,
+u <= 12°) keeps 182 of 764 part readings, error median 1.65°, p90 8.4° (`runs/r5b-results/gt/`).
+Report with the issue list and a "位置对不对" table: https://claude.ai/artifact/86jUzcrvntqFAgXPQiUnuC (source in
+`report/`, rendered `report/panoptes-round5.html`).
+
+**Round 5 integration: IN PROGRESS when this was written** (Walmart checkpoint, audits, summary and the review were still running at 23:55). Workflow run `wf_401bb21d-ec8` (script
 `workflows/r5d.js`) on branch `r5b/integrate` (merge of the four builders done at 854e3e7). It implements RecGen for all
 non-simple objects (FAST, 2 processes per GPU, look-alike reuse), the clean 3D pane (models in place, no boxes/labels),
 an overlay alignment metric + overlay view, and the false-tilt fix; runs ME340 first and writes
