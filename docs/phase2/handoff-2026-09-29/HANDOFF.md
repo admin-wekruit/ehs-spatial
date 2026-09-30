@@ -54,7 +54,11 @@ line, and report results. Only ask when truly blocked (secrets, deletions, money
   Remote exec into the deployed `panoptes-report-workspace` container was denied: do not do it.
 - Don't list `~/Downloads` (use the exact paths in `data/clips/*/clip.json`). Don't stop local Postgres on 54329.
 - Deletions need the user's approval each time. Commit/push only when asked; commit trailer
-  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Nothing is pushed yet.
+  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. On GitHub (`admin-wekruit/ehs-spatial`): this handoff on
+  branch `handoff/phase2-2026-09-29-docs`; code branches `r4b/integrate`, `r5b/{vocab,models,time,visit,integrate}`,
+  `recgen/fast`, `route/jev`, `r5/models` (pushed by the user at ~23:10; `r5b/integrate` was at 1a8f42e then and kept
+  moving). Older experiment branches (`fx/*`, `x13/*`, `r4/*`, `mvp*/*`) are local only. The auto-mode classifier
+  blocks agent pushes of code branches; ask the user to run the push.
 - Disk: the Mac had ~14 GB free; keep pulls small (jpg ≤ 1600 px), check `df -h /System/Volumes/Data`, stop if < 8 GB;
   large blobs stay on Modal Volumes.
 - Never `SendMessage` to a running workflow agent: it spawns a duplicate writer. To change a running workflow, stop it
@@ -126,6 +130,15 @@ mutable naming bank, 3D pane labels wrong. Results: `runs/r4b-results/`.
 9.3 vs 10.0 of 19 (within seed noise), 2 A100 → 20/40/70 objects in ~19/36/62 s; by eye on 90 objects RecGen 58/27/5,
 SAM 3D 29/36/8, TRELLIS and TripoSR worse, observed surface 38/52/0 (`runs/recgen-fast-results/`,
 `runs/r5-models-results/`). Jev-Omni routing (fixed-shape list → Jev Q5 raw) ~0.82–0.90 held out, no VLM (route/jev).
+
+**ME340 on the merged code, run 1 (r5b-int-me340-001, 23:00, warm):** first 3D 18.2 s, cards 39.9 s, observed
+surfaces 42.1 s, all types 98.0 s, first RecGen model 130.5 s, all RecGen models 298.7 s (too slow; r4b's 182.8 s was
+mostly boxes). 275 cards: 130 RecGen, 139 observed surface, 6 primitives, 0 boxes. Overlay alignment (model rendered from
+the video camera vs the object mask): observed surface IoU median 0.51 / 4.6 cm, RecGen 0.40 / 10.9 cm (30 % above
+0.5) → run 2 shows a RecGen model only when it lines up (42 of 118 on run 1's data), else the observed surface.
+RecGen GPU time: view selection 658 s + generation 666 s (129 models, ~5 s each) + acceptance check 519 s → cut
+selection and checks first. VLM: 1 scene-vocabulary request + 50 medoid names; 0 hazard. GPU peak 69.3 GiB.
+Files: `runs/r5b-int-me340-001/`, `runs/r5b-results/me340/quick-run001.json`, `runs/r5b-results/viewer/me340/`.
 
 **Round 5 integration: IN PROGRESS when this was written.** Workflow run `wf_401bb21d-ec8` (script
 `workflows/r5d.js`) on branch `r5b/integrate` (merge of the four builders done at 854e3e7). It implements RecGen for all
