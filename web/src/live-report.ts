@@ -86,8 +86,10 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
       coordinateFrameId: frame, transform: { ...identity(frame), position: [0, 1, 2].map(k => (min[k] + max[k]) / 2) }, placementState: "confirmed",
       material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .05], color: [.45, .9, .8] } };
     const half = dm && (dm.kind === "cylinder" ? [dm.radius_m, dm.radius_m, dm.length_m / 2] : dm.size_m.map((v: number) => v / 2));
-    // a generated model's bounds are in the shot frame (sam3d.judge / r5_bench.gate_mesh); the viewer reads them about the pose
-    const local = glb && !model.reuse_of && model.bounds?.min && [model.bounds.min, model.bounds.max].map((b: number[]) => b.map((v, k) => v - model.transform.position[k]));
+    // a generated model's bounds are in the shot frame (sam3d.judge / r5_bench.gate_mesh); the viewer reads them about the pose (a
+    // look-alike's copy: its group's model's, the same GLB about its own centre)
+    const src = model && (model.reuse_of ? accepted.get(model.reuse_of) : model);
+    const local = glb && src?.bounds?.min && [src.bounds.min, src.bounds.max].map((b: number[]) => b.map((v, k) => v - src.transform.position[k]));
     const rep: any = glb ? { id: "model:" + o.id, kind: "generated_mesh", assetId: asset(glb), coordinateFrameId: frame,
       transform: { ...identity(frame), ...model.transform }, placementState: "confirmed", bounds: local ? { min: local[0], max: local[1] } : undefined }
       : dm ? { id: "prim:" + o.id, kind: "primitive", primitive: modelPrimitive(dm), coordinateFrameId: frame,

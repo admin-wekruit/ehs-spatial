@@ -3,7 +3,7 @@
 // surface; 'display only'), its model must draw in the 3D pane (the pane changes; the model alone in its corner), the 3D label of the
 // selected object must be the card's shown name, and cards with planar parts show lettered parts with their angles to the floor
 // ('part A ... to the floor'). The shot GLBs' nodes must load without errors. Screenshots per object.
-// Run from web/: node tests/r5b-models-browser.mjs MIRROR REPORT OUT [--n 8] [--ids card-id,card-id]
+// Run from web/: node tests/r5b-models-browser.mjs MIRROR REPORT OUT [--n 8] [--ids card-id,card-id] [--no-parts]
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,7 +62,7 @@ try{
   assert.ok(rows.filter(r=>r.changed3d).length>=Math.ceil(rows.length/2),'a selected model redraws the 3D pane');
   assert.ok(rows.filter(r=>r.inset).length>=Math.ceil(rows.length*.75),'the selected models show alone in the 3D pane\'s corner');
   assert.ok(rows.filter(r=>r.label3d).length>=Math.ceil(rows.length*.75),'the 3D label is the card\'s shown name');
-  assert.ok(rows.some(r=>r.parts>0),'some card shows lettered parts with their angles to the floor');
+  if(!argv.includes('--no-parts'))assert.ok(rows.some(r=>r.parts>0),'some card shows lettered parts with their angles to the floor');  // --no-parts: a report whose plumb check failed (Walmart)
   console.log(`r5b models browser check passed: ${rows.length} cards (${[...new Set(rows.map(r=>r.tier))].join(', ')}), ${rows.filter(r=>r.changed3d).length} redrew the 3D pane, `+
     `${rows.filter(r=>r.inset).length} insets, ${rows.filter(r=>r.label3d).length} 3D labels = card names, ${rows.filter(r=>r.parts).length} with lettered parts; `+
     `asset errors: ${live.errors.length ? live.errors.join(', ') : 'none'}`);

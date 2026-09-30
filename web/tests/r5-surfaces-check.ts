@@ -9,7 +9,7 @@ const blob = (sha: string) => ({ sha256: sha, bytes: 10, mediaType: "model/gltf-
 const obj = (id: string, extra: any = {}) => ({ id, shot: 0, word: "unidentified object", box_min_m: [0, 0, 0], box_max_m: [1, 1, 1], ...extra });
 const layers: any = {
   objects: patch("objects", { objects: [..."abcdef"].map(k => obj(k)).concat([obj("g", { merged_into: "b" })]) }),
-  models: patch("models", { models: [{ object: "a", transform: { position: [1, 2, 3], quaternion: [0, 0, 0, 1], scale: [1, 1, 1] } },
+  models: patch("models", { models: [{ object: "a", transform: { position: [1, 2, 3], quaternion: [0, 0, 0, 1], scale: [1, 1, 1] }, bounds: { min: [.5, 1.5, 2.5], max: [1.5, 2.5, 3.5] } },
     { object: "f", reuse_of: "a", transform: { position: [4, 2, 3], quaternion: [0, 0, .7071, .7071], scale: [1.1, 1.1, 1.1] } }] }, { "model-a": blob("aa") }),
   surfaces: patch("surfaces", { surfaces: ["a", "b", "c"].map(o => ({ object: o, blob: "shot-0", min: [0, 0, 0], max: [1, 1, 1], triangles: 10 })) },
     { "shot-0": blob("s0") }),
@@ -26,6 +26,7 @@ const checks: [boolean, string][] = [
   [rep("a").id === "model:a" && rep("a").assetId === "sha256:aa", "the generated mesh wins"],
   [rep("f").id === "model:f" && rep("f").assetId === "sha256:aa" && rep("f").transform.scale[0] === 1.1 && rep("f").transform.position[0] === 4,
     "a look-alike's copy: the rep's GLB at its own pose"],
+  [rep("f").bounds?.min[0] === -.5 && rep("a").bounds?.max[2] === .5, "a copy carries its group model's local bounds (the 3D label, the preview)"],
   [rep("b").id === "surface:b" && rep("b").node === "b" && rep("b").assetId === "sha256:s0" && rep("b").transform.position[0] === 0, "tier 0: the shot GLB's node"],
   [rep("c").id === "prim:c", "a checked primitive before the surface"],
   [rep("d").id === "box:d" && rep("e").id === "box:e", "no surface and no checked primitive: the see-through box"],
