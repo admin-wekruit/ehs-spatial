@@ -39,7 +39,61 @@ export function modelPrimitive(m: any) {
   return { kind: "faces", parts: [{ center: [0, 0, 0], size: m.size_m.map(pos), alpha: FACES.map(f => a(m.faces?.[f] === "seen")) }] };
 }
 
-export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null, onDemand: any[] = []): SceneDocument {
+// ---------------------------------------------------------------- r5b: time (fast_report.timeline's card timelines)
+export const STATE_COLOR: Record<string, number[]> = { appeared: [.2, .85, .3], moved: [.25, .55, 1], disappeared: [1, .3, .25], "moved away": [1, .55, .15] };
+const CHANGED = new Set(["appeared", "moved", "disappeared"]);
+
+/** A card's state at video time t from its timeline: the interval holding t (its state, reason, values), else 'not seen yet' before
+ *  its first interval or 'outside its shot' after its last. People: 'present' while their track has a detection within 0.4 s. */
+export function stateAt(card: any, t: number): { state: string; reason?: string; interval?: any } {
+  if (card?.kind === "person") {
+    const pts = card.time?.positions || [];
+    const near = pts.some((q: any) => Math.abs((q.t ?? -1e9) - t) <= .4);
+    return near ? { state: "present" } : { state: t < (card.time?.first_seen_s ?? 0) ? "not seen yet" : "not observed" };
+  }
+  const ivs: any[] = card?.time?.timeline?.intervals || [];
+  if (!ivs.length) return { state: card?.time?.state || "—" };
+  const iv = ivs.find(x => x.t[0] <= t && t < x.t[1]);
+  if (iv) return { state: iv.state === "moved" && String(iv.reason || "").startsWith("moved to") ? "moved away" : iv.state, reason: iv.reason, interval: iv };
+  return t < ivs[0].t[0] ? { state: "not seen yet" } : { state: "outside its shot" };
+}
+
+/** Shot frame position of a floor-frame (x, y) at height z (the cards layer's floor frame of that shot). */
+export function floorToShot(ff: any, xy: number[], z: number) {
+  const o = ff.origin_m, x = ff.x, n = ff.z, y = [n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]];
+  return [0, 1, 2].map(k => o[k] + xy[0] * x[k] + xy[1] * y[k] + z * n[k]);
+}
+
+/** r5b: the time-scrubber representations of a card whose timeline has a change: per interval, the model (`still`, the card's
+ *  static representation) at that interval's place while the object is there (moved by the interval's position minus the card's),
+ *  none while it is gone or not seen yet; a coloured box where it appeared, moved to, moved away from or disappeared. -> [] for a
+ *  card without a change (its model stays static). box: the object's shot-frame bounds (the marker's size and height). */
+export function timeReps(card: any, frame: string, ff: any, still: any, box: { min: number[]; max: number[] }): any[] {
+  const tl = card?.time?.timeline;
+  if (!tl?.changes?.length || !ff || !still) return [];
+  const n = ff.z, o = ff.origin_m, c = [0, 1, 2].map(k => (box.min[k] + box.max[k]) / 2);
+  const h = (c[0] - o[0]) * n[0] + (c[1] - o[1]) * n[1] + (c[2] - o[2]) * n[2];  // the box centre's height above the floor
+  const dims = [0, 1, 2].map(k => Math.max(box.max[k] - box.min[k], .05)), c0 = tl.centre_xy;
+  const out: any[] = [];
+  let lastXY: number[] | null = null;
+  (tl.intervals || []).forEach((iv: any, i: number) => {
+    const xy = iv.v?.position_xy?.[0] ?? null, away = iv.state === "moved" && String(iv.reason || "").startsWith("moved to");
+    const gone = iv.state === "disappeared" || away, notYet = String(iv.reason || "").startsWith("not seen yet"), at = xy ?? lastXY;
+    if (!gone && !notYet && at) {
+      const shift = c0 ? floorToShot({ ...ff, origin_m: [0, 0, 0] }, [at[0] - c0[0], at[1] - c0[1]], 0) : [0, 0, 0];
+      out.push({ ...still, id: `${still.id}@${i}`, timeRange: iv.t, transform: { ...still.transform, position: still.transform.position.map((v: number, k: number) => v + shift[k]) } });
+    }
+    const col = STATE_COLOR[away ? "moved away" : iv.state], where = gone ? (lastXY ?? at) : at;
+    if (col && where)
+      out.push({ id: `state:${card.id}@${i}`, kind: "primitive", primitive: { kind: "box", dimensions: dims }, coordinateFrameId: frame, timeRange: iv.t,
+        transform: { coordinateFrameId: frame, position: floorToShot(ff, where, h), quaternion: [0, 0, 0, 1], scale: [1, 1, 1] }, placementState: "confirmed",
+        material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .35], color: col } });
+    if (xy) lastXY = xy;
+  });
+  return out;
+}
+
+export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null, onDemand: any[] = [], cardShots?: any[] | null): SceneDocument {
   const doc: any = { schemaVersion: 2, target: "scene", captureId: report, coordinateFrames: [], cameras: [], observations: [], entities: [],
     assets: [], annotations: [], geometryBindings: {} };
   const asset = (ref: BlobRef) => {
@@ -76,11 +130,16 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
   const accepted = new Map<string, any>((models?.data.models || []).map((m: any) => [m.object, m]));
   const byCard = new Map<string, any>((cards || []).filter((c: any) => c.kind === "object").map((c: any) => [c.id, c]));
   const seen = new Map<string, any>((surfaces?.data.surfaces || []).map((r: any) => [r.object, r]));
+  const shotFrames = new Map<number, any>((cardShots || []).map((x: any) => [x.index, x.floor_frame]));
   for (const o of objects?.data.objects || []) {
     if (byCard.size && !byCard.has(o.id)) continue;  // merged into another card (v1's or densify's aliases): drawn there
     const card = byCard.get(o.id), frame = frameOf(o.shot), min = o.box_min_m, max = o.box_max_m, model = accepted.get(o.id);
     const glb = model && models.blobs["model-" + (model.reuse_of || o.id)];
-    const dm = card?.model?.tier === "primitive" ? card.model : null;
+    // r5b (time): a moved object seen as two cards has one model (the better-seen card's shape, cards.link_moves' model_source),
+    // posed where each card is
+    const srcCard = card?.model_source && card.model_source !== o.id ? byCard.get(card.model_source) : null;
+    const ownDm = card?.model?.tier === "primitive" ? card.model : null;
+    const dm = ownDm && srcCard?.model?.tier === "primitive" ? { ...srcCard.model, position: ownDm.position, quaternion: ownDm.quaternion } : ownDm;
     const sf = seen.get(o.id), sglb = sf?.blob && surfaces.blobs[sf.blob];
     const box = { id: "box:" + o.id, kind: "primitive", primitive: { kind: "box", dimensions: [0, 1, 2].map(k => Math.max(max[k] - min[k], .01)) },
       coordinateFrameId: frame, transform: { ...identity(frame), position: [0, 1, 2].map(k => (min[k] + max[k]) / 2) }, placementState: "confirmed",
@@ -100,9 +159,13 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
         transform: identity(frame), placementState: "confirmed", bounds: sf.min && { min: sf.min, max: sf.max } }
       : box;
     const idn = card?.identity || {};
+    // r5b (time): a card with a change in its timeline is drawn per interval (the time scrubber shows its state at t); the others stay static
+    const timed = card?.time?.timeline?.changes?.length ? card : null, ff = timed && shotFrames.get(timed.shot);
+    const reps = timed ? timeReps(timed, frame, ff, rep, { min, max }) : [];
     doc.entities.push({ id: o.id, label: idn.name || idn.type?.label || o.label || o.word, associationState: "association_pending", visible: true, observationRefs: [],
-      activeModelRepresentationId: rep.id, representations: [rep],
-      fast: { kind: "object", ...o, model: model || null, display_model: card?.model || null, surface: sf || null, tier: glb ? 1 : dm ? "primitive" : sglb ? 0 : null } });
+      activeModelRepresentationId: reps.length ? reps[0].id : rep.id, representations: reps.length ? reps : [rep],
+      fast: { kind: "object", ...o, model: model || null, display_model: card?.model || null, surface: sf || null, tier: glb ? 1 : dm ? "primitive" : sglb ? 0 : null,
+        timed: reps.length > 0 } });
   }
   for (const c of onDemand) {  // r5b: an on-demand card's observed surface (fast_report.ondemand.surface_model: an inline one-node GLB)
     const m = c.model;
@@ -119,10 +182,14 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
     if (!ref) continue;
     const frame = frameOf(t.shot), rules = (people.data.rules || []).filter((r: any) => r.track === undefined || r.track === t.id);
     // The viewer's model class draws it and lets it be picked; its status stays observed+estimated (fast.kind).
+    // r5b: where the person is at the video's time (PeopleLoop's positions per 5 fps keyframe), beside the whole track
+    const pts: any[] = t.points || [], at = pts.map((q: any, i: number) => ({ id: `person-at:${t.id}:${i}`, kind: "primitive",
+      primitive: { kind: "box", dimensions: [.4, .4, .4] }, coordinateFrameId: frame, timeRange: [q.t, Math.min(pts[i + 1]?.t ?? q.t + .2, q.t + .4)],
+      transform: { ...identity(frame), position: q.xyz }, placementState: "confirmed", material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .6], color: [1, .8, .1] } }));
     doc.entities.push({ id: "person:" + t.id, label: "person " + t.id, associationState: "association_pending", visible: true, observationRefs: [],
       activeModelRepresentationId: "track:" + t.id, fast: { kind: "person", ...t, points: undefined, rules },
       representations: [{ id: "track:" + t.id, kind: "generated_mesh", sourceKind: "people_track", assetId: asset(ref), coordinateFrameId: frame,
-        transform: identity(frame), placementState: "confirmed" }] });
+        transform: identity(frame), placementState: "confirmed" }, ...at] });
   }
   if (splat?.blobs.splat)
     doc.annotations.push({ id: "splat", kind: "gaussian_splats", format: splat.data.format, assetId: asset(splat.blobs.splat), count: splat.data.count,
