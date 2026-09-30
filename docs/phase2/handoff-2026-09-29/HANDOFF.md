@@ -62,9 +62,10 @@ line, and report results. Only ask when truly blocked (secrets, deletions, money
 - Deletions need the user's approval each time. Commit/push only when asked; commit trailer
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. On GitHub (`admin-wekruit/ehs-spatial`): this handoff on
   branch `handoff/phase2-2026-09-29-docs`; code branches `r4b/integrate`, `r5b/{vocab,models,time,visit,integrate}`,
-  `recgen/fast`, `route/jev`, `r5/models` (pushed by the user at ~23:10; `r5b/integrate` was at 1a8f42e then and kept
-  moving). Older experiment branches (`fx/*`, `x13/*`, `r4/*`, `mvp*/*`) are local only. The auto-mode classifier
-  blocks agent pushes of code branches; ask the user to run the push.
+  `recgen/fast`, `route/jev`, `r5/models`, and (pushed by the user at ~00:05 on 2026-09-30) `r5b/integrate` at `ac04f0d`,
+  `r6/correct`, and every experiment branch (`fb/*`, `fx/*`, `m0/*`–`m4/*`, `mvp*/*`, `r4/*`, `x13/*`); a secret-pattern
+  scan of those commits found 0 hits. Everything is on GitHub. The auto-mode classifier blocks agent pushes of code
+  branches; ask the user to run such pushes.
 - Disk: the Mac had ~14 GB free; keep pulls small (jpg ≤ 1600 px), check `df -h /System/Volumes/Data`, stop if < 8 GB;
   large blobs stay on Modal Volumes.
 - Never `SendMessage` to a running workflow agent: it spawns a duplicate writer. To change a running workflow, stop it
@@ -177,9 +178,8 @@ stopped, and `modal app list` shows no ephemeral apps. Where things were left:
   angle gate, ME340 runs 001-002, Sam's Club run 002, the GT run `r5b-int-gt-001` (`runs/r5b-results/gt/`), the visit
   GT score (`runs/r5b-results/visit-gt/`), partial audits (`runs/r5b-results/audit/`). Not done = Walmart's checkpoint
   (its calls in `runs/r5b-int-walmart-002` finished but were not summarised), the audits, `runs/r5b-results/summary.*`,
-  the adversarial review. ME340 run 003 was aborted. Local `r5b/integrate` HEAD is `ac04f0d`, 2 commits ahead of
-  GitHub (`90e7639` results tooling, `ac04f0d` RAM++ stays the default vocabulary after measuring the Qwen+RAM++
-  union): push again with the same command the user used.
+  the adversarial review. ME340 run 003 was aborted. `r5b/integrate` HEAD is `ac04f0d`, on GitHub (`90e7639` results tooling, `ac04f0d`
+  RAM++ stays the default vocabulary after measuring the Qwen+RAM++ union); on GitHub.
 - **Round-6 correctness** (workflow `workflows/r6-correctness.js`): stopped before any work. Worktree
   `panoptes-phase2-video-r6-correct` exists on branch `r6/correct` at `ac04f0d` with no changes. This is next step 1.
 

@@ -16,8 +16,9 @@ Suggested `/goal` line for the new session (the user writes goals in Chinese):
 
 ## Starting point
 
-- Code: branch `r5b/integrate` (local HEAD `ac04f0d`; GitHub may be 2 commits behind until the user pushes again).
-  An empty worktree `panoptes-phase2-video-r6-correct` on branch `r6/correct` (at `ac04f0d`) is ready.
+- Code: branch `r5b/integrate` at `ac04f0d` (on GitHub, `github.com/admin-wekruit/ehs-spatial`, with every other
+  phase-2 branch). Branch `r6/correct` (at `ac04f0d`, on GitHub too) is the starting branch; on the Mac an empty
+  worktree `panoptes-phase2-video-r6-correct` is ready.
 - Planned-but-not-run workflow for this goal: `workflows/r6-correctness.js`.
 - Current report: https://claude.ai/artifact/86jUzcrvntqFAgXPQiUnuC (source and rendered copy in `report/`).
 - Current numbers and files: `HANDOFF.md` §6, `results/by-run/r5b-results/` (quick.json, alignment.json, gt/).
