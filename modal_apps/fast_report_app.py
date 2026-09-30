@@ -48,6 +48,7 @@ VOLUMES = {"/v/da3": modal.Volume.from_name("moge3-hf-cache"), "/v/sam3": modal.
            "/v/models": modal.Volume.from_name("panoptes-fb-models", create_if_missing=True),
            "/v/layers": modal.Volume.from_name("panoptes-fb-layers", create_if_missing=True),
            "/weights": modal.Volume.from_name("panoptes-sam3d-weights"),  # SAM 3D (sam3d_research's volume)
+           "/cache": modal.Volume.from_name("panoptes-lucida-weights"),  # r5: RecGen + DINOv2 (the internal profile only)
            "/ckpt": modal.Volume.from_name("panoptes-splat-train"),  # LPIPS' AlexNet for the splat's held-out score (torch hub cache)
            "/v/x13": modal.Volume.from_name("panoptes-x13-models"),  # r4/naming: DINOv2-L and PE-Core-L (x13's weights, read only)
            "/v/r4": modal.Volume.from_name("panoptes-r4-naming")}  # r4/naming: YOLOE-26L with the taxonomy baked in (modal_apps/r4_naming.py)
@@ -57,14 +58,15 @@ def build_image():
     """CUDA devel base (nvcc for SAM 3D's pytorch3d); E9's main environment, pinned to the versions E9 ran (torch
     2.14.0+cu130, transformers 5.17.0, open3d 0.19.0), vLLM in its own venv as in E9; then B's venvs (/opt/sam3d,
     /opt/gate, /opt/splat); the repo's code mounted at /repo (the SAM 3D, gate and splat processes run it from there)."""
-    from fast_report import sam3d, splat
+    from fast_report import sam3d, splat, x7
     base = (modal.Image.from_registry("nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04", add_python="3.11")
             .apt_install("git", "libgl1", "libglib2.0-0", "libgomp1")
             .pip_install("torch==2.14.0", "torchvision", "xformers", "transformers==5.17.0", "accelerate", "addict", "pillow", "scipy",
                          "open3d==0.19.0", "shapely", "pydantic", "opencv-python-headless", "sentencepiece",
                          f"git+https://github.com/ByteDance-Seed/Depth-Anything-3.git@{DA3_CODE}")
             .run_commands("python -m venv /opt/vllm && PIP_EXTRA_INDEX_URL= /opt/vllm/bin/pip install -q vllm==0.11.0 transformers==4.57.1 pillow"))
-    out = splat.with_envs(sam3d.with_envs(base)).env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
+    out = x7.with_recgen(splat.with_envs(sam3d.with_envs(base)))  # r5: RecGen's venv for the internal profile (idle otherwise)
+    out = out.env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     # r4/naming: PE-Core-L (open_clip, x13's version) and YOLOE (Ultralytics, AGPL-3.0: accepted by the user for now); ultralytics
     # without its opencv-python dependency (the image has opencv-python-headless: two cv2 packages would overwrite each other)
     out = (out.pip_install("open_clip_torch==3.3.0", "matplotlib", "pyyaml", "requests", "psutil", "polars", "ultralytics-thop")
@@ -79,6 +81,46 @@ image = build_image() if modal.is_local() else modal.Image.debian_slim()  # a co
 
 def gpu_listing():
     return subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True).stdout.splitlines()
+
+
+# r5b (models): Jev-Omni, the display-model router's decider, on its OWN A100 (never on the report's two): route/jev's image and volumes
+def jev_image():
+    """route/jev's image (X13's line, its layers cached) with the repo at /repo, as the report's own image mounts it: this module
+    imports sam3_app and fast_report at the top, in every container of the app."""
+    from modal_apps import route_jev  # (scripts/route_jev.py is the scoring side, same module name)
+    out = route_jev.image
+    for d in ("fast_report", "scripts", "modal_apps"):
+        out = out.add_local_dir(REPO / d, f"/repo/{d}", ignore=["**/__pycache__/**", "**/*.pyc"])
+    return out
+
+
+JEV_IMAGE = jev_image() if modal.is_local() else modal.Image.debian_slim()
+
+
+JEV_SCALEDOWN_S = 300  # the bench wakes it before each call (calls are ~4-5 min apart)
+
+
+@app.cls(image=JEV_IMAGE, gpu="A100-80GB", cpu=4, memory=49152, timeout=3600, retries=0, max_containers=1, scaledown_window=JEV_SCALEDOWN_S,
+         volumes={"/v/x8": modal.Volume.from_name("panoptes-x8-models"), "/v/x13": modal.Volume.from_name("panoptes-x13-models")})
+class Jev:
+    """fast_report.jev on its own GPU: the report's container asks it Q5 for the cards no class routes (fast_report.route)."""
+
+    @modal.enter()
+    def load(self):
+        from fast_report import jev, route
+        self.entered = time.time()
+        self.st = jev.load()
+        jev.warm(self.st, route.JEV_STATE, route.Q5[0], route.Q5[1])  # the first request's set-up is cold start, never a call's
+
+    @modal.method()
+    def ping(self):
+        """The bench wakes it before each call (the service is up in production): cold start, never analysis time."""
+        return {"load_s": self.st["load_s"], "warm_s": self.st.get("warm_s"), "entered_unix": self.entered, "now_unix": time.time()}
+
+    @modal.method()
+    def decide(self, qs):
+        from fast_report import jev
+        return jev.decide(self.st, qs)
 
 
 @app.function(image=image, gpu="A100-80GB", timeout=1200, retries=0, volumes=VOLUMES)
@@ -121,6 +163,9 @@ from fast_report.layers import Writer  # noqa: E402  C
          scaledown_window=60)
 @modal.concurrent(max_inputs=4)  # mvp3: an on-demand click is answered beside a running analysis (run() itself stays one at a time)
 class FastReport:
+    # r5 (models): 'internal' runs RecGen (non-commercial licence: internal use only) in SAM 3D's place on GPU 0; 'commercial' as before
+    profile: str = modal.parameter(default="commercial")
+
     @modal.enter()
     def boot(self):
         import copy
@@ -141,9 +186,21 @@ class FastReport:
         self.vllm = vlm.start(1, mps=VLLM_MPS)  # first: its load overlaps everything below; GPU 1 stays empty until it has profiled
         b["vllm_mps"] = VLLM_MPS
         lap("vllm_spawned_s")
-        self.sam3d = sam3d.Workers(gpu=0, n=2)  # B: two SAM 3D processes under MPS on GPU 0 (~60 s load + 16 s warm-up, beside vLLM's load)
-        self.gate_pool = sam3d.GatePool(GATE_PROCS)  # the gate's prepare/assess processes (niced)
-        self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"))
+        self.recgen = None
+        if self.profile == "internal":  # r5: two RecGen processes on GPU 0 (x7.recgen_worker), X7's select/gate ops in the gate venv
+            from fast_report import x7
+            env = sam3d.worker_env(x7.RECGEN_PY, CUDA_VISIBLE_DEVICES=0, ATTN_BACKEND="xformers", SPCONV_ALGO="native", HF_HUB_OFFLINE=1)
+            env["PYTHONPATH"] += os.pathsep + x7.RECGEN_DIR
+            self.sam3d = None
+            self.recgen = sam3d.Pool([x7.RECGEN_PY, "-c", "from fast_report.recgen_fast import recgen_worker; recgen_worker()"], 2, env, "recgen")  # r5b: FAST
+            self.gate_pool = sam3d.Pool([sam3d.GATE_PY, "-c", "from fast_report.r5_bench import cpu_worker; cpu_worker()"], GATE_PROCS,
+                                        sam3d.worker_env(sam3d.GATE_PY, OMP_NUM_THREADS=1, OPENBLAS_NUM_THREADS=1, MKL_NUM_THREADS=1), "gate")
+        else:
+            self.sam3d = sam3d.Workers(gpu=0, n=2)  # B: two SAM 3D processes under MPS on GPU 0 (~60 s load + 16 s warm-up, beside vLLM's load)
+            self.gate_pool = sam3d.GatePool(GATE_PROCS)  # the gate's prepare/assess processes (niced)
+        b["profile"] = self.profile
+        self.jev_decide = self._jev_decide  # r5b: the router's decider (Jev-Omni on its own GPU: the Jev class)
+        self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"), initializer=core.single_threaded)
         self.proc_pool.map(core.warm_worker, range(PROCS))
         import torch
         import open3d  # noqa: F401
@@ -167,7 +224,8 @@ class FastReport:
         self.namer_enc = cascade.Encoders(self.dev_seg)  # r4/naming: DINOv2-L, PE-Core-L, YOLOE on GPU 1, after vLLM sized its share
         lap("naming_encoders_gpu1_s")
         self.splat = splat.Worker(gpu=1, torch_home="/ckpt/torch")  # after vLLM sized its cache from GPU 1's free memory (B)
-        b["sam3d"] = self.sam3d.ready()  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
+        b["sam3d"] = self.sam3d.ready() if self.sam3d is not None else None  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
+        b["recgen"] = self.recgen.ready(900) if self.recgen is not None else None
         lap("sam3d_ready_s")
         self.sams = {self.dev_geo: segment.Sam3(sam0, proc, self.dev_geo), self.dev_seg: segment.Sam3(sam.to(self.dev_seg), proc, self.dev_seg)}
         from fast_report import ondemand  # mvp3 D4 (b): SAM 3's tracker for on-demand clicks, GPU 1 (+0.9 GB), warmed below
@@ -252,7 +310,7 @@ class FastReport:
 
     @modal.exit()
     def stop(self):
-        for name in ("sam3d", "gate_pool", "splat"):
+        for name in ("sam3d", "recgen", "gate_pool", "splat"):
             if getattr(self, name, None) is not None:
                 getattr(self, name).close()
         if getattr(self, "vllm", None) is not None:
@@ -261,6 +319,16 @@ class FastReport:
     @modal.method()
     def boot_info(self):
         return self.boot_record
+
+    @staticmethod
+    def _jev_decide(qs, per_request=64):
+        """r5b: Jev-Omni's answers for qs [(key, jpeg, state, question, options)], requests of per_request in parallel."""
+        chunks = [qs[i:i + per_request] for i in range(0, len(qs), per_request)]
+        t = time.perf_counter()
+        with ThreadPoolExecutor(4) as ex:
+            got = list(ex.map(lambda c: Jev().decide.remote(c), chunks))
+        return {"probs": {k: v for g in got for k, v in g["probs"].items()}, "round_trip_s": round(time.perf_counter() - t, 3),
+                "compute_s": [g["compute_s"] for g in got], "peak_gib": max((g["peak_gib"] for g in got), default=None), "requests": len(chunks)}
 
     @modal.method()
     def click(self, report_id: str, i: int, x: float, y: float, style: str = "outline"):
@@ -307,7 +375,7 @@ class FastReport:
         import multiprocessing
         from concurrent.futures import ProcessPoolExecutor
         if getattr(self.proc_pool, "_broken", False):  # mvp2/integrate: a worker died in the last call (Sam's Club 003, in cards.v1_box):
-            self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"))  # every later call failed
+            self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"), initializer=core.single_threaded)  # every later call failed
             list(self.proc_pool.map(core.warm_worker, range(PROCS)))  # at its first submit; a new pool, warmed (not analysis time)
             pool_note = "the process pool broke in an earlier call and was recreated before this one"
         price = usd_per_s(2, CPU, MEMORY_GIB)

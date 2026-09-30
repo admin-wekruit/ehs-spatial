@@ -41,7 +41,9 @@ STAGES = {"decode", "cuts", "sam3.person", "vlm.vocab", "sam3.vocab.wave1", "sam
           # r4/coverage: box sources and SAM 3 tracker masks in densify
           "coverage.detect", "coverage.masks",
           # r4/naming: the cascade
-          "naming.signals", "naming.signals.densify", "naming.settle.first", "naming.settle.densify", "naming.vlm.first", "naming.vlm.densify"}  # plus write.<layer>
+          "naming.signals", "naming.signals.densify", "naming.settle.first", "naming.settle.densify", "naming.vlm.first", "naming.vlm.densify",
+          "surfaces", "recgen.select", "recgen.generate", "recgen.gate",
+          "tier0.v1", "tier0.v3", "tier0.pack.v1", "tier0.pack.v3", "tier1.jev"}  # r5 (models): the observed surfaces, the internal profile; plus write.<layer>
 PRICE = {"A100-80GB": .000694, "cpu_core": .0000131, "gib": .00000222}  # Modal list prices, $/s
 
 

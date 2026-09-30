@@ -116,7 +116,8 @@ class Pool:
         self.boot, self.procs, self.logs, self.lock = [Future() for _ in range(n)], [], [], threading.Lock()
         for i in range(n):
             self.logs.append(f"/tmp/fb-{name}-{i}.log")
-            self.procs.append(subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open(self.logs[i], "wb"), env=env, cwd=str(ROOT)))
+            self.procs.append(subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open(self.logs[i], "wb"),
+                                               env=env[i] if isinstance(env, list) else env, cwd=str(ROOT)))  # a list: one env a process (its GPU)
             threading.Thread(target=self._serve, args=(i,), daemon=True).start()
 
     def _serve(self, i):
@@ -559,8 +560,11 @@ def judge(src, key, view, c2w, generated):
                                          "relative_depth_p95", "fitResidualCm", "observedCoverage", "entityCoverage", "viewsAgreeing",
                                          "judgedPoints", "icpScale", "icpRotationDeg", "observedShare", "triangles", "sourceFrame", "observation")}
     if v["accepted_source_consistency"]:
+        from fast_report import observed
+        flags = observed.gate_seen(src, key, result["vertices"], result["faces"])  # r5b: faced, clear sight, points on it
+        out["gate"]["observedShare_r5b"] = round(float(flags.mean()), 3)
         light, light_faces, light_colors = cvo.decimate(result["vertices"], result["faces"], result["colors"] / 255, DISPLAY_FACES)
-        alpha = np.where(result["flags"], cvo.OBSERVED_ALPHA, cvo.INFERRED_ALPHA)[cKDTree(result["vertices"]).query(light)[1]]
+        alpha = np.where(flags, cvo.OBSERVED_ALPHA, cvo.INFERRED_ALPHA)[cKDTree(result["vertices"]).query(light)[1]]
         centre = light.mean(0)
         transform = np.eye(4)
         transform[:3, 3] = centre

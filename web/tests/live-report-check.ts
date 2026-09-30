@@ -105,9 +105,9 @@ import {modelPrimitive} from '../src/live-report.ts';
   assert.equal(cyl.indices.length,36*(6+6));assert.ok(Math.abs(cyl.bounds.max[0]-.3)<1e-6&&Math.abs(cyl.bounds.max[2]-.45)<1e-6);
   const frame=primitive(modelPrimitive({kind:'open frame',parts:[[0,0,0,.05,.05,1.8,1],[0,0,.9,1.2,.4,.03,0]]}));
   assert.equal(frame.indices.length,72);assert.equal(alpha(frame).filter(a=>a===.3).length,24,'an unseen member is faint');
-  // a card's model replaces the see-through box; an accepted SAM 3D mesh replaces the model
+  // a card's checked primitive (r5b: tier 'primitive') replaces the see-through box; an accepted generated mesh replaces the model
   const one=(models:any)=>liveDocument('r',{objects:{layer:'objects',seq:1,data:{objects:[{id:'o',shot:0,word:'box',box_min_m:[0,0,0],box_max_m:[1,1,1]}]},blobs:{}} as any,...models},
-    [{id:'o',kind:'object',model:{kind:'box',size_m:[1,1,1],faces:{},position:[.5,.5,.5],quaternion:[0,0,0,1]}}]).entities[0] as any;
+    [{id:'o',kind:'object',model:{kind:'box',tier:'primitive',size_m:[1,1,1],faces:{},position:[.5,.5,.5],quaternion:[0,0,0,1]}}]).entities[0] as any;
   assert.equal(one({}).activeModelRepresentationId,'prim:o');
   assert.equal(one({models:{layer:'models',seq:2,data:{models:[{object:'o',transform:{position:[0,0,0]},bounds:{}}]},blobs:{'model-o':{sha256:'ab',bytes:1}}}}).activeModelRepresentationId,'model:o');
 }
