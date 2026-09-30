@@ -165,6 +165,8 @@ class FastReport:
         vlm.wait(self.vllm)
         lap("vllm_ready_s")
         self.namer_enc = cascade.Encoders(self.dev_seg)  # r4/naming: DINOv2-L, PE-Core-L, YOLOE on GPU 1, after vLLM sized its share
+        from fast_report import vocab
+        self.vocab = vocab.load(vocab.TEXT, self.dev_seg)  # r5b: the VLM-free wave-2 words' text (PE-Core zero-shot, 5 MB on GPU 1)
         lap("naming_encoders_gpu1_s")
         self.splat = splat.Worker(gpu=1, torch_home="/ckpt/torch")  # after vLLM sized its cache from GPU 1's free memory (B)
         b["sam3d"] = self.sam3d.ready()  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
@@ -208,6 +210,7 @@ class FastReport:
             masks = torch.zeros((600, 280, 504), dtype=torch.bool, device=self.dev_geo)
             masks[:, 50:150, 100:300] = True
             cascade.signals(self.namer_enc, frames, np.arange(600) % 4, masks, np.arange(600) // 5, 120, lambda i: frames[i].cpu().numpy())
+            vocab.pe_scores(self.namer_enc, list(frames[:2].cpu().numpy()), self.vocab["text"], self.vocab["words"], self.vocab["scale"])
             lap("warm_naming_s")
         import m3_exp_geometry as geo
         geo.fuse(torch.full((2, 280, 504), 2., device=self.dev_geo), np.repeat(np.array([[[300., 0, 252], [0, 300, 140], [0, 0, 1]]]), 2, 0),
@@ -430,13 +433,12 @@ def poll_like_the_viewer(report, stop, port=8793):
 
 
 @app.local_entrypoint()
-def main(video: str, start: float = 0., end: float = 0., site: str = "site", out: str = "", windows: str = "", vocab: str = "qwen",
+def main(video: str, start: float = 0., end: float = 0., site: str = "site", out: str = "", windows: str = "", vocab: str = "",
          serve: bool = False, eval_site: str = "", splat_preview_s: float = 0., background_s: float = 0., vram_source: str = "auto",
          mirror_max_mb: float = 0.):
     import hashlib
     import threading
     from fast_report import layers
-    assert vocab == "qwen", "only the Qwen vocabulary is wired (fast_report/vlm.py docstring)"
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)  # never reuse a run folder
     plan = []
@@ -467,6 +469,7 @@ def main(video: str, start: float = 0., end: float = 0., site: str = "site", out
         report_id = f"fb-{site}-{digest[:8]}-{int(time.time())}"
         layers.put_blob(out, mp4)  # the client holds its own MP4: it is never sent back
         options = {"cache": use_cache, "site_vocab": flag == "site", "window_s": [a, b], "client_has": [digest], "background_s": background_s,
+                   "vocab": vocab or None,  # r5b: fast_report.vocab.DEFAULT unless named ('qwen': the opt-in comparison)
                    "densify": flag != "nodensify",
                    "vram_source": vram_source,
                    "splat_preview_s": splat_preview_s or None, "eval_holdout": ev.holdout_frames(eval_site) if ev else None}

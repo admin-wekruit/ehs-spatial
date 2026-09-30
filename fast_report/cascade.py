@@ -13,7 +13,9 @@ Per object card, cheapest first:
      (the local Qwen3-VL-8B decider over the cluster's cheap candidates, sizes struck by the measured geometry); the answer
      is copied only to members whose SAM 3 word gives the same class
   4. everything else stays 'unidentified object': its physical card is complete; its words stay unverified candidates
-  5. the bank grows by the VLM's answers only (cheap names never enter it); a row carries video, site and family
+  5. the bank grows by the VLM's answers only (cheap names never enter it); a row carries video, site and family. r5b: the bank a
+     run reads is a frozen snapshot (read only, its sha256 in the run's record); a run's VLM rows go to its report folder
+     (bank-rows-<pass>.npz) and join a new snapshot offline only (scripts/r5b_vocab.py bank)
 
 Crops follow x13's recipe (scripts/x13_naming.tight_crop, Encoder.image): the mask's box + 10 % a side, squared, grey
 outside the frame; 'masked' = grey outside the mask; up to K_VIEWS views (PE-Core: PE_VIEWS); a card vector is the sum of
@@ -30,7 +32,9 @@ from fast_report import cards
 
 DINO, PE_CORE, X13_HF = "facebook/dinov2-large", "hf-hub:timm/PE-Core-L-14-336", "/v/x13/hf"
 YOLO_PT = "/v/r4/yolo/yoloe-26l-seg-taxonomy.pt"  # modal_apps/r4_naming.py bakes the taxonomy in (AGPL-3.0, accepted for now)
-BANK = "/v/layers/label-bank/dinov2-l-v1.npz"      # seeded by scripts/r4_naming_fit.py (round 2's Gemini names), grown by runs
+# r5b: the frozen snapshot every run reads (never written by a run; scripts/r5b_vocab.py bank builds the next one offline). Its
+# 'classes' / 'text' are the zero-shot's (every taxonomy class, x13's prompt ensemble); round 4's growing file was dinov2-l-v1.npz
+BANK = "/v/layers/label-bank/frozen/r5b-A.npz"
 CALIBRATION = Path(__file__).with_name("naming_calibration.json")
 K_VIEWS, PE_VIEWS, CROP_PAD, BATCH = 5, 3, .1, 64
 DINO_SIDE, PE_SIDE, DINO_MEAN, DINO_STD = 224, 336, (.485, .456, .406), (.229, .224, .225)
@@ -38,13 +42,11 @@ K, TAU = 10, .05                                    # bank k-NN (x13: set before
 YOLO_IMGSZ, YOLO_CONF, MATCH_IOU = 960, .05, .5
 RULES = ("sam3+bank", "sam3+zero-shot/yolo")
 MAX_OPTIONS = 8
-# ponytail: pinned to the 102 classes YOLOE and the bank's text embeddings were baked with (r4/naming, on mvp2's taxonomy);
-# round 3 added these to cards.TAXONOMY later. Their SAM 3 words still name cards; they get no YOLOE or zero-shot vote, so
-# they go to the VLM step. Upgrade path: re-bake both with the new classes (modal_apps/r4_naming.py) and drop this list.
-BAKED_WITHOUT = ("wrap", "curtain")
-CLASSES = [c for fam in cards.TAXONOMY.values() for c in fam if c not in BAKED_WITHOUT]  # the text embeddings' and YOLOE's class order
+# r5b: the zero-shot's classes are the bank snapshot's own ('classes' beside 'text': every taxonomy class, r5b-A on); YOLOE's are the
+# names baked into its weights (r4: the 102 of mvp2's taxonomy, the model's own list). Both only name taxonomy classes.
+# ponytail: YOLOE is not re-baked for the classes added since ('wrap', 'curtain', 'machine tool holder'): they get no YOLOE vote.
+CLASSES = [c for fam in cards.TAXONOMY.values() for c in fam]  # a new snapshot's zero-shot classes (scripts/r5b_vocab.py bank)
 FAMILIES = list(cards.TAXONOMY)
-FAMILY_OF = np.array([FAMILIES.index(cards.FAMILY[c]) for c in CLASSES])  # class index -> family index (zero-shot summed per family)
 VLM_SOURCE = "qwen3-vl-8b decider (cluster medoid)"
 
 
@@ -71,8 +73,8 @@ class Encoders:
         norm = [t for t in pre.transforms if type(t).__name__ == "Normalize"][0]
         self.pe_mean, self.pe_std = tuple(norm.mean), tuple(norm.std)
         self.yolo = YOLOE(YOLO_PT)
-        names = self.yolo.names if isinstance(self.yolo.names, list) else [self.yolo.names[i] for i in range(len(self.yolo.names))]
-        assert names == CLASSES, "YOLOE's baked classes are not the taxonomy's"
+        self.yolo_names = self.yolo.names if isinstance(self.yolo.names, list) else [self.yolo.names[i] for i in range(len(self.yolo.names))]
+        assert all(n in cards.FAMILY for n in self.yolo_names), "YOLOE's baked classes are not taxonomy classes"
 
     def _norm(self, x, mean, std):
         t = self.torch
@@ -188,7 +190,8 @@ def signals(enc, frames, frame_of, masks, owner, n_obj, frame_bgr):
             best = {}
             for x0, y0, x1, y1, c, p in dets[int(frame_of[i])]:
                 if iou((x0, y0, x1, y1), src[i]) >= MATCH_IOU:
-                    best[CLASSES[int(c)]] = max(best.get(CLASSES[int(c)], 0.), float(p))
+                    n = enc.yolo_names[int(c)]
+                    best[n] = max(best.get(n, 0.), float(p))
             for c, p in best.items():
                 acc[c] = acc.get(c, 0.) + p / len(v)
         yolo[o] = {c: round(p, 4) for c, p in sorted(acc.items(), key=lambda x: -x[1])[:5]}
@@ -212,43 +215,48 @@ def iou(a, b):
 # ---------------------------------------------------------------- the bank (CPU)
 
 class Bank:
-    """VLM answers keyed by DINOv2-L card vectors, with the taxonomy's PE-Core text embeddings. Lookups use the rows of the
-    same domain family and never this video's (its own earlier answers come in as settle()'s `in_video` rows instead)."""
+    """A frozen snapshot of VLM answers keyed by DINOv2-L card vectors, with the zero-shot's PE-Core text embeddings ('classes',
+    'text'). Read only (r5b: round 4's runs grew one shared file during the benches, 1798 -> 1998 rows): `sha256` names what a run
+    read. Lookups use the rows of the same domain family, never this video's (its own earlier answers come in as settle()'s
+    `in_video` rows) and, with exclude_site (a site or several; the benches: no row of the scored site), never that site's. A
+    row's label follows the current taxonomy (label_of its name)."""
 
-    def __init__(self, path=BANK):
-        self.path, self.lock, self.new = Path(path), threading.Lock(), 0
-        z = np.load(self.path)
+    def __init__(self, path=BANK, exclude_site=None):
+        import hashlib
+        import io
+        raw = Path(path).read_bytes()
+        self.path, self.sha256 = str(path), hashlib.sha256(raw).hexdigest()
+        self.exclude = {exclude_site} if isinstance(exclude_site, str) else set(exclude_site or ())
+        z = np.load(io.BytesIO(raw))
         self.emb, self.meta = z["emb"].astype(np.float32), json.loads(str(z["meta"]))
+        for m in self.meta:
+            m["label"] = label_of(m.get("name")) or m.get("label")
         self.text, self.scale = z["text"].astype(np.float32), float(z["text_scale"])
-        assert list(z["classes"]) == CLASSES, "the bank's text embeddings are not in the taxonomy's order"
+        self.classes = [str(c) for c in z["classes"]]
+        assert len(self.classes) == len(self.text) and all(c in cards.FAMILY for c in self.classes), "zero-shot classes: taxonomy classes"
+        self.family_of = np.array([FAMILIES.index(cards.FAMILY[c]) for c in self.classes])  # zero-shot summed per family
         self.rows_at_load = len(self.meta)
 
     def rows(self, family, video):
-        with self.lock:
-            keep = [i for i, m in enumerate(self.meta) if m["family"] == family and m["video"] != video]
-            return self.emb[keep], [self.meta[i] for i in keep]
-
-    def add(self, emb, rows):
-        with self.lock:
-            if len(rows):
-                self.emb = np.concatenate([self.emb, np.asarray(emb, np.float32).reshape(len(rows), -1)])
-                self.meta += rows
-                self.new += len(rows)
-
-    def save(self):
-        with self.lock:
-            if not self.new:
-                return
-            tmp = self.path.with_suffix(".tmp.npz")
-            np.savez(tmp, emb=self.emb.astype(np.float16), meta=json.dumps(self.meta), text=self.text, text_scale=np.float32(self.scale),
-                     classes=np.array(CLASSES))
-            tmp.replace(self.path)
-            self.new = 0
+        keep = [i for i, m in enumerate(self.meta) if m["family"] == family and m["video"] != video and m.get("site") not in self.exclude]
+        return self.emb[keep], [self.meta[i] for i in keep]
 
     def zero_shot(self, pe):
         z = self.scale * np.asarray(pe, np.float32) @ self.text.T
         z = np.exp(z - z.max(-1, keepdims=True))
         return z / z.sum(-1, keepdims=True)
+
+    def record(self):
+        return {"path": self.path, "sha256": self.sha256, "rows": self.rows_at_load, "zero_shot_classes": len(self.classes),
+                "exclude_sites": sorted(self.exclude), "read_only": True}
+
+
+def write_rows(path, rows):
+    """A pass's bank rows [(vector, meta)] -> one npz beside the report (offline write-back only: scripts/r5b_vocab.py bank)."""
+    if rows:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        np.savez(path, emb=np.stack([np.asarray(e, np.float32) for e, _ in rows]).astype(np.float16), meta=json.dumps([m for _, m in rows]))
+    return len(rows)
 
 
 def calibration(site, family, path=CALIBRATION):
@@ -333,14 +341,14 @@ def clusters(V, ids, cut):
     return out + alone
 
 
-def candidates(words, v, bank_meta, measured_m=None):
+def candidates(words, v, bank_meta, measured_m=None, classes=CLASSES):
     """A medoid's options: the cluster's SAM 3 words (most voted first), the medoid's zero-shot top 3, YOLOE top 2 and bank
     top 3 (a class word, or the neighbour's own name for a class outside the taxonomy); one per class; struck when the measured
     size rules the class out (the geometry first); alphabetical (no rank cue, x13), at most MAX_OPTIONS.
     -> (options, struck)"""
     names = list(words[:6])
     if v["probs"] is not None:
-        names += [CLASSES[j] for j in np.argsort(-v["probs"])[:3]]
+        names += [classes[j] for j in np.argsort(-v["probs"])[:3]]
     names += [c for c, _ in sorted(v["yolo_all"].items(), key=lambda x: -x[1])[:2]]
     names += [bank_meta[v["bank"]["nn"][lab]]["name"] if lab.startswith("~") else lab for lab in v["bank"]["ranked"][:3]]
     seen, out = set(), []
@@ -368,9 +376,9 @@ def settle(items, bank, th, video, family, in_video=()):
         probs = bank.zero_shot(it["pe"]) if np.any(it["pe"]) else None
         yo = max(it["yolo"].items(), key=lambda x: x[1]) if it["yolo"] else (None, 0.)
         v = vs[it["id"]] = {"sam3": sam3_vote(it["votes"]), "bank": knn(it["dino"], B, labels), "probs": probs, "yolo": yo, "yolo_all": it["yolo"],
-                            "zero_shot": (CLASSES[int(np.argmax(probs))], float(np.max(probs))) if probs is not None else (None, 0.)}
+                            "zero_shot": (bank.classes[int(np.argmax(probs))], float(np.max(probs))) if probs is not None else (None, 0.)}
         rule, lab = tier1(v, th)
-        fz = np.bincount(FAMILY_OF, probs, len(FAMILIES)) if probs is not None else None
+        fz = np.bincount(bank.family_of, probs, len(FAMILIES)) if probs is not None else None
         rec = recs[it["id"]] = {"sam3": [v["sam3"][0], round(v["sam3"][1], 3), v["sam3"][2]], "bank": [v["bank"]["label"], round(v["bank"]["share"], 3)],
                                 "zero_shot": [v["zero_shot"][0], round(v["zero_shot"][1], 3)], "yolo": [yo[0], round(float(yo[1]), 3)],
                                 "zero_shot_family": [FAMILIES[int(fz.argmax())], round(float(fz.max()), 3)] if fz is not None else [None, 0.]}
@@ -395,10 +403,11 @@ def settle(items, bank, th, video, family, in_video=()):
             for it in its:
                 for wd, sc in (it["votes"] or {}).items():
                     wv[wd] = wv.get(wd, 0.) + float(sc)
-            opts, struck = candidates([wd for wd, _ in sorted(wv.items(), key=lambda x: -x[1])], vs[med["id"]], meta, med.get("measured_m"))
+            opts, struck = candidates([wd for wd, _ in sorted(wv.items(), key=lambda x: -x[1])], vs[med["id"]], meta, med.get("measured_m"), bank.classes)
             recs[med["id"]].update(options=opts, struck=struck)
             qs.append((med["id"], [it["id"] for it in its if it is not med], opts))
-    own = {it["id"]: candidates([wd for wd, _ in sorted((it["votes"] or {}).items(), key=lambda x: -x[1])], vs[it["id"]], meta, it.get("measured_m"))[0]
+    own = {it["id"]: candidates([wd for wd, _ in sorted((it["votes"] or {}).items(), key=lambda x: -x[1])], vs[it["id"]], meta, it.get("measured_m"),
+                                bank.classes)[0]
            for it in rest if it["askable"]}
     return recs, qs, own
 
@@ -457,9 +466,10 @@ def identity(base, rec, decided=None):
 
 def self_check():
     """The rules end to end on a toy video: tier 1 needs a second vote, one question per cluster, copies only to members
-    whose SAM 3 word agrees, the rest stay unidentified, the bank never feeds a video its own rows and grows by VLM answers
-    only; the view pick and the calibration lookup."""
-    assert len(CLASSES) == 102 and not set(BAKED_WITHOUT) & set(CLASSES), "the class list YOLOE and the text embeddings were baked with"
+    whose SAM 3 word agrees, the rest stay unidentified, the bank never feeds a video its own rows (nor, excluded, its site's),
+    is read only and its new rows (VLM answers only) go to a file; the view pick and the calibration lookup."""
+    assert "machine tool holder" in CLASSES and len(CLASSES) == len(set(CLASSES)) == len(cards.FAMILY)
+    import hashlib
     import tempfile
     rng = np.random.default_rng(0)
     d = 16
@@ -474,6 +484,9 @@ def self_check():
                  classes=np.array(CLASSES))
         bank = Bank(p)
         assert [m["card"] for m in bank.rows("retail", "vself")[1]] == ["c0"], "same family, never this video"
+        assert bank.sha256 == hashlib.sha256(p.read_bytes()).hexdigest() and bank.record()["read_only"]
+        assert Bank(p, exclude_site="a").rows("retail", "vother")[1] == [meta[1]], "the scored site's rows never (benches)"
+        assert Bank(p, exclude_site=["a", "self"]).rows("retail", "vother")[1] == [] and Bank(p).record()["exclude_sites"] == []
         pe_box = text[CLASSES.index("box")]
         items = [  # o0: SAM 3 box + bank box -> cheap; o1..o3 look alike (SAM 3: pallet, pallet, cart); o4 agrees with nothing, no view
             {"id": "o0", "votes": {"cardboard box": 1.}, "dino": base[0], "pe": pe_box, "yolo": {}, "askable": True},
@@ -499,10 +512,12 @@ def self_check():
         assert r2["a"]["route"] == "vlm" and esc == [("b", [], ["box", "crate", "shelf"])], esc  # b asked on its own, shelf offered
         r2, rows3, _ = resolve(r2, esc, {"b": "crate"}, {"b": {"dino": base[1]}}, "v", "s", "retail")
         assert r2["b"]["route"] == "vlm" and r2["b"]["name"] == "crate" and rows3[0][1]["label"] == "crate"
-        bank.add([r[0] for r in rows], [r[1] for r in rows])
-        bank.save()
+        before = p.read_bytes()
+        assert write_rows(Path(tmp) / "r" / "bank-rows-first.npz", rows) == 1 and p.read_bytes() == before, "rows go beside the report"
+        z = np.load(Path(tmp) / "r" / "bank-rows-first.npz")
+        assert json.loads(str(z["meta"]))[0]["label"] == "pallet" and z["emb"].shape == (1, d) and write_rows(Path(tmp) / "x.npz", []) == 0
         again = Bank(p)
-        assert again.rows_at_load == 4 and [m["card"] for m in again.rows("retail", "vself")[1]] == ["c0"]  # its own row: never looked up
+        assert again.rows_at_load == 3 and again.sha256 == bank.sha256
         th_u = {"sam3+bank": float("inf"), "sam3+zero-shot/yolo": float("inf"), "cluster_cut": 0.}
         recs, qs, _ = settle(items[:1], again, th_u, "vother", "retail")
         assert "route" not in recs["o0"] and len(qs) == 1, "uncalibrated: nothing accepted cheaply, the medoid is asked"
@@ -519,5 +534,5 @@ def self_check():
     v = {"sam3": ("box", .7, "box"), "bank": {"label": "shelf", "share": .9}, "zero_shot": ("shelf", .9), "yolo": ("box", .2)}
     assert tier1(v, {"sam3+bank": .1, "sam3+zero-shot/yolo": .5}) == ("sam3+zero-shot/yolo", "box")
     assert tier1({**v, "yolo": (None, 0.)}, {"sam3+bank": .1, "sam3+zero-shot/yolo": .5}) == (None, None), "one vote is not enough"
-    print("cascade self-check ok: second vote, one question per cluster, verified copies, unidentified, bank write-back and "
-          "lookups (family, never its own video), calibration lookup, view pick")
+    print("cascade self-check ok: second vote, one question per cluster, verified copies, unidentified, frozen bank (read only, "
+          "its hash, rows beside the report, never its own video or excluded site), calibration lookup, view pick")

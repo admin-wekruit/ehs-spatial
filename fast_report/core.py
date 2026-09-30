@@ -694,7 +694,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     import torch
     import torch.nn.functional as F
     import video_events
-    from fast_report import cards, cascade, coverage, layers, segment, vlm
+    from fast_report import cards, cascade, coverage, layers, segment, vlm, vocab
     dev_geo, dev_seg = m.dev_geo, m.dev_seg
     t_call = time.perf_counter()  # this call's decider questions (vlm.log_stats)
     video_sha = sha256(mp4)
@@ -724,31 +724,56 @@ def analyse(m, mp4, opts, clock, writer, log):
     seg_future = m.cpu_pool.submit(work.worker, dev_seg, "seg")
     cuts_ready = threading.Event()
     early = m.cpu_pool.submit(work.worker, dev_geo, "geo before cuts", cuts_ready) if dev_geo != dev_seg else None
-    vlm_frames = sorted({int((i + .5) * n_total / vlm.VOCAB_FRAMES) for i in range(vlm.VOCAB_FRAMES)})
+    # r5b: SAM 3's wave-2 words come from a VLM-free source (fast_report.vocab; the user: the VLM comes last and rarely): 'pe'
+    # (default: PE-Core zero-shot on the naming encoder, GPU 1), 'taxonomy', 'words' (a given list: the r5b comparison), or the
+    # round-4 Qwen scene vocabulary ('qwen', an opt-in comparison only)
+    vocab_src = opts.get("vocab") or vocab.DEFAULT
+    # r5b: the bank rows a run may read: never the scored site's (bank_exclude_site: the benches) nor those named (a bank build)
+    bank_exclude = ([site] if opts.get("bank_exclude_site") else []) + list(opts.get("bank_exclude_sites") or [])
+    site_family = json.loads(cascade.CALIBRATION.read_text()).get("site_family", {}).get(site, "unknown")
+    vlm_frames = vocab.pick_frames(n_total, vlm.VOCAB_FRAMES if vocab_src == "qwen" else vocab.FRAMES) if vocab_src in ("qwen", "pe") else []
     frames, grays, futures, keys, chunk_at, chunk_done = [], [], [], [], [], {}
     decoded_all = threading.Event()
     results = {}
 
-    def vocab_then_events():
-        """GPU 1's vLLM: the vocabulary first (it gates wave 2), then events (they gate nothing)."""
-        try:
-            with clock.stage("vlm.vocab.frames", n={"frames": len(vlm_frames)}):  # seek: no waiting for the decoder to get there
-                reader = cv2.VideoCapture("/tmp/in.mp4")
-                for f in vlm_frames:
-                    reader.set(cv2.CAP_PROP_POS_FRAMES, f)
-                    seeked.append(reader.read()[1])
-                reader.release()
+    def scene_words():
+        """-> (wave-2 words, record) from opts['vocab']."""
+        if vocab_src == "words":
+            return list(dict.fromkeys(opts.get("vocab_words") or [])), {"source": "given list (computed off the pipeline)"}
+        if vocab_src == "taxonomy":
+            b = cascade.Bank(opts.get("bank") or cascade.BANK, exclude_site=bank_exclude)
+            return vocab.taxonomy_words(b.meta, site_family, b.exclude), {"bank": b.sha256}
+        with clock.stage("vocab.frames", n={"frames": len(vlm_frames)}):  # seek: no waiting for the decoder to get there
+            reader = cv2.VideoCapture("/tmp/in.mp4")
+            for f in vlm_frames:
+                reader.set(cv2.CAP_PROP_POS_FRAMES, f)
+                seeked.append(reader.read()[1])
+            reader.release()
+        if vocab_src == "qwen":
             with clock.stage("vlm.vocab", n={"frames": len(vlm_frames)}):
                 pngs = [cv2.imencode(".png", raster_rgb(img))[1].tobytes() for img in seeked]
-                words, rec = vlm.vocab(pngs)
-            results["vocab"] = {**rec, "words": words, "frames": vlm_frames}
+                return vlm.vocab(pngs)
+        assert vocab_src == "pe", f"unknown vocabulary source {vocab_src}"
+        with torch.inference_mode(), clock.stage("vocab.pe", gpu=m.namer_enc.dev, n={"frames": len(seeked), "words": len(m.vocab["words"])}):
+            per = vocab.pe_scores(m.namer_enc, seeked, m.vocab["text"], m.vocab["words"], m.vocab["scale"])
+        got = vocab.rank(per, skip=wave1)
+        return [w for w, _ in got], {"scores": got, "text_file": m.vocab["file"], "rule": vocab.RULE}
+
+    def vocab_then_events():
+        """The vocabulary first (it gates wave 2), then events on GPU 1's vLLM (they gate nothing; r5b: only when options ask)."""
+        t_v = time.perf_counter()
+        try:
+            words, rec = scene_words()
+            results["vocab"] = {**rec, "source": vocab_src, "words": words, "frames": vlm_frames, "s": round(time.perf_counter() - t_v, 3)}
         except Exception as error:  # noqa: BLE001  no vocabulary: wave 1 alone, recorded
-            words, results["vocab"] = [], {"error": repr(error)[:500]}
+            words, results["vocab"] = [], {"source": vocab_src, "error": repr(error)[:500]}
         decoded_all.wait()
         results["wave2_words"] = work.set_wave2(words, len(keys))
         clock.mark("vocab_known")
         if use_cache and words:
             vlm.remember_site(site_path, words, video_sha)
+        if not opts.get("events", False):  # r5b: events off by default (caption + action only when on: video_events.PROMPT)
+            return []
         with clock.stage("vlm.events.frames"):
             windows = []
             for t0, t1 in video_events.bounds(len(frames) / fps, 12.):
@@ -1045,7 +1070,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     cards_out, cards_ready, pick_ready, judge_futures, cards_lock = {}, threading.Event(), threading.Event(), [], threading.Lock()
     judge_lock = threading.Lock()
     facts_done = {"identity": threading.Event(), "judge3": threading.Event(), "densify_names": threading.Event()}  # the decider's last
-    if not opts.get("densify", True) or not objects or not opts.get("judge", True):  # work: the splat waits for it (mvp2); r4: judge off
+    if not opts.get("densify", True) or not objects or not opts.get("judge", False):  # work: the splat waits for it (mvp2); r5b: judge off by default
         facts_done["judge3"].set()  # densify_names: the naming of densify's objects (mvp3 integrate: Qwen decider; r4: the cascade)
     if not opts.get("densify", True) or not objects or opts.get("namer") is not None:
         facts_done["densify_names"].set()
@@ -1106,7 +1131,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             from fast_report import judge
         except ImportError:
             return
-        if not opts.get("judge", True):
+        if not opts.get("judge", False):  # r5b: judgement paused (the user): off unless options ask
             return
         outl = results.get("outlines_v2" if version >= 3 else "outlines") or {}
         ctx = judge.context(cam_rows, outl.get("frames", []), results.get("people"), frames,
@@ -1262,11 +1287,11 @@ def analyse(m, mp4, opts, clock, writer, log):
     # r4/naming: the cascade (fast_report.cascade; the VLM last). sig: object id -> its naming signals (cascade.signals)
     naming = {"first_done": threading.Event(), "in_video": [], "passes": [], "bank": None, "lock": threading.Lock(), "error": None}
     naming_on = opts.get("naming", "cascade") == "cascade" and getattr(m, "namer_enc", None) is not None
-    family = json.loads(cascade.CALIBRATION.read_text()).get("site_family", {}).get(site, "unknown") if naming_on else None
+    family = site_family if naming_on else None
     sig = {}
     if naming_on:
-        try:
-            naming["bank"] = cascade.Bank()
+        try:  # r5b: a frozen snapshot, read only (its hash in the record); benches leave the scored site's rows out
+            naming["bank"] = cascade.Bank(opts.get("bank") or cascade.BANK, exclude_site=bank_exclude)
         except Exception:  # noqa: BLE001  no bank (or no text embeddings): the round-3 path (the Qwen decider for every object)
             import traceback
             naming_on, naming["error"] = False, traceback.format_exc()[-1500:]
@@ -1315,11 +1340,9 @@ def analyse(m, mp4, opts, clock, writer, log):
         decided.update(decided2)
         with naming["lock"]:
             naming["in_video"] += rows
-        naming["bank"].add([r[0] for r in rows], [r[1] for r in rows])
-        try:
-            naming["bank"].save()
-            saved = True
-        except Exception as error:  # noqa: BLE001  the names stand; the bank misses this pass's rows
+        try:  # r5b: never into the bank a run reads; beside the report, for the offline write-back (scripts/r5b_vocab.py bank)
+            saved = cascade.write_rows(Path(f"/v/layers/reports/{writer.report_id}") / f"bank-rows-{tag}.npz", rows)
+        except Exception as error:  # noqa: BLE001  the names stand; the offline write-back misses this pass's rows
             saved = repr(error)[:300]
         idents = {cid: cascade.identity(cmap[cid]["identity"], r, decided.get(cid)) for cid, r in recs.items()}
         try:  # the pass's inputs beside the report (offline analysis: the vectors against the bank's, other operating points)
@@ -1336,7 +1359,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                "groups": len({r.get("group") for r in recs.values() if r.get("group") is not None}), "vlm_questions": len(decided),
                "vlm_questions_groups": n_group_q, "vlm_questions_escalated": len(decided2),
                "vlm_named": sum(1 for a in [*answers.values(), *answers2.values()] if a), "medoids_without_a_question": len(qs) - n_group_q,
-               "bank_rows_added": len(rows), "bank_saved": saved, "bank_rows_at_load": naming["bank"].rows_at_load, "family": family,
+               "bank_rows_added": len(rows), "bank_rows_file": saved, "bank_rows_at_load": naming["bank"].rows_at_load, "family": family,
                "calibration": {k: (None if v == float("inf") else v) for k, v in th.items()}, "s": round(time.perf_counter() - t0, 3),
                "records": recs}
         naming["passes"].append(rec)
@@ -2184,7 +2207,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     summary["identity_densify"] = namer["densify"].result() if namer.get("densify") else None  # before the judge futures: it adds one
     summary["naming"] = {"on": naming_on, "error": naming["error"], "family": family, "passes": [{k: v for k, v in r.items() if k != "records"} for r in naming["passes"]],
                          "bank_rows_at_load": naming["bank"].rows_at_load if naming["bank"] else None,
-                         "bank_rows_now": len(naming["bank"].meta) if naming["bank"] else None}
+                         "bank": naming["bank"].record() if naming["bank"] else None}
     summary["judge"] = [f.result() for f in judge_futures]  # after densify: it adds the v3 judgements' future
     summary["cards"] = {"v1": summary["cards"], "v3": cards_out.get("v3", {}).get("stats")}
     summary["boxes_v3"] = box_stats(objects, cards_out.get("v3"))
