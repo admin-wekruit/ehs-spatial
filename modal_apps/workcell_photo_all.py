@@ -44,7 +44,7 @@ def _finish(proc, label, timeout=1200):
 
 @app.function(image=image, gpu="A100-80GB:2", cpu=16, memory=80 * 1024,
               volumes=volumes, timeout=1800, retries=0, min_containers=0)
-def reconstruct(images: list[bytes], words: list[str]):
+def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height_m: float):
     import numpy as np
     from PIL import Image
     import torch
@@ -61,6 +61,8 @@ def reconstruct(images: list[bytes], words: list[str]):
         sources = [str(root / f"source-{i}.jpg") for i in range(1, 5)]
         map_proc = _start(["/opt/mapanything/bin/python", "/repo/scripts/workcell_map_worker.py", str(root), *sources], 0, hf="/v/map/huggingface")
         sam_proc = _start(["python", "/repo/scripts/workcell_sam_worker.py", str(root)], 1)
+        active = []
+        geometry_proc = None
         try:
             _finish(map_proc, "geometry")
             geometry_end = time.monotonic()
@@ -86,8 +88,12 @@ def reconstruct(images: list[bytes], words: list[str]):
             cart = json.loads((root / "cart-masks.json").read_text())
             report._prepare_inputs(root, seg, cart)
             prepare_end = time.monotonic()
+            geometry_proc = _start([
+                "python", "-c",
+                "import sys; from pathlib import Path; from scripts.workcell_photo_geometry import build; "
+                "build(Path(sys.argv[1]), [Path(p) for p in sys.argv[2:6]], float(sys.argv[6]), float(sys.argv[7]))",
+                str(root), *sources, str(diameter_m), str(height_m)], "")
             plans = ((0, "robot", "v1:1;v2:2;v3:3;v4:4;multi:1,2,3"), (1, "cart", "single:1"))
-            active = []
             for gpu, kind, groups in plans:
                 source = root / f"{kind}-input.npz"
                 target = root / kind
@@ -106,13 +112,17 @@ def reconstruct(images: list[bytes], words: list[str]):
                     (root / f"{kind}-{name}.glb").write_bytes(mesh.export(file_type="glb"))
                     timing[f"{kind}-{name}"] = {**stats, "modelLoadSeconds": worker["modelLoadSeconds"]}
             model_end = time.monotonic()
+            _finish(geometry_proc, "metric geometry")
+            complete_end = time.monotonic()
             (root / "models-timing.json").write_text(json.dumps({"models": timing, "containerWallSeconds": model_end - started}))
             (root / "stage-timing.json").write_text(json.dumps({"geometrySeconds": geometry_end-started,
                 "owlSeconds": owl_end-geometry_end, "segmentationSeconds": json.loads((root / "sam-timing.json").read_text())["containerSeconds"],
                 "cartMaskSeconds": sam_end-owl_end, "prepareSeconds": prepare_end-sam_end,
-                "modelSeconds": model_end-prepare_end}))
+                "modelSeconds": model_end-prepare_end,
+                "metricTailSeconds": complete_end-model_end}))
             wanted = [*root.glob("frame_*.json.gz"), *root.glob("photo-*.png"), *root.glob("*.json"),
-                      *root.glob("*-input.npz"), *root.glob("*.glb")]
+                      *root.glob("*-input.npz"), *root.glob("*.glb"), *root.glob("geometry-*.jpg"),
+                      *root.glob("geometry-*.png")]
             payload = io.BytesIO()
             with tarfile.open(fileobj=payload, mode="w:gz") as archive:
                 for path in wanted:
@@ -121,21 +131,24 @@ def reconstruct(images: list[bytes], words: list[str]):
                     archive.add(path, arcname=path.name)
             return {"archive": payload.getvalue(), "containerWallSeconds": time.monotonic() - started}
         finally:
-            for proc in (map_proc, sam_proc):
-                if proc.poll() is None:
+            for proc in (map_proc, sam_proc, geometry_proc, *(job[3] for job in active)):
+                if proc is not None and proc.poll() is None:
                     proc.terminate()
                     proc.wait(timeout=10)
 
 
 @app.local_entrypoint()
-def main(images: str, out: str, words: str):
+def main(images: str, out: str, words: str, button_diameter_m: float = .2, button_height_m: float = .2):
     started = time.monotonic()
     paths = [Path(p) for p in images.split(",")]
     if len(paths) != 4 or any(not p.is_file() for p in paths):
         raise ValueError("Exactly four source photos required")
     destination = Path(out)
     destination.mkdir(parents=True, exist_ok=True)
-    result = reconstruct.remote([p.read_bytes() for p in paths], words.split(","))
+    import math
+    if not all(math.isfinite(v) and v > 0 for v in (button_diameter_m, button_height_m)):
+        raise ValueError("Button dimensions must be finite and positive")
+    result = reconstruct.remote([p.read_bytes() for p in paths], words.split(","), button_diameter_m, button_height_m)
     with tarfile.open(fileobj=io.BytesIO(result["archive"]), mode="r:gz") as archive:
         for member in archive.getmembers():
             if Path(member.name).name != member.name:

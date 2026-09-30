@@ -17,7 +17,7 @@ import time
 
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageOps
 import trimesh
 
 
@@ -235,107 +235,38 @@ def _bbox_quality(root, seg, kind):
     return rows
 
 
-def _color_components(mask, area_min, area_max):
-    n, _, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8))
-    return [(int(x), int(y), int(w), int(h), int(area))
-            for x, y, w, h, area in stats[1:n] if area_min <= area <= area_max]
-
-
-def _button_candidate(root, seg, diameter_m, height_m):
-    """Find a red mushroom cap directly above a compact yellow housing."""
-    candidates = []
-    for i in range(1, 5):
-        frame = _frame(root, i)
-        rgb = _array(frame["image"])
-        hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
-        red = cv2.inRange(hsv, (0, 80, 80), (12, 255, 255)) | cv2.inRange(hsv, (170, 80, 80), (179, 255, 255))
-        yellow = cv2.inRange(hsv, (16, 70, 80), (45, 255, 255))
-        reds = _color_components(red, 8, 180)
-        yellows = _color_components(yellow, 18, 350)
-        points, K, pose = (_array(frame[k]) for k in ("pts3d", "intrinsics", "camera_poses"))
-        valid = _array(frame["non_ambiguous_mask"]).astype(bool)
-        local = (points - pose[:3, 3]) @ pose[:3, :3]
-        depth = local[..., 2]
-        for rx, ry, rw, rh, ra in reds:
-            if not (3 <= rw <= 20 and 2 <= rh <= 18):
-                continue
-            for yx, yy, yw, yh, ya in yellows:
-                if not (5 <= yw <= 35 and 3 <= yh <= 35):
-                    continue
-                overlap = max(0, min(rx + rw, yx + yw) - max(rx, yx))
-                if overlap < .55 * rw or abs(rx + rw / 2 - yx - yw / 2) > .35 * yw:
-                    continue
-                if not (ry - 2 <= yy <= ry + rh + 12 and ry + rh <= yy + yh + 3):
-                    continue
-                x0, y0, x1, y1 = min(rx, yx), min(ry, yy), max(rx + rw, yx + yw), max(ry + rh, yy + yh)
-                if x1 - x0 > 35 or y1 - y0 > 42:
-                    continue
-                if x0 == 0 or y0 == 0 or x1 == rgb.shape[1] or y1 == rgb.shape[0]:
-                    continue  # A cropped diameter is not a scale measurement.
-                patch = valid[y0:y1, x0:x1] & np.isfinite(depth[y0:y1, x0:x1]) & (depth[y0:y1, x0:x1] > 0)
-                if patch.sum() < 12:
-                    continue
-                native_depth = float(np.median(depth[y0:y1, x0:x1][patch]))
-                native_d = float((x1 - x0) * native_depth / K[0, 0])
-                native_h = float((y1 - y0) * native_depth / K[1, 1])
-                world = np.median(points[y0:y1, x0:x1][patch], axis=0)
-                if min(native_d, native_h) <= 0:
-                    continue
-                candidates.append({"photo": i, "box": [x0, y0, x1, y1],
-                                   "redPixels": ra, "yellowPixels": ya,
-                                   "centerNative": world.tolist(), "nativeDiameter": native_d,
-                                   "nativeHeight": native_h, "scaleFromDiameter": diameter_m / native_d,
-                                   "scaleFromHeight": height_m / native_h})
-    # The anchor is one stationary physical component in several camera views.
-    groups = []
-    for candidate in sorted(candidates, key=lambda row: -(row["redPixels"] + row["yellowPixels"])):
-        center = np.asarray(candidate["centerNative"])
-        group = next((g for g in groups if np.linalg.norm(center - np.asarray(g[0]["centerNative"])) < .35
-                      and all(v["photo"] != candidate["photo"] for v in g)), None)
-        if group is None:
-            groups.append([candidate])
-        else:
-            group.append(candidate)
-    views = max(groups, key=lambda g: (len(g), sum(v["redPixels"] + v["yellowPixels"] for v in g)), default=[])
-    scales = np.array([x[k] for x in views for k in ("scaleFromDiameter", "scaleFromHeight")], float)
-    med = float(np.median(scales)) if len(scales) else None
-    spread = float(np.median(np.abs(scales - med)) / med) if med else None
-    shape_disagreement = (float(np.median([abs(x["scaleFromDiameter"] - x["scaleFromHeight"]) /
-                                           np.mean([x["scaleFromDiameter"], x["scaleFromHeight"]])
-                                           for x in views])) if views else None)
-    usable = (len(views) >= 2 and spread is not None and spread <= .15 and
-              shape_disagreement is not None and shape_disagreement <= .15)
-    return {"assumedDiameterM": diameter_m, "assumedHeightM": height_m,
-            "source": "user-supplied provisional dimensions; red/yellow color pair in raw images",
-            "views": views, "candidateCount": len(candidates),
-            "status": "candidate" if usable else "unverified",
-            "nativeToMetres": med if usable else None,
-            "relativeMedianAbsoluteDeviation": spread,
-            "diameterHeightScaleDisagreement": shape_disagreement}
-
-
-def _button_preview(root, button):
-    """Show the supplied 20x20 cm shape as a hypothesis, even if calibration fails."""
-    views = button["views"]
-    if len(views) < 2:
-        return None
-    scale = float(np.median([view["scaleFromDiameter"] for view in views]))
-    diameter_native = button["assumedDiameterM"] / scale
-    height_native = button["assumedHeightM"] / scale
-    center = np.median([view["centerNative"] for view in views], axis=0)
+def _export_metric_scene(root, geometry):
+    """Bake one common scale and floor transform into the downloadable scene."""
+    scale = float(geometry["anchor"]["mPerNative"])
+    if not np.isfinite(scale) or scale <= 0:
+        raise ValueError("No finite positive reference scale for scene export")
+    normal = np.asarray(geometry["floor"]["normal"], float)
+    transform = trimesh.geometry.align_vectors(normal, [0, 1, 0])
+    transform[:3, :3] *= scale
+    transform[1, 3] = scale * float(geometry["floor"]["offset"])
     scene = trimesh.Scene()
-    for label, radius, height, offset, color in (
-        ("yellow_housing", diameter_native / 2, height_native * .8, height_native * .1, [235, 197, 28, 255]),
-        ("red_cap", diameter_native * .24, height_native * .2, -height_native * .4, [191, 35, 30, 255]),
-    ):
-        mesh = trimesh.creation.cylinder(radius=radius, height=height, sections=48)
-        mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
-        mesh.apply_translation(center + [0, offset, 0])
-        mesh.visual.vertex_colors = np.tile(color, (len(mesh.vertices), 1))
-        scene.add_geometry(mesh, node_name=label, geom_name=label)
-    (root / "button.glb").write_bytes(scene.export(file_type="glb"))
-    return {"kind": "assumed dimension preview", "sourcePhotos": [x["photo"] for x in views],
-            "scaleUsedForPreviewOnly": scale}
+    for name in ("robot-v4", "cart-single", "posts", "fence-fitted", "floor-fitted"):
+        mesh = trimesh.load(root / f"{name}.glb", force="scene").to_geometry()
+        scene.add_geometry(mesh, node_name=name, geom_name=name, transform=transform)
+    scene.metadata.update(units="meters", scale_status="user_dimension_hypothesis",
+                          button_height_m=geometry["anchor"]["assumedHeightM"],
+                          button_width_m=geometry["anchor"]["assumedWidthM"])
+    (root / "workcell-metric.glb").write_bytes(scene.export(file_type="glb"))
+
+
+def _anchor_sheet(root, sources, anchor):
+    """Show exactly which physical component the editable dimensions refer to."""
+    views = anchor["views"]
+    sheet = Image.new("RGB", (160 * len(views), 188), "#152222")
+    draw = ImageDraw.Draw(sheet)
+    for number, view in enumerate(views):
+        with Image.open(sources[view["photo"] - 1]) as source:
+            source = ImageOps.exif_transpose(source).convert("RGB")
+            crop = source.crop(tuple(view["boxRaw"]))
+            crop.thumbnail((144, 156))
+            sheet.paste(crop, (number * 160 + (160 - crop.width) // 2, 8))
+        draw.text((number * 160 + 8, 169), f"Photo {view['photo']}", fill="white")
+    sheet.save(root / "geometry-anchor.jpg", quality=90)
 
 
 def _build_page(root, metrics):
@@ -346,13 +277,15 @@ def _build_page(root, metrics):
     (page / "index.html").write_text(
         TEMPLATE.read_text().replace("../observed/viewer-assets/", "./viewer-assets/"))
     shutil.copytree(TEMPLATE.parent.parent / "observed/viewer-assets", page / "viewer-assets")
+    shutil.copytree(TEMPLATE.parent / "viewer-assets", page / "viewer-assets", dirs_exist_ok=True)
     assets = ("robot-v1.glb", "robot-v2.glb", "robot-v3.glb", "robot-v4.glb", "robot-multi.glb",
               "cart-single.glb", "cart-observed.glb", "posts.glb", "fence-observed.glb",
-              "mask-contact-sheet.jpg", "extra-mask-contact-sheet.jpg", "cart-mask-sheet.jpg")
+              "mask-contact-sheet.jpg", "extra-mask-contact-sheet.jpg", "cart-mask-sheet.jpg",
+              "fence-fitted.glb", "floor-fitted.glb", "workcell-metric.glb", "geometry.json")
     for name in assets:
         shutil.copyfile(root / name, page / name)
-    if (root / "button.glb").is_file():
-        shutil.copyfile(root / "button.glb", page / "button.glb")
+    for evidence in [*root.glob("geometry-*.jpg"), *root.glob("geometry-*.png")]:
+        shutil.copyfile(evidence, page / evidence.name)
     frames = []
     for i in range(1, 5):
         shutil.copyfile(root / f"photo-{i}.png", page / f"photo-{i}.png")
@@ -363,7 +296,7 @@ def _build_page(root, metrics):
                        "cameraToWorld": _array(frame["camera_poses"]).tolist()})
     times = metrics["stageTiming"]
     data = {"frames": frames, "quality": metrics["robotQuality"], "cartQuality": metrics["cartQuality"],
-            "button": metrics["button"], "scale": metrics["button"]["status"],
+            "geometry": metrics["geometry"],
             "timing": {"oneShotSeconds": metrics["oneShotWallSeconds"],
                        "geometrySeconds": times["geometrySeconds"],
                        "segmentationSeconds": times["segmentationSeconds"],
@@ -386,8 +319,8 @@ def _self_check():
 def run(images, out, diameter_m, height_m):
     if len(images) != 4 or len(set(images)) != 4 or any(not p.is_file() for p in images):
         raise ValueError("Exactly four distinct, readable source photos are required")
-    if diameter_m <= 0 or height_m <= 0:
-        raise ValueError("Button dimensions must be positive")
+    if not all(np.isfinite(v) and v > 0 for v in (diameter_m, height_m)):
+        raise ValueError("Button dimensions must be finite and positive")
     if out.exists():
         raise ValueError("Output must be a new directory; a one-shot run never mutates earlier evidence")
     out.mkdir(parents=True)
@@ -397,7 +330,8 @@ def run(images, out, diameter_m, height_m):
     paths = ",".join(str(p) for p in images)
     try:
         record = _job("one-container", ["modal_apps/workcell_photo_all.py", "--images", paths,
-                  "--out", str(out), "--words", ",".join(WORDS)], out)
+                  "--out", str(out), "--words", ",".join(WORDS),
+                  "--button-diameter-m", str(diameter_m), "--button-height-m", str(height_m)], out)
     except Exception as error:
         ledger["failure"] = str(error)
         (out / "spend-ledger.json").write_text(json.dumps(ledger, indent=2) + "\n")
@@ -407,9 +341,11 @@ def run(images, out, diameter_m, height_m):
     usd_per_second = 2 * .000694 + 16 * .0000131 + 80 * .00000222
     ledger["estimate"] = {
         "usdPerSecond": round(usd_per_second, 7),
-        "lowerBoundUsd": round(usd_per_second * modal_timing["containerWallSeconds"], 3),
-        "wallClockUpperBoundUsd": round(usd_per_second * modal_timing["wallSecondsIncludingColdStart"], 3),
-        "basis": "unit-rate estimate, not an invoice; upper bound includes possible scheduling time"}
+        "functionWindowEstimateUsd": round(usd_per_second * modal_timing["containerWallSeconds"], 3),
+        "callWindowEstimateUsd": round(usd_per_second * modal_timing["wallSecondsIncludingColdStart"], 3),
+        "rateSource": "https://modal.com/pricing",
+        "rateCheckedDate": "2026-09-30",
+        "basis": "reserved-resource list-rate estimates, not invoice amounts; call window includes possible scheduling time"}
     (out / "spend-ledger.json").write_text(json.dumps(ledger, indent=2) + "\n")
     seg = json.loads((out / "sam3.json").read_text())
     cart_seg = json.loads((out / "cart-masks.json").read_text())
@@ -426,11 +362,12 @@ def run(images, out, diameter_m, height_m):
     _mask_sheet(out, seg, ("industrial robot arm", "safety fence", "work platform"), "mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("yellow safety post", "black bollard", "emergency stop button"), "extra-mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("cart",), "cart-mask-sheet.jpg", cart_seg)
-    button = _button_candidate(out, seg, diameter_m, height_m)
-    button["preview"] = _button_preview(out, button)
+    geometry = json.loads((out / "geometry.json").read_text())
+    _anchor_sheet(out, images, geometry["anchor"])
+    _export_metric_scene(out, geometry)
     metrics = {"oneShotWallSeconds": round(time.monotonic() - began, 2),
-               "button": button, "robotQuality": robot_quality, "cartQuality": cart_quality,
-               "surfaces": surfaces, "posts": posts, "runs": ledger["runs"],
+               "robotQuality": robot_quality, "cartQuality": cart_quality,
+               "surfaces": surfaces, "posts": posts, "runs": ledger["runs"], "geometry": geometry,
                "stageTiming": json.loads((out / "stage-timing.json").read_text())}
     page = _build_page(out, metrics)
     metrics["oneShotWallSeconds"] = round(time.monotonic() - began, 2)
@@ -440,7 +377,7 @@ def run(images, out, diameter_m, height_m):
     (out / "one-shot.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2) + "\n")
     (out / "spend-ledger.json").write_text(json.dumps(ledger, indent=2) + "\n")
     print(json.dumps({"oneShotWallSeconds": metrics["oneShotWallSeconds"],
-                      "buttonStatus": button["status"], "output": str(out)}), flush=True)
+                      "buttonStatus": geometry["anchor"]["status"], "output": str(out)}), flush=True)
 
 
 def main():
