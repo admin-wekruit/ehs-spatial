@@ -2566,6 +2566,18 @@ def analyse(m, mp4, opts, clock, writer, log):
                    objects=len(objects), cascade=casc, events_windows=len(ev), vllm_engine_stats=vlm.throughput(), vlm_questions=vlm.log_stats(t_call),
                    cut_chunks={"submitted_s": chunk_at, "done_s": [chunk_done.get(i) for i in range(len(futures))],
                                "work_s": [round(f.result()["s"], 3) for f in futures]})
+    if opts.get("visit_of"):  # r5b: this video as a revisit of the site map's report (fast_report.visits): the `visits` layer, on this clock
+        from fast_report import visits
+        try:
+            writer.drain()  # this report's own layers are in the store before the comparison reads them
+            with clock.stage("visits", gpu=dev_geo):
+                m.da3.restore()  # offloaded for SAM 3D after the last shot; run() restores it again at the end (off the clock)
+                summary["visits"] = visits.run("/v/layers", opts["visit_of"], writer.report_id, visits.Gpu(m.da3, m.namer_enc), writer, clock,
+                                               site=opts.get("visit_site"), b_frames=frames)[2]
+            clock.mark("visits_put")
+        except Exception:  # noqa: BLE001  the report stands without its visits layer; the reason is kept
+            import traceback
+            summary["visits"] = {"error": traceback.format_exc()[-3000:]}
     return summary
 
 

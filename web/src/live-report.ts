@@ -93,7 +93,24 @@ export function timeReps(card: any, frame: string, ff: any, still: any, box: { m
   return out;
 }
 
-export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null, onDemand: any[] = [], cardShots?: any[] | null): SceneDocument {
+/** r5b (visits): a status per object of this visit and the site map's objects to draw as ghosts, from the `visits` layer and the
+ *  panel's pick (show visit A = the site map's objects carried into this visit's frame; show visit B = this visit's own objects). */
+export const VISIT_COLOR: Record<string, number[]> = { new: [.2, .8, .3], moved: [.25, .5, 1], missing: [.95, .2, .2], changed_height: [1, .55, .05],
+  changed_angle: [1, .55, .05], static: [.7, .7, .7], delineated_otherwise: [.7, .7, .7], not_observed_in_a: [.55, .45, .75] };
+export type VisitView = { showA: boolean; showB: boolean; status: Map<string, string>; ghosts: { id: string; row: any; model: any; shot: number }[] };
+export function visitView(visits: any, showA: boolean, showB: boolean): VisitView | null {
+  if (!visits?.objects) return null;
+  const status = new Map<string, string>(), ghosts: VisitView["ghosts"] = [];
+  for (const o of visits.objects) {
+    if (o.b) status.set(o.b, o.status);
+    const m = o.status === "missing" ? o.ghost_model : ["moved", "changed_height", "changed_angle"].includes(o.status) ? o.carried?.model : null;
+    if (m?.kind && m.position) ghosts.push({ id: "visit-a:" + o.a, row: o, model: m, shot: o.shot_b });
+  }
+  return { showA, showB, status, ghosts };
+}
+
+export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null, onDemand: any[] = [], cardShots?: any[] | null,
+  visit?: VisitView | null): SceneDocument {
   const doc: any = { schemaVersion: 2, target: "scene", captureId: report, coordinateFrames: [], cameras: [], observations: [], entities: [],
     assets: [], annotations: [], geometryBindings: {} };
   const asset = (ref: BlobRef) => {
@@ -158,6 +175,8 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
       : sglb ? { id: "surface:" + o.id, kind: "generated_mesh", sourceKind: "observed_surface_model", assetId: asset(sglb), node: o.id, coordinateFrameId: frame,
         transform: identity(frame), placementState: "confirmed", bounds: sf.min && { min: sf.min, max: sf.max } }
       : box;
+    const vs = visit?.showB ? visit.status.get(o.id) : undefined;  // r5b: this visit's object coloured by what changed since the site map
+    if (vs && VISIT_COLOR[vs] && rep.material) rep.material = { ...rep.material, color: VISIT_COLOR[vs], baseColorFactor: [1, 1, 1, vs === "static" ? .1 : .35] };
     const idn = card?.identity || {};
     // r5b (time): a card with a change in its timeline is drawn per interval (the time scrubber shows its state at t); the others stay static
     const timed = card?.time?.timeline?.changes?.length ? card : null, ff = timed && shotFrames.get(timed.shot);
@@ -165,7 +184,7 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
     doc.entities.push({ id: o.id, label: idn.name || idn.type?.label || o.label || o.word, associationState: "association_pending", visible: true, observationRefs: [],
       activeModelRepresentationId: reps.length ? reps[0].id : rep.id, representations: reps.length ? reps : [rep],
       fast: { kind: "object", ...o, model: model || null, display_model: card?.model || null, surface: sf || null, tier: glb ? 1 : dm ? "primitive" : sglb ? 0 : null,
-        timed: reps.length > 0 } });
+        timed: reps.length > 0, visit: vs || null } });
   }
   for (const c of onDemand) {  // r5b: an on-demand card's observed surface (fast_report.ondemand.surface_model: an inline one-node GLB)
     const m = c.model;
@@ -176,6 +195,15 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
       activeModelRepresentationId: "surface:" + c.id, fast: { kind: "object", on_demand: true, shot: c.shot, display_model: m, tier: 0 },
       representations: [{ id: "surface:" + c.id, kind: "generated_mesh", sourceKind: "observed_surface_model", assetId: id, node: m.node || c.id,
         coordinateFrameId: frame, transform: identity(frame), placementState: "confirmed", bounds: m.bounds }] });
+  }
+  for (const g of visit?.showA ? visit.ghosts : []) {  // r5b: the site map's object where it stood, carried into this visit's frame
+    const frame = frameOf(g.shot), m = g.model, half = m.kind === "cylinder" ? [m.radius_m, m.radius_m, m.length_m / 2] : (m.size_m || [.1, .1, .1]).map((v: number) => v / 2);
+    doc.entities.push({ id: g.id, label: `visit A: ${g.row.name_a || g.row.a} (${g.row.status})`, associationState: "association_pending", visible: true, observationRefs: [],
+      activeModelRepresentationId: "ghost:" + g.id, fast: { kind: "visit_ghost", row: g.row, shot: g.shot },
+      representations: [{ id: "ghost:" + g.id, kind: "primitive", primitive: modelPrimitive(m), coordinateFrameId: frame,
+        transform: { ...identity(frame), position: m.position, quaternion: m.quaternion }, placementState: "confirmed",
+        bounds: { min: half.map((v: number) => -Math.max(v, .0025)), max: half.map((v: number) => Math.max(v, .0025)) },
+        material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .25], selectedFactor: [1, 1, 1, 1], color: VISIT_COLOR[g.row.status] || [.9, .9, .9] } }] });
   }
   for (const t of people?.data.tracks || []) {
     const ref = people.blobs["track-" + t.id];

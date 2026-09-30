@@ -112,11 +112,11 @@ import {modelPrimitive} from '../src/live-report.ts';
   assert.equal(one({models:{layer:'models',seq:2,data:{models:[{object:'o',transform:{position:[0,0,0]},bounds:{}}]},blobs:{'model-o':{sha256:'ab',bytes:1}}}}).activeModelRepresentationId,'model:o');
   // r5b: a card with a change is drawn per interval (the scrubber): the model at each interval's place, a coloured box where it moved
   const ff={origin_m:[0,0,0],x:[1,0,0],z:[0,0,1]};
-  const moved={id:'o',kind:'object',shot:0,model:{kind:'box',size_m:[1,1,1],faces:{},position:[.5,.5,.5],quaternion:[0,0,0,1]},
+  const moved={id:'o',kind:'object',shot:0,model:{kind:'box',tier:'primitive',size_m:[1,1,1],faces:{},position:[.5,.5,.5],quaternion:[0,0,0,1]},
     time:{timeline:{centre_xy:[.5,.5],changes:[{kind:'moved'}],intervals:[{state:'not observed',t:[0,2],reason:'not seen yet'},{state:'first seen',t:[2,5],v:{position_xy:[[.5,.5],.1]}},
       {state:'moved',t:[5,9],v:{position_xy:[[2.5,.5],.1]}},{state:'not observed',t:[9,10],reason:'out of view'}]}}};
   const doc2=liveDocument('r',{objects:{layer:'objects',seq:1,data:{objects:[{id:'o',shot:0,word:'box',box_min_m:[0,0,0],box_max_m:[1,1,1]}]},blobs:{}} as any},
-    [moved],[{index:0,floor_frame:ff}]).entities[0] as any;
+    [moved],[],[{index:0,floor_frame:ff}]).entities[0] as any;
   const reps=doc2.representations;
   assert.ok(reps.every((r:any)=>r.timeRange),'every representation of a changed card is timed');
   const models=reps.filter((r:any)=>r.id.startsWith('prim:o@'));
