@@ -31,6 +31,7 @@ STAGES = {"decode", "cuts", "sam3.person", "vlm.vocab", "sam3.vocab.wave1", "sam
           "sam3d.decimate", "splat.preview", "splat.full",
           # the core's finer stages (fb/a-core), fixed as well
           "vlm.vocab.frames", "vlm.events.frames", "gather.person_floor", "pack.room.shot", "people.shot", "dedupe",
+          "vocab.frames", "vocab.ram", "vocab.pe",  # r5b: the VLM-free wave-2 word sources (fast_report.vocab)
           "outlines.segmented", "outlines.projected", "outlines.polygons", "cascade.embed", "cascade.decide", "vlm.name.crops",
           "vlm.name", "frames.shared", "sam3d.inputs", "splat.setup", "splat.score", "da3.restore",
           # click MVP (mvp/a-cards): pick layer, cards, densify, identity
