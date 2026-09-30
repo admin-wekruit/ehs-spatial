@@ -18,7 +18,9 @@ every number a card shows carries +-u and its scale (contract()).
 
     python -m fast_report.cards --self-check
 """
+import json
 import sys
+from pathlib import Path
 import time
 
 import numpy as np
@@ -169,7 +171,9 @@ TAXONOMY = {
                                  # mvp3/judge: retail fixtures the namers named (round-2 review D3)
                                  "clip strip", "merchandise strip", "hanging strip", "hanger", "shoe hanger"),
                 "cabinet": ("tool cabinet", "flammables cabinet", "flammable cabinet", "safety cabinet", "storage cabinet", "filing cabinet",
-                            "cupboard", "tool chest", "drawer unit", "drawer", "roll cabinet", "chest of drawers"),
+                            "cupboard", "tool chest", "drawer unit", "drawer", "roll cabinet", "chest of drawers",
+                            # r5b: workshop doors of cabinets and lockers (round 2's held-out labels: 'workbench locker door')
+                            "cabinet door", "locker door", "cupboard door", "drawer front", "workbench cabinet"),
                 "locker": (), "tool holder": ("tool rack", "pegboard", "tool board", "tool organizer", "tool wall", "tool stand", "holder",
                                                 "organizer"),
                 "refrigerator": ("fridge", "freezer", "cooler", "display freezer", "refrigerated case")},
@@ -194,22 +198,28 @@ TAXONOMY = {
                             # mvp3/judge: parts of a machine named on their own (ME340, round-2 review D3)
                             "machine component", "bellows cover", "way cover", "spindle cover", "machine leg", "machine bed",
                             "machine stand", "machine base", "coolant tank", "chip conveyor", "cable carrier", "handwheel",
-                            "steady rest", "bandsaw head"),
-                "lathe": ("cnc lathe",), "milling machine": ("mill", "cnc mill", "milling"), "cnc machine": ("machining center", "cnc", "waterjet", "water jet", "waterjet cutter", "water jet cutter",
+                            "steady rest", "bandsaw head",
+                            # r5b: a machine's own panels, doors and windows (round 2's labels: CNC side panel, lathe cover panel)
+                            "machine side panel", "machine panel", "machine cover", "machine door", "machine window", "cover panel"),
+                "lathe": ("cnc lathe",), "milling machine": ("mill", "cnc mill", "milling", "mill table", "milling table", "knee mill", "vertical mill"), "cnc machine": ("machining center", "cnc", "waterjet", "water jet", "waterjet cutter", "water jet cutter",
                                                                         "plasma cutter", "laser cutter", "cnc router"),
                 "drill press": (), "grinder": ("bench grinder", "grinding machine", "belt sander", "sander"),
                 "saw": ("band saw", "bandsaw", "table saw", "chop saw", "miter saw"), "welder": ("welding machine",),
                 "compressor": ("air compressor",), "press": ("hydraulic press", "arbor press"), "vise": ("bench vise", "vice", "machine vise"),
                 "3d printer": ()},
     "tool": {"hand tool": ("tool", "wrench", "spanner", "hammer", "mallet", "screwdriver", "pliers", "file", "chisel", "clamp", "caliper",
-                           "hex key", "allen key", "hex key set", "drill bit", "tape measure", "measuring tape", "gauge", "gage", "tap",
+                           "hex key", "allen key", "hex key set", "drill bit", "tape measure", "measuring tape", "gauge", "gage", "tap", "tap wrench",
                            "collet", "chuck", "level", "cutter", "wrench set", "broom",
                            # mvp3/judge: cutting tools (a longer match than the machine word mill), gauges (round-2 review D3)
                            "end mill", "face mill", "shell mill", "fly cutter", "milling cutter", "cutting tool", "parallel",
                            "parallel set", "blow gun", "scale", "ruler", "square"),
              "power tool": ("drill", "power drill", "cordless drill", "angle grinder", "impact driver", "heat gun", "jigsaw", "circular saw",
                             "nail gun"),
-             "tool box": ("toolbox", "tool kit", "tool case"), "tool tray": ("tray",)},
+             "tool box": ("toolbox", "tool kit", "tool case"), "tool tray": ("tray",),
+             # r5b: the holder that carries a cutter into a machine's spindle (CAT40 and the like), not a rack for tools (storage's
+             # 'tool holder'); round 2's held-out labels 'mill tool holder', 'end mill in a tool holder'
+             "machine tool holder": ("mill tool holder", "end mill holder", "cat40 tool holder", "collet chuck", "tool holder item",
+                                     "shell mill arbor", "boring head", "drill chuck")},
     "handling": {"forklift": ("fork lift", "lift truck", "reach truck"), "pallet jack": ("pallet truck", "hand pallet truck", "pump truck"),
                  "hand truck": ("dolly", "sack truck"),
                  "cart": ("trolley", "shopping cart", "utility cart", "rolling cart", "platform cart", "flatbed cart", "stocking cart",
@@ -237,9 +247,10 @@ TAXONOMY = {
                                      "digital readout", "readout", "control terminal", "readout display", "digital display",
                                      "dro", "dro display", "lcd display", "led display"),
                    "electrical outlet": ("outlet", "power outlet", "socket", "power strip", "receptacle"), "switch": ("light switch",),
-                   "light fixture": ("ceiling light", "lamp", "fluorescent light", "fluorescent lamp", "light", "work light", "lighting"),
-                   "fan": ("ceiling fan", "exhaust fan", "floor fan")},
-    "building": {"door": ("roll up door", "garage door", "overhead door", "doorway"), "window": ("glass window",),
+                   "light fixture": ("ceiling light", "lamp", "fluorescent light", "fluorescent lamp", "light", "work light", "lighting",
+                                     "ceiling light fixture", "light fitting", "shop light"),
+                   "fan": ("ceiling fan", "exhaust fan", "floor fan", "pedestal fan", "standing fan", "box fan")},
+    "building": {"door": ("roll up door", "garage door", "overhead door", "doorway", "roller door", "door rail", "door track", "roller door rail"), "window": ("glass window",),
                  "column": ("pillar", "post", "support column", "beam"), "wall panel": ("partition wall", "partition", "wall board"),
                  "floor drain": ("drain", "grate", "drain grate", "drain cover"), "vent": ("air vent", "grille", "vent cover")},
     "electronics": {"monitor": ("computer monitor", "screen", "display screen", "tv", "television"),
@@ -247,7 +258,9 @@ TAXONOMY = {
     "material": {"wooden board": ("board", "plank", "lumber", "plywood", "wood", "wooden block", "block of wood"),
                  "metal sheet": ("sheet metal", "metal plate", "plate"),
                  "metal part": ("part", "machine part", "metal piece", "workpiece", "fitting", "bracket", "metal block", "block", "gear",
-                                "bolt", "nut", "fixture", "metal bar", "bar stock", "rod", "stud", "handle", "round stock", "jaw", "dowel", "pin", "dowel pin", "collar", "shaft"),
+                                "bolt", "nut", "fixture", "metal bar", "bar stock", "rod", "stud", "handle", "round stock", "jaw", "dowel", "pin", "dowel pin", "collar", "shaft",
+                                # r5b: machine-shop setup parts (round 2's labels: angle plates, clamping studs)
+                                "angle plate", "clamping stud", "t slot bolt", "step block", "clamp bar"),
                  "whiteboard": ("bulletin board", "notice board", "dry erase board")},
     "ppe": {"glove": ("work glove",), "safety glasses": ("goggles", "glasses", "face shield"), "hard hat": ("helmet",)},
     "misc": {"rag": ("cloth", "towel", "shop towel"), "paper": ("paper sheet", "document"), "clipboard": (), "book": ("binder", "manual"),
@@ -305,7 +318,34 @@ TYPE_LABEL = {"storage": "shelf / rack / storage", "goods": "container / box / g
               "misc": "other item", "hazard": "spill"}
 TYPE_ONLY = " (type only)"
 ZS_FAMILY_MIN = .5  # a priori: zero-shot alone gives a family only when its summed family probability is at least this
+ZS_STRONG = .9  # r5b, a priori: a zero-shot family this sure outranks a lone SAM 3 word (ME340: locker doors and a fan under 'metal part')
 SHAPES = ("long thin object", "flat panel", "box-shaped object", "compact object", "object (shape not measured)")
+# r5b: the family vote's single-vote routes ('zero-shot strong', 'sam3 word alone', 'zero-shot alone') are shown only for the
+# families where they were right often enough on the dev labels (scripts/r5b_vocab.py fit: runs/mvp2-identity-study-001's items,
+# not the held-out ones); elsewhere the card is 'unidentified (<shape>)'. No file: every route is allowed (round 4's rule).
+FAMILY_FIT = Path(__file__).with_name("family_calibration.json")
+SINGLE_ROUTES = ("zero-shot strong", "sam3 word alone", "zero-shot alone")
+
+
+def family_fit(path=FAMILY_FIT):
+    """{route: {family: allowed}, 'default': {route: allowed}} from the fitted file (cached), or {} (every route allowed)."""
+    key = str(path)
+    if key not in _FIT:
+        _FIT[key] = json.loads(Path(path).read_text()) if Path(path).exists() else {}
+    return _FIT[key]
+
+
+_FIT = {}
+
+
+def allowed(fit, route, family):
+    r = (fit.get("routes") or {}).get(route) or {}
+    return bool(r[family]["ok"]) if family in r else bool((fit.get("default") or {}).get(route, True))
+
+
+def unidentified(shape):
+    """The name of a card no family vote was sure of: 'unidentified (<shape>)' (r5b; round 4 showed '<shape> (type only)')."""
+    return f"unidentified ({'shape not measured' if shape == SHAPES[4] else shape})"
 
 
 def family_of(name):
@@ -315,12 +355,14 @@ def family_of(name):
     return FAMILY.get(canonical(name))
 
 
-def family_vote(sam3=None, yolo=None, zero_shot_family=None, bank=None, vlm_named=False):
+def family_vote(sam3=None, yolo=None, zero_shot_family=None, bank=None, vlm_named=False, fit=None):
     """The cheap votes at family level -> (family, source) or (None, None). sam3 / yolo / bank: a class or a name; zero_shot_family:
-    (family, summed p). The SAM 3 word's family with any other vote agreeing; else two of the other three agreeing; else the
-    SAM 3 word's family alone (its detector saw that kind of thing); else zero-shot alone at p >= ZS_FAMILY_MIN. 'hazard'
-    (spill) is never a type without a VLM (a spill is an EHS claim)."""
+    (family, summed p). The SAM 3 word's family with any other vote agreeing; else two of the other three agreeing; then the
+    single-vote routes, each only for the families family_fit() allows (r5b): zero-shot at p >= ZS_STRONG ('zero-shot strong'),
+    the SAM 3 word's family alone, zero-shot at ZS_FAMILY_MIN <= p < ZS_STRONG. 'hazard' (spill) is never a type without a VLM
+    (a spill is an EHS claim)."""
     ok = lambda f: f is not None and (f != "hazard" or vlm_named)  # noqa: E731
+    fit = family_fit() if fit is None else fit
     zf, zp = (zero_shot_family or (None, 0.))
     f = {"sam3": family_of(sam3), "yolo": family_of(yolo), "zero-shot": zf, "bank": family_of(bank)}
     f = {k: v if ok(v) else None for k, v in f.items()}
@@ -331,10 +373,10 @@ def family_vote(sam3=None, yolo=None, zero_shot_family=None, bank=None, vlm_name
     two = next((x for x in other if other.count(x) >= 2), None)
     if two:
         return two, " + ".join(k for k in ("yolo", "zero-shot", "bank") if f[k] == two) + " (family)"
-    if f["sam3"]:
-        return f["sam3"], "sam3 word alone (family)"
-    if zf and ok(zf) and zp >= ZS_FAMILY_MIN:
-        return zf, "zero-shot alone (family)"
+    for route, fam, on in (("zero-shot strong", f["zero-shot"], zp >= ZS_STRONG), ("sam3 word alone", f["sam3"], True),
+                           ("zero-shot alone", f["zero-shot"], ZS_FAMILY_MIN <= zp < ZS_STRONG)):  # two bands: each route its own items
+        if fam and on and allowed(fit, route, fam):
+            return fam, f"{route} (family)"
     return None, None
 
 
@@ -1735,8 +1777,8 @@ def apply_name(card):
     cls = canonical(shown)
     if shown == UNIDENTIFIED or cls is None:  # r4/naming: every object card carries a type; an unnamed one shows it
         ident["type"] = type_of(ident, phys, cls)
-        if shown == UNIDENTIFIED:
-            shown = ident["name"] = ident["type"]["label"] + TYPE_ONLY
+        if shown == UNIDENTIFIED:  # r5b: a family shows as '<family label> (type only)', no family as 'unidentified (<shape>)'
+            shown = ident["name"] = ident["type"]["label"] + TYPE_ONLY if ident["type"]["family"] else unidentified(ident["type"]["label"])
             cls = None
     else:
         ident["type"] = type_of(ident, phys, cls)
@@ -2509,7 +2551,11 @@ def self_check():
                      ("work table and tools", "workbench"), ("gantry cnc waterjet", "cnc machine"), ("bellows cover", "machine"), ("stretch wrap", "wrap"),
                      ("pallet racking upright", "rack"), ("shelf talker", "sign"), ("product display", "display rack"), ("box cutter", "hand tool"),
                      ("workbench leg", "workbench"), ("gondola shelf support", "shelf"), ("shopping cart caster wheel", "cart"),
-                     ("jug of windshield washer fluid", "container"), ("cabinet door", "door")):
+                     ("jug of windshield washer fluid", "container"), ("cabinet door", "cabinet"),
+                     # r5b: a cabinet's or a machine's own door is that cabinet's or machine's (round 2's held-out labels); the
+                     # holder that carries a cutter into a spindle is tooling, not a rack for tools
+                     ("workbench locker door", "cabinet"), ("machine side panel", "machine"), ("mill tool holder", "machine tool holder"),
+                     ("tool holder", "tool holder"), ("mill table", "milling machine"), ("roller door rail", "door"), ("pedestal fan", "fan")):
         assert canonical(n_) == want, (n_, canonical(n_))
     # the gate: 'spill' named by a VLM on a 0.6 m high box (a spill is flat, on the floor) with no detector word -> not shown
     a2 = copy.deepcopy(by["obj-0-0"])
@@ -2735,11 +2781,21 @@ def self_check():
                        {0: dict(shot, frame=fr, cam_floor=to_floor(cams[:, :3, 3], fr), u_pose_m=.04)}, [])
     assert pc3[0]["identity"]["name"].startswith("person? (small") and "lowest point" in pc3[0]["identity"]["note"], pc3[0]["identity"]
     # r4/naming: types. The family votes; the shape fallback; an unnamed card shows its type, idempotently, with no class prior
-    assert family_vote("cardboard box", None, ("storage", .9), None) == ("goods", "sam3 word alone (family)")
+    saved_fit = dict(_FIT)
+    _FIT[str(FAMILY_FIT)] = {}  # the rules themselves (no fitted file): every single-vote route allowed
+    assert family_vote("cardboard box", None, ("storage", .8), None) == ("goods", "sam3 word alone (family)")
+    assert family_vote("cardboard box", None, ("storage", .9), None) == ("storage", "zero-shot strong (family)"), "r5b: a sure zero-shot first"
     assert family_vote("carton", "crate", ("storage", .9), None) == ("goods", "sam3 word + yolo (family)")
     assert family_vote(None, "lathe", ("machine", .3), "~motor") == ("machine", "yolo + zero-shot (family)")
     assert family_vote(None, None, ("machine", .4), None) == (None, None) and family_vote(None, None, ("machine", .6), None)[0] == "machine"
     assert family_vote("puddle", None, ("hazard", .9), None) == (None, None), "a spill is never a type without a VLM"
+    # r5b: a single-vote route only for the families the dev labels allow; the route's default for the others
+    gate = {"routes": {"sam3 word alone": {"material": {"ok": False}, "goods": {"ok": True}}}, "default": {"sam3 word alone": False}}
+    assert family_vote("metal block", None, ("machine", .3), None, fit=gate) == (None, None)
+    assert family_vote("carton", None, ("machine", .3), None, fit=gate) == ("goods", "sam3 word alone (family)")
+    assert family_vote("lathe", None, ("tool", .3), None, fit=gate) == (None, None), "no fit for the family: the route's default"
+    assert family_vote("metal block", None, ("material", .3), None, fit=gate)[0] == "material", "two votes are never gated"
+    assert unidentified("compact object") == "unidentified (compact object)" and unidentified(SHAPES[4]) == "unidentified (shape not measured)"
     v = lambda x: {"value": x, "u": .01}  # noqa: E731
     assert shape_type({"height": v(.1), "width": v(2.), "depth": v(.2)}) == "long thin object"
     assert shape_type({"height": v(1.), "width": v(1.2), "depth": v(.05)}) == "flat panel"
@@ -2755,7 +2811,9 @@ def self_check():
     before = _json.dumps(card, sort_keys=True)
     assert _json.dumps(apply_name(card), sort_keys=True) == before, "apply_name is idempotent with a type"
     card["identity"]["naming"] = {"route": "unidentified"}
-    assert apply_name(card)["identity"]["name"] == "box-shaped object (type only)" and card["identity"]["type"]["family"] is None
+    assert apply_name(card)["identity"]["name"] == "unidentified (box-shaped object)" and card["identity"]["type"]["family"] is None
+    _FIT.clear()
+    _FIT.update(saved_fit)
     named = {"identity": {"proposed": "drill press", "decided_by": "vlm options", "naming": {"route": "vlm"}}, "physical": {}}
     assert apply_name(named)["identity"]["type"] == {"family": "machine", "label": "machine", "source": "the name"}
     print(f"cards self-check ok: robust extents within 5 % with flying pixels, fragment merge + cannot-link, depth not observed from one side, "

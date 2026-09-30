@@ -70,7 +70,9 @@
  "site_family": {
   "me340": "shop floor",
   "samsclub-a2": "retail",
-  "walmart": "retail"
+  "walmart": "retail",
+  "lightning": "shop floor"
  },
- "note": "folds[site]: held out (fitted without that video); families[f]: production"
+ "note": "folds[site]: held out (fitted without that video); families[f]: production",
+ "site_family_note": "r5b: 'lightning' (the Lightning eMotors factory tour clip, data/clips/lightning-3572) is a shop floor: its VLM rows are the only shop-floor rows that are not ME340's"
 }

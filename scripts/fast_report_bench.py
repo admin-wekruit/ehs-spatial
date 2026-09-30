@@ -15,6 +15,10 @@ peaks and >90% flags, quality, acceptance against section 13, and the Modal list
 
     python scripts/fast_report_bench.py --out RUNS/mvp-bench-NNN [--sites me340,samsclub-a2,walmart]
         [--plan first,warm,warm,shifted] [--shift-s 5] [--background-s 0] [--serve] [--no-gpu-eval] [--click-latency C.json]
+        [--plan warm@pe,warm@taxonomy,warm@ram --vocab-words W.json] [--prelude lightning=CLIP.mp4@taxonomy] [--clicks C.json]
+    (r5b: a plan entry's '@source' is its call's wave-2 word source: pe | taxonomy | qwen, or a key of --vocab-words
+    {source: {site: [words]}} (a list computed off the pipeline); --prelude calls run first, unscored (the bank build);
+    --clicks {site: [{frame, x, y, ...}]} on-demand clicks after each video's first warm call)
     python scripts/fast_report_bench.py --billing RUNS/fb-bench-NNN     # reconcile with `modal billing report` (hours settle late)
     python scripts/fast_report_bench.py --self-check                    # the loop and the summary on a fake container
 """
@@ -311,6 +315,7 @@ def bench(a):
                          daemon=True).start()
         meta["hazard"] = {"decider": "gemini via the report-workspace container (scripts/name_video_entities.py's exec mechanism)",
                           "relay": "two modal.Queue.ephemeral(), this CLI"}
+    words_file = json.loads(a.vocab_words.read_text()) if a.vocab_words else {}
     with hazard_ctx, modal.enable_output(), app.run(), modal.Queue.ephemeral() as namer_q:
         meta["app_id"] = app.app_id
         relay = NamerRelay(namer_q, out) if a.namer == "gemini" else None
@@ -319,17 +324,37 @@ def bench(a):
         boot = fr.boot_info.remote()  # waits for the container: cold start, recorded, never counted as analysis
         boot = {**boot, "client_submitted_unix": submitted, "client_ready_unix": time.time(), "submit_to_ready_s_two_clocks": round(time.time() - submitted, 1)}
         (out / "boot.json").write_text(json.dumps(boot, indent=1))
+        for j, pre in enumerate(filter(None, a.prelude.split(","))):  # r5b: unscored calls first (the bank build's clips)
+            site, _, rest = pre.partition("=")
+            path, _, voc = rest.partition("@")
+            mp4 = Path(path).read_bytes()
+            sha = hashlib.sha256(mp4).hexdigest()
+            report = f"pre-{site}-{sha[:8]}-{int(time.time())}"
+            fl.put_blob(mirror_root, mp4)
+            options = {**vocab_options(voc or a.vocab, site, words_file), "client_has": [sha], "events": a.events, "judge": False,
+                       "display": False, "bank_exclude_site": a.bank_exclude_site, **({"bank": a.bank} if a.bank else {}), "naming": a.naming,
+                       "bank_exclude_sites": sites}  # the rows it writes must carry nothing of the scored videos
+            rec = call(fr, lambda e, r: fl.mirror(e, r, int(a.mirror_max_mb * 1e6) if a.mirror_max_mb else None), mirror_root, mp4, site, report, options)
+            rec.update(site=site, call=-1 - j, kind="prelude", window_s=None, frame_offset=0, options=options)
+            records.append(rec)
+            (out / f"call-{report}.json").write_text(json.dumps(rec, indent=1, default=str))
+            print("prelude", site, voc, json.dumps({k: v["first"]["written_s"] for k, v in layer_times(rec).items()}), flush=True)
         for site in sites:
-            for i, kind in enumerate(plan):
+            clicked = False
+            plan_s = plan if site == sites[0] or not a.plan_rest else a.plan_rest.split(",")  # r5b: the first video's first call after boot only
+            for i, kind in enumerate(plan_s):
+                kind, _, voc = kind.partition("@")
                 mp4, span, offset = window(site, kind, a.shift_s, out)
                 sha = hashlib.sha256(mp4).hexdigest()
-                last = site == sites[-1] and i == len(plan) - 1
+                last = site == sites[-1] and i == len(plan_s) - 1
                 report = f"mvp-{site}-{sha[:8]}-{int(time.time())}"
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
-                options = {"vocab": a.vocab, "discover": a.discover, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
+                options = {**vocab_options(voc or a.vocab, site, words_file), "discover": a.discover, "client_has": [sha],
+                           "background_s": a.background_s if last else 0, "window_s": span, "events": a.events,
+                           "bank_exclude_site": a.bank_exclude_site, **({"bank": a.bank} if a.bank else {}),
                            "coverage": a.coverage and kind != "warm-off", "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {}),
                            "coverage_debug": json.loads(a.coverage_debug.read_text()).get(site, []) if a.coverage_debug else [],
-                           **({} if a.judge == "on" else {"judge": False}), **({} if a.display == "on" else {"display": False}),
+                           "judge": a.judge == "on", **({} if a.display == "on" else {"display": False}),
                            "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm, "naming": a.naming}  # r4: the VLMs only when asked
                 options.update({k: False for k in ("judge", "identity", "display") if k in a.off} | ({"dump": True} if a.dump else {}))
                 if a.jev:  # r5b: the display-model router's Jev-Omni, awake before the call (its cold start is never analysis time)
@@ -340,11 +365,18 @@ def bench(a):
                     options["hazard_queues"] = queues
                 rec = call(fr, lambda e, r: fl.mirror(e, r, int(a.mirror_max_mb * 1e6) if a.mirror_max_mb else None), mirror_root, mp4, site, report, options,
                            Poller(report) if a.serve else None, relay)
-                rec.update(site=site, call=i, kind=kind, window_s=span, frame_offset=offset, options={k: v for k, v in options.items() if k not in ("namer", "hazard_queues")} | ({"namer": "gemini relay"} if relay else {})
+                rec.update(site=site, call=i, kind=kind, vocab=voc or a.vocab, window_s=span, frame_offset=offset,
+                           options={k: v for k, v in options.items() if k not in ("namer", "hazard_queues")} | ({"namer": "gemini relay"} if relay else {})
                            | ({"hazard": "gemini relay"} if queues is not None else {}))
                 if kind != "shifted":  # the delivered report's frames are the base window's
                     quality(rec, mirror_root, out, gpu=False)
-                rec["mvp_latency"] = mvp_latency(rec, mirror_root, site, click_latency)
+                try:  # a scoring failure must not end the bench (the container's calls are what cost)
+                    rec["mvp_latency"] = mvp_latency(rec, mirror_root, site, click_latency)
+                except Exception as error:  # noqa: BLE001
+                    rec["mvp_latency"] = {"error": repr(error)[:300]}
+                if kind == "warm" and not clicked and a.clicks:  # r5b: on-demand clicks (not analysis time) on this video's first warm call
+                    clicked = True
+                    rec["clicks"] = clicks(fr, mirror_root, rec["run"]["report"], json.loads(a.clicks.read_text()).get(site, []))
                 records.append(rec)
                 (out / f"call-{report}.json").write_text(json.dumps(rec, indent=1, default=str))
                 print(site, i, kind, json.dumps({k: v["first"]["written_s"] for k, v in layer_times(rec).items()}), flush=True)
@@ -376,6 +408,42 @@ def bench(a):
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
     (out / "summary.md").write_text(summary_md(summary, out))
     print((out / "summary.md").read_text())
+
+
+def vocab_options(source, site, words_file):
+    """r5b: a call's wave-2 word source -> its options (a key of the --vocab-words file: that source's list for this site; None: the
+    pipeline's default, fast_report.vocab.DEFAULT)."""
+    if source is None:
+        return {}
+    if source in words_file:
+        return {"vocab": "words", "vocab_words": list(words_file[source].get(site) or []), "vocab_list": source}
+    assert source in ("ram", "pe", "ram+pe", "taxonomy", "qwen"), f"unknown word source {source}"
+    return {"vocab": source}
+
+
+def clicks(fr, mirror_root, report, todo):
+    """r5b: on-demand clicks {frame, x, y} on a report (FastReport.click: fast_report.ondemand), each on the pick frame of the same
+    source frame -> [{click, status, entity or card name and how it was named, timing}]. Not analysis time."""
+    import fast_report_eval as fe
+    pick = fe.patch_versions(mirror_root, report, "pick")[-1]["data"]
+    at = {f["frame"]: i for i, f in enumerate(pick["frames"])}
+    out = []
+    for c in todo:
+        i = at.get(int(c.get("pick_frame", c["frame"])))
+        if i is None:
+            out.append({**c, "status": "no pick frame"})
+            continue
+        t = time.time()
+        try:
+            r = fr.click.remote(report, i, float(c["x"]), float(c["y"]))
+        except Exception as error:  # noqa: BLE001  one failed click is recorded, the rest go on
+            out.append({**c, "status": "error", "error": repr(error)[:300]})
+            continue
+        ident = r.get("identity") or {}
+        out.append({**c, "status": r.get("status"), "entity": r.get("entity"), "name": ident.get("name"), "decided_by": ident.get("decided_by"),
+                    "naming": ident.get("naming"), "vlm_requests": ident.get("vlm_requests"), "kind": r.get("kind"), "surface": r.get("surface"),
+                    "timing": r.get("timing"), "round_trip_s": round(time.time() - t, 3)})
+    return out
 
 
 def latency_table(records):
@@ -457,6 +525,8 @@ def self_check():
     with tempfile.TemporaryDirectory() as tmp:
         md = summary_md({"mvp_latency_table": t, "boot": {"ready_s": 131.}, "mvp_error": "x"}, Path(tmp))
     assert "| pick v1 | 33.5 (34.0) ✓ |" in md and "131.0 s" in md
+    assert vocab_options(None, "me340", {}) == {} and vocab_options("ram", "me340", {}) == {"vocab": "ram"}, "r5b: no source named: the pipeline's default"
+    assert vocab_options("x", "me340", {"x": {"me340": ["vise"]}}) == {"vocab": "words", "vocab_words": ["vise"], "vocab_list": "x"}
     print("fast_report_bench self-check passed: stream -> mirror, run.json kept, layer times, section 13 acceptance, summary, MVP window/latency table/page")
 
 
@@ -465,16 +535,25 @@ if __name__ == "__main__":
     p.add_argument("--out", type=Path)
     p.add_argument("--sites", default="me340,samsclub-a2,walmart")
     p.add_argument("--plan", default="first,warm,warm,shifted", help="calls per video: first | warm | shifted | warm-off (r4: warm, --coverage off)")
+    p.add_argument("--plan-rest", default="", help="r5b: the plan of every video after the first (e.g. 'warm': one first call after boot in all)")
     p.add_argument("--shift-s", type=float, default=5.)
     p.add_argument("--click-latency", type=Path, help="C's headless click check result {p50_ms, p95_ms, n}")
     p.add_argument("--background-s", type=int, default=0)
     p.add_argument("--mirror-max-mb", type=float, default=0., help="larger blobs stay on the Modal Volume (a nearly full disk)")
-    p.add_argument("--vocab", default="qwen", choices=("qwen", "gemini"))
+    p.add_argument("--vocab", default=None, help="r5b: wave-2 word source: ram | pe | taxonomy | qwen | a key of --vocab-words (default: the "
+                                                 "pipeline's fast_report.vocab.DEFAULT)")
+    p.add_argument("--vocab-words", type=Path, help="r5b: {source: {site: [words]}}: word lists computed off the pipeline (RAM++, YOLOE-pf)")
+    p.add_argument("--prelude", default="", help="r5b: site=clip.mp4[@source],...: unscored calls before the plan (the bank build)")
+    p.add_argument("--clicks", type=Path, help="r5b: {site: [{frame, x, y}]}: on-demand clicks after each video's first warm call")
+    p.add_argument("--events", action="store_true", help="r5b: the Qwen event captions (off by default: caption + action only when on)")
+    p.add_argument("--bank", help="r5b: the frozen bank snapshot (default: fast_report.cascade.BANK)")
+    p.add_argument("--bank-exclude-site", action=argparse.BooleanOptionalAction, default=True,
+                   help="r5b: the scored site's bank rows never used (no leakage into its types)")
     p.add_argument("--hazard", default="off", choices=("off", "qwen", "gemini"),
                    help="the hazard judge's VLM (r4: off by default, the rules alone; gemini: relayed by this CLI)")
     p.add_argument("--namer", default="none", choices=("gemini", "none"), help="mvp2/identity: object names from Gemini through the relay, or none (r4 default)")
     p.add_argument("--identity-vlm", action="store_true", help="r4: the Qwen decider names what the namer did not (off: the SAM 3 word stays)")
-    p.add_argument("--judge", default="on", choices=("on", "off"), help="r4: off = no judgements at all (no rules, no hazard VLM questions)")
+    p.add_argument("--judge", default="off", choices=("on", "off"), help="r5b: judgement paused: off by default (on = the rules, no hazard VLM questions)")
     p.add_argument("--display", default="on", choices=("on", "off"), help="r4: off = no SAM 3D models and no splat (the facts only)")
     p.add_argument("--coverage", action=argparse.BooleanOptionalAction, default=True, help="r4/coverage (on by default in r4/integrate): detector boxes -> SAM 3 tracker masks in densify ('warm-off' calls leave it off)")
     p.add_argument("--coverage-debug", type=Path, help="r4 dev: {site: [{id, frame, x, y}]} points whose box masks' fates the run records")
