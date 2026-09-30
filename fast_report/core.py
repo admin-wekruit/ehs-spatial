@@ -655,7 +655,8 @@ def tried_rows(records):
     return list(out.values())
 
 
-TIER1_CAP, TIER1_UNTIL_S = 60, 150.  # r5b: generated models per video (best-seen and largest first); no new generation after this (analysis s)
+TIER1_CAP, TIER1_UNTIL_S = 60, 135.  # r5b: generated models per video (best-seen and largest first); no new generation after this (analysis s:
+# the queued ones finish after it; r5b-models-commercial-001's ME340 first call, deadline 150 s: tier 1 done at 203 s)
 JEV_SIDE = 448  # the outlined view Jev-Omni sees (route/jev's crops)
 
 
@@ -1822,6 +1823,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         from fast_report import route
         crops = jev_crops(cs, results.get("outlines_v2") or results.get("outlines"), frames)
         got = m.jev_decide([(cid, jpg, route.JEV_STATE, route.Q5[0], route.Q5[1]) for cid, jpg in crops.items()])
+        results["jev"] = {k: v for k, v in got.items() if k != "probs"}  # round trip, compute, requests: the plan's record
         return got["probs"]
 
     def start_models():
@@ -2469,6 +2471,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     summary["boxes_v3"] = box_stats(objects, cards_out.get("v3"))
     summary["sam3d"] = display["models"].result() if "models" in display else None
     summary["tier0"] = {v: f.result() for v, f in tier0_futs.items()}  # r5b: before the shared frames go (their colours)
+    summary["jev"] = results.get("jev")
     summary["splat"] = splat_future.result() if splat_future is not None else None
     Path(shared.result()).unlink(missing_ok=True)
     if opts.get("fixture_dump"):  # r5 (models): the model bench's hand-off, once every layer is written (not analysis time)

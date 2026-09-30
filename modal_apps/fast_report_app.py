@@ -107,14 +107,15 @@ class Jev:
 
     @modal.enter()
     def load(self):
-        from fast_report import jev
+        from fast_report import jev, route
         self.entered = time.time()
         self.st = jev.load()
+        jev.warm(self.st, route.JEV_STATE, route.Q5[0], route.Q5[1])  # the first request's set-up is cold start, never a call's
 
     @modal.method()
     def ping(self):
         """The bench wakes it before each call (the service is up in production): cold start, never analysis time."""
-        return {"load_s": self.st["load_s"], "entered_unix": self.entered, "now_unix": time.time()}
+        return {"load_s": self.st["load_s"], "warm_s": self.st.get("warm_s"), "entered_unix": self.entered, "now_unix": time.time()}
 
     @modal.method()
     def decide(self, qs):

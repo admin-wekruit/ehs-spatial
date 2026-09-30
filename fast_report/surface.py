@@ -28,9 +28,11 @@ def _cam_points(world, c2w):
     return (np.asarray(world, float) - c2w[:3, 3]) @ c2w[:3, :3]
 
 
-def observed_mesh(world, frame, c2w, K, rgb=None, views=None, hw=GRID_HW, stride=STRIDE):
+def observed_mesh(world, frame, c2w, K, rgb=None, views=None, hw=GRID_HW, stride=STRIDE, fill=True):
     """world (N,3) shot-frame m, frame (N,) local keyframe of each point, c2w (n,4,4), K (n,3,3) at hw; rgb(local) -> that
-    keyframe's BGR image or None; views: the local keyframes to integrate (default all). -> (vertices, faces, colours uint8, info)."""
+    keyframe's BGR image or None; views: the local keyframes to integrate (default all); fill (r5b): each dense view's depth image
+    grown by one stride cell at the nearest depth (the lift cut the masks' rims at depth edges and eroded them 1 px: r5b-models-
+    commercial-001's tier-0 surfaces covered a median 60 % of their outlines, 58 % for small objects). -> (vertices, faces, colours, info)."""
     import open3d as o3d
     t0 = time.perf_counter()
     world, frame = np.asarray(world, float), np.asarray(frame)
@@ -60,6 +62,11 @@ def observed_mesh(world, frame, c2w, K, rgb=None, views=None, hw=GRID_HW, stride
         order = np.argsort(-z)  # the nearest point of a pixel is written last
         D = np.zeros((h, w), np.float32)
         D[j[order], i[order]] = z[order]
+        if fill and sv == stride:  # r5b: the lift's rim loss back (its depth-edge cut and 1 px erosion): one cell at the nearest depth
+            from scipy.ndimage import minimum_filter
+            near = minimum_filter(np.where(D > 0, D, np.inf), size=3, mode="constant", cval=np.inf)
+            grow = (D == 0) & np.isfinite(near)
+            D[grow] = near[grow]
         C = np.full((h, w, 3), 128, np.uint8)
         img = rgb(v) if rgb is not None else None
         if img is not None:
@@ -67,6 +74,9 @@ def observed_mesh(world, frame, c2w, K, rgb=None, views=None, hw=GRID_HW, stride
             px = np.clip(np.round(u * W / hw[1]).astype(int), 0, W - 1)
             py = np.clip(np.round(vv * H / hw[0]).astype(int), 0, H - 1)
             C[j[order], i[order]] = img[py[order], px[order], ::-1]
+            if fill and sv == stride and grow.any():  # the grown cells take the frame's own colour there
+                gj, gi = np.nonzero(grow)
+                C[gj, gi] = img[np.clip(((gj + .5) * sv * H / hw[0]).astype(int), 0, H - 1), np.clip(((gi + .5) * sv * W / hw[1]).astype(int), 0, W - 1), ::-1]
         intr = o3d.camera.PinholeCameraIntrinsic(w, h, K[v][0, 0] / sv, K[v][1, 1] / sv, K[v][0, 2] / sv, K[v][1, 2] / sv)
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(o3d.geometry.Image(C), o3d.geometry.Image(D), depth_scale=1., depth_trunc=1e4,
                                                                   convert_rgb_to_intensity=False)

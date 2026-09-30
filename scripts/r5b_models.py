@@ -119,6 +119,12 @@ def shown(card, mirror, P, cache):
         if got is not None:
             V, F, _ = got
             return "observed surface", V[F], None
+    ph = card.get("physical") or {}
+    if ph.get("box_min_m") and ph.get("box_max_m"):  # the viewer's fallback: the see-through box (axis-aligned in the shot frame)
+        from r4_models import FACE_AXIS, box_tris
+        lo, hi = np.asarray(ph["box_min_m"], float), np.asarray(ph["box_max_m"], float)
+        T, _ = box_tris(lo, hi, dict.fromkeys(FACE_AXIS, False))
+        return "none", np.asarray(T, float).reshape(-1, 3, 3), None
     return "none", np.zeros((0, 3, 3)), None
 
 
@@ -198,14 +204,15 @@ def tile_row(card, how, mirror, P, cams, outl, aliases, imgs, cache, side=240):
                                   "kind": (card.get("model") or {}).get("kind"), "r4b_kind": kind4, "view": q, "shown": None, "r4b": None, "note": ""}
 
 
-def sheets(mirror, report, out, n=30, strat=20, seed=7, per=6):
+def sheets(mirror, report, out, n=30, strat=20, seed=7, per=6, only=None):
     import cv2
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     P = patches(mirror, report)
     cs, aliases = final_cards(mirror, P)
     cams, outl = cameras(P), outlines(mirror, P)
-    rows = sample(cs, P, n, strat, seed)
+    rows = sample(cs, P, n, strat, seed) if not only else \
+        [(c, f"tier:{only}") for c in cs if c.get("kind") == "object" and tier_of(c, P) == only][:strat]
     need = set()
     for c, _ in rows:
         keys = cams[c["shot"]]["keys"]
@@ -498,6 +505,89 @@ def gt_table(rows):
     return out
 
 
+# ---------------------------------------------------------------- every card's outline agreement, measured (the eye labels' proxy)
+def ious(mirror, report, out=None, limit=None):
+    """Every object card at its best view: the shown model's and r4b's silhouettes against the object's outline there (the outlines
+    layer's polygons: SAM 3's masks) -> per card IoU, coverage (outline share inside the silhouette), overflow (silhouette share
+    outside the outline); medians by tier. At 1/2 resolution (640 x 360)."""
+    import cv2
+    P = patches(mirror, report)
+    cs, aliases = final_cards(mirror, P)
+    cams, outl = cameras(P), outlines(mirror, P)
+    obj = [c for c in cs if c.get("kind") == "object" and (c.get("raw") or {}).get("model_fits")][:limit]
+    need = {}
+    for c in obj:
+        keys = cams[c["shot"]]["keys"]
+        ids = [c["id"], *((c.get("physical") or {}).get("merged_from") or [])] + [a for a, b in aliases.items() if b == c["id"]]
+        polys = {}
+        for i in ids:
+            for q, p in outl.get(i, {}).items():
+                polys.setdefault(q, []).extend(p)
+        best = [int(k) for k in (c.get("views") or {}).get("best", []) if int(k) in keys and int(k) in polys]
+        q = best[0] if best else (max(polys, key=lambda k: len(polys[k])) if polys else None)
+        if q is not None:
+            need[c["id"]] = (q, polys[q])
+    rows, cache = [], {}
+    for c in obj:
+        if c["id"] not in need:
+            continue
+        q, polys = need[c["id"]]
+        s = cams[c["shot"]]
+        v = s["keys"].index(q)
+        W, H = s["source_wh"][0] // 2, s["source_wh"][1] // 2
+        K = rr.k_full(np.asarray(s["K"][v], float), s["wh"], (W, H))
+        c2w = np.asarray(s["c2w"][v], float)
+        mask = np.zeros((H, W), np.uint8)
+        for p in polys:
+            cv2.fillPoly(mask, [np.round(np.asarray(p, float).reshape(-1, 2) / 2).astype(np.int32)], 1)
+        mask = mask > 0
+        tier, T, _ = shown(c, mirror, P, cache)
+        _, T4 = r4b(c)
+        row = {"card": c["id"], "tier": tier, "kind": (c.get("model") or {}).get("kind"), "mask_px": int(mask.sum())}
+        for tag, TT in (("shown", T), ("r4b", T4)):
+            cov = rr.raster(TT, c2w, K, (W, H))[0] if len(TT) else np.zeros((H, W), bool)
+            inter, uni = (cov & mask).sum(), (cov | mask).sum()
+            row[tag] = {"iou": round(inter / max(uni, 1), 3), "coverage": round(inter / max(mask.sum(), 1), 3), "overflow": round((cov & ~mask).sum() / max(cov.sum(), 1), 3)}
+        rows.append(row)
+    def med(rs, tag, k):
+        return round(float(np.median([r[tag][k] for r in rs])), 3) if rs else None
+    summary = {}
+    for t in ("all",) + TIERS:
+        rs = [r for r in rows if t == "all" or r["tier"] == t]
+        if rs:
+            summary[t] = {"n": len(rs), **{f"{tag}_{k}": med(rs, tag, k) for tag in ("shown", "r4b") for k in ("iou", "coverage", "overflow")},
+                          "shown_iou_ge_0.7": round(float(np.mean([r["shown"]["iou"] >= .7 for r in rs])), 3),
+                          "r4b_iou_ge_0.7": round(float(np.mean([r["r4b"]["iou"] >= .7 for r in rs])), 3),
+                          "shown_iou_lt_0.3": round(float(np.mean([r["shown"]["iou"] < .3 for r in rs])), 3),
+                          "r4b_iou_lt_0.3": round(float(np.mean([r["r4b"]["iou"] < .3 for r in rs])), 3)}
+    if out:
+        Path(out).write_text(json.dumps({"report": report, "summary": summary, "rows": rows}, indent=1))
+    return summary
+
+
+# ---------------------------------------------------------------- the eye labels, counted
+def label_counts(path, key):
+    """labels.json rows -> {right, partial, wrong, unclear, n} of one column ('shown' or 'r4b'), over all rows and per sample kind."""
+    rows = [r for r in json.loads(Path(path).read_text())["rows"] if r.get(key)]
+    out = {}
+    for name, rs in (("all", rows), ("random", [r for r in rows if r["sample"] == "random"]),
+                     ("stratified", [r for r in rows if r["sample"].startswith("stratified")])):
+        out[name] = {v: sum(r[key] == v for r in rs) for v in ("right", "partial", "wrong", "unclear")} | {"n": len(rs)}
+    out["by_tier"] = {t: {v: sum(r[key] == v for r in rows if r.get("tier") == t) for v in ("right", "partial", "wrong")}
+                      for t in sorted({r.get("tier") for r in rows if r.get("tier")})}
+    return out
+
+
+def tilted_counts(path):
+    rows = [r for r in json.loads(Path(path).read_text())["rows"] if r.get("truly_tilted") is not None]
+    tilt = [r for r in rows if r["truly_tilted"] is True and r.get("eye_deg") is not None]
+    err = [abs(r["tilt"] - r["eye_deg"]) for r in tilt]
+    return {"looked_at": len(rows), "truly_tilted": sum(r["truly_tilted"] is True for r in rows), "listed_15_75_not_tilted":
+            sum(r["truly_tilted"] is False and r["listed"] == "15-75" for r in rows),
+            "err_vs_eye_median_deg": round(float(np.median(err)), 1) if err else None, "err_vs_eye_max_deg": round(float(np.max(err)), 1) if err else None,
+            "within_u_plus_10_of_eye": sum(abs(r["tilt"] - r["eye_deg"]) <= r["u"] + 10 for r in tilt), "n_eye": len(tilt)}
+
+
 def self_check():
     cs = [{"id": f"o{i}", "kind": "object", "raw": {"model_fits": {"box": {}}}, "model": {"tier": 0 if i % 3 else "primitive"}} for i in range(40)]
     P = {"models": [{"data": {"models": [{"object": "o4"}]}}]}
@@ -520,12 +610,15 @@ def main():
     ap.add_argument("--n", type=int, default=30)
     ap.add_argument("--strat", type=int, default=20)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--only", help="sheets: only the cards of this tier (e.g. generated), up to --strat")
     ap.add_argument("--self-check", action="store_true")
     a = ap.parse_args()
     if a.self_check:
         return self_check()
     if a.cmd == "sheets":
-        sheets(*a.args, n=a.n, strat=a.strat, seed=a.seed)
+        sheets(*a.args, n=a.n, strat=a.strat, seed=a.seed, only=a.only)
+    elif a.cmd == "ious":  # MIRROR REPORT [OUT]
+        print(json.dumps(ious(*a.args), indent=1))
     elif a.cmd == "tilted":  # MIRROR REPORT OUT
         tilted(*a.args)
     elif a.cmd == "stats":  # MIRROR REPORT [CALL_JSON]

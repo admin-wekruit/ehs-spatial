@@ -3,6 +3,7 @@ A100s). X13's loader and X8's batched forward (route/jev measured it: 0.088 s a 
 from modal_apps/route_jev.py so the report's app and the route/jev bench share it.
 
   load()            the model from the x8 volume (HF_HOME=/v/x8/hf, offline): -> state
+  warm(st)          a full batch and a single question at load, so the first real request is not the slow one
   decide(st, qs)    qs [(key, jpeg, state, question, options)] -> {"probs": {key: [p]}, "compute_s", "load_s", "peak_gib"}
 """
 import io
@@ -27,6 +28,19 @@ def load():
     decoder.register_forward_hook(lambda _m, _a, out: st["full"].__setitem__("h", out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]))
     st["load_s"] = round(time.perf_counter() - t, 2)
     return st
+
+
+def warm(st, state="", question="Which shape?", options=("a", "b", "c", "d", "e")):
+    """One full batch of synthetic 448 px crops through the model at load (cold start): the first real request took 48-60 s in
+    r5b-models-*-001 (lazy CUDA / kernel set-up on the first forward), the next ones 3 s."""
+    import cv2
+    import numpy as np
+    rng = np.random.default_rng(0)
+    jpg = [cv2.imencode(".jpg", rng.integers(0, 255, (448, 448, 3), np.uint8))[1].tobytes() for _ in range(JEV_BATCH)]
+    t = time.perf_counter()
+    decide(st, [(str(i), j, state, question, list(options)) for i, j in enumerate(jpg)])
+    decide(st, [("0", jpg[0], state, question, list(options))])
+    st["warm_s"] = round(time.perf_counter() - t, 2)
 
 
 def batch(st, reqs):

@@ -6,7 +6,7 @@ the report runs it; that script imports it back).
                cables -> generated; boxes, pallets, shelves, racks, signs, pipes, boards -> primitive); 3) Jev-Omni Q5 for the
                rest: P(none of the simple shapes) > P_COMPLEX_CUT -> generated. No VLM.
   soft()       bags and soft goods: never generated (their shape is the moment's), the observed surface stays.
-  groups()     look-alike groups: the same type (the shown name; a type-only card is its own group) and every sorted box
+  groups()     look-alike groups: the same type (the shown name, or a type-only card's type) and every sorted box
                extent within LOOK_ALIKE of the group's first (best-seen) card: one generated model per group, reused by the rest.
 
     python -m fast_report.route --self-check
@@ -83,11 +83,12 @@ def soft(card):
 
 
 def type_key(card):
-    """The look-alike key: the shown name (normalised); None for a type-only or unnamed card (it is its own group)."""
+    """The look-alike key: the shown name, or a type-only card's type (its family's label: the size gate and the copy's outline
+    check keep a group to look-alikes), normalised; None for an unnamed card (it is its own group)."""
     name = (card.get("identity") or {}).get("name") or ""
-    if not name or name.endswith(cards.TYPE_ONLY) or name in (cards.UNIDENTIFIED, cards.NOT_OBJECT):
+    if not name or name in (cards.UNIDENTIFIED, cards.NOT_OBJECT):
         return None
-    return cards.norm(name)
+    return cards.norm(name[:-len(cards.TYPE_ONLY)] if name.endswith(cards.TYPE_ONLY) else name)
 
 
 def extents(card):
@@ -128,8 +129,8 @@ def self_check():
     a, b, c_, d = named("sneaker"), named("sneaker"), named("sneaker"), named("box sensor (type only)")
     b = {**b, "physical": {**b["physical"], "box": {"size_m": [.52, .41, .58]}}}
     c_ = {**c_, "physical": {**c_["physical"], "box": {"size_m": [1., .4, .6]}}}
-    g = groups([a, b, c_, d, d])
-    assert [len(x) for x in g] == [2, 1, 1, 1], [len(x) for x in g]
+    g = groups([a, b, c_, d, d, named("unidentified object")])
+    assert [len(x) for x in g] == [2, 1, 2, 1], [len(x) for x in g]  # a type-only pair of one size groups; an unnamed card never
     print("route self-check ok: class tier, Jev tier, view gate, soft goods, look-alike groups")
 
 
