@@ -17,8 +17,10 @@ import numpy as np
 from fast_report import cards
 
 FRAMES, N_WORDS, PER_CLASS, MIN_SCORE, TILE_TOP = 16, 40, 2, .5, 5
-DEFAULT = "qwen+ram"  # r5b integrate: the user accepted ONE Qwen scene-vocabulary request a video: RAM++'s words, then Qwen's (the
-# union of the two best sources, runs/r5b-results/summary.md's comparison); without the VLM, RAM++'s alone. r5b/vocab's pick was 'ram'
+DEFAULT = "ram"  # r5b integrate, measured (runs/r5b-results/summary.md, vocabulary table): the union with the one accepted Qwen request
+# ('qwen+ram') covered more clean objects on ME340 (98 vs 73 of 105) but typed its held-out items worse (0.35 vs 0.60) and its extra words
+# ('machine tool', 'tool station', and 'aisle' on Walmart) made frame-sized regions that swallow clicks; Sam's Club was equal. RAM++ stays
+# the default (VLM-free); 'qwen+ram' is an option (its Qwen words now pass usable(): no STOP word such as 'aisle')
 N_UNION = 60  # the union's words at most (SAM 3's wave 2 is warmed at 58 words)
 RAM_PY, RAM_HF = "/opt/ram/bin/python", "/v/models/hf-r5b"  # the RAM++ venv; its weights and BERT tokenizer (modal_apps/r5b_vocab.py cached them)
 RAM_REPO, RAM_CKPT = "xinyu1205/recognize-anything-plus-model", "ram_plus_swin_large_14m.pth"

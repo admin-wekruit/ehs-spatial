@@ -1137,7 +1137,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                     qw, qrec = qf.result(60)
                 except Exception as error:  # noqa: BLE001
                     qw, qrec = [], {"error": repr(error)[:300]}
-                got = vocab.union(got, [(w, 0.) for w in qw if vocab.cards.norm(w) not in {vocab.cards.norm(x) for x in wave1}], n=vocab.N_UNION)
+                got = vocab.union(got, [(w, 0.) for w in qw if vocab.usable(w) and vocab.cards.norm(w) not in {vocab.cards.norm(x) for x in wave1}],
+                                  n=vocab.N_UNION)
                 return [w for w, _ in got], {"scores": got, "ram_s": r["s"], "qwen": {"words": qw, **{k: v for k, v in (qrec or {}).items() if k != "words"}},
                                              "rule": f"RAM++ tags (object nouns), then the Qwen scene vocabulary's other words (vocab.union, <= {vocab.N_UNION})"}
             if vocab_src == "ram+pe":  # r5b follow-up: RAM++'s object tags first, then PE-Core's scene-specific words
