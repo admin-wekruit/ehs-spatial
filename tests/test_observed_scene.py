@@ -170,7 +170,12 @@ def test_normal_analysis_and_correction_call_observed_builder_after_registry(tmp
     service = SimpleNamespace(store=ArtifactStore(tmp_path / 'runs'), run_assessment=lambda _: events.append('assessment'))
     run_upload(service, CaptureRun(run_id='example', image_paths=[str(upload)]))
     assert events == ['assessment', 'detect', 'inventory', 'registry', 'observed', 'viewer', 'report']
-    assert json.loads((run / 'workspace.json').read_text())['state'] == 'done'
+    status = json.loads((run / 'workspace.json').read_text())
+    assert status['state'] == 'done'
+    assert set(status['timing']) == {'assessmentSeconds', 'reportSeconds', 'totalSeconds'}
+    assert all(seconds >= 0 for seconds in status['timing'].values())
+    deep = json.loads((run / 'deep_report_timing.json').read_text())
+    assert set(deep) == {'detectSeconds', 'inventorySeconds', 'reportSeconds'}
     events.clear()
     result = report_refresh._build_stage('example')
     assert events == ['inventory', 'registry', 'observed', 'viewer', 'report']

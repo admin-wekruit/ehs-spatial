@@ -5,6 +5,7 @@ import base64
 import hashlib
 import io
 from pathlib import Path
+from threading import Barrier
 
 import numpy as np
 import pytest
@@ -211,3 +212,18 @@ def test_cold_run_spends_one_sweep_per_frame(run_dir):
     assert adapter.calls == ["detect.sweep", "detect.sweep"]
     assert result["last_execution"] == {"sweep_calls": 2, "sam_calls": 0}
     assert {m["frame_id"] for m in result["missing"]} == {"frame_0001", "frame_0002"}
+
+
+def test_two_photos_sweep_together_but_keep_source_order(run_dir):
+    Image.new("RGB", (60, 80)).save(run_dir / "r1/input/image_02.png")
+    rendezvous = Barrier(2, timeout=2)
+
+    class ConcurrentAdapter(FakeAdapter):
+        def _create(self, op, **kwargs):
+            rendezvous.wait()
+            return super()._create(op, **kwargs)
+
+    result = detect_devices("r1", runs_root=run_dir, adapter=ConcurrentAdapter(_sweep()),
+                            subscriber=lambda *a, **kw: pytest.fail("no detected boxes"))
+    assert [frame["frame_id"] for frame in result["frames"]] == ["frame_0001", "frame_0002"]
+    assert result["last_execution"] == {"sweep_calls": 2, "sam_calls": 0}

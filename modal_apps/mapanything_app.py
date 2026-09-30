@@ -100,7 +100,7 @@ def load_images_with_metadata(paths):
 
 @app.cls(
     image=image,
-    gpu="A100",
+    gpu="A100-80GB:2",
     volumes={"/cache": volume},
     secrets=[modal.Secret.from_name("huggingface")],
     scaledown_window=180,
@@ -206,16 +206,31 @@ class MapAnything:
 
 
 @app.local_entrypoint()
-def main(image_paths: str):
+def main(image_paths: str, out: str = ""):
+    import gzip
     from pathlib import Path
+    import time
 
+    started = time.monotonic()
     uris = [
         "data:image/png;base64,"
         + base64.b64encode(Path(p).read_bytes()).decode("ascii")
         for p in image_paths.split(",")
     ]
     result = MapAnything().run.remote({"inputs": uris})
+    elapsed = time.monotonic() - started
     first = json.loads(result["data"][0])
+    if out:
+        destination = Path(out)
+        destination.mkdir(parents=True, exist_ok=True)
+        for index, payload in enumerate(result["data"], 1):
+            with gzip.open(destination / f"frame_{index:04d}.json.gz", "wb") as stream:
+                stream.write(payload)
+        (destination / "point_cloud.glb").write_bytes(result["point_cloud"])
+        (destination / "geometry-timing.json").write_text(json.dumps({
+            "sourceImages": image_paths.split(","), "wallSecondsIncludingColdStart": elapsed,
+            "frames": len(result["data"]), "pointCloudBytes": len(result["point_cloud"]),
+        }, indent=2) + "\n")
     print(
         f"{len(result['data'])} frames; frame0 keys {sorted(first)}; "
         f"pts3d shape {first['pts3d']['shape']}; "

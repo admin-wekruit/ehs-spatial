@@ -235,13 +235,24 @@ def _run_deep_report_chain(run_id: str) -> None:
     report. Fail-soft stage by stage; status file keeps the 报告 tab
     honest while this grinds. Re-entrant for upgrades: a run that already
     has detections skips straight to the inventory rules."""
+    import time
     import traceback
 
     run_dir = Path("runs") / run_id
     status_path = run_dir / "deep_report.status"
+    timing = {}
+    current_stage = None
+    stage_started = time.monotonic()
 
     def _mark(state: str) -> None:
+        nonlocal current_stage, stage_started
+        now = time.monotonic()
+        if current_stage:
+            timing[current_stage + 'Seconds'] = now - stage_started
+        current_stage, stage_started = state, now
         try:
+            if state in {'done', 'failed'}:
+                (run_dir / 'deep_report_timing.json').write_text(json.dumps(timing, indent=2) + '\n', encoding='utf-8')
             status_path.write_text(state, encoding="utf-8")
         except Exception:
             pass

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
@@ -44,6 +45,7 @@ def generation_state(run_id: str, candidate_id: str, job: Path, current_source) 
 
 
 def run_generation(runs: Path, run_id: str, candidate_id: str) -> dict:
+    started = time.monotonic()
     from .object_generation import generate_candidate
     job = job_root(runs, run_id, candidate_id)
     state = dict(_read_json_dict(job / 'status.json'), run_id=run_id, candidate_id=candidate_id, state='running')
@@ -62,6 +64,7 @@ def run_generation(runs: Path, run_id: str, candidate_id: str) -> dict:
         import logging
         logging.getLogger(__name__).exception('Object generation failed for %s/%s', run_id, candidate_id)
         state.update(state='failed', error=type(error).__name__)
+    state['elapsedSeconds'] = time.monotonic() - started
     write_json(job / 'status.json', state)
     return state
 
