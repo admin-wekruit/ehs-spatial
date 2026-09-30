@@ -411,7 +411,7 @@ def gt_rows(dump_run, inputs, parts_of, recorded_k=1.):
     import fast_report_eval as ev
     from fast_report import cards as fc
     from fast_report.core import CAMERA_HEIGHT_M
-    from fast_report.surface import planar_parts, tilt_deg
+    from fast_report.surface import planar_parts
     rows = []
     dump_run, inputs = Path(dump_run), Path(inputs)
     for rep in sorted((dump_run / "reports").iterdir()):
