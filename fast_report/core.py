@@ -753,11 +753,16 @@ def analyse(m, mp4, opts, clock, writer, log):
             with clock.stage("vlm.vocab", n={"frames": len(vlm_frames)}):
                 pngs = [cv2.imencode(".png", raster_rgb(img))[1].tobytes() for img in seeked]
                 return vlm.vocab(pngs)
-        if vocab_src == "ram":
+        if vocab_src in ("ram", "ram+pe"):
             with clock.stage("vocab.ram", n={"frames": len(seeked)}):
                 r = m.ram.tags(seeked)
             got = vocab.rank(vocab.object_tags(r["per_frame"], m.vocab["words"]), skip=wave1)
-            return [w for w, _ in got], {"scores": got, "ram_s": r["s"], "rule": "RAM++ tags (object nouns of the 'pe' word list), ranked by vocab.rank"}
+            if vocab_src == "ram+pe":  # r5b follow-up: RAM++'s object tags first, then PE-Core's scene-specific words
+                with torch.inference_mode(), clock.stage("vocab.pe", gpu=m.namer_enc.dev, n={"frames": len(seeked), "words": len(m.vocab["words"])}):
+                    per = vocab.pe_scores(m.namer_enc, seeked, m.vocab["text"], m.vocab["words"], m.vocab["scale"])
+                got = vocab.union(got, vocab.rank(per, skip=wave1))
+            return [w for w, _ in got], {"scores": got, "ram_s": r["s"], "rule": "RAM++ tags (object nouns of the 'pe' word list), ranked by vocab.rank"
+                                         + (", then PE-Core's words (vocab.union)" if vocab_src == "ram+pe" else "")}
         assert vocab_src == "pe", f"unknown vocabulary source {vocab_src}"
         with torch.inference_mode(), clock.stage("vocab.pe", gpu=m.namer_enc.dev, n={"frames": len(seeked), "words": len(m.vocab["words"])}):
             per = vocab.pe_scores(m.namer_enc, seeked, m.vocab["text"], m.vocab["words"], m.vocab["scale"])

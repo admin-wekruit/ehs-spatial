@@ -137,6 +137,16 @@ def load(path, dev):
             "file": str(path), "sha256": hashlib.sha256(raw).hexdigest()}
 
 
+def union(first, then, n=N_WORDS):
+    """Two ranked word lists [(word, score)] -> one: `first`'s words, then `then`'s not already in (by the singular form), <= n."""
+    seen, out = set(), []
+    for w, s in [*first, *then]:
+        if cards.norm(w) not in seen and len(out) < n:
+            seen.add(cards.norm(w))
+            out.append((w, s))
+    return out
+
+
 def object_tags(per_frame, words):
     """Tagger output [{tag: p}] -> only the tags that are object nouns (the 'pe' word list: the taxonomy, LVIS, Objects365,
     WORKSHOP, RETAIL): a tagger's scene and activity tags ('store', 'job', 'fill', 'courtyard') are never SAM 3 words."""
@@ -238,8 +248,8 @@ def pe_scores(enc, frames_bgr, text, words, scale, top=TILE_TOP):
                                        antialias=True, align_corners=False)[0])
             owner.append(i)
     out = [{} for _ in frames_bgr]
-    for b in range(0, len(crops), 64):
-        e = enc.pe_embed(torch.stack(crops[b:b + 64]))
+    for b in range(0, len(crops), 32):  # 32 a batch: its activations stay in GPU 1's cache (64: +4 GiB there, run r5b-vocab-final-001)
+        e = enc.pe_embed(torch.stack(crops[b:b + 32]))
         p = (scale * e @ text.float().T).softmax(-1)
         v, j = p.topk(top, dim=-1)
         for k, (vv, jj) in enumerate(zip(v.cpu().numpy(), j.cpu().numpy())):
@@ -269,6 +279,7 @@ def self_check():
     assert len(tiles(480, 640)) == 3 + 3 * 2 + 4 * 3, "a 4:3 frame: 480, 240 and 160 px squares"
     assert pick_frames(900, 4) == [112, 337, 562, 787]
     assert object_tags([{"store": .9, "shoe": .8, "Job": .7, "shopping cart": .6}], ["shoe", "shopping cart", "box"]) == [{"shoe": .8, "shopping cart": .6}]
+    assert union([("shoe", 3.), ("box", 2.)], [("shoes", 5.), ("vise", 1.)], n=3) == [("shoe", 3.), ("box", 2.), ("vise", 1.)]
     print("vocab self-check ok: STOP words, candidate list order, rank (evidence, per-class cap), taxonomy + bank labels, tiles")
 
 

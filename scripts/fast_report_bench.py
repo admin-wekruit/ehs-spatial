@@ -408,7 +408,7 @@ def vocab_options(source, site, words_file):
         return {}
     if source in words_file:
         return {"vocab": "words", "vocab_words": list(words_file[source].get(site) or []), "vocab_list": source}
-    assert source in ("ram", "pe", "taxonomy", "qwen"), f"unknown word source {source}"
+    assert source in ("ram", "pe", "ram+pe", "taxonomy", "qwen"), f"unknown word source {source}"
     return {"vocab": source}
 
 
