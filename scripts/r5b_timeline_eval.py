@@ -147,6 +147,70 @@ def planted(site, truth, claims, pick, aliases):
     return rows, used
 
 
+def polys_for(site, truth, span=150):
+    """The planted box's outline (source px, x6_plant's cube and DROID camera) on every frame within span of each change, per
+    place: the remote evaluator (modal_apps/r5b_eval_app.py) rasterises them against the pick maps on the Volume."""
+    import x6_plant as xp
+    ref, d, clip, up, p0 = _plant_ctx(site)
+    poses, mpn = d["poses_c2w"].astype(np.float64), ref["mpn"]
+    Kr = 2 * d["keyframe_final_fullres_intrinsics"][0].astype(float)
+    events = []
+    for e in truth["events"]:
+        if not e.get("placed"):
+            events.append({"kind": e["kind"], "placed": False})
+            continue
+        frames = {}
+        for f in range(max(0, e["change_frame"] - span), min(len(poses), e["change_frame"] + span)):
+            per = {}
+            for place in range(len(e["centre_native"])):
+                xy, z = xp.project(xp.cube(np.array(e["centre_native"][place]), up, np.array(e["side_dir"]), xp.SIDE / mpn), poses[f], Kr)
+                if (z > 0).all():
+                    per[str(place)] = np.round(xp.to_source(xy), 1).tolist()
+            if per:
+                frames[str(f)] = per
+        events.append({"kind": e["kind"], "placed": True, "change_frame": e["change_frame"], "change_s": e["change_s"], "frames": frames})
+    return {"events": events}
+
+
+def sheet_from_masks(mp4, claims, out_path, width=1600):
+    """sheet() for a remote evaluation: the claimed card's region comes as PNG masks per evidence keyframe."""
+    import base64
+    import cv2
+    if not claims:
+        return None
+    keys = sorted({k for c in claims for k in (c["before_key"], c["after_key"], c.get("new_place_key")) if k is not None})
+    cap, frames, f = cv2.VideoCapture(mp4), {}, 0
+    while len(frames) < len(keys):
+        ok, img = cap.read()
+        if not ok:
+            break
+        if f in keys:
+            frames[f] = img
+        f += 1
+    rows = []
+    for c in claims:
+        tiles = []
+        for k, col, lab in ((c["before_key"], (0, 255, 0), "before"), (c["after_key"], (0, 0, 255), "after"), (c.get("new_place_key"), (255, 160, 0), "new place")):
+            if k is None or k not in frames:
+                continue
+            img = frames[k].copy()
+            png = (c.get("masks") or {}).get(str(k))
+            if png:
+                m = cv2.imdecode(np.frombuffer(base64.b64decode(png), np.uint8), cv2.IMREAD_GRAYSCALE)
+                cs, _ = cv2.findContours(cv2.resize((m > 0).astype(np.uint8), (1280, 720), interpolation=cv2.INTER_NEAREST), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                cv2.drawContours(img, cs, -1, col, 4)
+            cv2.putText(img, f"{c['card']} {c['name']} {c['kind']} {lab} key {k}", (12, 44), 0, 1.1, (0, 255, 255), 3)
+            tiles.append(cv2.resize(img, (640, 360)))
+        while len(tiles) < 3:
+            tiles.append(np.zeros((360, 640, 3), np.uint8))
+        rows.append(np.hstack(tiles))
+    img = np.vstack(rows)
+    if img.shape[1] > width:
+        img = cv2.resize(img, (width, int(img.shape[0] * width / img.shape[1])))
+    cv2.imwrite(str(out_path), img, [cv2.IMWRITE_JPEG_QUALITY, 82])
+    return str(out_path)
+
+
 def sheet(mp4, claims, pick, aliases, out_path, width=1600):
     """Per claim a row: before / after (/ new place) keyframes, the card's pick region outlined (green before, red after)."""
     import cv2
@@ -246,37 +310,54 @@ if __name__ == "__main__":
     ap.add_argument("--plants-x6", type=Path, help="truth of calls labelled 'planted-x6' (X6's run-006 plants)")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--labels", type=Path)
+    ap.add_argument("--prepare", type=Path, help="write the remote evaluator's input (modal_apps/r5b_eval_app.py) here and stop")
+    ap.add_argument("--remote", type=Path, help="the remote evaluator's output: claims, masks and planted matches from the Volume")
     a = ap.parse_args()
-    import fast_report_eval as ev
-    a.out.mkdir(parents=True, exist_ok=True)
     labels = json.loads(a.labels.read_text()) if a.labels else {}
     reps = reports(a.run)
+    truth_of = lambda r: json.loads(((a.plants if r["label"] == "planted" else a.plants_x6) / f"planted-{r['site']}.json").read_text())  # noqa: E731
+    wanted = [r for r in reps if r["label"] in ("on", "planted", "planted-x6")]
+    if a.prepare:
+        a.prepare.write_text(json.dumps({"reports": {r["report"]: {"site": r["site"], "label": r["label"]} for r in wanted},
+                                         "polys": {r["report"]: polys_for(r["site"], truth_of(r)) for r in wanted if r["label"] != "on"}}))
+        print("remote input:", a.prepare, len(wanted), "reports")
+        sys.exit()
+    a.out.mkdir(parents=True, exist_ok=True)
+    remote = json.loads(a.remote.read_text()) if a.remote else None
     result = {"timing": timing(reps), "reports": [], "planted": []}
     all_claims = []
-    for r in reps:
-        if r["label"] not in ("on", "planted", "planted-x6"):
-            continue
-        L = ev.load_layers(a.run, r["report"])
-        oc = L["object_cards"]
-        cards = oc["cards"]
-        pick = ev.run_picks(a.run, r["report"], L)[-1][1]
-        aliases = oc.get("aliases") or {}
-        cl = claims_of(cards)
+    for r in wanted:
+        if remote is not None:  # read on the Volume (modal_apps/r5b_eval_app.py): the claims with their masks, the planted matches
+            x = remote[r["report"]]
+            cl, stats, places_ = x["claims"], (x.get("stats") or {}).get("timeline"), x["places_judged"]
+            n_obj, n_tl, version, width = x["objects"], x["with_timeline"], x["cards_version"], x.get("width")
+        else:
+            import fast_report_eval as ev
+            L = ev.load_layers(a.run, r["report"])
+            oc = L["object_cards"]
+            cards = oc["cards"]
+            last = ev.patch_versions(a.run, r["report"], "pick")[-1]  # the final pick only (a pruned mirror keeps no earlier version)
+            pick = ev.Pick(last["data"], ev.pick_bytes(a.run, last))
+            aliases = oc.get("aliases") or {}
+            cl, stats, places_ = claims_of(cards), (oc.get("stats") or {}).get("timeline"), places(cards)
+            n_obj, n_tl, version, width = sum(c.get("kind") == "object" for c in cards), sum(bool((c.get("time") or {}).get("timeline")) for c in cards), oc.get("version"), None
         for c in cl:
             c.update(report=r["report"], site=r["site"], label=r["label"])
-        stats = (oc.get("stats") or {}).get("timeline")
-        rec = {"report": r["report"], "site": r["site"], "label": r["label"], "first_call": r["first_call"], "cards_version": oc.get("version"),
-               "objects": sum(c.get("kind") == "object" for c in cards), "with_timeline": sum(bool((c.get("time") or {}).get("timeline")) for c in cards),
-               "claims": len(cl), "by_kind": {k: sum(c["kind"] == k for c in cl) for k in ("appeared", "disappeared", "moved")}, "stats": stats,
-               "places_judged": places(cards),
-               "windows": ((r["run"].get("summary") or {}).get("timeline") or {}).get("shots")}
+        rec = {"report": r["report"], "site": r["site"], "label": r["label"], "first_call": r["first_call"], "cards_version": version,
+               "objects": n_obj, "with_timeline": n_tl, "claims": len(cl), "by_kind": {k: sum(c["kind"] == k for c in cl) for k in ("appeared", "disappeared", "moved")},
+               "stats": stats, "places_judged": places_, "width": width, "windows": ((r["run"].get("summary") or {}).get("timeline") or {}).get("shots")}
         if r["label"] in ("planted", "planted-x6"):
-            truth = json.loads(((a.plants if r["label"] == "planted" else a.plants_x6) / f"planted-{r['site']}.json").read_text())
-            rows, used = planted(r["site"], truth, cl, pick, aliases)
-            for i in used:
-                cl[i]["planted_match"] = True
+            if remote is not None:
+                rows = x["planted"]
+            else:
+                rows, used = planted(r["site"], truth_of(r), cl, pick, aliases)
+                for i in used:
+                    cl[i]["planted_match"] = True
             result["planted"].append({"report": r["report"], "site": r["site"], "label": r["label"], "events": rows})
-        rec["sheet"] = sheet(r["mp4"], cl, pick, aliases, a.out / f"claims-{r['report']}.jpg") if cl else None
+        rec["sheet"] = (sheet_from_masks(r["mp4"], cl, a.out / f"claims-{r['report']}.jpg") if remote is not None else
+                        sheet(r["mp4"], cl, pick, aliases, a.out / f"claims-{r['report']}.jpg")) if cl else None
+        for c in cl:
+            c.pop("masks", None)
         result["reports"].append(rec)
         all_claims += cl
     result["claims"] = all_claims

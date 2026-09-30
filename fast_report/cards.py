@@ -1237,8 +1237,10 @@ def link_moves(cards, counts, appearance=None):
                                                       "old_place_empty": {"key": rec["old_place_empty_key"]}, "distance_m": rec["distance_m"],
                                                       "distance_u_m": rec["distance_u_m"], "rule": "r5b: one object, two cards: " + rec["same_object_by"]},
                              moved={"to": b_id} if cid == a_id else {"from": a_id})
+            for k in ("last_seen_reason", "note", "after_last_detection"):  # the move says what happened: no 'last seen' reason beside it
+                c["time"].pop(k, None)
             if (c.get("raw") or {}).get("time"):
-                c["raw"]["time"].update(state="moved", evidence=c["time"]["evidence"])
+                c["raw"]["time"].update(state="moved", evidence=c["time"]["evidence"], last_seen_reason=None, note=None, after_last_detection=None)
             if cid == b_id and by[a_id].get("model"):  # the model is made once per object: the better-seen card's, posed at each place
                 src = a_id if (by[a_id].get("views") or {}).get("n", 0) >= (c.get("views") or {}).get("n", 0) else b_id
                 c["model_source"] = by[a_id]["model_source"] = src

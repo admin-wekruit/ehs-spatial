@@ -100,7 +100,7 @@ def place(points, w, idx=None, min_views=MIN_VIEWS, min_pix=MIN_PIX, min_judged=
         pix = len(np.unique(vi[valid] * wd + ui[valid]))
         views.append({"key": int(key), "judged": int(valid.sum()) if pix >= min_pix else 0, "free": int(free.sum()), "front": int(front.sum() + person.sum()),
                       "occupied": int((valid & ~free & ~front).sum()), "inside": int(inside.sum()), "pixels": pix,
-                      **({"j": j, "px": (vi[free], ui[free])} if free_px else {})})
+                      **({"j": j, "px": (vi[free], ui[free]), "excess": (dmin[j][vi, ui][free] - zz[free]) / zz[free]} if free_px else {})})
     judged = [x for x in views if x["judged"] >= max(min_judged, .3 * len(points))]
     n_free = sum(x["free"] >= FREE_SHARE * x["judged"] for x in judged)
     n_occ = sum(x["occupied"] >= .5 * x["judged"] for x in judged)
@@ -119,6 +119,9 @@ def place(points, w, idx=None, min_views=MIN_VIEWS, min_pix=MIN_PIX, min_judged=
            "best_key": best["key"] if best else None, "best_free_share": round(best["free"] / best["judged"], 3) if best else None}
     if free_px:  # r5b: where the camera saw through the place, per free view (the look-alike test reads what is there)
         out["free_px"] = [(x["j"], x["px"]) for x in judged if x["free"] >= FREE_SHARE * x["judged"]]
+        if TRACE is not None:  # dev: how far past the place the free views saw (relative to the place's range)
+            ex = np.concatenate([x["excess"] for x in judged if x["free"] >= FREE_SHARE * x["judged"]] or [np.zeros(0)])
+            out["excess_q"] = np.round(np.percentile(ex, [10, 50, 90]), 3).tolist() if len(ex) else None
     return out
 
 
@@ -330,6 +333,7 @@ def _compact(vals):
 
 
 LOOKALIKE_SHARE = .3  # r5b: a place seen through onto a same-word object on this share of its free pixels is no claim
+TRACE = None  # dev (scripts/modal debug): a list that collects every place judged free with what was seen through it
 
 
 def lookalike(s, p, word, own):
@@ -363,7 +367,19 @@ def card_timeline(s, observed, frame, world, measure, compare, word=None, own=()
     local keyframe and shot-frame position; measure(local keys) -> {field: value dict with u_rel} or None (too few points);
     compare(a, b) -> {field: {delta, u, flagged}} for two windows' values; word, own: the object's detected word and its ids (its
     card and the objects merged into it) for the look-alike test on every place seen free. -> {windows, intervals, changes, rule} or None."""
-    alike = lambda p: lookalike(s, p, word, set(own)) if p["state"] == "free" else (0., None)  # noqa: E731
+    def alike(p):
+        out = lookalike(s, p, word, set(own)) if p["state"] == "free" else (0., None)
+        if TRACE is not None and p["state"] == "free":
+            labels = s.get("labels")
+            hist = {}
+            for j, (vi, ui) in p.get("free_px") or []:
+                if labels is not None:
+                    for c in np.asarray(labels[j])[vi, ui].astype(int):
+                        k = (s["label_words"][c - 1] if 0 < c <= len(s["label_words"]) else "none")
+                        hist[k] = hist.get(k, 0) + 1
+            TRACE.append({"own": sorted(own), "word": word, "share": round(out[0], 3), "other": out[1], "excess_q": p.get("excess_q"),
+                          "free_views": p["free_views"], "best_key": p["best_key"], "labels": dict(sorted(hist.items(), key=lambda x: -x[1])[:5])})
+        return out
     if not s.get("windows"):
         return None
     rows = window_rows(s["windows"], s["times"], float(s["times"][-1]) + .2)
