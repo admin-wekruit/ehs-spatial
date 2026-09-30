@@ -39,7 +39,23 @@ export function modelPrimitive(m: any) {
   return { kind: "faces", parts: [{ center: [0, 0, 0], size: m.size_m.map(pos), alpha: FACES.map(f => a(m.faces?.[f] === "seen")) }] };
 }
 
-export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null): SceneDocument {
+/** r5b (visits): a status per object of this visit and the site map's objects to draw as ghosts, from the `visits` layer and the
+ *  panel's pick (show visit A = the site map's objects carried into this visit's frame; show visit B = this visit's own objects). */
+export const VISIT_COLOR: Record<string, number[]> = { new: [.2, .8, .3], moved: [.25, .5, 1], missing: [.95, .2, .2], changed_height: [1, .55, .05],
+  changed_angle: [1, .55, .05], static: [.7, .7, .7], delineated_otherwise: [.7, .7, .7], not_observed_in_a: [.55, .45, .75] };
+export type VisitView = { showA: boolean; showB: boolean; status: Map<string, string>; ghosts: { id: string; row: any; model: any; shot: number }[] };
+export function visitView(visits: any, showA: boolean, showB: boolean): VisitView | null {
+  if (!visits?.objects) return null;
+  const status = new Map<string, string>(), ghosts: VisitView["ghosts"] = [];
+  for (const o of visits.objects) {
+    if (o.b) status.set(o.b, o.status);
+    const m = o.status === "missing" ? o.ghost_model : ["moved", "changed_height", "changed_angle"].includes(o.status) ? o.carried?.model : null;
+    if (m?.kind && m.position) ghosts.push({ id: "visit-a:" + o.a, row: o, model: m, shot: o.shot_b });
+  }
+  return { showA, showB, status, ghosts };
+}
+
+export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null, visit?: VisitView | null): SceneDocument {
   const doc: any = { schemaVersion: 2, target: "scene", captureId: report, coordinateFrames: [], cameras: [], observations: [], entities: [],
     assets: [], annotations: [], geometryBindings: {} };
   const asset = (ref: BlobRef) => {
@@ -90,8 +106,19 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
         transform: { ...identity(frame), position: dm.position, quaternion: dm.quaternion }, placementState: "confirmed",
         bounds: { min: half.map((v: number) => -Math.max(v, .0025)), max: half.map((v: number) => Math.max(v, .0025)) },
         material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .1], selectedFactor: [1, 1, 1, 1], color: [1, .72, .3] } } : box;
+    const vs = visit?.showB ? visit.status.get(o.id) : undefined;  // r5b: this visit's object coloured by what changed since the site map
+    if (vs && VISIT_COLOR[vs] && rep.material) rep.material = { ...rep.material, color: VISIT_COLOR[vs], baseColorFactor: [1, 1, 1, vs === "static" ? .1 : .35] };
     doc.entities.push({ id: o.id, label: o.label || o.word, associationState: "association_pending", visible: true, observationRefs: [],
-      activeModelRepresentationId: rep.id, representations: [rep], fast: { kind: "object", ...o, model: model || null, display_model: dm || null } });
+      activeModelRepresentationId: rep.id, representations: [rep], fast: { kind: "object", ...o, model: model || null, display_model: dm || null, visit: vs || null } });
+  }
+  for (const g of visit?.showA ? visit.ghosts : []) {  // r5b: the site map's object where it stood, carried into this visit's frame
+    const frame = frameOf(g.shot), m = g.model, half = m.kind === "cylinder" ? [m.radius_m, m.radius_m, m.length_m / 2] : (m.size_m || [.1, .1, .1]).map((v: number) => v / 2);
+    doc.entities.push({ id: g.id, label: `visit A: ${g.row.name_a || g.row.a} (${g.row.status})`, associationState: "association_pending", visible: true, observationRefs: [],
+      activeModelRepresentationId: "ghost:" + g.id, fast: { kind: "visit_ghost", row: g.row, shot: g.shot },
+      representations: [{ id: "ghost:" + g.id, kind: "primitive", primitive: modelPrimitive(m), coordinateFrameId: frame,
+        transform: { ...identity(frame), position: m.position, quaternion: m.quaternion }, placementState: "confirmed",
+        bounds: { min: half.map((v: number) => -Math.max(v, .0025)), max: half.map((v: number) => Math.max(v, .0025)) },
+        material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .25], selectedFactor: [1, 1, 1, 1], color: VISIT_COLOR[g.row.status] || [.9, .9, .9] } }] });
   }
   for (const t of people?.data.tracks || []) {
     const ref = people.blobs["track-" + t.id];

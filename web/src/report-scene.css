@@ -314,3 +314,18 @@ span.report-memory-actor { cursor: default; }
 .live-report-model-inset { position: absolute; right: 8px; bottom: 8px; width: 200px; margin: 0; border: 1px solid var(--scene-border); border-radius: 4px; background: #edf0ee; overflow: hidden; pointer-events: none; }
 .live-report-model-inset img { display: block; width: 100%; height: auto; }
 .live-report-model-inset figcaption { padding: 2px 6px; font-size: 11px; color: #34454d; }
+
+/* r5b (visits): the visits panel */
+.visits-pick { display: flex; gap: 6px; margin: 4px 0; }
+.visits-pick button, .visits-counts button { padding: 3px 8px; border: 1px solid #b9c7bd; border-radius: 3px; background: #fff; font-size: 12px; cursor: pointer; }
+.visits-pick button[aria-pressed="true"], .visits-counts button[aria-pressed="true"] { background: #243c31; color: #fff; }
+.visits-counts { display: flex; flex-wrap: wrap; gap: 4px; }
+.visits-counts button { border-left-width: 4px; }
+.visits-reg { font-size: 12px; }
+.visits-list { list-style: none; margin: 0; padding: 0; }
+.visits-row { border-bottom: 1px solid #e3e8e0; padding: 4px 12px; }
+.visits-row[aria-current="true"] { background: #eef6ee; }
+.visits-row > button { display: flex; align-items: center; justify-content: flex-start; gap: 6px; width: 100%; padding: 2px 0; border: 0; background: none; text-align: left; font-size: 13px; cursor: pointer; }
+.visits-dot { flex: 0 0 10px; height: 10px; border-radius: 50%; }
+.visits-delta { margin: 0 0 2px 16px; }
+.visits-evidence img { display: block; width: 100%; height: auto; margin: 4px 0; border: 1px solid #cfd8d1; }

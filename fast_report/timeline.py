@@ -66,22 +66,23 @@ def project(points, c2w, K):
         return K[0, 0] * cam[:, 0] / z + K[0, 2], K[1, 1] * cam[:, 1] / z + K[1, 2], z
 
 
-def near_min(w):
-    """Per keyframe depth, minimum over the (2 NEIGH + 1)^2 neighbourhood (0 = no depth wins: unknown is never free), and
+def near_min(w, neigh=NEIGH):
+    """Per keyframe depth, minimum over the (2 neigh + 1)^2 neighbourhood (0 = no depth wins: unknown is never free), and
     the person masks grown by PERSON_GROW px (a person's rim is neither free nor the object)."""
-    if w.get("_dmin_key") != (NEIGH, PERSON_GROW):
+    if w.get("_dmin_key") != (neigh, PERSON_GROW):
         from scipy.ndimage import maximum_filter, minimum_filter
-        w["_dmin"] = minimum_filter(np.asarray(w["depth"], np.float32), size=(1, 2 * NEIGH + 1, 2 * NEIGH + 1))
+        w["_dmin"] = minimum_filter(np.asarray(w["depth"], np.float32), size=(1, 2 * neigh + 1, 2 * neigh + 1))
         w["_person"] = maximum_filter(np.asarray(w["person"], bool), size=(1, 2 * PERSON_GROW + 1, 2 * PERSON_GROW + 1))
-        w["_dmin_key"] = (NEIGH, PERSON_GROW)
+        w["_dmin_key"] = (neigh, PERSON_GROW)
     return w["_dmin"], w["_person"]
 
 
-def place(points, w, pose_m=POSE_M):
+def place(points, w, pose_m=POSE_M, rel_margin=REL_MARGIN, neigh=NEIGH, free_share=FREE_SHARE):
     """How window w sees the place `points` occupied. -> {state, views: [per judged keyframe], best_key}. pose_m: the pose
-    error between the points and w's cameras (r5b: another visit's registration, larger than one video's 4 cm)."""
+    error between the points and w's cameras (r5b: another visit's registration, larger than one video's 4 cm); rel_margin: the
+    relative depth margin of 'free' (r5b: one registered scale, not a chain of stitched ones)."""
     h, wd = w["depth"].shape[1:]
-    dmin, grown = near_min(w)
+    dmin, grown = near_min(w, neigh)
     views, seen = [], 0
     for j, key in enumerate(w["keys"]):
         u, v, z = project(points, w["c2w"][j], w["K"][j])
@@ -93,12 +94,12 @@ def place(points, w, pose_m=POSE_M):
         d, person = w["depth"][j][vi, ui], grown[j][vi, ui]
         valid = (d > 0) & ~person & (zz <= MAX_RANGE)
         m = 2 * sigma(zz, pose_m)
-        free, front = valid & (dmin[j][vi, ui] > zz * (1 + REL_MARGIN) + m), valid & (d < zz - m)
+        free, front = valid & (dmin[j][vi, ui] > zz * (1 + rel_margin) + m), valid & (d < zz - m)
         pix = len(np.unique(vi[valid] * wd + ui[valid]))
         views.append({"key": int(key), "judged": int(valid.sum()) if pix >= MIN_PIX else 0, "free": int(free.sum()), "front": int(front.sum() + person.sum()),
                       "occupied": int((valid & ~free & ~front).sum()), "inside": int(inside.sum()), "pixels": pix})
     judged = [x for x in views if x["judged"] >= max(MIN_JUDGED, .3 * len(points))]
-    n_free = sum(x["free"] >= FREE_SHARE * x["judged"] for x in judged)
+    n_free = sum(x["free"] >= free_share * x["judged"] for x in judged)
     n_occ = sum(x["occupied"] >= .5 * x["judged"] for x in judged)
     if n_free >= MIN_VIEWS and n_free > n_occ:
         state = "free"

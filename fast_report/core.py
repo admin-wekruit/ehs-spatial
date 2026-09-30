@@ -2209,7 +2209,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             with clock.stage("visits", gpu=dev_geo):
                 m.da3.restore()  # offloaded for SAM 3D after the last shot; run() restores it again at the end (off the clock)
                 summary["visits"] = visits.run("/v/layers", opts["visit_of"], writer.report_id, visits.Gpu(m.da3, m.namer_enc), writer, clock,
-                                               site=opts.get("visit_site"))[2]
+                                               site=opts.get("visit_site"), b_frames=frames)[2]
             clock.mark("visits_put")
         except Exception:  # noqa: BLE001  the report stands without its visits layer; the reason is kept
             import traceback

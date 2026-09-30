@@ -5,8 +5,9 @@ import { splatAnnotation } from "./viewer/splat-layer";
 import { VideoMemory, VideoView, videoClock, type VideoPick } from "./VideoView";
 import { cameraPath, cameraView, currentCameras } from "./core";
 import { assetURL, chunkOrder, clickClock, emptyPick, entityInfo, fillChunk, gunzip, latest, liveDocument, onDemand, pickAt, pickChunks, pickIndexAt, pickMask, poll, readPick,
-  runsMask, SEVERITY, unknownRegion, worstVerdict, type PickChunk,
+  runsMask, SEVERITY, unknownRegion, visitView, worstVerdict, type PickChunk,
   type Info, type Patch, type Pick, type Poll } from "./live-report";
+import VisitsPanel, { VisitsTabLabel } from "./VisitsPanel";
 import "./report-scene.css";
 
 const OVER = 72;  // GB: 90% of an A100-80GB
@@ -41,9 +42,11 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   const layers = useMemo(() => latest(state.patches), [state.patches]);
   const docKey = Object.values(layers).filter(p => p.layer !== "timing").map(p => p.seq).sort((a, b) => a - b).join(",");
   const [cardsLayer, setCardsLayer] = useState<any>(null);  // declared here: the document draws each card's display model (r4)
-  const document = useMemo(() => liveDocument(reportId, layers, cardsLayer?.cards), [reportId, docKey, cardsLayer]);
+  const [visitShow, setVisitShow] = useState({ a: false, b: true });  // r5b: which visits the 3D pane shows (the visits panel's pick)
+  const visit = useMemo(() => visitView(layers.visits?.data, visitShow.a, visitShow.b), [layers.visits?.seq, visitShow]);
+  const document = useMemo(() => liveDocument(reportId, layers, cardsLayer?.cards, visit), [reportId, docKey, cardsLayer, visit]);
   const docRef = useRef(document); docRef.current = document;
-  const sceneId = docKey + (cardsLayer ? ":cards" + cardsLayer.version : "");
+  const sceneId = docKey + (cardsLayer ? ":cards" + cardsLayer.version : "") + (visit ? `:visits${+visitShow.a}${+visitShow.b}` : "");
   // For the headless checks: an asset fetched twice was reloaded; ready = when each asset was first on the GPU (unix s); clicks = ms
   // from pointer-down to the card in the DOM; pickDecodeMs = pick + depth fetched, inflated and indexed.
   const stats = useRef({ uploads: {} as Record<string, number>, ready: {} as Record<string, number>, scenes: 0, errors: [] as string[],
@@ -105,7 +108,7 @@ export default function LiveReport({ reportId }: { reportId: string }) {
 
   const host = useRef<HTMLDivElement>(null), viewer = useRef<SceneViewer | undefined>(undefined), opened = useRef(false), follow = useRef(false);
   const [selected, setSelected] = useState<string | null>(null), [frame, setFrame] = useState<string | null>(null), [following, setFollowing] = useState(false);
-  const [clicked, setClicked] = useState<Clicked | null>(null), [tab, setTab] = useState<"card" | "objects" | "memory">("card");
+  const [clicked, setClicked] = useState<Clicked | null>(null), [tab, setTab] = useState<"card" | "objects" | "memory" | "visits">("card");
   const [od, setOd] = useState<any>(null), odKey = useRef(0);  // mvp3: the on-demand card of the last click on no entity
   const choose = (id: string | null) => { odKey.current++; setOd(null); setSelected(id); setClicked(null); if (id) setTab("card"); };  // from 3D, the list, a card link
   const onPick = (p: VideoPick) => {  // a video click: the pick layer decides; before it lands, the smallest outline under the point
@@ -249,7 +252,8 @@ export default function LiveReport({ reportId }: { reportId: string }) {
       </div>
       <div className="live-report-side">
         <nav className="mvp-tabs" role="tablist">
-          {([["card", tr("卡片", "Card")], ["objects", `${tr("对象", "Objects")} (${cardsLayer?.cards?.length ?? 0})`], ["memory", tr("视频记忆", "Video memory")]] as const).map(([k, label]) =>
+          {([["card", tr("卡片", "Card")], ["objects", `${tr("对象", "Objects")} (${cardsLayer?.cards?.length ?? 0})`], ["memory", tr("视频记忆", "Video memory")],
+            ...(layers.visits ? [["visits", <VisitsTabLabel key="v" patch={layers.visits} tr={tr} />]] : [])] as [typeof tab, React.ReactNode][]).map(([k, label]) =>
             <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>)}
         </nav>
         <div className="mvp-panel">
@@ -259,6 +263,8 @@ export default function LiveReport({ reportId }: { reportId: string }) {
                 sam={samFor(layers.models, cardsLayer?.aliases, selected)} />)}
           {tab === "objects" && <ObjectList cards={cardsLayer?.cards || []} infos={infos} selected={selected} onSelect={choose} tr={tr} />}
           {tab === "memory" && <VideoMemory document={document} onSelect={choose} />}
+          {tab === "visits" && layers.visits && <VisitsPanel patch={layers.visits} show={visitShow} setShow={setVisitShow} selected={selected}
+            onSelect={id => { setSelected(id); setClicked(null); }} onSeek={seek} tr={tr} />}
         </div>
       </div>
     </div>

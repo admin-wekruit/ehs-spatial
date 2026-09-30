@@ -19,6 +19,7 @@ VOL = modal.Volume.from_name("panoptes-r5b-visit", create_if_missing=True)
 REPO = Path(__file__).resolve().parents[1]
 image = (modal.Image.debian_slim(python_version="3.11").apt_install("ffmpeg", "libgl1", "libglib2.0-0")
          .pip_install("numpy", "scipy", "opencv-python-headless", "pandas", "requests")
+         .pip_install("shapely")
          .add_local_dir(REPO / "scripts", "/repo/scripts", ignore=["**/__pycache__/**"])
          .add_local_dir(REPO / "fast_report", "/repo/fast_report", ignore=["**/__pycache__/**"]))
 TUM_URL = "https://cvg.cit.tum.de/rgbd/dataset/freiburg1/rgbd_dataset_freiburg1_{}.tgz"
@@ -191,6 +192,28 @@ def tum(names: str, out: str, windows: str = ""):
         (d / r["mp4_name"]).write_bytes(r.pop("mp4"))
         (d / "gt-poses.json").write_text(json.dumps({k: r[k] for k in ("name", "frames", "window", "posed_in_window", "floor", "gt_small", "poses")}))
         print(r["name"], r["frames"], r["window"], r["posed_in_window"], json.dumps(r["floor"])[:200], flush=True)
+
+
+LAYERS = modal.Volume.from_name("panoptes-fb-layers")
+
+
+@app.function(image=image, volumes={"/data": VOL, "/layers": LAYERS}, timeout=3600, retries=0, cpu=8, memory=16384)
+def gt_one(a: dict, b: dict):
+    """scripts/r5b_visits_eval.gt_pair on the Volumes: the reports' cards lifted with GT depth, their places in the other visit."""
+    import sys
+    sys.path[:0] = ["/repo", "/repo/scripts"]
+    import r5b_visits_eval as ev
+    return ev.gt_pair("/layers", "/data", a, b)
+
+
+@app.local_entrypoint()
+def gt(pairs: str, out: str):
+    o = Path(out)
+    o.mkdir(parents=True, exist_ok=True)
+    todo = json.loads(Path(pairs).read_text())
+    for r in gt_one.starmap([(x["a"], x["b"]) for x in todo]):
+        (o / f"gt-{r['a']['report']}--{r['b']['report']}.json").write_text(json.dumps(r))
+        print(r["a"]["report"], r["b"]["report"], len(r["cards_a"]), len(r["cards_b"]), len(r["overlaps"]), flush=True)
 
 
 @app.local_entrypoint()

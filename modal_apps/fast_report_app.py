@@ -591,9 +591,11 @@ def accuracy(plan: str, out: str, mirror_max_mb: float = 8.):
 
 
 @app.local_entrypoint()
-def visits(pairs: str, out: str, mirror_max_mb: float = 8.):
+def visits(pairs: str, out: str, plan: str = "", mirror_max_mb: float = 8.):
     """r5b: finished reports compared as visits of one site through one container (FastReport.visit: the `visits` layer on each
-    b report, its own clock). pairs: a JSON list of [a_report, b_report, site]."""
+    b report, its own clock). pairs: a JSON list of [a_report, b_report, site]. plan (optional, first): revisit videos analysed
+    with their visit step on the analysis clock (the accuracy entrypoint's plan format; options.visit_of = the site map's report)."""
+    import hashlib
     from fast_report import layers
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -602,6 +604,28 @@ def visits(pairs: str, out: str, mirror_max_mb: float = 8.):
     boot = fr.boot_info.remote()
     boot.update(client_submitted_unix=submitted, submit_to_ready_s_two_clocks=round(boot["ready_unix"] - submitted, 1))
     (out / "boot-visits.json").write_text(json.dumps(boot, indent=1, default=plain))
+    rows = []
+    for i, c in enumerate(json.loads(Path(plan).read_text()) if plan else []):
+        mp4 = Path(c["mp4"]).read_bytes()
+        digest = hashlib.sha256(mp4).hexdigest()
+        report_id = f"acc-{c['site']}-revisit-{digest[:8]}-{int(time.time())}"
+        layers.put_blob(out, mp4)
+        options = {"cache": False, "window_s": c["window_s"], "client_has": [digest], "display": False, **c["options"]}
+        run = None
+        for e in fr.run.remote_gen(mp4, c["site"], report_id, options):
+            if e["type"] in ("patch", "written", "run"):
+                layers.mirror(e, out, int(mirror_max_mb * 1e6) if mirror_max_mb else None)
+            if e["type"] == "run":
+                run = e["run"]
+        run.update(first_call=i == 0, call=c, milestones=milestones(out, report_id, run["t0_unix"]))
+        layers._write_json(out / "reports" / report_id / "run.json", run)
+        vs = [x for x in run["stages"] if x["stage"] == "visits"]
+        rows.append({"report": report_id, "site": c["site"], "visit_of": options.get("visit_of"), "first_call": i == 0, "error": run["error"],
+                     "visits_error": ((run.get("summary") or {}).get("visits") or {}).get("error"),
+                     "milestones": {k: v["written_s"] for k, v in run["milestones"].items()}, "visits_stage_s": round(vs[0]["end_s"] - vs[0]["start_s"], 3) if vs else None,
+                     "gpu_peak_gib": [g["peak_gb"] for g in run["gpu_peak"]], "usd_estimate": run["usd_estimate"]})
+        print(json.dumps(rows[-1], default=plain)[:1500], flush=True)
+    (out / "revisits-summary.json").write_text(json.dumps({"boot": boot, "runs": rows}, indent=1, default=plain))
     rows = []
     for a, b, site in json.loads(Path(pairs).read_text()):
         run = None
@@ -614,7 +638,8 @@ def visits(pairs: str, out: str, mirror_max_mb: float = 8.):
         layers._write_json(out / "reports" / b / f"visit-run-{a}.json", run)
         rows.append({"a": a, "b": b, "error": run["error"], "record": run["record"],
                      "written_s": [r.get("written_s") for r in run["layers"] if r["layer"] == "visits"], "gpu_peak_gib": [g["peak_gb"] for g in run["gpu_peak"]],
-                     "usd_estimate": run.get("usd_estimate")})
+                     "stages": {x["stage"]: round(x["end_s"] - x["start_s"], 3) for x in run["stages"] if x["stage"].startswith("visits")},
+                     "usd_estimate": run.get("usd_estimate"), "ended_unix": time.time()})
         print(json.dumps(rows[-1], default=plain)[:1500], flush=True)
     (out / "visits-summary.json").write_text(json.dumps({"boot": boot, "pairs": rows}, indent=1, default=plain))
 
