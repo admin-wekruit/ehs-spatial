@@ -402,10 +402,13 @@ def bench(a):
 
 
 def vocab_options(source, site, words_file):
-    """r5b: a call's wave-2 word source -> its options (a key of the --vocab-words file: that source's list for this site)."""
+    """r5b: a call's wave-2 word source -> its options (a key of the --vocab-words file: that source's list for this site; None: the
+    pipeline's default, fast_report.vocab.DEFAULT)."""
+    if source is None:
+        return {}
     if source in words_file:
         return {"vocab": "words", "vocab_words": list(words_file[source].get(site) or []), "vocab_list": source}
-    assert source in ("pe", "taxonomy", "qwen"), f"unknown word source {source}"
+    assert source in ("ram", "pe", "taxonomy", "qwen"), f"unknown word source {source}"
     return {"vocab": source}
 
 
@@ -513,6 +516,8 @@ def self_check():
     with tempfile.TemporaryDirectory() as tmp:
         md = summary_md({"mvp_latency_table": t, "boot": {"ready_s": 131.}, "mvp_error": "x"}, Path(tmp))
     assert "| pick v1 | 33.5 (34.0) ✓ |" in md and "131.0 s" in md
+    assert vocab_options(None, "me340", {}) == {} and vocab_options("ram", "me340", {}) == {"vocab": "ram"}, "r5b: no source named: the pipeline's default"
+    assert vocab_options("x", "me340", {"x": {"me340": ["vise"]}}) == {"vocab": "words", "vocab_words": ["vise"], "vocab_list": "x"}
     print("fast_report_bench self-check passed: stream -> mirror, run.json kept, layer times, section 13 acceptance, summary, MVP window/latency table/page")
 
 
@@ -526,7 +531,8 @@ if __name__ == "__main__":
     p.add_argument("--click-latency", type=Path, help="C's headless click check result {p50_ms, p95_ms, n}")
     p.add_argument("--background-s", type=int, default=0)
     p.add_argument("--mirror-max-mb", type=float, default=0., help="larger blobs stay on the Modal Volume (a nearly full disk)")
-    p.add_argument("--vocab", default="pe", help="r5b: wave-2 word source: pe (default) | taxonomy | qwen | a key of --vocab-words")
+    p.add_argument("--vocab", default=None, help="r5b: wave-2 word source: ram | pe | taxonomy | qwen | a key of --vocab-words (default: the "
+                                                 "pipeline's fast_report.vocab.DEFAULT)")
     p.add_argument("--vocab-words", type=Path, help="r5b: {source: {site: [words]}}: word lists computed off the pipeline (RAM++, YOLOE-pf)")
     p.add_argument("--prelude", default="", help="r5b: site=clip.mp4[@source],...: unscored calls before the plan (the bank build)")
     p.add_argument("--clicks", type=Path, help="r5b: {site: [{frame, x, y}]}: on-demand clicks after each video's first warm call")

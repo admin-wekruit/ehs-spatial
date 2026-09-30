@@ -196,6 +196,29 @@ def ram(videos: dict, k: int = 16):
     return out
 
 
+@app.function(image=image, gpu="L4", cpu=8, memory=32768, timeout=1200, retries=0, volumes=VOLUMES)
+def ram_worker_check(mp4: bytes, k: int = 16):
+    """The pipeline's RAM++ process (fast_report.vocab.Ram: /opt/ram venv, offline cache) on one video's frames: its boot record
+    and per-frame tags (to set beside ram()'s, which ran the same code in its own image)."""
+    import cv2
+    from fast_report import vocab
+    t = time.perf_counter()
+    ram_proc = vocab.Ram(0)
+    boot = ram_proc.ready(900)
+    boot_s = round(time.perf_counter() - t, 1)
+    fr, idx, _ = frames_of(mp4, k)
+    r = ram_proc.tags(fr)
+    ram_proc.close()
+    return {"boot": boot, "boot_s": boot_s, "frames": idx, "per_frame": r["per_frame"], "s": r["s"], "cv2": cv2.__version__}
+
+
+@app.local_entrypoint()
+def check_ram(out: str):
+    r = ram_worker_check.remote((PHASE2 / "data/clips/me340-165/source-full.mp4").read_bytes())
+    Path(out).write_text(json.dumps(r, indent=1))
+    print(json.dumps({k: v for k, v in r.items() if k != "per_frame"}), flush=True)
+
+
 @app.local_entrypoint()
 def main(out: str, sources: str = "pe,ram", extra: str = ""):
     """extra: name=path.mp4 pairs (comma list) tagged beside the three bench videos."""
