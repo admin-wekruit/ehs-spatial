@@ -66,6 +66,11 @@ def cards(mirror, report, out_dir, n=30, seed=29, per=10):
     vp = ev.patch_versions(mirror, report, "video")[-1]
     cap = cv2.VideoCapture(str(Path(mirror) / "blobs" / "sha256" / vp["blobs"]["video"]["sha256"]))
     tiles, rows = [], []
+    import r5b_models as r5m
+    import r5b_render as r5r
+    P5, cache5 = (r5m.patches(mirror, report) if (Path(mirror) / "reports" / report / "patches").exists() else None), {}
+    if P5 is not None and not P5.get("surfaces"):
+        P5 = None  # before r5b: r4's own drawing
     for k, c in enumerate(chosen):
         i = best[c["id"]][1]
         f = pick.frames[i]
@@ -85,8 +90,13 @@ def cards(mirror, report, out_dir, n=30, seed=29, per=10):
                 glb = rm.glb_tris(ev.blob_bytes(mirror, models_patch["blobs"][f"model-{s['object']}"]["sha256"]), s["transform"]["position"])
             except (OSError, KeyError, ValueError):  # a mesh blob left on the Volume (--mirror-max-mb): the primitive is drawn
                 glb = None
-        has_model = bool((c.get("model") or {}).get("kind"))
-        right, uv = rm.render(img, c, glb, K, c2w) if has_model or glb is not None else ((img * .35).astype(np.uint8), None)
+        if P5 is not None:  # r5b integrate: the model the viewer shows (generated / look-alike copy / primitive / observed surface)
+            _, T5, _ = r5m.shown(c, mirror, P5, cache5)
+            cov5 = r5r.raster(T5, c2w, K, (W, H))[0] if len(T5) else np.zeros((H, W), bool)
+            right, uv = r5r.overlay((img * .6).astype(np.uint8), cov5, tint=(80, 220, 120)), None
+        else:
+            has_model = bool((c.get("model") or {}).get("kind"))
+            right, uv = rm.render(img, c, glb, K, c2w) if has_model or glb is not None else ((img * .35).astype(np.uint8), None)
         ys, xs = np.nonzero(mk)
         box = [xs.min(), ys.min(), xs.max(), ys.max()]
         if uv is not None:
@@ -112,7 +122,7 @@ def cards(mirror, report, out_dir, n=30, seed=29, per=10):
         lines = [f"#{k} {c['id']}  {str(ident.get('name'))[:60]}  [frame {f['frame']}]", type_line(c),
                  "  ".join(f"{lab} {short(ph.get(fld))}" for fld, lab in PHYS[:4]),
                  "  ".join(f"{lab} {short(ph.get(fld))}" for fld, lab in PHYS[4:]) + f"  pos {short(pos)}  @{(c.get('views') or {}).get('distance_m', ['?'])[0]} m",
-                 rm.model_line(c, s)[:130]]
+                 (f"model: {r5m.tier_of(c, P5)} ({(c.get('model') or {}).get('kind')})" if P5 is not None else rm.model_line(c, s))[:130]]
         band = np.zeros((6 + 20 * len(lines), 960, 3), np.uint8)
         for j, t in enumerate(lines):
             cv2.putText(band, t, (6, 18 + 20 * j), cv2.FONT_HERSHEY_SIMPLEX, .44, (255, 255, 255), 1, cv2.LINE_AA)

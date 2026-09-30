@@ -25,7 +25,7 @@ def tiers(mirror, report):
     routes, rows = md.get("routes") or {}, {r["object"]: r for r in md.get("models", [])}
     obj = [c for c in cs if c.get("kind") == "object"]
     ns = [c for c in obj if c["id"] in rows or (routes.get(c["id"]) or [""])[0] in ("generated", "observed surface")
-          or "a look-alike of" in str((routes.get(c["id"]) or ["", ""])[1])]
+          or "but its model does not fit" in str((routes.get(c["id"]) or ["", ""])[1])]  # a look-alike whose copy did not fit
     shown = collections.Counter("generated (own)" if c["id"] in rows and not rows[c["id"]].get("reuse_of") else "generated (look-alike copy)"
                                 if c["id"] in rows else rm.tier_of(c, P) for c in ns)
     checked = [r for r in rows.values() if not r.get("reuse_of")]
