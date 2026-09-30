@@ -77,12 +77,16 @@ def near_min(w):
     return w["_dmin"], w["_person"]
 
 
-def place(points, w):
-    """How window w sees the place `points` occupied. -> {state, views: [per judged keyframe], best_key}."""
+def place(points, w, idx=None, min_views=MIN_VIEWS, min_pix=MIN_PIX, min_judged=MIN_JUDGED, rel_margin=REL_MARGIN):
+    """How window w sees the place `points` occupied. -> {state, views: [per judged keyframe], best_key}. r5b: idx = the
+    keyframes of w to read (default all: a card's shot dict is read in place, never copied per window); min_* = the width
+    ends' test (cards) judges its small probes on fewer pixels and in the object's own keyframes (one depth map: no
+    margin between windows, rel_margin 0), the defaults are X6's."""
     h, wd = w["depth"].shape[1:]
     dmin, grown = near_min(w)
     views, seen = [], 0
-    for j, key in enumerate(w["keys"]):
+    for j in (range(len(w["keys"])) if idx is None else idx):
+        key = w["keys"][j]
         u, v, z = project(points, w["c2w"][j], w["K"][j])
         inside = (z > .1) & (u >= BORDER * wd) & (u < (1 - BORDER) * wd) & (v >= BORDER * h) & (v < (1 - BORDER) * h)
         if inside.mean() < SEEN_SHARE:
@@ -92,14 +96,14 @@ def place(points, w):
         d, person = w["depth"][j][vi, ui], grown[j][vi, ui]
         valid = (d > 0) & ~person & (zz <= MAX_RANGE)
         m = 2 * sigma(zz)
-        free, front = valid & (dmin[j][vi, ui] > zz * (1 + REL_MARGIN) + m), valid & (d < zz - m)
+        free, front = valid & (dmin[j][vi, ui] > zz * (1 + rel_margin) + m), valid & (d < zz - m)
         pix = len(np.unique(vi[valid] * wd + ui[valid]))
-        views.append({"key": int(key), "judged": int(valid.sum()) if pix >= MIN_PIX else 0, "free": int(free.sum()), "front": int(front.sum() + person.sum()),
+        views.append({"key": int(key), "judged": int(valid.sum()) if pix >= min_pix else 0, "free": int(free.sum()), "front": int(front.sum() + person.sum()),
                       "occupied": int((valid & ~free & ~front).sum()), "inside": int(inside.sum()), "pixels": pix})
-    judged = [x for x in views if x["judged"] >= max(MIN_JUDGED, .3 * len(points))]
+    judged = [x for x in views if x["judged"] >= max(min_judged, .3 * len(points))]
     n_free = sum(x["free"] >= FREE_SHARE * x["judged"] for x in judged)
     n_occ = sum(x["occupied"] >= .5 * x["judged"] for x in judged)
-    if n_free >= MIN_VIEWS and n_free > n_occ:
+    if n_free >= min_views and n_free > n_occ:
         state = "free"
     elif n_occ and n_occ >= n_free:
         state = "occupied"
@@ -264,6 +268,292 @@ class Tracker:
                          "positions": [{"window": wi, "centroid": np.round(inst["centroid"], 3).tolist()} for wi, inst in o["obs"]],
                          "intervals": iv, "moves": len(o["moves"]), "windows_observed": len({wi for wi, _ in o["obs"]})})
         return rows
+
+
+# ---------- r5b: a card's timeline over its shot's content windows ----------
+# The core lifts a shot once (one DA3 forward, one map frame), so a card is one object of one shot. Its timeline cuts the
+# shot into fast_report.windows' content windows (a window's own keyframes: the carried ones belong to the one before) and
+# says per window what the object was: seen there ('first seen' / 'appeared' / 'static' / 'moved') with values measured on
+# that window's points alone, or not seen, and then why, from place() on its last seen points over the unseen windows so far
+# ('disappeared' once the camera saw through its place in >= MIN_VIEWS keyframes, withdrawn if it is seen there again; else
+# 'not observed' with the place's state). A value change between two windows is flagged only when it exceeds both windows'
+# u (the shared-scale term left out: one shot, one scale); a position change is a 'moved' claim only when the old place (the
+# earlier points away from the new ones) is seen empty too. Intervals are the runs of windows with one state and no flagged
+# change; each carries its values pooled over its windows. Compact: values are [value, u] (a position [[x, y], u]).
+
+TL_MIN_POINTS, TL_PLACE_KEYS, TL_PLACE_POINTS = 8, 24, 400
+TL_MOVE_SIGMA = 3.  # an earlier window's point farther than this x sigma from every later point is part of the old place
+TL_FIELDS = ("position_xy", "top_above_floor", "base_above_floor", "height", "width", "depth")
+TL_EVENTS = ("appeared", "first seen", "moved")
+TL_RULE = ("content windows (ORB co-visibility, fast_report.windows, threshold 0.40); per window: seen (values from its own points, "
+           "each +-u) or the place test on its last seen points over the unseen windows so far (timeline.place: 'disappeared' once "
+           "the camera saw through the place in >= 2 keyframes, withdrawn if it is seen there again); a change is flagged only when "
+           "it exceeds both windows' u (without the shared scale term); 'moved' needs the old place seen empty too; 'appeared' needs "
+           "its place seen empty before")
+
+
+def window_rows(windows, times, end_s):
+    """fast_report.windows' windows (local keyframe indices, carried first) -> [{w, keys (own), t: [t0, t1), reason}]."""
+    own = [list(w["keys"][w["carried"]:]) or list(w["keys"]) for w in windows]
+    return [{"w": i, "keys": ks, "t": [round(float(times[ks[0]]), 2), round(float(times[own[i + 1][0]]) if i + 1 < len(own) else float(end_s), 2)],
+             "reason": windows[i].get("reason")} for i, ks in enumerate(own)]
+
+
+def _sample(Q, n=TL_PLACE_POINTS):
+    return Q[:: max(1, len(Q) // n)]
+
+
+def _spread_keys(ks, n=TL_PLACE_KEYS):
+    ks = sorted(set(ks))
+    return ks if len(ks) <= n else [ks[int(i)] for i in np.linspace(0, len(ks) - 1, n)]
+
+
+def _t(s, j):
+    return round(float(s["times"][j]), 2)
+
+
+def _t_key(s, key):
+    ks = [int(k) for k in s["keys"]]
+    return _t(s, ks.index(int(key))) if key is not None and int(key) in ks else None
+
+
+def _brief(p):
+    return {k: p.get(k) for k in ("state", "views", "free_views", "occupied_views", "best_key")}
+
+
+def _compact(vals):
+    return None if not vals else {f: [vals[f]["value"], vals[f]["u"]] for f in TL_FIELDS if isinstance(vals.get(f), dict) and "value" in vals[f]}
+
+
+NOT_SEEN = {"occupied": "its place is occupied: there, not detected", "occluded": "occluded", "out-of-view": "out of view",
+            "unjudged": "not judged (too few pixels of its place)", "free": "its place seen empty"}
+
+
+def card_timeline(s, observed, frame, world, measure, compare):
+    """One card over its shot's content windows (s['windows'], cards' shot dict, read in place).
+    observed: local keyframes the object was seen on (pick-map detections or lifted points); frame, world: its points'
+    local keyframe and shot-frame position; measure(local keys) -> {field: value dict with u_rel} or None (too few points);
+    compare(a, b) -> {field: {delta, u, flagged}} for two windows' values. -> {windows, intervals, changes, rule} or None."""
+    if not s.get("windows"):
+        return None
+    rows = window_rows(s["windows"], s["times"], float(s["times"][-1]) + .2)
+    obs = set(int(j) for j in observed)
+    seen = [sorted(obs & set(r["keys"])) for r in rows]
+    first = next((i for i, x in enumerate(seen) if x), None)
+    if first is None:
+        return None
+    pts_of = lambda ks: world[np.isin(frame, ks)]  # noqa: E731
+    enough = lambda Q: Q if len(Q) >= MIN_JUDGED else world  # noqa: E731
+    first_pts = _sample(enough(pts_of(seen[first])))
+    out, changes = [], []
+    last, gone, unseen = None, None, []  # last: (row index, its values, its points); unseen: keyframes since the last sighting
+    for i, (r, ks) in enumerate(zip(rows, seen)):
+        row = {"w": r["w"], "t": r["t"], "seen": len(ks)}
+        if i < first:  # before its first sighting: is its place seen empty (evidence for 'appeared') or not seen yet
+            p = place(first_pts, s, _spread_keys(r["keys"]))
+            row.update(state="not observed", reason="not seen yet" + ("; " + NOT_SEEN[p["state"]] if p["state"] in ("free", "occupied", "occluded") else ""),
+                       place=_brief(p))
+        elif ks:
+            vals = measure(ks)
+            row["v"] = _compact(vals)
+            unseen = []
+            if gone is not None:  # seen again after a 'disappeared': the claim is withdrawn, never kept
+                for x in out[gone:]:
+                    if x["state"] == "disappeared":
+                        x.update(state="not observed", reason="its place was seen empty, but it was seen there again later: withdrawn")
+                changes[:] = [c for c in changes if not (c["kind"] == "disappeared" and c["window"] == out[gone]["w"])]
+                gone = None
+            if i == first:
+                row.update(_appeared(s, rows, first, first_pts, ks))
+                if row["state"] == "appeared":
+                    changes.append({"kind": "appeared", "window": r["w"], **row["evidence"]})
+            else:
+                row["state"] = "static"
+                ch = compare(last[1], vals) if (last and last[1] and vals) else None
+                if ch:
+                    row["d"] = {f: [c["delta"], c["u"][0], c["u"][1], c["flagged"]] for f, c in ch.items()}
+                if ch and ch.get("position_xy", {}).get("flagged"):
+                    now, old = pts_of(ks), last[2]
+                    if len(old) and len(now):
+                        from scipy.spatial import cKDTree
+                        cam = s["c2w"][ks[0]][:3, 3]
+                        old = old[cKDTree(now).query(old)[0] > TL_MOVE_SIGMA * sigma(np.linalg.norm(old - cam, axis=1))]
+                    p = place(_sample(old), s, _spread_keys(r["keys"])) if len(old) >= MIN_JUDGED else {"state": "unjudged"}
+                    if p["state"] == "free":
+                        j0 = seen[last[0]][-1]
+                        row.update(state="moved", evidence={"t_before": _t(s, j0), "t_after": _t(s, ks[0]), "before_key": int(s["keys"][j0]),
+                                                            "after_key": p["best_key"], "new_place_key": int(s["keys"][ks[0]]), "free_views": p["free_views"],
+                                                            "distance_m": ch["position_xy"]["delta"], "distance_u_m": max(ch["position_xy"]["u"])})
+                        changes.append({"kind": "moved", "window": r["w"], **row["evidence"]})
+                    else:
+                        row["note"] = f"its position differs by more than both u, but its old place was not seen empty ({p['state']}): no claim of motion"
+            last = (i, vals, pts_of(ks))
+        else:  # after it was seen, not seen here: the place test over the unseen windows so far
+            unseen += r["keys"]
+            if gone is not None:
+                row.update(state="disappeared", reason=f"gone since window {out[gone]['w']}")
+            else:
+                p = place(_sample(enough(last[2])), s, _spread_keys(unseen))
+                row["place"] = _brief(p)
+                if p["state"] == "free":
+                    gone, j0 = i, seen[last[0]][-1]
+                    ev = {"t_before": _t(s, j0), "t_after": _t_key(s, p["best_key"]), "before_key": int(s["keys"][j0]), "after_key": p["best_key"],
+                          "free_views": p["free_views"]}
+                    row.update(state="disappeared", evidence=ev)
+                    changes.append({"kind": "disappeared", "window": r["w"], **ev})
+                else:
+                    row.update(state="not observed", reason=NOT_SEEN[p["state"]])
+        out.append(row)
+    ivs = intervals(out, seen)
+    for x in ivs:
+        ks = x.pop("_keys")
+        x["v"] = _compact(measure(sorted(set(ks)))) if ks else None
+    return {"windows": out, "intervals": ivs, "changes": changes, "rule": TL_RULE}
+
+
+def _appeared(s, rows, first, pts, ks):
+    """'appeared' when the latest judged earlier windows (<= LOOKBACK back, read together from the latest) saw its place empty;
+    'first seen' when they saw it occupied or occluded (there before, not detected) or never saw it (new content)."""
+    keys = []
+    for j in range(first - 1, max(-1, first - 1 - LOOKBACK), -1):
+        keys += rows[j]["keys"]
+        p = place(pts, s, _spread_keys(keys))
+        if p["state"] == "free":
+            return {"state": "appeared", "evidence": {"t_before": _t_key(s, p["best_key"]), "t_after": _t(s, ks[0]), "before_key": p["best_key"],
+                                                      "after_key": int(s["keys"][ks[0]]), "free_views": p["free_views"]}}
+        if p["state"] in ("occupied", "occluded"):
+            return {"state": "first seen", "reason": f"its place was {p['state']} before (window {rows[j]['w']}): there before, not detected"}
+    return {"state": "first seen", "reason": "new content (its place was not seen before)"}
+
+
+def intervals(rows, seen):
+    """Runs of windows with one state and no flagged change between them (an event and the static windows after it are one
+    run); '_keys': the run's seen keyframes (the caller measures them)."""
+    out = []
+    for row, ks in zip(rows, seen):
+        flagged = any(d[3] for d in (row.get("d") or {}).values())
+        if out and not flagged and (out[-1]["state"] == row["state"] and row["state"] not in TL_EVENTS or
+                                    out[-1]["state"] in TL_EVENTS and row["state"] == "static"):
+            out[-1]["t"][1] = row["t"][1]
+            out[-1]["w"][1] = row["w"]
+            out[-1]["_keys"] += ks
+        else:
+            out.append({"state": row["state"], "t": list(row["t"]), "w": [row["w"], row["w"]], "_keys": list(ks),
+                        **({"reason": row["reason"]} if row.get("reason") else {}), **({"d": row["d"]} if flagged else {}),
+                        **({"evidence": row["evidence"]} if row.get("evidence") else {})})
+    return out
+
+
+def shown(tl, mobility, raw_states):
+    """The timeline a card shows for its class (apply_name): a deformable object changes shape (no place claims: it is
+    re-measured per window) and an agent moves by nature (present / not observed); others keep the raw states."""
+    if tl is None:
+        return None
+    for key in ("windows", "intervals"):
+        for x, st in zip(tl[key], raw_states[key]):
+            x["state"] = st
+    tl["changes"] = list(raw_states["changes"])
+    if mobility == "deformable":
+        for x in tl["windows"] + tl["intervals"]:
+            if x["state"] in ("disappeared", "moved"):
+                x["state"] = "not observed" if x["state"] == "disappeared" else "static"
+                x["reason"] = "a deformable object changes shape: re-measured per window, no place claim"
+        tl["changes"] = []
+    elif mobility == "agent":
+        for x in tl["windows"] + tl["intervals"]:
+            x["state"] = "present" if x["state"] in ("static", "moved") + TL_EVENTS else "not observed"
+        tl["changes"] = []
+    tl["mobility_rule"] = {"deformable": "re-measured per window, no place claims", "agent": "an agent: present / not observed, no place claims"}.get(mobility)
+    return tl
+
+
+def no_claims(tl, why):
+    """A timeline whose changes are not claims (why: e.g. a screen-fixed overlay): its states stay, its events become notes."""
+    if not tl:
+        return tl
+    for x in tl["windows"] + tl["intervals"]:
+        if x["state"] in ("appeared", "disappeared", "moved"):
+            x["state"], x["reason"] = {"appeared": "first seen", "disappeared": "not observed", "moved": "static"}[x["state"]], why
+    tl["changes"], tl["claims"] = [], why
+    return tl
+
+
+def raw_states(tl):
+    return None if tl is None else {"windows": [x["state"] for x in tl["windows"]], "intervals": [x["state"] for x in tl["intervals"]],
+                                    "changes": list(tl["changes"])}
+
+
+def interval_at(tl, t):
+    """The interval of a timeline holding video time t (the viewer's scrubber), or None."""
+    for x in (tl or {}).get("intervals", []):
+        if x["t"][0] <= t < x["t"][1]:
+            return x
+    return None
+
+
+def link_moves(cards, emb=None, tau=None, max_gap=2):
+    """r5b: across cards of one shot, a card that 'disappeared' and one that 'appeared' within max_gap windows of it, never
+    seen at the same time, sizes within SIZE_RATIO, places apart by more than both positions' u, and the same kind of thing
+    (appearance cos >= tau when both have a vector, else the same detected word) are one object that moved: both cards say
+    so, each with the other's id; a card joins one pair at most (the closest in time). -> the pairs [(from id, to id, record)]."""
+    by_shot = {}
+    for c in cards:
+        tl = (c.get("time") or {}).get("timeline")
+        if c.get("kind") != "object" or not tl:
+            continue
+        for ch in tl["changes"]:
+            if ch["kind"] in ("disappeared", "appeared"):
+                by_shot.setdefault(c["shot"], {"disappeared": [], "appeared": []})[ch["kind"]].append((c, ch))
+    pairs, used = [], set()
+    for sh in by_shot.values():
+        cand = []
+        for a, ca in sh["disappeared"]:
+            for b, cb in sh["appeared"]:
+                if a["id"] == b["id"] or abs(cb["window"] - ca["window"]) > max_gap:
+                    continue
+                ta, tb = a["time"], b["time"]
+                if tb["first_seen_s"] < ta["last_seen_s"]:  # seen at the same time: two objects
+                    continue
+                sa, sb = (a.get("raw") or {}).get("size") or {}, (b.get("raw") or {}).get("size") or {}
+                la, lb = sa.get("longest"), sb.get("longest")
+                if not la or not lb or not 1 / SIZE_RATIO <= la / lb <= SIZE_RATIO:
+                    continue
+                pa, pb = (a["physical"].get("position_xy") or {}), (b["physical"].get("position_xy") or {})
+                if "value" not in pa or "value" not in pb:
+                    continue
+                d = float(np.linalg.norm(np.subtract(pa["value"], pb["value"])))
+                if d <= pa["u"] or d <= pb["u"]:
+                    continue
+                va, vb = (emb or {}).get(a["id"]), (emb or {}).get(b["id"])
+                if va is not None and vb is not None and tau is not None:
+                    cos = float(np.dot(va, vb) / max(np.linalg.norm(va) * np.linalg.norm(vb), 1e-9))
+                    if cos < tau:
+                        continue
+                    how = f"appearance cos {cos:.3f} >= {tau:.3f}"
+                else:
+                    wa, wb = (a.get("identity") or {}).get("detector_words") or [], (b.get("identity") or {}).get("detector_words") or []
+                    if not (wa and wb and wa[0] == wb[0]):
+                        continue
+                    how, cos = f"the same detected word '{wa[0]}'", None
+                cand.append((abs(cb["window"] - ca["window"]), -(cos or 0.), a, ca, b, cb, d, how))
+        for _, _, a, ca, b, cb, d, how in sorted(cand, key=lambda x: (x[0], x[1])):
+            if a["id"] in used or b["id"] in used:
+                continue
+            used |= {a["id"], b["id"]}
+            rec = {"from": a["id"], "to": b["id"], "t_before": ca["t_before"], "t_after": cb["t_after"], "old_place_empty_key": ca["after_key"],
+                   "before_key": ca["before_key"], "new_place_key": cb["after_key"], "distance_m": round(d, 3),
+                   "distance_u_m": round(float(max(a["physical"]["position_xy"]["u"], b["physical"]["position_xy"]["u"])), 3), "same_object_by": how}
+            ca.update(kind="moved", to=b["id"], link=rec)
+            cb.update(kind="moved", **{"from": a["id"]}, link=rec)
+            pairs.append((a["id"], b["id"], rec))
+    return pairs
+
+
+def move_threshold(emb, together, q=99):
+    """The appearance cos a move needs: the q-th percentile over pairs of cards seen at the same time (known different
+    objects) in this video; None without such pairs."""
+    cs = [float(np.dot(emb[a], emb[b]) / max(np.linalg.norm(emb[a]) * np.linalg.norm(emb[b]), 1e-9)) for a, b in together if a in emb and b in emb]
+    return float(np.percentile(cs, q)) if len(cs) >= 20 else None
 
 
 # ---------- self-check: a synthetic room rendered by ray casting ----------

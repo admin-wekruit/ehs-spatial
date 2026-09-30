@@ -20,7 +20,7 @@ import sys
 
 import numpy as np
 
-THRESHOLD, MIN_KEYS, MAX_KEYS, CARRY, COLLAPSE = .55, 8, 40, 2, .05
+THRESHOLD, MIN_KEYS, MAX_KEYS, CARRY, COLLAPSE = .40, 8, 40, 2, .05  # X6 VERIFY: 0.40 is the recommendation (0.55 was the old default)
 GRID, MIN_CELL_KP, MIN_HITS, ORB_N, RATIO, F_PX, EDGE = (8, 4), 3, 2, 1500, .8, 1.5, .2
 
 

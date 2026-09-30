@@ -292,6 +292,15 @@ def windows_geometry(da3, kf, grays, threshold=.40):
     return out, rec
 
 
+def shot_windows(grays):
+    """r5b: a shot's content windows (fast_report.windows' rule, threshold 0.40) on its keyframes' 640x480 grey rasters, in a
+    worker process beside DA3 -> (windows over local keyframe indices, seconds)."""
+    from fast_report import windows as win
+    t = time.perf_counter()
+    ws = win.run(list(range(len(grays))), [win.features(g) for g in grays])
+    return ws, round(time.perf_counter() - t, 3)
+
+
 def floor_plane(depth, K, c2w, floor, stride=4):
     """Least-squares plane through the floor-masked points, trimmed three times; camera height above it (DA3 units). E9."""
     import torch
@@ -740,7 +749,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                 reader.release()
             with clock.stage("vlm.vocab", n={"frames": len(vlm_frames)}):
                 pngs = [cv2.imencode(".png", raster_rgb(img))[1].tobytes() for img in seeked]
-                words, rec = vlm.vocab(pngs)
+                words, rec = vlm.vocab(pngs, neutral=opts.get("vocab_prompt") == "neutral")
             results["vocab"] = {**rec, "words": words, "frames": vlm_frames}
         except Exception as error:  # noqa: BLE001  no vocabulary: wave 1 alone, recorded
             words, results["vocab"] = [], {"error": repr(error)[:500]}
@@ -749,6 +758,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         clock.mark("vocab_known")
         if use_cache and words:
             vlm.remember_site(site_path, words, video_sha)
+        if not opts.get("events", True):  # r5b: no event captions (their prompt asks for PPE and safety notes: the user's direction)
+            return []
         with clock.stage("vlm.events.frames"):
             windows = []
             for t0, t1 in video_events.bounds(len(frames) / fps, 12.):
@@ -816,6 +827,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         kf = torch.cat(work.chunks[dev_geo])
     clock.mark("cuts_ready")
     cuts_ready.set()
+    # r5b: each shot's content windows (the cards' timelines), in the process pool beside DA3 (ORB on the keyframes' grey rasters)
+    win_futures = [m.proc_pool.submit(shot_windows, [gray_all[keys[q]] for q in pos]) for pos in shot_pos] if opts.get("timeline", True) else []
     if early is not None:
         early.result()
 
@@ -1078,6 +1091,10 @@ def analyse(m, mp4, opts, clock, writer, log):
         writer.put("object_cards", data, blobs or None, "estimated+inferred", card_labels)
         clock.mark(f"cards_v{version}_put")
 
+    def appearance():
+        """r5b: the naming signals' PE-Core vectors known so far ({object id: vector}): a moved object's two cards must look alike."""
+        return {i: v["pe"] for i, v in list(sig.items()) if v.get("pe") is not None}
+
     def cards_job():
         with clock.stage("cards.inputs", n={"shots": len(geo)}):
             shots_in = []
@@ -1089,9 +1106,19 @@ def analyse(m, mp4, opts, clock, writer, log):
                                  "sharp": np.array([sharp_all[k_] for k_ in gg["keys"]]), "plumb_deg": cards.plumb(*gg["mesh_vf"], normal),
                                  "plumb_walls": cards.plumb_walls(*gg["mesh_vf"], normal),
                                  "depth": gg["depth_m"].cpu().numpy(), "person": gg["person"].cpu().numpy()})
+            tl_rec = results["timeline"] = {"on": bool(win_futures), "rule": "fast_report.windows (ORB co-visibility 0.40) per shot", "shots": []}
+            for x in shots_in:  # options timeline False: round 4's cards (no timelines, no width ends test: the 'at most' rule)
+                x["r5b"] = bool(opts.get("timeline", True))
+            for si, f in enumerate(win_futures):  # r5b: done long before (they ran beside DA3); a failure leaves that shot without timelines
+                try:
+                    shots_in[si]["windows"], w_s = f.result(timeout=60)
+                    tl_rec["shots"].append({"windows": len(shots_in[si]["windows"]), "keys": [len(w["keys"]) for w in shots_in[si]["windows"]],
+                                            "reasons": [w["reason"] for w in shots_in[si]["windows"]], "s": w_s})
+                except Exception as error:  # noqa: BLE001
+                    tl_rec["shots"].append({"error": repr(error)[:300]})
         with clock.stage("cards.v1", n={"objects": len(objects)}):  # the pick maps' counts are read only for the time fields
             out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": obj_points,
-                               "counts": lambda: (pick_ready.wait(120), pick_counts)[1],
+                               "counts": lambda: (pick_ready.wait(120), pick_counts)[1], "appearance": appearance(),
                                "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
         cards_out["v1"], cards_out["shots_in"] = out, shots_in
         cards_ready.set()
@@ -1315,12 +1342,14 @@ def analyse(m, mp4, opts, clock, writer, log):
         decided.update(decided2)
         with naming["lock"]:
             naming["in_video"] += rows
-        naming["bank"].add([r[0] for r in rows], [r[1] for r in rows])
-        try:
-            naming["bank"].save()
-            saved = True
-        except Exception as error:  # noqa: BLE001  the names stand; the bank misses this pass's rows
-            saved = repr(error)[:300]
+        saved = "off (options bank_write: the shared label bank is read only in this run)"
+        if opts.get("bank_write", True):  # r5b: evaluation runs read the shared bank and never grow it (review finding 7)
+            naming["bank"].add([r[0] for r in rows], [r[1] for r in rows])
+            try:
+                naming["bank"].save()
+                saved = True
+            except Exception as error:  # noqa: BLE001  the names stand; the bank misses this pass's rows
+                saved = repr(error)[:300]
         idents = {cid: cascade.identity(cmap[cid]["identity"], r, decided.get(cid)) for cid, r in recs.items()}
         try:  # the pass's inputs beside the report (offline analysis: the vectors against the bank's, other operating points)
             d_ = Path(f"/v/layers/reports/{writer.report_id}")
@@ -1915,7 +1944,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         with clock.stage("cards.v3", n={"objects": len(objects)}):
             shots_in = cards_out.get("shots_in")
             out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": points_v3, "counts": counts_v2,
-                               "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
+                               "appearance": appearance(), "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
         with cards_lock:  # the identities known now (v2's, else v1's words); a later decider pass merges in as v4
             prev = cards_out.get("identities") or {c["id"]: c["identity"] for c in cards_out.get("v1", {}).get("cards", []) if c["kind"] == "object"}
             out = with_identity(out, prev)
@@ -2187,6 +2216,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                          "bank_rows_now": len(naming["bank"].meta) if naming["bank"] else None}
     summary["judge"] = [f.result() for f in judge_futures]  # after densify: it adds the v3 judgements' future
     summary["cards"] = {"v1": summary["cards"], "v3": cards_out.get("v3", {}).get("stats")}
+    summary["timeline"] = results.get("timeline")
     summary["boxes_v3"] = box_stats(objects, cards_out.get("v3"))
     summary["sam3d"] = display["models"].result() if "models" in display else None
     summary["splat"] = splat_future.result() if splat_future is not None else None

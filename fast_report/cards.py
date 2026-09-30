@@ -1115,6 +1115,7 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
             from fast_report import timeline
             s["_dmin"] = minimum_filter(np.asarray(s["depth"], np.float32), size=(1, 2 * timeline.NEIGH + 1, 2 * timeline.NEIGH + 1))
             s["_person"] = maximum_filter(np.asarray(s["person"], bool), size=(1, 2 * timeline.PERSON_GROW + 1, 2 * timeline.PERSON_GROW + 1))
+            s["_dmin_key"] = (timeline.NEIGH, timeline.PERSON_GROW)  # r5b: place() reads the shot dict in place
             if pool is not None:
                 for key in ("depth", "person", "_dmin", "_person"):
                     path = os.path.join(shm_dir or "/dev/shm", f"fb-cards-{os.getpid()}-{time.time_ns()}-{si}-{key.strip('_')}.npy")
@@ -1155,6 +1156,8 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
                 by_id[cid]["part_of"] = rec
                 by_id[rec["id"]].setdefault("parts", []).append({"id": cid, "kind": rec["kind"]})
     model_s = sum(r.pop("model_s", 0.) for r in rims.values())  # r4 (models): CPU seconds the display models' fits took (all processes)
+    moves = link_moves(cards, all_counts, inp.get("appearance"))  # r5b: a disappeared and an appeared card that are one moved object
+    t_link = time.perf_counter()
     cards += people_cards(inp.get("people"), shots, cards, k)
     shot_rows = [{"index": si, "floor_frame": {"origin_m": np.round(s["frame"]["origin"], 3).tolist(), "x": np.round(s["frame"]["R"][0], 5).tolist(),
                                                "z": np.round(s["frame"]["R"][2], 5).tolist()},
@@ -1172,10 +1175,68 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
              "parts": sum(r["kind"] == "part" for r in part_of.values()), "contents": sum(r["kind"] == "contents" for r in part_of.values()),
              "implausible": sum(c["physical"]["size_check"].get("status") == "implausible" for c in shown),
              "s": {"merge": round(t_merge - t0, 3), "shots": round(t_shots - t_merge, 3), "wait_counts": round(t_counts - t_shots, 3),
-                   "cards": round(t_cards - t_counts, 3), "models_cpu": round(model_s, 3),
-                   "people": round(time.perf_counter() - t_cards, 3)}}
+                   "cards": round(t_cards - t_counts, 3), "models_cpu": round(model_s, 3), "moves_link": round(t_link - t_cards, 3),
+                   "people": round(time.perf_counter() - t_link, 3)},
+             "timeline": timeline_stats(shown, moves)}
     return {"cards": cards, "shots": shot_rows, "aliases": aliases, "stats": stats, "diagnostics": {"rim": rims},
             "walked": {si: {kk: np.round(v, 3).tolist() for kk, v in s["walked"].items()} for si, s in shots.items()}}
+
+
+def link_moves(cards, counts, appearance=None):
+    """r5b: timeline.link_moves on the cards (appearance: {card id: vector} when the naming signals exist; its threshold is
+    the 99th percentile over cards seen on one keyframe, known different objects), then each pair's timelines say 'moved'
+    from the change on (the old card: moved to the new one; the new card: moved from the old one), raw states too."""
+    from fast_report import timeline
+    emb, tau = None, None
+    if appearance:
+        emb = {c["id"]: appearance[c["id"]] for c in cards if c.get("kind") == "object" and c["id"] in appearance}
+        ids = {c["id"] for c in cards if c.get("kind") == "object"}
+        together = set()
+        for_frame = {}
+        for oid, per in (counts or {}).items():
+            if oid in ids:
+                for kf, c in per.items():
+                    if c[0] >= MIN_PX:
+                        for_frame.setdefault((oid.split("-")[1], int(kf)), []).append(oid)
+        for grp in for_frame.values():
+            for i, a in enumerate(grp[:40]):
+                for b in grp[i + 1:40]:
+                    together.add((a, b))
+        tau = timeline.move_threshold(emb, sorted(together)[:20000])
+    pairs = timeline.link_moves(cards, emb, tau)
+    by = {c["id"]: c for c in cards}
+    for a_id, b_id, rec in pairs:
+        for cid, other, since in ((a_id, b_id, "disappeared"), (b_id, a_id, "appeared")):
+            c = by[cid]
+            tl, raw = c["time"]["timeline"], ((c.get("raw") or {}).get("time") or {}).get("timeline_states")
+            for key in ("windows", "intervals"):
+                for j, x in enumerate(tl[key]):
+                    if x["state"] == since:  # the old card from its disappearance on; the new card's appearance (and its interval)
+                        x["state"] = "moved"
+                        x["reason"] = ("moved to " if since == "disappeared" else "moved from ") + other
+                        if raw:
+                            raw[key][j] = "moved"
+            c["time"].update(state="moved", evidence={"before": {"key": rec["before_key"], "t": rec["t_before"]}, "after": {"key": rec["new_place_key"], "t": rec["t_after"]},
+                                                      "old_place_empty": {"key": rec["old_place_empty_key"]}, "distance_m": rec["distance_m"],
+                                                      "distance_u_m": rec["distance_u_m"], "rule": "r5b: one object, two cards: " + rec["same_object_by"]},
+                             moved={"to": b_id} if cid == a_id else {"from": a_id})
+            if (c.get("raw") or {}).get("time"):
+                c["raw"]["time"].update(state="moved", evidence=c["time"]["evidence"])
+            if cid == b_id and by[a_id].get("model"):  # the model is made once per object: the better-seen card's, posed at each place
+                src = a_id if (by[a_id].get("views") or {}).get("n", 0) >= (c.get("views") or {}).get("n", 0) else b_id
+                c["model_source"] = by[a_id]["model_source"] = src
+    return {"pairs": [r for _, _, r in pairs], "appearance_threshold": tau, "cards_with_vectors": len(emb or {})}
+
+
+def timeline_stats(cards, moves):
+    """r5b: the cards' timelines in numbers (the run summary): cards with one, windows per shot, change claims by kind."""
+    import collections
+    tls = [(c.get("time") or {}).get("timeline") for c in cards]
+    tls = [t for t in tls if t]
+    return {"cards": len(cards), "with_timeline": len(tls),
+            "changes": dict(collections.Counter(ch["kind"] for t in tls for ch in t["changes"])),
+            "intervals_median": float(np.median([len(t["intervals"]) for t in tls])) if tls else None,
+            "moves_linked": len(moves["pairs"]), "appearance_threshold": moves["appearance_threshold"]}
 
 
 def walked_paths(s, people):
@@ -1290,17 +1351,34 @@ def unresolved(phys):
     the sign through a later 'needs review'), or 'not measurable' when it was already a lower bound ('at least': both ends
     unknown). A check with a maximum can still PASS on the bound, never FAIL. mvp2/integrate: under the ground-truth u rule
     (extents k 2.39 on the geometry parts) small tools and goods 2-5 m away read e.g. 'width 0.04 +- 0.07 m' on 51-70 % of the
-    retail and workshop cards' widths. Heights above the floor and positions are not sizes (zero is a value)."""
+    retail and workshop cards' widths. Heights above the floor and positions are not sizes (zero is a value).
+    r5b (width): 'at most' held for only 72-92 % of the r4b GT widths, so an unresolved width is 'at most' only when both of its
+    ends were seen bounded by free space (width['ends'], cards.ends); otherwise it is the extent seen, 'at least' (its u from
+    depth, resolution and scale: which part was seen is coverage, not error) when that is resolved, else 'not observed'."""
     for n in UNRESOLVED:
         f = phys.get(n)
+        lower = f.pop("lower", None) if isinstance(f, dict) else None
         if not (isinstance(f, dict) and "value" in f and f["u"] >= abs(f["value"])):
             continue
+        ends = f.get("ends")
         if f.get("status") == "at least":
             phys[n] = {"status": "not measurable", "reason": "only a lower bound, and its uncertainty is as large as it"}
+        elif n == "width" and "ends" in f and not (ends and all(e == "free" for e in (ends.get("lo"), ends.get("hi")))):
+            keep = {k: f[k] for k in ("unit", "level", "scale", "n_subsets") if k in f}
+            why = "its ends were not both seen bounded by free space (" + ", ".join(f"{k} end {v}" for k, v in (ends or {}).items() if k in ("lo", "hi")) + ")" \
+                if ends else "its ends were not tested (no depth)"
+            if lower and lower["u"] < lower["value"]:
+                phys[n] = {**keep, "value": lower["value"], "u": lower["u"], "parts": lower["parts"], "status": "at least", "bound": "at least", "ends": ends,
+                           "measured": {"value": f["value"], "u": f["u"]}, "reason": f"not resolved and {why}: the extent seen, a lower bound"}
+            else:
+                phys[n] = {"status": "not observed", "ends": ends, "measured": {"value": f["value"], "u": f["u"]},
+                           "reason": f"not resolved and {why}; the extent seen is below its own uncertainty"}
         else:
-            phys[n] = {**{k: f[k] for k in ("unit", "level", "scale", "parts", "n_subsets") if k in f}, "value": round(f["value"] + f["u"], 3),
+            phys[n] = {**{k: f[k] for k in ("unit", "level", "scale", "parts", "n_subsets", "ends") if k in f},
+                       "value": round(max(f["value"] + f["u"], (ends or {}).get("span_m") or 0.) if n == "width" else f["value"] + f["u"], 3),
                        "u": 0., "status": "at most", "bound": "at most", "measured": {"value": f["value"], "u": f["u"]},
-                       "reason": "not resolved (its +-u reached zero at this distance and resolution): only an upper bound"}
+                       "reason": "not resolved (its +-u reached zero at this distance and resolution): only an upper bound" +
+                                 (", both ends seen bounded by free space" if n == "width" else "")}
 
 
 def unresolved_distance(f, floor_m=1.):
@@ -1309,6 +1387,115 @@ def unresolved_distance(f, floor_m=1.):
     if isinstance(f, dict) and "value" in f and f["u"] >= max(abs(f["value"]), floor_m):
         return {"status": "not measurable", "reason": "its uncertainty is larger than the distance and than 1 m: the positions are too uncertain here"}
     return f
+
+
+END_REGION, END_GAP_PX, END_SLAB_PX, END_KEYS, END_MIN_PIX, END_MIN_JUDGED = .2, 6, 3, 12, 6, 8  # r5b: the width ends' test
+BAND = .15  # r5b: an object whose points sit in the frame's top or bottom band in >= BAND_VIEWS of its views gets no change claims
+BAND_VIEWS = .8  # (burned-in captions and logos, the camera operator's own cart: they move with the frame, not in the room)
+
+
+def ends(P, views, axis, s, z_med):
+    """r5b: is each end of the object along `axis` (floor xy, unit) seen bounded by free space? The points of the last
+    END_REGION of its extent at that end, moved past the end by END_GAP_PX px at their range (the lift drops a 1 px rim and
+    place() takes the minimum depth over NEIGH px) and spread over a slab END_SLAB_PX px deep, keep their height and cross
+    position; timeline.place on the object's own views says whether the camera saw past them ('free': the object ends
+    there), a surface at their depth ('occupied': it may go on), something in front ('occluded'), or too little
+    ('out-of-view': the frame edge; 'unjudged'). -> {'lo': state, 'hi': state, 'keys': n} or None (no depth)."""
+    from fast_report import timeline
+    if s.get("depth") is None or len(P) < 8 or not len(views):
+        return None
+    a = np.array([axis[0], axis[1], 0.])
+    pr = P @ a
+    lo, hi = pr.min(), pr.max()  # the extreme points: the probes start past everything the object showed
+    L, px = hi - lo, z_med / s["fx"]
+    keys = views if len(views) <= END_KEYS else [views[int(i)] for i in np.linspace(0, len(views) - 1, END_KEYS)]
+    out = {"keys": len(keys), "span_m": round(float(L + 2 * END_GAP_PX * px), 3)}  # between the two probes: 'at most' is never below it
+    for name, sgn, edge in (("lo", -1., lo), ("hi", 1., hi)):
+        Q = P[pr <= lo + END_REGION * L] if sgn < 0 else P[pr >= hi - END_REGION * L]
+        if len(Q) < 8:
+            out[name] = "unjudged"
+            continue
+        Q = Q[:: max(1, len(Q) // 150)]
+        probe = np.concatenate([Q + np.outer(edge - Q @ a + sgn * (END_GAP_PX + t) * px, a) for t in (0., END_SLAB_PX / 2, END_SLAB_PX)])
+        out[name] = timeline.place(probe @ s["frame"]["R"] + s["frame"]["origin"], s, keys, min_pix=END_MIN_PIX, min_judged=END_MIN_JUDGED,
+                                   rel_margin=0.)["state"]
+    return out
+
+
+def in_band(P, frame, views, s):
+    """r5b: share of the object's views where its points (projected into that view) sit in the top or bottom BAND of the frame."""
+    from fast_report import timeline
+    h = s["depth"].shape[1] if s.get("depth") is not None else 280
+    world = P @ s["frame"]["R"] + s["frame"]["origin"]
+    n = 0
+    for v in views:
+        _, row, z = timeline.project(world[frame == v], s["c2w"][v], s["K"][v])
+        r = np.median(row[z > .05]) / h if (z > .05).any() else .5
+        n += r < BAND or r > 1 - BAND
+    return n / max(len(views), 1)
+
+
+def window_measure(P, frame, x, s, axes, wi, k, cam_f, u_pose, u_floor, up_rad, windows_seen):
+    """r5b: a card's per-window values for its timeline: the card's definitions on one window's (or interval's) points alone,
+    each +-u from the model terms (one view set) plus a coverage term, what those views did not see of the largest extent any
+    of its windows saw (a partial view moves a centre by up to the part not seen); never the card's view-subset spread (a
+    move inside the shot is in it). u_rel leaves the shared scale term out (one shot, one scale: it scales a difference, it
+    does not make one). -> (measure(local keys) -> {field: value dict} or None, compare(a, b) -> {field: {delta, u, flagged}})."""
+    from fast_report import timeline
+    cam_h, di = cam_f[:, 2], 1 - wi
+
+    def raw(ks):
+        m = np.isin(frame, ks)
+        if m.sum() < timeline.TL_MIN_POINTS:
+            return None
+        Q = P[m]
+        b = box_of(Q, axes)
+        t, bo = rim(x, ks, cam_h, b["top"], "top"), rim(x, ks, cam_h, b["base"], "bottom")
+        b["top"], b["base"] = max(b["top"], t if t is not None else -np.inf), min(b["base"], bo if bo is not None else np.inf)
+        b["cam"] = np.median(cam_f[list(ks)], 0)
+        b["z"] = float(np.median(np.linalg.norm(Q - b["cam"], axis=1)))
+        return b
+    got = [b for b in (raw(ks) for ks in windows_seen if ks) if b is not None]
+    ref = {"sides": np.max([b["sides"] for b in got], 0), "top": max(b["top"] for b in got), "base": min(b["base"] for b in got)} if got else None
+
+    def wv(v, parts, family, cov):
+        r = value(v, parts, family, k, views_term=False)
+        ks_ = 1. if isinstance(k.get(family, 1.), dict) else float(k.get(family, 1.))
+        rel = float(np.sqrt(max(r["u"] ** 2 - (ks_ * parts.get("scale", 0.)) ** 2, 0.)))
+        r.update(u=round(float(np.hypot(r["u"], cov)), 3), u_rel=round(float(np.hypot(rel, cov)), 3))
+        r["parts"]["coverage"] = round(float(cov), 4)
+        return r
+
+    def measure(ks):
+        b = raw(ks)
+        if b is None or ref is None:
+            return None
+        res = 2 * STRIDE * b["z"] / s["fx"]
+        hd = float(np.linalg.norm(b["centre_xy"] - b["cam"][:2]))
+        miss = np.maximum(ref["sides"] - b["sides"], 0.)
+        ct, cb = max(ref["top"] - b["top"], 0.), max(b["base"] - ref["base"], 0.)
+        out = {"keys": len(ks), "points": int(np.isin(frame, ks).sum())}
+        for name, v, cov in (("top_above_floor", b["top"], ct), ("base_above_floor", b["base"], cb)):
+            out[name] = wv(v, {"depth": DEPTH_REL * abs(v - b["cam"][2]), "floor": u_floor, "edge": b["z"] / s["fx"], "up": up_rad * hd,
+                               "scale": SCALE_REL * abs(v)}, "height", cov)
+        h = b["top"] - b["base"]
+        out["height"] = wv(h, {"depth": DEPTH_REL * h, "resolution": res, "scale": SCALE_REL * h}, "extent", ct + cb)
+        for name, ax in (("width", wi), ("depth", di)):
+            v = float(b["sides"][ax])
+            out[name] = wv(v, {"depth": DEPTH_REL * v, "resolution": res, "scale": SCALE_REL * v}, "extent", float(miss[ax]))
+        out["position_xy"] = wv(b["centre_xy"], {"depth": DEPTH_REL * hd, "pose": u_pose, "scale": SCALE_REL * float(np.linalg.norm(b["centre_xy"]))},
+                                "position", float(np.linalg.norm(miss)))
+        return out
+
+    def compare(a, b):
+        out = {}
+        for f in timeline.TL_FIELDS:
+            p, q = a.get(f), b.get(f)
+            if isinstance(p, dict) and isinstance(q, dict) and "value" in p and "value" in q:
+                d = float(np.linalg.norm(np.subtract(q["value"], p["value"])))
+                out[f] = {"delta": round(d, 3), "u": [p["u_rel"], q["u_rel"]], "flagged": bool(d > p["u_rel"] and d > q["u_rel"])}
+        return out
+    return measure, compare
 
 
 def rim(x, vs, cam_h, ref, which):
@@ -1416,6 +1603,10 @@ def object_card(o, x, s, k, marking, merged_from, counts):
                     "extent", k, subs(fn), note="pooled over every view; subsets give the spread")
         if name == "width" and lr_cut:
             rec.update(status="at least", reason="cut by the frame edge in every view")
+        if name == "width" and s.get("r5b", True):  # r5b: its ends' free-space evidence, and its extent seen as a lower bound (unresolved() decides)
+            rec["ends"] = ends(P, views, axes[wi], s, z_med)
+            lb = value(v, {"depth": DEPTH_REL * v, "resolution": res, "scale": SCALE_REL * v}, "extent", k, views_term=False)
+            rec["lower"] = {kk: lb[kk] for kk in ("value", "u", "parts")}
         if not seen:  # r4: the depth seen from this side stays beside it as a lower bound when it is resolved (u < value)
             rec = {"status": "not observed", "reason": f"seen from one side (azimuth spread {az_spread:.0f} deg)",
                    **({"visible": {**rec, "status": "at least", "reason": "the depth seen from this side: the far side is hidden"}} if rec["u"] < rec["value"] else {})}
@@ -1492,7 +1683,21 @@ def object_card(o, x, s, k, marking, merged_from, counts):
                       "distance_m": [round(min(dist.values()), 2), round(max(dist.values()), 2)], "azimuth_spread_deg": round(az_spread, 1),
                       "subsets": [[int(keys[v]) for v in q["views"]] for q in sub]},
             "observed": ["masks", "views", "time"], "estimated": ["physical"], "inferred": ["identity", "class"]}
-    card["time"] = time_card(o, s, counts, sub, views, P, frame)
+    tl = None
+    if s.get("windows") and s.get("depth") is not None:  # r5b: the card's timeline over its shot's content windows
+        from fast_report import timeline
+        observed = sorted({int(j) for j, c in counts.items() if c[0] >= MIN_PX} | set(views))
+        rows = timeline.window_rows(s["windows"], s["times"], float(s["times"][-1]) + .2)
+        measure, compare = window_measure(P, frame, x, s, axes, wi, k, cam_f, s["u_pose_m"], u_floor, up_rad,
+                                          [sorted(set(observed) & set(r["keys"])) for r in rows])
+        tl = timeline.card_timeline(s, observed, frame, P @ s["frame"]["R"] + s["frame"]["origin"], measure, compare)
+        if tl is not None:
+            tl["centre_xy"] = np.round(pooled["centre_xy"], 3).tolist()  # the model's pose per interval moves by (interval - this)
+            band = in_band(P, frame, views, s)
+            if tl["changes"] and band >= BAND_VIEWS:
+                timeline.no_claims(tl, f"seen in the frame's top or bottom band in {band:.0%} of its views (a caption, a logo or the camera's "
+                                       "own cart moves with the frame): no change claims")
+    card["time"] = time_card(o, s, counts, sub, views, P, frame, tl)
     # observed behaviour over the class prior (section 4.8): extents that change > 2x between subsets at a static place
     ext_change = None
     if card["time"].get("state") == "static" and len(sub) >= 2:
@@ -1675,7 +1880,7 @@ def identity_v1(o, sc=None):
 
 ANGLES = ("principal_axis_tilt_deg", "planar_slope_deg")
 REVIEWED = ("top_above_floor", "base_above_floor", "height", "width", "depth", "visible_length", "footprint_m2", "position_xy", "nearest_walked_path", *ANGLES)
-TIME_RAW = ("state", "evidence", "last_seen_reason", "after_last_detection", "note")
+TIME_RAW = ("state", "evidence", "last_seen_reason", "after_last_detection", "note", "timeline_states")
 UNIDENTIFIED = "unidentified object"
 COPIED = "vlm copy (cluster medoid, SAM 3 word agrees)"  # r4/naming: a VLM answer on a look-alike, confirmed by this object's own word
 VLM_ROUTES = ("gemini open name", "vlm options", COPIED)  # the routes where a VLM named the object (the hazard gate's third check)
@@ -1684,7 +1889,10 @@ NAMER_STATUS = {"object": None, "part": "a part of a bigger thing (named as the 
 
 
 def _time_raw(t):
-    return None if t is None else {k: t.get(k) for k in TIME_RAW}
+    if t is None:
+        return None
+    from fast_report import timeline
+    return {**{k: t.get(k) for k in TIME_RAW}, "timeline_states": timeline.raw_states(t.get("timeline"))}
 
 
 def hazard_gate(ident, raw):
@@ -1784,12 +1992,16 @@ def apply_name(card):
         card["model"]["sam3d_eligibility"] = "an open frame" if card["model"]["kind"] == "open frame" else raw["sam3d_eligibility"]
     t, tr = card.get("time"), raw.get("time")
     if t is not None and tr is not None:
-        t.update(tr)
+        t.update({k: v for k, v in tr.items() if k != "timeline_states"})
+        if t.get("timeline") and tr.get("timeline_states"):  # r5b: the timeline's states for its class (deformable, agent)
+            from fast_report import timeline
+            timeline.shown(t["timeline"], kind["mobility"], tr["timeline_states"])
         if kind["mobility"] == "agent":
             t.update(state="agent: position per keyframe", note="an agent is tracked, not given a place state", evidence=None)
-        elif kind["mobility"] == "deformable" and tr["state"] == "disappeared":
+        elif kind["mobility"] == "deformable" and tr["state"] in ("disappeared", "moved"):
             t.update(state="static" if t.get("static_subsets") else f"last seen at {t.get('last_detected_s')} s", evidence=None,
-                     last_seen_reason="place seen empty, but a deformable object does not move")
+                     last_seen_reason="place seen empty, but a deformable object does not move" if tr["state"] == "disappeared" else
+                     "a deformable object changes shape: re-measured per window, no claim of motion")
     ident["candidates_struck"] = strike(ident.get("candidates") or [], (phys.get("size_check") or {}).get("measured_m"))
     return card
 
@@ -1856,9 +2068,10 @@ def decide_identity(ident, options, answer, calibration=None):
     return out
 
 
-def time_card(o, s, counts, sub, views, P, frame):
+def time_card(o, s, counts, sub, views, P, frame, timeline_=None):
     """Section 4.6 from the pick maps' pixel counts per keyframe; name-free (apply_name turns an agent's or a deformable
-    object's state into its class's)."""
+    object's state into its class's). r5b: with the card's timeline (timeline.card_timeline) the timeline decides the
+    state ('disappeared' / 'moved' with its evidence frames; one place test per content window, the same rule)."""
     times, keys = s["times"], s["keys"]
     det = sorted(j for j, c in counts.items() if c[0] >= MIN_PX)
     seen = sorted(j for j, c in counts.items() if c[0] >= MIN_PX or c[1] >= MIN_PX)
@@ -1882,6 +2095,28 @@ def time_card(o, s, counts, sub, views, P, frame):
     last = max(det) if det else max(views)
     after = [j for j in range(last + 1, len(keys))]
     place = None
+    if timeline_ is not None:
+        tlast = round(float(times[last]), 2)
+        out.update(static_subsets=static, last_detected_s=tlast, timeline=timeline_)
+        end = timeline_["intervals"][-1] if timeline_["intervals"] else {}
+        gone = [c for c in timeline_["changes"] if c["kind"] == "disappeared"]
+        moved = [c for c in timeline_["changes"] if c["kind"] == "moved"]
+        if end.get("state") == "disappeared" and gone:
+            g = gone[-1]
+            out.update(state="disappeared", evidence={"before": {"key": g["before_key"], "t": g["t_before"]}, "after": {"key": g["after_key"], "t": g["t_after"]},
+                                                      "free_views": g["free_views"], "rule": "X6 see-through test per content window (r5b timeline)"})
+            return out
+        if moved:
+            m = moved[-1]
+            out.update(state="moved", evidence={"before": {"key": m["before_key"], "t": m["t_before"]}, "after": {"key": m["new_place_key"], "t": m["t_after"]},
+                                                "old_place_empty": {"key": m["after_key"]}, "free_views": m["free_views"], "distance_m": m["distance_m"],
+                                                "distance_u_m": m["distance_u_m"], "rule": "r5b timeline: moved by more than both u, its old place seen empty"})
+            return out
+        out["state"] = "static" if static else f"last seen at {tlast} s"
+        out["last_seen_reason"] = end.get("reason") if end.get("state") == "not observed" else "end of the shot" if not after else "seen in its shot's last window"
+        if static is False:
+            out["note"] = "view-subset centroids differ by more than 3 sigma: not a claim of motion (partial views move a centroid)"
+        return out
     if after and s.get("_dmin") is not None and len(P) >= 30:
         from fast_report import timeline
         pick = after if len(after) <= AFTER_KEYS else [after[int(i)] for i in np.linspace(0, len(after) - 1, AFTER_KEYS)]
@@ -2582,11 +2817,23 @@ def self_check():
           "footprint_m2": value(1.2, {"views": .1}, "extent", {}, [1.2, 1.1], unit="m2")}
     assert not long_object(ph, {"sides": np.array([2., .6])}, sb([[2., .6], [1.95, .58]]), 0, 1, False, True, .05, {}) and "visible_length" not in ph
     assert "status" not in ph["width"] and "status" not in ph["depth"]
-    ph = {"width": value(.04, {"resolution": .03}, "extent", {"extent": {"sets": 2.4, "one_set": 4.5}}), "height": value(.3, {"views": .02}, "extent", {}),
+    ph = {"width": {**value(.04, {"resolution": .03}, "extent", {"extent": {"sets": 2.4, "one_set": 4.5}}), "ends": {"lo": "free", "hi": "free"}},
+          "height": value(.3, {"views": .02}, "extent", {}),
           "top_above_floor": value(.02, {"floor": .05}, "height", {})}  # mvp2/integrate: 0.04 +- 0.14 m is no size; 0.02 +- 0.05 m up is a value
     unresolved(ph)
     assert ph["width"]["status"] == "at most" and ph["width"]["value"] == round(.04 + ph["width"]["measured"]["u"], 3) and ph["width"]["u"] == 0.
     assert "status" not in ph["height"] and "status" not in ph["top_above_floor"], ph
+    # r5b: an unresolved width with an end not seen bounded by free space is the extent seen ('at least') or 'not observed'
+    ph = {"width": {**value(.04, {"resolution": .03}, "extent", {"extent": {"sets": 2.4, "one_set": 4.5}}), "ends": {"lo": "free", "hi": "occupied"},
+                    "lower": {"value": .04, "u": .05, "parts": {}}}}
+    unresolved(ph)
+    assert ph["width"]["status"] == "not observed" and "value" not in ph["width"] and "lower" not in ph["width"], ph
+    ph = {"width": {**value(.3, {"views": .4}, "extent", {}), "ends": {"lo": "free", "hi": "out-of-view"}, "lower": {"value": .3, "u": .1, "parts": {}}}}
+    unresolved(ph)
+    assert ph["width"]["status"] == "at least" and ph["width"]["value"] == .3 and ph["width"]["u"] == .1 and ph["width"]["bound"] == "at least", ph
+    ph = {"width": {**value(.3, {"views": .1}, "extent", {}), "ends": None, "lower": {"value": .3, "u": .1, "parts": {}}}}
+    unresolved(ph)
+    assert ph["width"]["value"] == .3 and "status" not in ph["width"] and "lower" not in ph["width"], "a resolved width stays a value"
     ph = {"height": value(.1, {"resolution": .2}, "extent", {}, status="at least")}  # a cut lower bound that is not resolved: nothing known
     unresolved(ph)
     assert ph["height"]["status"] == "not measurable", ph
