@@ -97,7 +97,10 @@ def jev_image():
 JEV_IMAGE = jev_image() if modal.is_local() else modal.Image.debian_slim()
 
 
-@app.cls(image=JEV_IMAGE, gpu="A100-80GB", cpu=4, memory=49152, timeout=3600, retries=0, max_containers=1, scaledown_window=600,
+JEV_SCALEDOWN_S = 300  # the bench wakes it before each call (calls are ~4-5 min apart)
+
+
+@app.cls(image=JEV_IMAGE, gpu="A100-80GB", cpu=4, memory=49152, timeout=3600, retries=0, max_containers=1, scaledown_window=JEV_SCALEDOWN_S,
          volumes={"/v/x8": modal.Volume.from_name("panoptes-x8-models"), "/v/x13": modal.Volume.from_name("panoptes-x13-models")})
 class Jev:
     """fast_report.jev on its own GPU: the report's container asks it Q5 for the cards no class routes (fast_report.route)."""

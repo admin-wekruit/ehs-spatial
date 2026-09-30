@@ -351,6 +351,12 @@ def bench(a):
     meta["finished_unix"] = time.time()
     meta["usd_estimate_upper"] = round((meta["finished_unix"] - submitted) * usd_per_s(), 2)  # the container's whole life, list prices
     summary = summarize(out, records, boot, meta)
+    if meta.get("jev_pings"):  # r5b: the router's own A100 (list-price upper bound: first container entry -> the bench's end + its scale-down)
+        from fast_report.instrument import PRICE
+        from modal_apps.fast_report_app import JEV_SCALEDOWN_S
+        life = meta["finished_unix"] + JEV_SCALEDOWN_S - min(p["entered_unix"] for p in meta["jev_pings"])
+        summary["jev"] = {"pings": meta["jev_pings"], "life_s_upper": round(life, 1),
+                          "usd_upper": round(life * (PRICE["A100-80GB"] + 4 * PRICE["cpu_core"] + 48 * PRICE["gib"]), 2)}
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
     runs, repeats = {}, {}
     for site in sites:  # the MVP rows: the first warm call, against the second warm call and the shifted window

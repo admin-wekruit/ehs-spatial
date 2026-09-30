@@ -755,8 +755,8 @@ def reuse_placement(rep, member, model, shot):
 
 def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None, until_s=None, ctx=None):
     """r5b tier 1: generated models where tier1_plan routes them (SAM 3D s1cfg12 in the commercial profile, RecGen FAST in the
-    internal one), one per look-alike group, at most TIER1_CAP a video, started once the first names are in and generating once
-    SAM 3 is off GPU 0 (ctx['gpu0_free']); each accepted model at once as a 'models' version (cumulative) with its group's copies
+    internal one), one per look-alike group, at most TIER1_CAP a video, planned once the first names are in and generating once
+    the facts are (ctx['gpu0_free']: densify and its names done, GPU 0's SAM 3 work with them); each accepted model at once as a 'models' version (cumulative) with its group's copies
     (reuse_placement, kept only where the copy fits the member's own outline), and a last one ('final'). 'tried' says per object
     what the generator did; 'routes' why each card has, or has not, a generated model. Display layers, never measurements."""
     import os
@@ -780,7 +780,7 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
     judged = lambda: sum(r.get("stage") == "assess" for r in records)  # noqa: E731
     writer.put("models", {**base, "models": [], "attempted": 0, "final": False, "tried": []}, None, "generated", GENERATED)  # the routes, at once
     if ctx.get("gpu0_free") is not None:
-        ctx["gpu0_free"].wait(300)  # SAM 3 off GPU 0 (densify's pass done): the generator's memory
+        ctx["gpu0_free"].wait(300)  # the facts first (click MVP section 7): densify's GPU 0 work and the cards v3 build
     with torch.cuda.device(dev):
         torch.cuda.empty_cache()  # the core's cached blocks back to the device before the generator's processes run beside it
     clock.mark("tier1_generating")
@@ -866,7 +866,12 @@ def tier0_job(m, version, out, points, objects, shots_in, frames_path, clock, wr
     at = {o["id"]: j for j, o in enumerate(objects[:len(points)])}
     shots = {s["index"]: s for s in shots_in}
     plumb = {r["index"]: {"usable": r.get("angles_usable"), "u_deg": r.get("plumb_u_deg"), "reading": r.get("plumb_deg")} for r in out["shots"]}
-    frs, jobs = {}, []
+    import os
+    frs, jobs, depth_paths = {}, [], {}
+    for si, s in shots.items():  # the shots' depth for consistent(): a /dev/shm .npy each, mapped by the workers
+        if s.get("depth") is not None:
+            depth_paths[si] = os.path.join("/dev/shm" if os.path.isdir("/dev/shm") else "/tmp", f"fb-tier0-{os.getpid()}-{time.time_ns()}-{si}.npy")
+            np.save(depth_paths[si], np.ascontiguousarray(s["depth"], np.float32))
     for c in cs:
         s = shots[c["shot"]]
         if c["shot"] not in frs:
@@ -877,9 +882,14 @@ def tier0_job(m, version, out, points, objects, shots_in, frames_path, clock, wr
         loc = {int(k): i for i, k in enumerate(s["keys"])}
         subsets = [[loc[int(k)] for k in sv if int(k) in loc] for sv in (c.get("views") or {}).get("subsets") or []]
         jobs.append((c["id"], np.concatenate([points[j]["world"] for j in js]), np.concatenate([points[j]["frame"] for j in js]), s["c2w"], s["K"],
-                     frames_path, [int(q) for q in s["keys"]], frs[c["shot"]], float(np.median(s["K"][:, 0, 0])), subsets, plumb.get(c["shot"], {})))
-    with clock.stage(f"tier0.v{version}", n={"objects": len(jobs)}):
-        res = list(m.proc_pool.map(surface.card_tier0, jobs, chunksize=4))
+                     frames_path, [int(q) for q in s["keys"]], frs[c["shot"]], float(np.median(s["K"][:, 0, 0])), subsets, plumb.get(c["shot"], {}),
+                     depth_paths.get(c["shot"])))
+    try:
+        with clock.stage(f"tier0.v{version}", n={"objects": len(jobs)}):
+            res = list(m.proc_pool.map(surface.card_tier0, jobs, chunksize=4))
+    finally:
+        for p_ in depth_paths.values():
+            Path(p_).unlink(missing_ok=True)
     with clock.stage(f"tier0.pack.v{version}", n={"objects": len(res)}):
         shot_of = {c["id"]: c["shot"] for c in cs}
         nodes, rows = {}, []
@@ -902,7 +912,8 @@ def tier0_job(m, version, out, points, objects, shots_in, frames_path, clock, wr
     clock.mark(f"tier0_v{version}_put")
     return {"version": version, "objects": len(jobs), "with_surface": len(where), "bytes": sum(len(b[0]) for b in blobs.values()),
             "cpu_s": stats_s([r[5].get("s") for r in res]), "mesh_s": stats_s([r[5].get("mesh_s") for r in res]),
-            "parts_s": stats_s([r[5].get("parts_s") for r in res]), "with_parts": sum(bool((r[4] or {}).get("parts")) for r in res)}
+            "parts_s": stats_s([r[5].get("parts_s") for r in res]), "with_parts": sum(bool((r[4] or {}).get("parts")) for r in res),
+            "kept_share": stats_s([r[5].get("kept_share") for r in res])}
 
 
 def stats_s(v):
@@ -1775,7 +1786,8 @@ def analyse(m, mp4, opts, clock, writer, log):
     # the facts (click MVP section 7: densify, cards and judgements before the display layers)
     sam3d_objs = m.cpu_pool.submit(sam3d_inputs)
     display = {}  # 'models': SAM 3D's future; 'splat_wait': the splat's release is scheduled
-    sam3_gpu0_done = threading.Event()  # r5b: SAM 3's passes are off GPU 0 (tier 1 generates after it)
+    facts_in = threading.Event()  # r5b: densify and its names are done (start_display): tier 1 generates only then (smoke-001: generating
+    # from densify's SAM 3 end took cards v3 from 82 to 125 s on ME340 and GPU 0 to 74.6 GiB beside densify's lift)
 
     def release_splat():
         if not release.is_set():
@@ -1820,7 +1832,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                 return
             display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo,
                                                   lambda: next((cards_out[v] for v in ("v4", "v3", "v2", "v1") if v in cards_out), None),
-                                                  TIER1_UNTIL_S, {"gpu0_free": sam3_gpu0_done, "names": facts_done["identity"],
+                                                  TIER1_UNTIL_S, {"gpu0_free": facts_in, "names": facts_done["identity"],
                                                                   "shots_in": lambda: cards_out.get("shots_in"), "points_of": points_of,
                                                                   "jev_ask": jev_ask if getattr(m, "jev_decide", None) else None})
             clock.mark("tier1_started")
@@ -1828,12 +1840,12 @@ def analyse(m, mp4, opts, clock, writer, log):
     def start_display():
         with display_lock:  # mvp3 integrate: called from densify or from the Qwen densify naming's end, whichever is last
             splat_after_facts()
+            facts_in.set()
             if not display_on:
                 return
             clock.mark("display_started")
         start_models()
     if not densify_on or not objects:
-        sam3_gpu0_done.set()
         start_display()
     v1_labels = {o["id"]: o["label"] for o in objects}
     gpu0_free, cascade_done = threading.Event(), threading.Event()
@@ -2022,7 +2034,6 @@ def analyse(m, mp4, opts, clock, writer, log):
         work.hidden.clear()
         claimed_o.clear()
         clock.mark("densify_sam3_done")
-        sam3_gpu0_done.set()  # r5b: tier 1's generator may use GPU 0's memory now
         n_d = len(dens["q"])
         qs = np.asarray(dens["q"], np.int64)
         packed = np.concatenate(dens["packed"]) if dens["packed"] else np.zeros((0, DA3_HW[0], DA3_HW[1] // 8), np.uint8)

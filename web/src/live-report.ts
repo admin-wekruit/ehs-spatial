@@ -77,7 +77,7 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
   const byCard = new Map<string, any>((cards || []).filter((c: any) => c.kind === "object").map((c: any) => [c.id, c]));
   const seen = new Map<string, any>((surfaces?.data.surfaces || []).map((r: any) => [r.object, r]));
   for (const o of objects?.data.objects || []) {
-    if (o.merged_into && byCard.has(o.merged_into)) continue;  // its points are the card it merged into (drawn there)
+    if (byCard.size && !byCard.has(o.id)) continue;  // merged into another card (v1's or densify's aliases): drawn there
     const card = byCard.get(o.id), frame = frameOf(o.shot), min = o.box_min_m, max = o.box_max_m, model = accepted.get(o.id);
     const glb = model && models.blobs["model-" + (model.reuse_of || o.id)];
     const dm = card?.model?.tier === "primitive" ? card.model : null;

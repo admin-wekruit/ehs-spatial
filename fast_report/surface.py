@@ -170,7 +170,7 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
         seen = cams[np.unique(frame[comp])].mean(0)
         if (seen - c) @ nrm < 0:
             nrm = -nrm
-        parts.append({"ix": comp, "c": c, "n": nrm, "ext": ext, "res95": res95})
+        parts.append({"ix": comp, "c": c, "n": nrm, "ext": ext, "res95": res95, "ax": axes})
     if not parts:
         return {"status": "not measurable", "reason": "no planar part (>= 5 % of the points, >= 5 cm a side)", "s": round(time.perf_counter() - t0, 4)}
     fit = lambda p: float(np.degrees(np.arctan(2 * p["res95"] / max(p["ext"].min(), 1e-6))))  # noqa: E731  measure_observed_points' plane term
@@ -193,7 +193,8 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
         if fit(p) > FIT_MAX_DEG:  # the cards' rule for any angle: a patch this rough is curved, no angle
             v = {"status": "not measurable", "reason": f"a curved patch: fit term {fit(p):.0f} deg > {FIT_MAX_DEG:g}", "value_if_flat": v["value"]}
         rows.append({"name": chr(65 + len(rows)), "tilt_deg": v, "area_m2": round(float(np.prod(p["ext"])), 3), "centre_m": np.round(p["c"], 3).tolist(),
-                     "normal": np.round(p["n"], 4).tolist(), "sides_m": np.round(p["ext"], 3).tolist(), "share": round(len(p["ix"]) / n, 3)})
+                     "normal": np.round(p["n"], 4).tolist(), "sides_m": np.round(p["ext"], 3).tolist(), "axes": np.round(p["ax"], 4).tolist(),
+                     "share": round(len(p["ix"]) / n, 3)})
     bends = []
     from scipy.spatial import cKDTree
     for a in range(len(parts)):
@@ -317,11 +318,65 @@ def decimate(V, F, C, target=TIER0_TRIANGLES):
     return np.asarray(m.vertices), np.asarray(m.triangles), (np.asarray(m.vertex_colors) * 255).round().clip(0, 255).astype(np.uint8)
 
 
+CONSISTENT_SHARE, CONSISTENT_VIEWS = .5, 12  # r5b: a point stays when half of the views that see it put it inside the object's outline
+
+
+def outline_cells(P, c2w, K, hw=GRID_HW, stride=STRIDE):
+    """An object's outline in one view from its own points there: their stride cells, closed over the sampling's gaps (a wider kernel
+    for a thinned view) and dilated one cell (the lift erodes masks at depth edges). -> (h, w) bool."""
+    import cv2
+    h, w = hw[0] // stride, hw[1] // stride
+    X = (np.asarray(P, float) - c2w[:3, 3]) @ c2w[:3, :3]
+    X = X[X[:, 2] > .05]
+    col, row = (K[0, 0] * X[:, 0] / X[:, 2] + K[0, 2]) / stride, (K[1, 1] * X[:, 1] / X[:, 2] + K[1, 2]) / stride
+    ok = (row >= 0) & (row < h) & (col >= 0) & (col < w)
+    g = np.zeros((h, w), np.uint8)
+    g[row[ok].astype(int), col[ok].astype(int)] = 1
+    if g.sum() < 4:
+        return g > 0
+    r, c = np.nonzero(g)
+    fill = g.sum() / max(1, (np.ptp(r) + 1) * (np.ptp(c) + 1))
+    k = 3 if fill >= .5 else 5 if fill >= .2 else 7
+    return cv2.dilate(cv2.morphologyEx(g, cv2.MORPH_CLOSE, np.ones((k, k), np.uint8)), np.ones((3, 3), np.uint8)) > 0
+
+
+def consistent(Pw, frame, c2w, K, depth=None, tol_m=.03, tol_rel=.03):
+    """r5b: the points the object's other views agree on. A point lifted from one view's mask (its bleed onto the background, a
+    neighbour's edge) falls outside the object's outline in the views that see it from elsewhere; the TSDF would fuse it into the
+    surface. A point stays when, over up to CONSISTENT_VIEWS of the object's views that see it (in frame; with depth, not behind
+    that view's surface by more than the tolerance) OTHER than its own (inside by construction), >= CONSISTENT_SHARE put it inside the
+    outline (outline_cells); a point no other view sees stays. -> keep (n,) bool."""
+    from fast_report.observed import spread
+    Pw, frame = np.asarray(Pw, float), np.asarray(frame)
+    views = spread(sorted(np.unique(frame).tolist()), CONSISTENT_VIEWS)
+    h, w = GRID_HW[0] // STRIDE, GRID_HW[1] // STRIDE
+    seen, inside = np.zeros(len(Pw), int), np.zeros(len(Pw), int)
+    for v in views:
+        mask = outline_cells(Pw[frame == v], c2w[v], K[v])
+        X = (Pw - c2w[v][:3, 3]) @ c2w[v][:3, :3]
+        z = X[:, 2]
+        ok = z > .05
+        col = np.full(len(Pw), -1)
+        row = np.full(len(Pw), -1)
+        col[ok] = np.floor((K[v][0, 0] * X[ok, 0] / z[ok] + K[v][0, 2]) / STRIDE).astype(int)
+        row[ok] = np.floor((K[v][1, 1] * X[ok, 1] / z[ok] + K[v][1, 2]) / STRIDE).astype(int)
+        vis = ok & (row >= 0) & (row < h) & (col >= 0) & (col < w)
+        if depth is not None:
+            D = np.asarray(depth[v], np.float32)
+            d = D[np.clip(row * STRIDE, 0, D.shape[0] - 1), np.clip(col * STRIDE, 0, D.shape[1] - 1)]
+            vis &= ~((d > 0) & (z > d + np.maximum(tol_m, tol_rel * d)))
+        vis &= frame != v
+        seen += vis
+        inside[vis] += mask[row[vis], col[vis]]
+    return (seen == 0) | (inside >= CONSISTENT_SHARE * seen)
+
+
 def card_tier0(job):
     """r5b tier 0, a worker's card: (id, world points, their local keyframes, c2w, K, frames .npy path, the shot's source keys, floor
-    frame, fx, subsets (local keyframe lists), plumb {usable, u_deg, reading}) -> (id, V (shot frame), F, rgb, planar parts, info).
-    The card's main cluster is the cards' own (cards.prepare); its planar parts are measured on the same observed points."""
-    cid, world, frame, c2w, K, frames_path, keys, fr, fx, subsets, plumb = job
+    frame, fx, subsets (local keyframe lists), plumb {usable, u_deg, reading}, the shot's depth .npy path or None) -> (id, V (shot
+    frame), F, rgb, planar parts, info). The card's main cluster is the cards' own (cards.prepare), cut to the points its views agree
+    on (consistent()); the observed mesh and the planar parts are made from the same points."""
+    cid, world, frame, c2w, K, frames_path, keys, fr, fx, subsets, plumb, depth_path = job
     from fast_report import cards
     t0 = time.perf_counter()
     world, frame = np.asarray(world, float), np.asarray(frame)
@@ -330,16 +385,22 @@ def card_tier0(job):
     z = np.einsum("ni,ni->n", world - c2w[frame, :3, 3], c2w[frame, :3, 2])
     x = cards.prepare({"world": world, "frame": frame, "z": z}, fr, fx)
     Pw = x["P"] @ fr["R"] + fr["origin"]
+    keep = consistent(Pw, x["frame"], c2w, K, np.load(depth_path, mmap_mode="r") if depth_path else None)
+    if keep.sum() >= 10:
+        Pw, Pf, pf = Pw[keep], x["P"][keep], x["frame"][keep]
+    else:
+        Pf, pf = x["P"], x["frame"]
     frames = np.load(frames_path, mmap_mode="r") if frames_path else None
-    V, F, C, info = observed_mesh(Pw, x["frame"], c2w, K, rgb=(lambda v: frames[keys[v]]) if frames is not None else None)
+    V, F, C, info = observed_mesh(Pw, pf, c2w, K, rgb=(lambda v: frames[keys[v]]) if frames is not None else None)
     V, F, C = decimate(V, F, C)
     t1 = time.perf_counter()
     if not plumb.get("usable"):
         parts = {"status": "not measurable", "reason": "plumb check failed: the room's walls read "
                  f"{'n/a' if plumb.get('reading') is None else round(plumb['reading'], 1)} deg off vertical (limit {cards.PLUMB_MAX_DEG:g})"}
     else:
-        parts = planar_parts(x["P"], x["frame"], subsets if len(subsets) >= 2 else [], cards.to_floor(c2w[:, :3, 3], fr), plumb.get("u_deg"))
-    info.update(mesh_s=round(t1 - t0, 4), parts_s=round(time.perf_counter() - t1, 4), triangles=int(len(F)), s=round(time.perf_counter() - t0, 4))
+        parts = planar_parts(Pf, pf, subsets if len(subsets) >= 2 else [], cards.to_floor(c2w[:, :3, 3], fr), plumb.get("u_deg"))
+    info.update(mesh_s=round(t1 - t0, 4), parts_s=round(time.perf_counter() - t1, 4), triangles=int(len(F)), s=round(time.perf_counter() - t0, 4),
+                kept_share=round(float(keep.mean()), 3))
     return cid, V, F, C, parts, info
 
 
@@ -403,6 +464,12 @@ def self_check():
     import json
     doc = json.loads(glb[20:20 + struct.unpack("<I", glb[12:16])[0]])
     assert [n["name"] for n in doc["nodes"]] == ["obj-0-1", "obj-0-2"] and len(doc["meshes"]) == 2
+    # consistent(): the face seen by 3 cameras keeps its points; a blob lifted from view 0 alone (a mask's bleed onto a wall 1 m
+    # behind) falls outside the face's outline in views 1 and 2 and goes
+    blob = np.c_[rng.uniform(-1.2, -.9, 400), np.full(400, 1.), rng.uniform(0, .4, 400)]
+    Pc, fc = np.concatenate([face[::10], blob]), np.r_[fr[::10], np.zeros(400, int)]
+    keep = consistent(Pc, fc, c2ws, np.repeat(K[None], 3, 0))
+    assert keep[:len(face[::10])].mean() > .95 and keep[len(face[::10]):].mean() < .2, (keep[:2000].mean(), keep[2000:].mean())
     Vd, Fd, Cd = decimate(V, F, C, 50)
     assert len(Fd) <= 50 and len(Cd) == len(Vd)
     assert [p["name"] for p in out["parts"]] == ["A", "B"] and out["bends"][0]["names"] == ["A", "B"]
