@@ -314,7 +314,7 @@ def bench(a):
     with hazard_ctx, modal.enable_output(), app.run(), modal.Queue.ephemeral() as namer_q:
         meta["app_id"] = app.app_id
         relay = NamerRelay(namer_q, out) if a.namer == "gemini" else None
-        fr = holder["fr"] = FastReport()
+        fr = holder["fr"] = FastReport(profile=a.profile)
         submitted = time.time()
         boot = fr.boot_info.remote()  # waits for the container: cold start, recorded, never counted as analysis
         boot = {**boot, "client_submitted_unix": submitted, "client_ready_unix": time.time(), "submit_to_ready_s_two_clocks": round(time.time() - submitted, 1)}
@@ -330,7 +330,8 @@ def bench(a):
                            "coverage": a.coverage and kind != "warm-off", "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {}),
                            "coverage_debug": json.loads(a.coverage_debug.read_text()).get(site, []) if a.coverage_debug else [],
                            **({} if a.judge == "on" else {"judge": False}), **({} if a.display == "on" else {"display": False}),
-                           "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm, "naming": a.naming}  # r4: the VLMs only when asked
+                           "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm, "naming": a.naming,  # r4: the VLMs only when asked
+                           **({"surface": True} if a.surface else {})}  # r5: tier 0 (observed surfaces, planar-part angles)
                 options.update({k: False for k in ("judge", "identity", "display") if k in a.off} | ({"dump": True} if a.dump else {}))
                 if queues is not None:
                     hazard.workspace_container()  # awake before the call (the report service is up in production): off the analysis clock
@@ -471,6 +472,9 @@ if __name__ == "__main__":
     p.add_argument("--coverage-debug", type=Path, help="r4 dev: {site: [{id, frame, x, y}]} points whose box masks' fates the run records")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
     p.add_argument("--naming", default="cascade", choices=("cascade", "decider"), help="r4/naming: the cascade (the VLM last), or round 3's Qwen decider for every object")
+    p.add_argument("--surface", action="store_true", help="r5 (models): every card's planar-part angles and observed-surface display model")
+    p.add_argument("--profile", default="commercial", choices=("commercial", "internal"),
+                   help="r5 (models): internal = RecGen (non-commercial licence) for the complete models in SAM 3D's place")
     p.add_argument("--serve", action="store_true")
     p.add_argument("--off", default="", help="r4: comma list of judge,identity,display to switch off (judgement paused; no VLM identity)")
     p.add_argument("--dump", action="store_true", help="r4/instances: the instance layer's inputs to the layers Volume (reports/<id>/r4-instances-dump.pkl.gz)")

@@ -1063,6 +1063,7 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
     objects, points = inp["objects"], inp["points"]
     shots = {s["index"]: dict(s) for s in inp["shots"]}
     for s in shots.values():
+        s["surface_parts"] = bool(inp.get("surface_parts"))  # r5 (models)
         s["frame"] = floor_frame(s["c2w"][0], s["normal"], s["point_m"])
         s["cam_floor"] = to_floor(s["c2w"][:, :3, 3], s["frame"])
         s["fx"] = float(np.median(s["K"][:, 0, 0]))
@@ -1451,6 +1452,8 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     # angles (section 4.5)
     for name in ("principal_axis_tilt_deg", "planar_slope_deg"):
         phys[name] = angle(name, sub, s, k)
+    if s.get("surface_parts"):  # r5 (models): the observed points' planar parts, each to the floor and to each other
+        phys["surface_parts"] = surface_parts(P, frame, bl, s, k)
     longest = float(max(pooled["sides"].max(), h))
     fragmented = x["dropped_share"] > 1 - MAIN_SHARE
     phys["dropped_share"] = x["dropped_share"]
@@ -1647,6 +1650,17 @@ def angle(name, sub, s, k):
     return value(float(np.median(vals)), {"views": max(vals) - min(vals), "fit": u_fit, "plumb": s.get("plumb_u_deg", s["plumb_deg"])}, "angle", k, vals,
                  unit="deg",
                  scale=SCALE_FREE)
+
+
+def surface_parts(P, frame, bl, s, k):
+    """r5 (models): fast_report.surface.planar_parts on the card's points, its view subsets (blocks) giving the spread; the shot's
+    plumb check gates it like every angle (section 4.5)."""
+    from fast_report import surface
+    if not s["angles_usable"]:
+        return {"status": "not measurable", "reason": "plumb check failed: the room's walls read "
+                f"{'n/a' if s.get('plumb_deg') is None else round(s['plumb_deg'], 1)} deg off vertical (limit {PLUMB_MAX_DEG:g})"}
+    return surface.planar_parts(P, frame, bl if len(bl) >= 2 else [], s["cam_floor"], s.get("plumb_u_deg", s.get("plumb_deg")),
+                                {"angle": k.get("surface_angle", surface.SURFACE_K)})  # its own GT k (surface.SURFACE_K)
 
 
 def strike(cands, measured):
@@ -2414,6 +2428,10 @@ def self_check():
     out = build({"shots": [shot], "objects": objects, "points": points, "counts": lambda: counts, "people": people, "calibration": {}})
     by = {c["id"]: c for c in out["cards"]}
     pc = by["person:0-1"]
+    # r5 (models): with surface_parts on, 3D cards carry the observed points' planar parts (or why not); off, no field
+    sp = build({"shots": [shot], "objects": objects[:2], "points": points[:2], "counts": None, "people": None, "calibration": {}, "surface_parts": True})
+    assert all("parts" in c["physical"]["surface_parts"] or c["physical"]["surface_parts"].get("status") for c in sp["cards"] if c["kind"] == "object")
+    assert not any("surface_parts" in c["physical"] for c in out["cards"])
     # r4 (models): every object card has a display model (generated, display only), none on a person
     assert all(c["model"]["status"] == display_model.STATUS and (c["model"]["kind"] or c["physical"]["level"] == "2d only")
                for c in out["cards"] if c["kind"] == "object") and "model" not in pc

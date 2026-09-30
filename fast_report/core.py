@@ -101,9 +101,20 @@ def measure_chunk(gray, a, b, a0, b1):
             "jump": m["jump"][pairs], "spans": m["spans"][spans], "shape": m["shape"], "s": time.perf_counter() - t}
 
 
+def single_threaded():
+    """The process pool's initializer (r5): one thread a process for OpenMP / BLAS before any library starts its pool. 24 processes x
+    open3d's default 32 OpenMP threads (the surfaces job, the planar parts in the cards) took ME340's surfaces 218 s instead of ~2 s
+    and slowed SAM 3D's calls 5x beside them (run r5-models-report-commercial-001)."""
+    import os
+    for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+        os.environ[k] = "1"
+
+
 def warm_worker(_):
     import cv2
-    from fast_report import cards, judge  # noqa: F401  the cards' and the judge's work runs in these processes (MVP A, B)
+    import open3d  # noqa: F401  r5: the planar parts and the surfaces job use it; its import (~1 s) is cold start, not a cards build's
+    from scipy.sparse.csgraph import connected_components  # noqa: F401
+    from fast_report import cards, judge, surface  # noqa: F401  the cards' and the judge's work runs in these processes (MVP A, B)
     cv2.setNumThreads(1)
     time.sleep(.2)
     return __import__("os").getpid()
@@ -666,10 +677,18 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
     records, models, blobs = [], [], {}
     shots = [{k: gg[k] for k in ("index", "keys", "depth_m", "c2w_m", "K", "person")} for gg in geo]
     judged = lambda: sum(r.get("stage") == "assess" for r in records)  # noqa: E731
-    base = {"eligible": None if eligible is None else len(eligible), "rule": display_model.WELL_OBSERVED}
+    internal = getattr(m, "recgen", None) is not None  # r5 (models): the internal profile's RecGen in SAM 3D's place
+    base = {"eligible": None if eligible is None else len(eligible), "rule": display_model.WELL_OBSERVED,
+            "generator": "RecGen (internal profile: non-commercial licence)" if internal else "SAM 3D s1cfg12"}
     try:
-        for x in sam3d.gate(objs, shots, shared.result(), clock, m.sam3d, m.gate_pool, vocab=words, records=records, eligible=eligible,
-                            background=until_s is not None, deadline=None if until_s is None else clock.t0_unix + until_s):
+        if internal:
+            from fast_report import recgen_models
+            models_iter = recgen_models.gate(objs, shots, shared.result(), clock, m.recgen, m.gate_pool, eligible, records,
+                                             deadline=None if until_s is None else clock.t0_unix + until_s)
+        else:
+            models_iter = sam3d.gate(objs, shots, shared.result(), clock, m.sam3d, m.gate_pool, vocab=words, records=records, eligible=eligible,
+                                     background=until_s is not None, deadline=None if until_s is None else clock.t0_unix + until_s)
+        for x in models_iter:
             models.append({"object": x["object"], "transform": {"position": [float(v) for v in x["transform"][:3, 3]], "quaternion": [0, 0, 0, 1],
                                                                 "scale": [1, 1, 1]}, "bounds": x["bounds"], "gate": x["gate"]})
             blobs[f"model-{x['object']}"] = (x["glb"], {"mediaType": "model/gltf-binary", "format": "glb"})
@@ -685,6 +704,47 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
         for d in sam3d.SHARED.glob(f"fb-gate-{os.getpid()}-*"):  # this run's staged gate inputs
             shutil.rmtree(d, ignore_errors=True)
     return {**summary, "records": records}
+
+
+SURFACE_LABELS = ["a display layer, never used for measurement: per object the surface the video saw (its observed points fused, opaque) "
+                  "and the card's primitive for the unseen bulk (translucent)"]
+
+
+def surfaces_job(m, cards_now, points, objects, shots_in, frames_path, clock, writer):
+    """r5 (models) tier 0: every object card's display model from its own observed points (fast_report.surface.card_display in the
+    process pool): the observed-surface mesh opaque, the card's primitive translucent, one GLB each, one 'surfaces' version."""
+    from fast_report import cards, surface
+    cs = [c for c in (cards_now() or {}).get("cards", []) if c.get("kind") == "object"]
+    at = {o["id"]: j for j, o in enumerate(objects[:len(points)])}
+    shots = {s["index"]: s for s in shots_in}
+    frs, jobs = {}, []
+    for c in cs:
+        s = shots[c["shot"]]
+        if c["shot"] not in frs:
+            frs[c["shot"]] = cards.floor_frame(s["c2w"][0], s["normal"], s["point_m"])
+        js = [at[i] for i in [c["id"], *c["physical"].get("merged_from", [])] if i in at]
+        if js:
+            jobs.append((c["id"], np.concatenate([points[j]["world"] for j in js]), np.concatenate([points[j]["frame"] for j in js]), s["c2w"], s["K"],
+                         frames_path, [int(q) for q in s["keys"]], frs[c["shot"]], float(np.median(s["K"][:, 0, 0])), c.get("model")))
+    with clock.stage("surfaces", n={"objects": len(jobs)}):
+        out = list(m.proc_pool.map(surface.card_display, jobs, chunksize=4))
+    rows, blobs = [], {}
+    for cid, glb, centre, info in out:
+        if glb is not None:
+            blobs[f"surface-{cid}"] = (glb, {"mediaType": "model/gltf-binary", "format": "glb"})
+            rows.append({"object": cid, "position": centre, **{k: info.get(k) for k in ("triangles", "observed_triangles", "voxel_m", "views", "bounds")}})
+    writer.put("surfaces", {"surfaces": rows, "count": len(rows), "of": len(cs),
+                            "rule": "per object a TSDF of its own observed points (1-4 cm voxels), marching cubes, components under 5 % dropped, "
+                                    "vertex colours from its keyframes; the card's primitive (its display model) translucent for the unseen bulk"},
+               blobs, "generated", SURFACE_LABELS)
+    clock.mark("surfaces_put")
+    return {"objects": len(jobs), "with_surface": sum(r["observed_triangles"] > 0 for r in rows), "bytes": sum(len(b[0]) for b in blobs.values()),
+            "cpu_s": stats_s([o[3].get("s") for o in out])}
+
+
+def stats_s(v):
+    v = [x for x in v if x is not None]
+    return {"n": len(v), "median": round(float(np.median(v)), 4), "sum": round(float(np.sum(v)), 2)} if v else None
 
 
 def analyse(m, mp4, opts, clock, writer, log):
@@ -1092,6 +1152,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         with clock.stage("cards.v1", n={"objects": len(objects)}):  # the pick maps' counts are read only for the time fields
             out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": obj_points,
                                "counts": lambda: (pick_ready.wait(120), pick_counts)[1],
+                               "surface_parts": opts.get("surface", False) and not opts.get("densify", True),  # r5: on the last build only
                                "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
         cards_out["v1"], cards_out["shots_in"] = out, shots_in
         cards_ready.set()
@@ -1571,6 +1632,9 @@ def analyse(m, mp4, opts, clock, writer, log):
             splat_after_facts()
             if display.get("models") or not display_on:
                 return
+            if opts.get("surface") and objects:  # r5 (models) tier 0: every card's observed surface, beside SAM 3D
+                display["surfaces"] = m.cpu_pool.submit(surfaces_job, m, lambda: next((cards_out[v] for v in ("v4", "v3", "v2", "v1") if v in cards_out), None),
+                                                        results.get("points_v3") or obj_points, objects, cards_out.get("shots_in"), shared.result(), clock, writer)
             display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo,
                                                   lambda: next((cards_out[v] for v in ("v4", "v3", "v2", "v1") if v in cards_out), None),
                                                   MODELS_UNTIL_S if splat_future is not None else None)  # while the splat trains
@@ -1886,6 +1950,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         cascade_done.wait()  # the cascade indexes the first objects: new ones join the list after it
         objects.extend(new_objs)
         points_v3 += new_points
+        results["points_v3"] = points_v3  # r5 (models): the bench's dump
         labels_v2 = {**v1_labels, **{o["id"]: o["label"] for o in new_objs}}
         with clock.stage("outlines.polygons.v2", n={"frames": len(maps_v2)}):
             counts_v2, ready_v2 = {}, threading.Event()
@@ -1915,6 +1980,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         with clock.stage("cards.v3", n={"objects": len(objects)}):
             shots_in = cards_out.get("shots_in")
             out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": points_v3, "counts": counts_v2,
+                               "surface_parts": opts.get("surface", False),
                                "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
         with cards_lock:  # the identities known now (v2's, else v1's words); a later decider pass merges in as v4
             prev = cards_out.get("identities") or {c["id"]: c["identity"] for c in cards_out.get("v1", {}).get("cards", []) if c["kind"] == "object"}
@@ -2189,8 +2255,16 @@ def analyse(m, mp4, opts, clock, writer, log):
     summary["cards"] = {"v1": summary["cards"], "v3": cards_out.get("v3", {}).get("stats")}
     summary["boxes_v3"] = box_stats(objects, cards_out.get("v3"))
     summary["sam3d"] = display["models"].result() if "models" in display else None
+    summary["surfaces"] = display["surfaces"].result() if "surfaces" in display else None  # r5: before the shared frames go
     summary["splat"] = splat_future.result() if splat_future is not None else None
     Path(shared.result()).unlink(missing_ok=True)
+    if opts.get("fixture_dump"):  # r5 (models): the model bench's hand-off, once every layer is written (not analysis time)
+        from fast_report import fixture
+        t_dump = time.perf_counter()
+        final = next((cards_out[v] for v in ("v4", "v3", "v2", "v1") if v in cards_out), {"cards": []})
+        summary["dump"] = fixture.dump(Path("/v/layers/r5") / opts["fixture_dump"], writer.report_id, sam3d_objs.result(), geo, frames, fps, final["cards"],
+                                       cards_out.get("shots_in"), objects, results.get("points_v3") or obj_points)
+        summary["dump"]["seconds"] = round(time.perf_counter() - t_dump, 2)
     summary.update(frames=n, fps=fps, wh=[W, H], cuts=cuts, keyframes=len(keys), object_keyframes=len(range(0, len(keys), segment.OBJECT_EVERY)),
                    words=len(words), wave2_words=len(work.wave2 or []), vocab=results.get("vocab"), sam3_tasks_by_worker=work.by_worker,
                    vocab_frames_equal_decoded=[bool(img is not None and np.array_equal(img, frames[f])) for img, f in zip(seeked, vlm_frames)],

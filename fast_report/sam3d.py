@@ -116,7 +116,8 @@ class Pool:
         self.boot, self.procs, self.logs, self.lock = [Future() for _ in range(n)], [], [], threading.Lock()
         for i in range(n):
             self.logs.append(f"/tmp/fb-{name}-{i}.log")
-            self.procs.append(subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open(self.logs[i], "wb"), env=env, cwd=str(ROOT)))
+            self.procs.append(subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open(self.logs[i], "wb"),
+                                               env=env[i] if isinstance(env, list) else env, cwd=str(ROOT)))  # a list: one env a process (its GPU)
             threading.Thread(target=self._serve, args=(i,), daemon=True).start()
 
     def _serve(self, i):
