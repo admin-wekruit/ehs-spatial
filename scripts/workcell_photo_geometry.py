@@ -20,6 +20,17 @@ def _unit(v):
     return v / np.linalg.norm(v)
 
 
+def _edge_depth_neighborhoods(samples_raw, A, raw_shape):
+    """Keep the legacy ±2-at-518 footprint in original pixels at every resolution."""
+    delta = samples_raw[-1] - samples_raw[0]
+    perpendicular = _unit(np.array([delta[1], -delta[0]]))
+    # The baseline grid's one-pixel footprint is max(raw HW)/518 raw pixels.
+    # Map this fixed source neighborhood through the actual rounded resize/crop,
+    # rather than halving its source width when the canonical grid doubles.
+    raw = samples_raw[None] + np.arange(-2., 3.)[:, None, None] * perpendicular * (max(raw_shape[:2]) / 518)
+    return (np.c_[raw.reshape(-1, 2), np.ones(raw.size // 2)] @ A.T)[:, :2].reshape(raw.shape)
+
+
 def _rays(uv, K, pose):
     return np.c_[uv, np.ones(len(uv))] @ np.linalg.inv(K).T @ pose[:3, :3].T
 
@@ -265,6 +276,7 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2):
     # Fit separate supported fence planes; all later image lines are ray/plane
     # intersections, so lower rails and the real open space remain geometric.
     cloud = np.concatenate(fence_points)
+    fence_input_count = len(cloud)
     planes = []
     for _ in range(4):
         if len(cloud) < 500:
@@ -281,6 +293,10 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2):
             duplicate['points'] = np.vstack([duplicate['points'], pts])
         cloud = cloud[~keep]
     records, line_evidence = [], []
+    diagnostics = {'fenceInputPoints': fence_input_count, 'planeCount': len(planes),
+                   'planeSupportPoints': [len(p['points']) for p in planes],
+                   'sourceStencil': 'five raw-pixel normal offsets at (-2,-1,0,1,2) * max(raw HW)/518; exact saved affine',
+                   'photos': []}
     for photo, source in enumerate(sources, 1):
         raw = cv2.imread(str(source))
         raw_mask = _raw_mask(_response(seg, photo, 'safety fence'), raw.shape[:2])
@@ -296,52 +312,71 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2):
         depth_points = _array(frame['pts3d'])
         valid = _array(frame['non_ambiguous_mask']).astype(bool)
         proposals = []
+        counts = {'photo': photo, 'detectedSegments': 0 if lines is None else len(lines),
+                  'rawNeighborhoodHalfWidthPx': 2 * max(raw.shape[:2]) / 518,
+                  'proposalsBeforeCap': 0, 'proposals': 0, 'pairedBeams': 0, 'unpairedProposals': 0,
+                  'rejected': {name: 0 for name in ('short', 'outsideMask', 'outsideRaster', 'depthSupport',
+                              'neighborhoodSupport', 'planeSupport', 'intersection', 'orientationOrLength')}}
+        diagnostics['photos'].append(counts)
+        before_pairing = len(records)
         if lines is None:
             continue
         for segment in lines.reshape(-1, 4):
             raw_end = (segment.reshape(2, 2) + .5) / factor - .5
             if np.linalg.norm(segment[2:] - segment[:2]) < min(gray.shape) * .025:
+                counts['rejected']['short'] += 1
                 continue
             t = np.linspace(.05, .95, 15)
             sample_raw = raw_end[:1] * (1 - t[:, None]) + raw_end[1:] * t[:, None]
             ri = np.rint(sample_raw).astype(int)
             if np.mean(raw_mask[ri[:, 1], ri[:, 0]]) < .8:
+                counts['rejected']['outsideMask'] += 1
                 continue
             canonical = (np.c_[sample_raw, np.ones(len(t))] @ f['A'].T)[:, :2]
             ix = np.rint(canonical).astype(int)
             inside = (ix[:, 0] >= 0) & (ix[:, 0] < depth_points.shape[1]) & (ix[:, 1] >= 0) & (ix[:, 1] < depth_points.shape[0])
             ix = ix[inside]
             if len(ix) < 10:
+                counts['rejected']['outsideRaster'] += 1
                 continue
             dp = depth_points[ix[:, 1], ix[:, 0]]
             vg = valid[ix[:, 1], ix[:, 0]] & np.isfinite(dp).all(1)
             if vg.sum() < 8:
+                counts['rejected']['depthSupport'] += 1
                 continue
             # Test both sides of an edge; interpolated pointmaps mix the
             # rail with floor/background exactly on the silhouette.
-            perpendicular = _unit(np.array([canonical[-1, 1] - canonical[0, 1], canonical[0, 0] - canonical[-1, 0]]))
             neighborhoods = []
-            for shift in (-2., -1., 0., 1., 2.):
-                near = np.rint(canonical + shift * perpendicular).astype(int)
+            for sample in _edge_depth_neighborhoods(sample_raw, f['A'], raw.shape):
+                near = np.rint(sample).astype(int)
                 near[:, 0] = np.clip(near[:, 0], 0, depth_points.shape[1] - 1)
                 near[:, 1] = np.clip(near[:, 1], 0, depth_points.shape[0] - 1)
                 values = depth_points[near[:, 1], near[:, 0]]
                 good_near = valid[near[:, 1], near[:, 0]] & np.isfinite(values).all(1)
                 if good_near.sum() >= 8:
                     neighborhoods.append(values[good_near])
+            if not neighborhoods:
+                counts['rejected']['neighborhoodSupport'] += 1
+                continue
+            if not planes:
+                counts['rejected']['planeSupport'] += 1
+                continue
             errors = [min(np.median(abs(values @ p['normal'] + p['offset'])) for values in neighborhoods) for p in planes]
             pi = int(np.argmin(errors))
             if errors[pi] > tolerance * 3:
+                counts['rejected']['planeSupport'] += 1
                 continue
             p = planes[pi]
             end = (np.c_[raw_end, np.ones(2)] @ f['A'].T)[:, :2]
             world = _intersect(end, f['K'], f['pose'], p['normal'], p['offset'])
             if not np.isfinite(world).all():
+                counts['rejected']['intersection'] += 1
                 continue
             length = np.linalg.norm(world[1] - world[0]); direction = _unit(world[1] - world[0])
             vertical = abs(direction @ up) > .985
             horizontal = abs(direction @ up) < .12
             if not (vertical or horizontal) or length > extent * 2:
+                counts['rejected']['orientationOrLength'] += 1
                 continue
             # Snap only the direction within the supported plane. Endpoint
             # center and length are preserved; no point is forced onto floor.
@@ -355,7 +390,9 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2):
         # Pair parallel image edges into observed rectangular rail faces.
         # ponytail: O(n²) bounded to 500 strongest segments per photo; spatial
         # indexing is the upgrade if substantially denser captures are required.
+        counts['proposalsBeforeCap'] = len(proposals)
         proposals = sorted(proposals, key=lambda r: -r['length'])[:500]
+        counts['proposals'] = len(proposals)
         line_evidence.extend({'sourcePhoto': photo, 'plane': r['plane'], 'rawEnds': r['rawEnds'].tolist(),
                               'initialHeightNative': float(r['ends'].mean(0) @ up + d),
                               'lengthNative': float(r['length'])}
@@ -399,7 +436,11 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2):
                             'footNative': foot.tolist(), 'heightNative': h,
                             'rawEdges': [row['rawEnds'].tolist(), other['rawEnds'].tolist()],
                             'planeDepthResidualNative': row['planeDepthResidualNative']})
+        counts['pairedBeams'] = len(records) - before_pairing
+        counts['unpairedProposals'] = len(proposals) - len(used)
         del raw, raw_mask, frame, depth_points
+    diagnostics['pairedBeams'] = len(records)
+    (root / 'fence-edge-diagnostics.json').write_text(json.dumps(diagnostics, indent=2) + '\n')
     if not records:
         raise ValueError('No image-supported paired fence edges; cannot fabricate a fence model')
     # A shared rail is a repeatable 3D LINE. Intersect its image interpretation

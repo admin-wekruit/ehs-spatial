@@ -1,15 +1,17 @@
 """Run: PYTHONPATH=.:scripts python scripts/check_workcell_photo_metrology.py."""
 import copy
+import hashlib
 import json
 import tempfile
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from ehs_spatial.measurements import measure_observed_points
-from workcell_photo_metrology import (TARGETS, _fit_circle, _floor_evidence, _legacy,
-                                     _line_fit, _measure, _pixels, _reference, _route,
-                                     _tangencies, _terminal_edges, _validate_results)
+from workcell_photo_metrology import (TARGETS, _color_observation, _fit_circle, _floor_evidence, _legacy,
+                                     _joint_reference, _line_fit, _measure, _pixels, _reference, _route,
+                                     _supported_color_hull, _tangencies, _terminal_edges, _validate_results)
 from workcell_photo_objects import _project
 
 
@@ -115,6 +117,53 @@ def main():
     median = _legacy(even, {'floor': {'normal': [0, 0, 1], 'offset': 0}})
     assert median['heightNative'] == .5 and median['pointNative'][2] == .5, median
 
+    selected_plane = {'floor': {'normal': [0, 0, 1], 'offset': 0}, 'clearances': [
+        {'id': f'fence-plane-{index}-lower-rail', 'pointNative': [0, 0, height],
+         'footNative': [0, 0, 0], 'heightNative': height, 'sourcePhotos': [1, 2],
+         'observedViewHeightRangeNative': [height, height]}
+        for index, height in enumerate((.2, .7))]}
+    assert _legacy({'id': 'fence-0', 'geometryPlaneIndex': 1}, selected_plane)['heightNative'] == .7
+
+    # A connected yellow-colored background wedge was entering the convex hull.
+    # Its local RGB appearance differs from the body; no physical dimensions or
+    # desired clearance is supplied to the image-only contour refinement.
+    color_rgb = np.full((150, 190, 3), [115, 110, 100], np.uint8)
+    color_rgb[35:115, 70:135] = [230, 205, 20]
+    color_rgb[90:114, 53:70] = [105, 85, 35]
+    color_rgb[90:110, 54:70] = [115, 110, 100]
+    contour = _color_observation(color_rgb, [40, 20, 150, 130], 'yellow')
+    assert min(p[0] for p in contour['colorHullRaw']) == 53
+    assert min(p[0] for p in contour['hullRaw']) >= 69, 'Connected background still expands silhouette'
+    assert max(p[0] for p in contour['hullRaw']) == 134, 'Body boundary changed without image evidence'
+    # A crossing bright wire erases just a short stretch of the body edge.
+    # Those unsupported outward vertices cannot define the physical diameter;
+    # the independently visible body edges must stay at their original pixels.
+    wire_rgb = np.full((150, 190, 3), 30, np.uint8)
+    wire_rgb[35:115, 70:135] = [230, 205, 20]
+    clean_hull = np.array([[70, 35], [134, 35], [134, 114], [70, 114]], np.float32)
+    clean, _ = _supported_color_hull(wire_rgb, clean_hull)
+    assert set(map(tuple, clean)) == set(map(tuple, clean_hull)), 'Supported contours were globally eroded'
+    wire_rgb[75:80, 133:150] = [240, 235, 220]
+    bulge = np.array([[70, 35], [134, 35], [136, 76], [136, 78], [134, 114], [70, 114]], np.float32)
+    supported, rejected = _supported_color_hull(wire_rgb, bulge)
+    assert max(supported[:, 0]) == 134 and len(rejected) == 2, 'A locally obscured contour expanded the diameter'
+    cv2.setRNGSeed(12345)
+    assert _color_observation(color_rgb, [40, 20, 150, 130], 'yellow') == contour, 'RGB refinement depends on unrelated RNG history'
+    for absent in (np.full_like(color_rgb, 110), np.pad(color_rgb[35:37, 70:95], ((20, 128), (30, 135), (0, 0)))):
+        try:
+            _color_observation(absent, [0, 0, absent.shape[1], absent.shape[0]], 'yellow')
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Missing component or insufficient color interior became a contour')
+    for bad_box in ([-1, 0, 10, 10], [1, 1, 1, 5], [40, 20, 150.5, 130]):
+        try:
+            _color_observation(color_rgb, bad_box, 'yellow')
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Invalid source-image region was accepted')
+
     # The visible physical endcap must beat an interior color transition and a
     # thin mask tail. No percentile or desired ground distance is supplied.
     rgb = np.full((290, 140, 3), 135, np.uint8)
@@ -196,6 +245,30 @@ def main():
     changed = {'reference': known, 'evaluation': {'synthetic_private_distance': -1234}}
     assert json.dumps(_reference(wrapped), sort_keys=True) == json.dumps(_reference(changed), sort_keys=True)
     assert 'evaluation' not in json.dumps(_reference(wrapped))
+    with tempfile.TemporaryDirectory(prefix='joint-reference-check-') as directory:
+        camera_path = Path(directory) / 'cameras.json'
+        camera_path.write_text('{}')
+        joint = {'reference': _reference(wrapped), 'status': 'available', 'mPerNative': .6,
+                 'cameraSha256': hashlib.sha256(camera_path.read_bytes()).hexdigest()}
+        assert _joint_reference(joint, _reference(wrapped), camera_path)['mPerNative'] == .6
+        for invalid in ('diameter', 'camera', 'status', 'scale'):
+            bad = copy.deepcopy(joint)
+            if invalid == 'diameter':
+                bad['reference']['features']['redActuatorDiameterM'] = .041
+            elif invalid == 'camera':
+                bad['cameraSha256'] = '0' * 64
+            elif invalid == 'status':
+                bad['status'] = 'unsupported'
+            else:
+                bad['mPerNative'] = float('nan')
+            try:
+                _joint_reference(bad, _reference(wrapped), camera_path)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f'Joint reference {invalid} mismatch was accepted')
+        joint.update(status='unsupported', mPerNative=None)
+        assert _joint_reference(joint, _reference(wrapped), camera_path)['mPerNative'] is None
 
     obj = {'status': 'available', 'reason': None, 'pointNative': [0., 0., .45], 'footNative': [0., 0., 0.],
            'heightNative': .45, 'rangeNative': [.44, .46], 'sourcePhotos': [1, 2, 3],
@@ -204,6 +277,21 @@ def main():
     result = {'schemaVersion': 1, 'reference': _reference(wrapped),
               'routes': {key: _route(key, objects, .6) for key in 'ABCD'}}
     _validate_results(result)
+    joint_result = copy.deepcopy(result)
+    joint_result['jointReference'] = {'status': 'available', 'mPerNative': .7}
+    joint_result['routes']['J'] = _route('Joint sizes and cameras', objects, .7)
+    _validate_results(joint_result)
+    joint_result['routes']['J']['scaleMPerNative'] = .6
+    try:
+        _validate_results(joint_result)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('Joint route accepted a scale from another camera fit')
+    joint_result['jointReference'] = {'status': 'unsupported', 'mPerNative': None}
+    joint_result['routes']['J'] = _route('Rejected joint sizes and cameras', objects, None)
+    _validate_results(joint_result)
+    assert all(row['heightM'] is None for row in joint_result['routes']['J']['objects'])
     with tempfile.TemporaryDirectory(prefix='workcell-metrology-check-') as temporary:
         path = Path(temporary) / 'results.json'
         path.write_text(json.dumps(result, allow_nan=False))
@@ -224,7 +312,7 @@ def main():
         pass
     else:
         raise AssertionError('Foot outside the saved plane was accepted')
-    print('PASS: crop/C2W, stale-anchor circle signs, noisy-line gauge, face width, split endcap/gaps, occlusion, floor sensitivity, truth exclusion, JSON/metric contract')
+    print('PASS: crop/C2W, RGB contour refinement, fence plane identity, stale-anchor circle signs, noisy-line gauge, face width, split endcap/gaps, occlusion, floor sensitivity, truth exclusion, JSON/metric contract')
 
 
 if __name__ == '__main__':

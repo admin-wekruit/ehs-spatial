@@ -14,6 +14,7 @@ import modal
 if not modal.is_local():
     sys.path.insert(0, "/repo")
 from modal_apps.fast_report_app import build_image
+from fast_report.sam3d import TORCH_HUB
 
 app = modal.App("workcell-photo-one-shot")
 image = build_image(with_mapanything=True) if modal.is_local() else modal.Image.debian_slim()
@@ -28,6 +29,7 @@ def _start(command, gpu, *, hf=None):
     env["CUDA_VISIBLE_DEVICES"] = str(gpu)
     env["PYTHONPATH"] = "/repo:/repo/scripts:/repo/modal_apps:/opt/recgen"
     env["HF_HUB_OFFLINE"] = "1"
+    env["TORCH_HOME"] = TORCH_HUB  # Reuse image-baked DINOv2; parallel Hub bootstrap mutates one shared cache.
     if hf:
         env["HF_HOME"] = hf
     env["ATTN_BACKEND"] = "xformers"

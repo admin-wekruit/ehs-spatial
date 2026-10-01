@@ -40,6 +40,27 @@ def _reference(value):
             'scopeStatus': value.get('scopeStatus', 'pending_confirmation')}
 
 
+def _joint_reference(value, reference, cameras):
+    """Bind a joint-fit scale to its exact camera output and named input sizes."""
+    if value is None:
+        return None
+    if isinstance(value, (str, Path)):
+        value = json.loads(Path(value).read_text())
+    if not isinstance(value, dict) or _reference(value.get('reference', {})) != reference:
+        raise ValueError('Joint fit must use the same three reference dimensions and scope')
+    if not isinstance(cameras, (str, Path)) or not Path(cameras).is_file():
+        raise ValueError('Joint fit requires its exported camera file')
+    if value.get('cameraSha256') != hashlib.sha256(Path(cameras).read_bytes()).hexdigest():
+        raise ValueError('Joint fit scale and camera bytes disagree')
+    scale = value.get('mPerNative')
+    if value.get('status') == 'available':
+        if isinstance(scale, bool) or not isinstance(scale, (int, float)) or not np.isfinite(scale) or scale <= 0:
+            raise ValueError('Supported joint fit requires a positive finite scale')
+    elif value.get('status') != 'unsupported' or scale is not None:
+        raise ValueError('Unsupported joint fit cannot supply a metric scale')
+    return value
+
+
 def _pixels(uv, transform):
     uv = np.asarray(uv, float).reshape(-1, 2)
     result = np.c_[uv, np.ones(len(uv))] @ np.asarray(transform).T
@@ -115,7 +136,8 @@ def _legacy(item, geometry):
     norm = np.linalg.norm(floor['normal'])
     up, offset = np.asarray(floor['normal']) / norm, floor['offset'] / norm
     if item['id'] == 'fence-0':
-        feature = next((row for row in geometry.get('clearances', []) if row['id'] == 'fence-plane-0-lower-rail'), None)
+        plane_index = item.get('geometryPlaneIndex', 0)
+        feature = next((row for row in geometry.get('clearances', []) if row['id'] == f'fence-plane-{plane_index}-lower-rail'), None)
         if feature:
             return {'status': 'available', 'reason': None,
                     **{key: feature[key] for key in ('pointNative', 'footNative', 'heightNative', 'sourcePhotos')},
@@ -145,8 +167,48 @@ def _legacy(item, geometry):
             'method': 'median of saved all-valid-mask-point extrema; virtual display endpoint, not a physical edge'}
 
 
-def _largest_color(rgb, box, color):
-    x0, y0, x1, y1 = np.asarray(box, int)
+def _supported_color_hull(rgb, hull):
+    """Do not let a locally obscured boundary vertex define an outer tangent."""
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+    kept, rejected = [], []
+    for index, point in enumerate(hull):
+        before, after = point - hull[index - 1], hull[(index + 1) % len(hull)] - point
+        tangent = _unit(_unit(before) + _unit(after))
+        normal = np.array([tangent[1], -tangent[0]])
+        # Compare a boundary's RGB contrast with adjacent portions of the same
+        # edge. A crossing wire can erase that boundary without erasing its
+        # neighbors. Exclude the unsupported vertex; do not shift all edges.
+        pixels = (point + np.array([-8, -6, -4, 0, 4, 6, 8])[:, None, None] * tangent +
+                  np.array([-2, 2])[None, :, None] * normal)
+        samples = cv2.remap(lab, pixels[:, :, 0].astype(np.float32), pixels[:, :, 1].astype(np.float32),
+                            cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+        contrast = np.linalg.norm(samples[:, 1] - samples[:, 0], axis=1)
+        adjacent = float(np.median(np.r_[contrast[:3], contrast[4:]]))
+        if adjacent > 20 and contrast[3] < .5 * adjacent:
+            rejected.append({'pixel': point.tolist(), 'edgeContrastLab': float(contrast[3]),
+                             'adjacentEdgeContrastLab': adjacent})
+        else:
+            kept.append(point)
+    if len(kept) < 3:
+        raise ValueError('Insufficient locally supported RGB boundary vertices')
+    return cv2.convexHull(np.asarray(kept, np.float32)).reshape(-1, 2), rejected
+
+
+def _color_observation(rgb, box, color):
+    """Color associates a component; local RGB contrast refines its silhouette.
+
+    The HSV hull alone incorporates connected reflections and background wedges.
+    GrabCut reclassifies only a four-raw-pixel boundary band, with an eroded color
+    core as foreground. This remains an image-supported silhouette hypothesis,
+    not confirmation that the full physical part is visible.
+    """
+    box = np.asarray(box, float)
+    if (color not in ('red', 'yellow') or box.shape != (4,) or not np.isfinite(box).all() or
+            np.any(box != np.rint(box))):
+        raise ValueError('A named color and finite integer pixel box are required')
+    x0, y0, x1, y1 = box.astype(int)
+    if not (0 <= x0 < x1 <= rgb.shape[1] and 0 <= y0 < y1 <= rgb.shape[0]):
+        raise ValueError('Color box must lie within the original image')
     hsv = cv2.cvtColor(rgb[y0:y1, x0:x1], cv2.COLOR_RGB2HSV)
     mask = ((cv2.inRange(hsv, (0, 100, 90), (12, 255, 255)) |
              cv2.inRange(hsv, (170, 100, 90), (179, 255, 255))) if color == 'red' else
@@ -158,7 +220,44 @@ def _largest_color(rgb, box, color):
     yy, xx = np.where(labels == label)
     if len(xx) < 30:
         raise ValueError('Too few component color pixels')
-    return cv2.convexHull(np.c_[xx + x0, yy + y0].astype(np.float32)).reshape(-1, 2)
+    original_hull = cv2.convexHull(np.c_[xx + x0, yy + y0].astype(np.float32)).reshape(-1, 2)
+    # ponytail: a fixed four-pixel raw-image band limits correction to local RGB
+    # evidence; larger segmentation errors require new instance observations.
+    band = 4
+    low = np.maximum([x0 - 2 * band, y0 - 2 * band], 0)
+    high = np.minimum([x1 + 2 * band, y1 + 2 * band], rgb.shape[1::-1])
+    crop = rgb[low[1]:high[1], low[0]:high[0]]
+    component = np.zeros(crop.shape[:2], np.uint8)
+    component[yy + y0 - low[1], xx + x0 - low[0]] = 1
+    core = cv2.distanceTransform(component, cv2.DIST_L2, 5) > band
+    if core.sum() < 10:
+        raise ValueError('Color component has insufficient interior for RGB contour refinement')
+    labels = np.full(component.shape, cv2.GC_BGD, np.uint8)
+    labels[cv2.dilate(component, np.ones((2 * band + 1, 2 * band + 1), np.uint8)) > 0] = cv2.GC_PR_BGD
+    labels[core] = cv2.GC_FGD
+    # Extraction is sequential per process; fix OpenCV's GMM initialization so
+    # a previous ROI or an unrelated OpenCV call cannot change the silhouette.
+    cv2.setRNGSeed(0)
+    cv2.grabCut(crop, labels, None, np.zeros((1, 65)), np.zeros((1, 65)), 3, cv2.GC_INIT_WITH_MASK)
+    refined = (labels & 1).astype(np.uint8)
+    count, labels, _, _ = cv2.connectedComponentsWithStats(refined)
+    label = max(range(1, count), key=lambda value: np.count_nonzero(core & (labels == value)))
+    yy, xx = np.where(labels == label)
+    initial_hull = cv2.convexHull(np.c_[xx, yy].astype(np.float32)).reshape(-1, 2)
+    hull, rejected = _supported_color_hull(crop, initial_hull)
+    hull += low
+    for row in rejected:
+        row['pixel'] = (np.asarray(row['pixel']) + low).tolist()
+    return {'hullRaw': hull.tolist(), 'colorHullRaw': original_hull.tolist(),
+            'graphCutHullRaw': (initial_hull + low).tolist(), 'unsupportedBoundaryVerticesRaw': rejected,
+            'method': 'HSV instance association; seeded local RGB GrabCut; convex silhouette support',
+            'boundaryBandRawPx': band, 'seedCorePixels': int(core.sum()),
+            'colorPixels': int(component.sum()), 'refinedPixels': len(xx),
+            'scope': 'visible RGB silhouette hypothesis; occlusion and physical part identity remain unverified'}
+
+
+def _largest_color(rgb, box, color):
+    return np.asarray(_color_observation(rgb, box, color)['hullRaw'], np.float32)
 
 
 def _tangencies(hull, frame, up):
@@ -233,10 +332,11 @@ def _calibrate(candidates, frames, geometry, reference, up, drawings):
         rows, views = [], []
         for photo, candidate in per_photo.items():
             try:
-                hull = _largest_color(frames[photo]['rgb'], candidate['boxRaw'], color)
+                observation = _color_observation(frames[photo]['rgb'], candidate['boxRaw'], color)
+                hull = np.asarray(observation['hullRaw'])
                 tangents = _tangencies(hull, frames[photo], up)
                 rows.extend(tangents)
-                views.append({'photo': photo, 'hullRaw': hull.tolist(), 'tangentPixelsRaw': [row['uvRaw'].tolist() for row in tangents]})
+                views.append({'photo': photo, **observation, 'tangentPixelsRaw': [row['uvRaw'].tolist() for row in tangents]})
                 drawings[photo]['standard'].append({'name': color, 'hullRaw': hull.tolist(), 'tangentPixelsRaw': views[-1]['tangentPixelsRaw']})
             except ValueError as error:
                 views.append({'photo': photo, 'reason': str(error)})
@@ -727,8 +827,9 @@ def _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings)
         bottom, top, views = [], [], []
         try:
             if ident == 'fence-0':
-                plane = geometry['fence']['planes'][0]
-                beams = sorted((row for row in geometry['fence']['beams'] if row['plane'] == 0 and row['horizontal']), key=lambda row: row['heightNative'])
+                plane_index = item.get('geometryPlaneIndex', 0)
+                plane = geometry['fence']['planes'][plane_index]
+                beams = sorted((row for row in geometry['fence']['beams'] if row['plane'] == plane_index and row['horizontal']), key=lambda row: row['heightNative'])
                 for photo in frames:
                     for row in [row for row in beams if row['sourcePhoto'] == photo][:10]:
                         edges = []
@@ -1000,16 +1101,23 @@ def _overlays(out, frames, drawings, objects):
                 for end in ends:
                     cv2.circle(image, tuple(np.rint(end).astype(int)), 7, colors[obj['id']], 2)
         name = f'raw-image-features-{photo}.jpg'
-        if not cv2.imwrite(str(out / name), image):
+        factor = min(1., 1600 / max(image.shape[:2]))
+        display = cv2.resize(image, None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA) if factor < 1 else image
+        if not cv2.imwrite(str(out / name), display):
             raise OSError('Could not save raw-image feature overlay')
         files.append({'photo': photo, 'file': name, 'rawShape': list(image.shape[:2]),
+                      'displayShape': list(display.shape[:2]), 'displayScaleFromRaw': factor,
                       'legend': 'magenta: named circular silhouettes/tangencies; gray: end-edge candidates; colored: selected visible edge and floor foot; blue filled: actual floor-fit inliers; red hollow: rejected floor-fit samples'})
     return files
 
 
 def _validate_results(result):
-    if set(result['routes']) != {'A', 'B', 'C', 'D'}:
-        raise ValueError('All four comparison routes are required')
+    if set(result['routes']) not in ({'A', 'B', 'C', 'D'}, {'A', 'B', 'C', 'D', 'J'}):
+        raise ValueError('All four comparison routes and only the optional joint route are allowed')
+    if 'J' in result['routes']:
+        joint = result.get('jointReference', {})
+        if not joint or result['routes']['J']['scaleMPerNative'] != joint.get('mPerNative'):
+            raise ValueError('Joint route must use its own validated metric scale')
     for route in result['routes'].values():
         if {row['id'] for row in route['objects']} != set(TARGETS):
             raise ValueError('Every route must preserve all target identities')
@@ -1028,11 +1136,12 @@ def _validate_results(result):
     json.dumps(result, allow_nan=False)
 
 
-def build(root, out, sources, reference, cameras=None):
+def build(root, out, sources, reference, cameras=None, joint_reference=None):
     start = time.monotonic()
     root, out = Path(root), Path(out)
     sources = [Path(source) for source in sources]
     reference = _reference(reference)
+    joint_reference = _joint_reference(joint_reference, reference, cameras)
     if len(sources) != 4:
         raise ValueError('Exactly four original JPEG sources are required in recorded order')
     if root.resolve() == out.resolve():
@@ -1083,6 +1192,11 @@ def build(root, out, sources, reference, cameras=None):
                               'Pixel sensitivity and floor scatter do not bound camera or semantic systematic error.',
                               'Ground-truth evaluation values are excluded from estimator inputs and method selection.'],
               'wallSeconds': time.monotonic() - start}
+    if joint_reference is not None:
+        result['jointReference'] = joint_reference
+        result['cameraRoute'] = 'Joint three-dimension button and camera fit; independently retriangulated source geometry'
+        result['routes']['J'] = _route('Joint button height, both diameters, cameras and scene tracks', objects,
+                                      joint_reference['mPerNative'])
     result['evidenceImages'] = _overlays(out, frames, drawings, objects)
     _validate_results(result)
     (out / 'results.json').write_text(json.dumps(result, indent=2, allow_nan=False) + '\n')

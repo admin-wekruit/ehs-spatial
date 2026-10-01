@@ -34,8 +34,11 @@ def unpack(payload, directory):
 
 
 @app.function(image=image, gpu='A100-80GB:2', cpu=16, memory=80*1024,
-              timeout=1200, retries=0, min_containers=0)
-def experiment(payload: bytes, mode: str):
+              volumes={'/v/layers': modal.Volume.from_name('panoptes-fb-layers')},
+              timeout=2100, retries=0, min_containers=0)
+def experiment(payload: bytes, mode: str, joint_max_nfev: int = 100):
+    # Direct imports and child processes use the same mounted source tree.
+    sys.path[:0] = ['/repo', '/repo/scripts']
     started = time.monotonic()
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)/'input'; root.mkdir()
@@ -43,6 +46,10 @@ def experiment(payload: bytes, mode: str):
         unpack(payload, root)
         code_files = [Path('/repo/scripts')/name for name in ('workcell_guard_joint.py','check_workcell_guard_joint.py','workcell_guard_controls.py','workcell_guard_dense.py','workcell_guard_silhouette.py','workcell_photo_metrology.py','check_workcell_photo_metrology.py','workcell_photo_geometry.py','workcell_photo_calibration.py','workcell_photo_objects.py','workcell_photo_oneshot.py','check_workcell_camera_pixels.py') if (Path('/repo/scripts')/name).exists()]
         code_files += [Path('/repo/fast_report/x7.py'), Path('/repo/ehs_spatial/measurements.py')]
+        if mode in ('metrology-joint-button', 'metrology-depth'):
+            code_files += [Path('/repo/scripts')/name for name in ('workcell_button_bundle.py', 'check_workcell_button_bundle.py')]
+        if mode == 'metrology-depth':
+            code_files += [Path('/repo/scripts')/name for name in ('workcell_depth_metrology.py', 'check_workcell_depth_metrology.py')]
         (out/'implementation-manifest.json').write_text(json.dumps({str(p.relative_to('/repo')):hashlib.sha256(p.read_bytes()).hexdigest() for p in code_files},indent=2))
         env = os.environ.copy(); env['PYTHONPATH'] = '/repo:/repo/scripts'
         sources = [str(root/f'source-{i}.jpg') for i in range(1,5)]
@@ -86,6 +93,53 @@ def experiment(payload: bytes, mode: str):
             run('dense_replay', prefix+'from scripts.workcell_guard_joint import build; build(root,out/"LoFTR-COLMAP-cameras/joint",cameras=root/"control/cameras.json",tracks=root/"control/tracks.json",sources=[Path(p) for p in sys.argv[3:]])',600)
         elif mode == 'silhouette':
             run('silhouette', prefix+'from scripts.workcell_guard_silhouette import run; run(root,out/"A4-shared-silhouette",[Path(p) for p in sys.argv[3:]])',600)
+        elif mode == 'metrology-depth':
+            from concurrent.futures import ThreadPoolExecutor
+            from scripts.workcell_depth_metrology import depth_run_path
+            depth_path = depth_run_path('/v/layers', json.loads((root/'depth-run.json').read_text())['volumeRunPath'])
+            summary = json.loads((depth_path/'run.json').read_text())
+            if summary['inputSha256'] != [hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in sources]:
+                raise ValueError('Depth ablation and metrology source photos disagree')
+            jobs = []
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                for name in ('default-518', 'double-1036'):
+                    if summary['branches'].get(name, {}).get('status') != 'completed':
+                        records[name] = {'status': 'depth_unavailable', 'reason': 'Source depth branch did not complete'}
+                        continue
+                    fresh = out/name/'fresh-geometry'; fresh.mkdir(parents=True)
+                    import shutil
+                    for p in sorted((depth_path/name).glob('*')):
+                        if p.name.startswith(('frame_', 'photo-')) and p.is_file():
+                            shutil.copyfile(p, fresh/p.name)
+                    code = prefix+'import json; from scripts.workcell_depth_metrology import run; '
+                    code += f'run(root,out/{name!r}/"fresh-geometry",out/{name!r}/"measurements",'
+                    code += f'sources=[Path(p) for p in sys.argv[3:]],reference=json.loads((root/"reference.json").read_text()),joint_max_nfev={joint_max_nfev})'
+                    jobs.append(pool.submit(run, name, code, 1050))
+                for job in jobs: job.result()
+            run('cached_original', prefix+'import json; from scripts.workcell_photo_metrology import build; '
+                'build(root,out/"cached-original-cameras",sources=[Path(p) for p in sys.argv[3:]],'
+                'reference=json.loads((root/"reference.json").read_text()))',180)
+            if (root/'control/cameras.json').is_file():
+                run('cached_joint_button', prefix+'import json; from scripts.workcell_button_bundle import build; '
+                    'build(root,out/"cached-joint-button",sources=[Path(p) for p in sys.argv[3:]],'
+                    'reference=json.loads((root/"reference.json").read_text()),'
+                    f'cameras=root/"control/cameras.json",tracks=root/"control/tracks.json",max_nfev={joint_max_nfev})',500)
+                if (out/'cached-joint-button/cameras.json').is_file():
+                    run('cached_joint_metrology',prefix+'import json; from scripts.workcell_photo_metrology import build; '
+                        'build(root,out/"cached-joint-cameras",sources=[Path(p) for p in sys.argv[3:]],'
+                        'reference=json.loads((root/"reference.json").read_text()),'
+                        'cameras=out/"cached-joint-button/cameras.json",joint_reference=out/"cached-joint-button/joint-reference.json")',180)
+        elif mode == 'metrology-joint-button':
+            run('joint_button', prefix+'import json; from scripts.workcell_button_bundle import build; '
+                'build(root,out/"joint-button",sources=[Path(p) for p in sys.argv[3:]],'
+                'reference=json.loads((root/"reference.json").read_text()),'
+                f'cameras=root/"control/cameras.json",tracks=root/"control/tracks.json",max_nfev={joint_max_nfev})',950)
+            joint_dir = out/'joint-button'
+            if records['joint_button'].get('returncode') == 0 and (joint_dir/'cameras.json').is_file():
+                run('metrology_joint_button',prefix+'import json; from scripts.workcell_photo_metrology import build; '
+                    'build(root,out/"joint-cameras",sources=[Path(p) for p in sys.argv[3:]],'
+                    'reference=json.loads((root/"reference.json").read_text()),'
+                    'cameras=out/"joint-button/cameras.json",joint_reference=out/"joint-button/joint-reference.json")',180)
         elif mode in ('metrology', 'metrology-square-pixels'):
             from concurrent.futures import ThreadPoolExecutor
             code = prefix+'import json; from scripts.workcell_photo_metrology import build; '
@@ -102,7 +156,7 @@ def experiment(payload: bytes, mode: str):
                     jobs.append(pool.submit(run, 'metrology_refined', code+'build(root,out/"refined-cameras",'+args+',cameras=root/"control/cameras.json")',600))
                 for job in jobs: job.result()
         else:
-            raise ValueError('Expected controls, joint, dense, dense-replay, silhouette, metrology or metrology-square-pixels')
+            raise ValueError('Unknown experiment mode')
         (out/'run.json').write_text(json.dumps({'records':records, 'containerWallSeconds':time.monotonic()-started}, indent=2))
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode='w:gz') as archive:
@@ -113,16 +167,25 @@ def experiment(payload: bytes, mode: str):
 
 
 @app.local_entrypoint()
-def main(baseline: str, out: str, sources: str, mode: str = 'controls', control: str = '', alignment: str = '', measurements: str = ''):
+def main(baseline: str, out: str, sources: str, mode: str = 'controls', control: str = '', alignment: str = '', measurements: str = '', depth_run: str = '', joint_max_nfev: int = 100):
     root = Path(baseline); destination = Path(out)
+    if not 1 <= joint_max_nfev <= 400:
+        raise ValueError('Joint iteration cap must be between 1 and 400')
     if destination.exists(): raise ValueError('Use a fresh experiment output directory')
     reference = None
-    if mode in ('metrology', 'metrology-square-pixels'):
+    if mode in ('metrology', 'metrology-square-pixels', 'metrology-joint-button', 'metrology-depth'):
         if not measurements: raise ValueError('Metrology requires --measurements with known reference dimensions')
         from scripts.workcell_photo_calibration import load_measurements
         config = load_measurements(measurements)
         # Only reference dimensions enter the solver; check distances stay on the caller.
         reference = json.dumps({'schemaVersion':1,'reference':config['reference']}).encode()
+    if mode == 'metrology-joint-button' and (not control or not all((Path(control)/name).is_file() for name in ('cameras.json','tracks.json'))):
+        raise ValueError('Joint button fitting requires saved source camera and track files')
+    if mode == 'metrology-depth':
+        from scripts.workcell_depth_metrology import depth_run_path
+        summary = json.loads(Path(depth_run).read_text())
+        relative = Path(summary['volumeRunPath'])
+        depth_run_path('/v/layers', relative)
     source_paths = [Path(p) for p in sources.split(',')]
     if len(source_paths) != 4 or not all(p.is_file() for p in source_paths): raise ValueError('Four source photos required')
     files = [*root.glob('frame_*.json.gz'), *root.glob('photo-*.png')]
@@ -137,6 +200,11 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
             item = tarfile.TarInfo('reference.json'); item.size = len(reference)
             hashes[item.name] = hashlib.sha256(reference).hexdigest()
             archive.addfile(item, io.BytesIO(reference))
+        if mode == 'metrology-depth':
+            payload = json.dumps({'volumeRunPath': relative.as_posix()}).encode()
+            item = tarfile.TarInfo('depth-run.json'); item.size = len(payload)
+            hashes[item.name] = hashlib.sha256(payload).hexdigest()
+            archive.addfile(item, io.BytesIO(payload))
         if control:
             directory = Path(control)
             for p in [directory/'cameras.json',directory/'tracks.json',*sorted((directory/'model').glob('*.bin'))]:
@@ -149,7 +217,7 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
     destination.mkdir(parents=True)
     control_result = Path(control)/'results.json' if control else None
     control_model = json.loads(control_result.read_text()).get('cameraModel') if control_result and control_result.is_file() else None
-    (destination/'input-manifest.json').write_text(json.dumps({'baseline':str(root),'mode':mode,
+    (destination/'input-manifest.json').write_text(json.dumps({'baseline':str(root),'mode':mode,'jointMaxNfev':joint_max_nfev,
         'control':control or None,'controlCameraModel':control_model,'sha256':hashes},indent=2))
     start = time.monotonic()
     rate = 2*.000694+16*.0000131+80*.00000222
@@ -158,7 +226,7 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
               'rateSource':'https://modal.com/pricing', 'rateCheckedDate':'2026-10-01',
               'estimateBasis':'reserved-resource list rate; call window includes scheduling; build time excluded; not invoice'}
     try:
-        result = experiment.remote(buffer.getvalue(), mode)
+        result = experiment.remote(buffer.getvalue(), mode, joint_max_nfev)
         unpack(result['archive'], destination)
         elapsed = time.monotonic()-start
         ledger.update(status='completed', functionSeconds=result['containerWallSeconds'],callSeconds=elapsed,

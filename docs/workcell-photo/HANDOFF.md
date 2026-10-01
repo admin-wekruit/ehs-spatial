@@ -2,7 +2,9 @@
 
 更新：2026-10-01。范围为四张 BOR1 原图的对象级重建、模型内空间估计、可交互照片报告，以及护板角度实验。本文按当前代码和保存产物核对；代码、报告资产、原始照片、模型权重分别交接。
 
-**本次新增：** [现有四图的按钮标尺 / 3 cm 实验](SUB3-EXPERIMENT-2026-10-01.md)。未要求新增实测相机参数；源观测对照、实现问题修正、原图叠线与支出单独保存。在线入口为 [测量实验页](https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/metrology.html)，页面可返回完整 52 对象 3D。实验页的候选不能自动当作主场景已经更新的准确模型；具体结果、是否达标以实验文档为准。
+**最新 RGB 深度实验：** [原图轮廓、三尺寸联合约束与518/1036分辨率对照](RGB-DEPTH-EXPERIMENT-2026-10-01.md)。两档深度与100/400次有界对照已完成，未达到3cm；新518档围栏条件估计16.44cm，两侧光幕未知，1036档没有受支持的围栏模型。用户已确认青色修正轮廓；联合候选模型仍未通过留出验证。
+
+**此前测量实验：** [现有四图的按钮标尺 / 3 cm 实验](SUB3-EXPERIMENT-2026-10-01.md)。未要求新增实测相机参数；源观测对照、实现问题修正、原图叠线与支出单独保存。在线入口为 [测量实验页](https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/metrology.html)，页面可返回完整 52 对象 3D。实验页的候选不能自动当作主场景已经更新的准确模型；具体结果、是否达标以实验文档为准。
 
 ## 1. 从哪里接手
 
@@ -15,7 +17,8 @@
 | 报告网址 | https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/ |
 | 已保存的 A4 报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-guard-shared-report-2026-09-30/` |
 | 当前实测标尺报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-measured-reference-2026-10-01-final/`；公开网站同网址更新 |
-| 新增测量实验报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-sub3-report-2026-10-01-final/`；复用前一行完整模型并附加测量实验 |
+| 此前测量实验报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-sub3-report-2026-10-01-final/`；复用前一行完整模型并附加测量实验 |
+| 最新 RGB 深度实验报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-rgb-depth-report-2026-10-01-b/`；包含两档深度、候选按钮模型、负结果及完整旧报告入口；实验结论未达3cm |
 
 ```bash
 git clone --branch codex/workcell-photo-speed https://github.com/admin-wekruit/ehs-spatial.git
@@ -30,7 +33,7 @@ git clone https://github.com/admin-wekruit/panoptes-workcell-report.git
 - 当前报告含 52 个对象记录、97 个来源观察、136 个关联网格节点。这些是产物统计，不是经现场核验的物体识别准确率。
 - 左右护板的 A4 结构模型共用 **104.2702°** 参数，来自用户提供的“同规格同角”先验及照片轮廓拟合。缓存输入上的拟合/导出为 **44.04 秒**；这不含 MapAnything、SAM、OWLv2 和 RecGen 重跑。
 - **真实折弯角不可唯一确定**：104.27°、120°、150°、174° 的离散候选均通过本次条件照片贴合门槛。这些采样值不是置信区间。`measurementAngleDeg` 仍为 `null`。中间护板仍无受支持的实物折弯角，不参与左右共享参数。
-- 用户于 2026-10-01 提供现场尺寸：红色触发按钮直径 **4 cm**、圆形主体最大直径 **8.5 cm**、高度 **10 cm**，记录于 `docs/workcell-photo/measurements-2026-10-01.json`。高度暂对应红帽＋黄体＋灰底（不含支架），该部位对应待确认。当前使用高度确定统一尺度；两个直径分别约束对应标尺部件，不能用旧整套轮廓宽替代主体直径。
+- 用户于 2026-10-01 提供现场尺寸：红色触发按钮直径 **4 cm**、圆形主体最大直径 **8.5 cm**、高度 **10 cm**，并确认整体高度正确，记录于 `docs/workcell-photo/measurements-2026-10-01.json`。高度对应红帽＋黄体＋灰底（不含支架）。已发布主场景仍使用高度确定统一尺度；两个直径用于对应参考部件建模。先前 A–D 实验没有将三个尺寸一起约束相机，不能将该实验称为已完成联合标定。
 - A4 通过的是相对 A1 的轮廓拟合门槛。左板平均 IoU 0.66678 → 0.72784、右板 0.64792 → 0.67494；左板照片 4 从 0.76244 降为 0.72519，不能宣称所有视图均改善。
 - `objects[].groundDistance` 保留各照片可见下缘到拟合地面的距离；至少两个有效来源视角，单视图保持未知。10 cm 高度标尺下，识别到的围栏下横杆约 **17.13 cm**；两侧光幕外壳下缘的多视角中位数约 **14.36 / 15.71 cm**。独立实测为围栏 **20 cm**、光幕 **24 cm**，分别偏低约 **2.87 / 9.64 / 8.29 cm**。实测离地距离仅用于评估，没有进入尺度、相机或地面拟合；照片间范围不是精度保证。
 - 本轮实测标尺换算、参考部件建模与误差报告只使用保存结果，没有新增 GPU 推理调用，历史 334.60 秒完整运行成绩保持原定义。
