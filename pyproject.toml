@@ -29,6 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest==9.1.1"]
+photo = ["opencv-python-headless==5.0.0.93", "scipy==1.18.0", "trimesh==5.1.0"]
 
 [tool.setuptools.packages.find]
 include = ["ehs_spatial*", "panoptes_worker*"]

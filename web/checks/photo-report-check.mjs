@@ -4,10 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { createRequire } from 'node:module';
-const { chromium } = createRequire(process.env.PLAYWRIGHT_FROM || '/Users/adam/Desktop/ontab/package.json')('playwright');
+const { chromium } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const assets = path.resolve(process.argv[2]), out = path.resolve(process.argv[3] || '/tmp/panoptes-photo-check');
 const web = path.resolve(new URL('..', import.meta.url).pathname), payload = JSON.parse(fs.readFileSync(path.join(assets, 'scene-report.json')));
-const viewerAssets = process.env.VIEWER_ASSETS || '/Users/adam/Desktop/panoptes-public/panoptes-workcell-pages/workcell-photo-direct/viewer-assets';
+const viewerAssets = process.env.VIEWER_ASSETS || path.join(assets, 'page', 'viewer-assets');
 fs.mkdirSync(out, { recursive: true });
 const mime = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.json': 'application/json', '.png': 'image/png', '.glb': 'model/gltf-binary' };
 const reportRequests = [], modelRequests = [];
@@ -21,7 +21,7 @@ const server = http.createServer((req, res) => {
   res.setHeader('content-type', mime[path.extname(file)] || 'application/octet-stream'); fs.createReadStream(file).pipe(res);
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const browser = await chromium.launch({ args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] });
+const browser = await chromium.launch({ args: [...(process.platform === 'darwin' ? ['--use-angle=metal'] : []), '--ignore-gpu-blocklist', '--enable-gpu'] });
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 }, acceptDownloads: true, hasTouch: true });
   const errors = [], apiRequests = []; page.on('pageerror', e => errors.push(e.message)); page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) apiRequests.push(request.url()); });
@@ -87,6 +87,22 @@ try {
   await page.mouse.click(canvas.x + pixel[0] / pixel[2] / sourceCamera.width * canvas.width, canvas.y + pixel[1] / pixel[2] / sourceCamera.height * canvas.height);
   assert.equal(await page.locator('[data-selected-object]').getAttribute('data-selected-object'), 'emergency-button', 'model canvas picks button from robot selection');
   assert.equal(await page.locator('[data-height-native]').textContent(), '0.200 m');
+  const buttonGround = payload.objects.find(o => o.id === 'emergency-button').groundDistance;
+  const distanceLabel = factor => `${(buttonGround.byPhoto['4'].valueNative * payload.nativeToMetersDefault * factor).toFixed(3)} m`;
+  assert.equal(await page.locator('[data-ground-distance-native]').textContent(), distanceLabel(1));
+  await page.getByRole('button', { name: /可旋转 3D/ }).click();
+  await page.getByRole('button', { name: '显示离地测量线', exact: true }).click();
+  const groundLabel = page.locator('[data-pane="spatial"] .native-stage svg text').filter({ hasText: `${distanceLabel(1)} · 条件估计` });
+  await groundLabel.waitFor();
+  await page.getByLabel('按钮整体高度厘米').fill('40');
+  await page.locator('[data-pane="spatial"] .native-stage svg text').filter({ hasText: `${distanceLabel(2)} · 条件估计` }).waitFor();
+  assert.equal(await page.locator('[data-ground-distance-native]').textContent(), distanceLabel(2));
+  await page.getByLabel('按钮整体高度厘米').fill('20');
+  await page.waitForFunction(expected => +document.querySelector('[data-model-loaded]').dataset.modelLoaded === expected, expectedModels);
+  await page.screenshot({ path: path.join(out, 'button-ground-distance.png'), fullPage: true });
+  await page.getByRole('button', { name: '隐藏离地测量线', exact: true }).click();
+  await groundLabel.waitFor({state:'detached'});
+  await page.getByRole('button', { name: /照片 \/ 模型对比/ }).click();
   async function downloadAt(height) {
     await page.getByLabel('按钮整体高度厘米').fill(String(height));
     const pending = page.waitForEvent('download'); await page.getByRole('button', { name: '下载当前模型 GLB' }).click();
@@ -214,5 +230,5 @@ try {
   await page.screenshot({ path: path.join(out, 'mobile.png'), fullPage: true });
   assert.deepEqual(apiRequests, [], 'offline saved analyses must not call remote APIs');
   assert.deepEqual(errors, [], 'no browser runtime errors');
-  console.log(JSON.stringify({ pass: true, objects: payload.objects.length, checks: ['list and inspector', 'single-view dimensions unknown', 'center-handle mouse/touch/keyboard drag', 'slider 0/50/100 stable viewport', 'photo and model selection', 'photo camera switch', '20/40 cm geometry export', 'free 3D actual orbit changes canvas', 'ground-plane grid and world XYZ', 'per-board saved bend and isolated fold arcs', 'width scale and mismatch', 'mobile list and inspector', payload.inclinationAnalysis ? 'saved plane card and actual SVG annotation' : 'missing analysis remains usable', 'zero API requests'], screenshot: path.join(out, 'desktop.png') }));
+  console.log(JSON.stringify({ pass: true, objects: payload.objects.length, checks: ['list and inspector', 'single-view dimensions unknown', 'center-handle mouse/touch/keyboard drag', 'slider 0/50/100 stable viewport', 'photo and model selection', 'photo camera switch', '20/40 cm geometry export', 'free 3D actual orbit changes canvas', 'ground-plane grid and world XYZ', 'observed lower edge to floor with 20/40 cm measurement-line scaling', 'per-board saved bend and isolated fold arcs', 'width scale and mismatch', 'mobile list and inspector', payload.inclinationAnalysis ? 'saved plane card and actual SVG annotation' : 'missing analysis remains usable', 'zero API requests'], screenshot: path.join(out, 'desktop.png') }));
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

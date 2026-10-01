@@ -2,17 +2,19 @@
 
 Heavy stages share one ephemeral two-A100 Modal container, with GPU 0 for
 geometry/OWLv2 and GPU 1 for SAM 3, then both GPUs for RecGen.
-Run with the project venv: python scripts/workcell_photo_oneshot.py --images a.jpg b.jpg c.jpg d.jpg --out NEW_DIR
+Run with the project venv: python scripts/workcell_photo_oneshot.py --images a.jpg b.jpg c.jpg d.jpg --out NEW_DIR --viewer-assets THREE_0_178_0_DIR
 """
 
 import argparse
 import base64
 import gzip
+import hashlib
 import json
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import time
 
 import cv2
@@ -22,8 +24,16 @@ import trimesh
 
 
 REPO = Path(__file__).resolve().parents[1]
-MODAL = Path("/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/modal")
-TEMPLATE = Path("/Users/adam/Desktop/panoptes-public/panoptes-workcell-pages/workcell-photo-direct/index.html")
+# Three.js 0.178.0 npm package, MIT. See docs/workcell-photo/HANDOFF.md for acquisition.
+VIEWER_ASSET_SHA256 = {
+    "LICENSE": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601",
+    "three.core.js": "562b72799ef1145f77997ece49a34f578422873757b0a13e41d76dcbfb776f06",
+    "three.module.js": "bc0d236927f5163414e7c59a5567257dfe925f1929ce0a151ac4185dc45ca5a2",
+    "addons/controls/OrbitControls.js": "b97879c748170baadeb3fb84cea1ffdf4674e283dc06042f34e2acb95a76042c",
+    "addons/loaders/GLTFLoader.js": "caba6c51cfd8c7d5313bd7705a54b76bc0a7199d9822ecc497c5311eaffe8e5e",
+    "addons/utils/BufferGeometryUtils.js": "cbcfe1864abedcc0122cb893373918fe14469491717a34ca6efcc38551805765",
+    "addons/exporters/GLTFExporter.js": "3d91af558632f8ced2ac9bb4230f108c4004ef82966338ae001b9fa84be59550",
+}
 GUARD_WORD = "yellow and black striped panel"
 WORDS = ("industrial robot arm", "safety fence", "yellow safety post", "black bollard",
          "emergency stop button", "red emergency stop switch", "light curtain",
@@ -65,7 +75,7 @@ def _response(seg, index, word):
 
 def _job(name, argv, out):
     started = time.monotonic()
-    result = subprocess.run([str(MODAL), "run", *argv], cwd=REPO,
+    result = subprocess.run([sys.executable, "-m", "modal", "run", *argv], cwd=REPO,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, timeout=1800, check=False)
     elapsed = time.monotonic() - started
@@ -280,7 +290,7 @@ def _export_metric_scene(root, geometry):
     normal = np.asarray(geometry["floor"]["normal"], float)
     transform = trimesh.geometry.align_vectors(normal, [0, 1, 0])
     transform[:3, :3] *= scale
-    transform[1, 3] = scale * float(geometry["floor"]["offset"])
+    transform[1, 3] = scale * float(geometry["floor"]["offset"]) / np.linalg.norm(normal)
     scene = trimesh.Scene()
     objects = json.loads((root / "objects.json").read_text())["objects"]
     cached = {}
@@ -320,16 +330,30 @@ def _anchor_sheet(root, sources, anchor):
     sheet.save(root / "geometry-anchor.jpg", quality=90)
 
 
-def _build_page(root, metrics):
-    built = root / "report-ui"
+def _freeze_report_ui(root, viewer_assets):
+    built = REPO / "web/dist-photo"
     if not (built / "photo.html").is_file():
         raise FileNotFoundError("Build the shared report UI first: cd web && node node_modules/vite/bin/vite.js build --config vite.photo.config.ts")
+    assets = {name: (viewer_assets / name).read_bytes() for name in VIEWER_ASSET_SHA256}
+    for name, payload in assets.items():
+        if hashlib.sha256(payload).hexdigest() != VIEWER_ASSET_SHA256[name]:
+            raise ValueError(f"Viewer asset is not the required Three.js 0.178.0 file: {viewer_assets / name}")
+    shutil.copytree(built, root / "report-ui")
+    for name, payload in assets.items():
+        target = root / "report-ui/viewer-assets" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+
+
+def _build_page(root, metrics):
+    built = root / "report-ui"
+    if not (built / "photo.html").is_file() or any(
+            not (built / "viewer-assets" / name).is_file() for name in VIEWER_ASSET_SHA256):
+        raise FileNotFoundError("Freeze the built report UI and its Three.js assets before packaging")
     page = root / "page"
     page.mkdir()
     shutil.copytree(built, page, dirs_exist_ok=True)
     shutil.copyfile(built / "photo.html", page / "index.html")
-    shutil.copytree(TEMPLATE.parent.parent / "observed/viewer-assets", page / "viewer-assets")
-    shutil.copytree(TEMPLATE.parent / "viewer-assets", page / "viewer-assets", dirs_exist_ok=True)
     assets = ("robot-v1.glb", "robot-v2.glb", "robot-v3.glb", "robot-v4.glb", "robot-multi.glb",
               "cart-single.glb", "guard-multi.glb", "guard-left.glb", "guard-center.glb", "guard-right.glb",
               "guard-partition.json", "cart-observed.glb", "posts.glb", "fence-observed.glb",
@@ -375,18 +399,16 @@ def _self_check():
     print("workcell_photo_oneshot self-check passed")
 
 
-def run(images, out, diameter_m, height_m):
+def run(images, out, diameter_m, height_m, viewer_assets):
     if len(images) != 4 or len(set(images)) != 4 or any(not p.is_file() for p in images):
         raise ValueError("Exactly four distinct, readable source photos are required")
     if not all(np.isfinite(v) and v > 0 for v in (diameter_m, height_m)):
         raise ValueError("Button dimensions must be finite and positive")
-    if not (REPO / 'web/dist-photo/photo.html').is_file():
-        raise FileNotFoundError('Build web/vite.photo.config.ts before starting cloud inference')
     if out.exists():
         raise ValueError("Output must be a new directory; a one-shot run never mutates earlier evidence")
     out.mkdir(parents=True)
     # Freeze the built viewer before compute; concurrent rebuilds must not change a running report.
-    shutil.copytree(REPO / "web/dist-photo", out / "report-ui")
+    _freeze_report_ui(out, viewer_assets)
     began = time.monotonic()
     ledger = {"hardware": "one ephemeral 2 x A100-80GB container", "mode": "ephemeral modal run",
               "actualBilledUsd": None, "runs": []}
@@ -451,6 +473,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--images", type=Path, nargs=4)
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--viewer-assets", type=Path, help="Three.js 0.178.0 runtime directory; see docs/workcell-photo/HANDOFF.md")
     parser.add_argument("--button-diameter-m", type=float, default=.2)
     parser.add_argument("--button-height-m", type=float, default=.2)
     parser.add_argument("--self-check", action="store_true")
@@ -458,10 +481,10 @@ def main():
     if args.self_check:
         _self_check()
         return
-    if not args.images or not args.out:
-        parser.error("--images and --out are required")
+    if not args.images or not args.out or not args.viewer_assets:
+        parser.error("--images, --out and --viewer-assets are required")
     run([p.resolve() for p in args.images], args.out.resolve(),
-        args.button_diameter_m, args.button_height_m)
+        args.button_diameter_m, args.button_height_m, args.viewer_assets.resolve())
 
 
 if __name__ == "__main__":

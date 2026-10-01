@@ -10,6 +10,7 @@ export type MeasureRegion = { coordinateFrameId: string; nativeToPlane: number[]
 export type SceneMeasurement = {
   revisionId: string; kind: string; coordinateFrameId: string; source: string;
   value: number; unit: "deg" | "native" | "native2"; method: string;
+  displayLabel?: string;
   references: { entityId: string; representationId: string; assetId: string | null; assetSha256: string | null; placementState: string | null; qualityStatus: string | null }[];
   lines: { points: number[][]; color: string }[]; labelPoint: number[];
   quality: { areaNative2?: number; angularErrorDeg?: number | null; angularSpreadDeg?: number; rmsResidualNative?: number; classification?: string; surfaceId?: string; surfaceFits?: { areaFraction: number; rmsResidualNative: number }[]; deviationFromVerticalDeg?: number; groundReference?: { normal?: number[] | null }; regionFraction?: number };

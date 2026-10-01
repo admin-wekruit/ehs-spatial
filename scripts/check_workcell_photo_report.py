@@ -31,6 +31,14 @@ for i,camera in enumerate(doc['cameras'],1):
     assert np.allclose(camera['K'],_array(f['intrinsics']))
 for entity in doc['entities']:
     item=objects[entity['id']]
+    distance=item.get('groundDistance',{})
+    if len({o['photo'] for o in item['observations']})<2:
+        assert not distance.get('byPhoto'), 'single-view distance remains unsupported'
+    for sample in [*distance.get('byPhoto',{}).values(), *([distance['feature']] if distance.get('feature') else [])]:
+        if sample['valueNative'] is None: continue
+        point,foot=np.asarray(sample['pointNative']),np.asarray(sample['footNative'])
+        assert abs(foot[2])<1e-6 and np.allclose(point[:2],foot[:2],atol=1e-6)
+        assert np.isclose(np.linalg.norm(point-foot),sample['valueNative'],atol=1e-6)
     assert entity['physicalDimensionsUnknown'] and entity['modelOrientationUnknown']
     for evidence in entity['measurements'].get('orientationEvidence', {}).values():
         if evidence.get('axisNative') is not None:

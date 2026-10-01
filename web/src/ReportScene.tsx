@@ -214,9 +214,10 @@ export function Extent({ entity, document }: { entity: Entity; document: SceneDo
 
 export function ReportScene({
   revision, selection, onSelect, imageId, cameraId, onCamera,
-  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false,
+  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false, measurementOverride,
 }: {
   matchedComparison?: boolean;
+  measurementOverride?: SceneMeasurement | null;
   revision: Revision;
   selection: Selection;
   onSelect: (entityId: string, observationId?: string) => void;
@@ -291,7 +292,8 @@ export function ReportScene({
   useEffect(() => {
     if (!analysisAvailable && !activeSurface) setMeasurement(savedBend?.status === "measured" ? savedBend.result || null : null);
   }, [analysisAvailable, selected?.id, savedBend, activeSurface]);
-  const measurement = (showAngles || rawMeasurement?.unit !== "deg") && rawMeasurement?.revisionId === revision.id && rawMeasurement.references.some(ref => ref.entityId === selected?.id) ? rawMeasurement : null;
+  const activeMeasurement = measurementOverride ?? rawMeasurement;
+  const measurement = (showAngles || activeMeasurement?.unit !== "deg") && activeMeasurement?.revisionId === revision.id && activeMeasurement.references.some(ref => ref.entityId === selected?.id) ? activeMeasurement : null;
   const [measurePoints,setMeasurePoints]=useState<SurfacePick[]>([]),[pickingPoints,setPickingPoints]=useState(false),[pointError,setPointError]=useState(false),[pointCount,setPointCount]=useState<2|3>(2);
   useEffect(() => { setMeasureRegion(null); setDrawingRegion(false); setMeasurePoints([]); setPickingPoints(false); }, [revision.id, selection.entityId]);
   useEffect(()=>{if(layer!=="model"){setMeasurePoints([]);setPickingPoints(false);}},[layer]);

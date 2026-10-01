@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ReportScene } from "./ReportScene";
 import { ObjectFacts } from "./WorkcellReport";
 import { SceneResources } from "./SceneResources";
-import type { BendAnalysis, InclinationAnalysis } from "./SpatialMeasurements";
+import type { BendAnalysis, InclinationAnalysis, SceneMeasurement } from "./SpatialMeasurements";
 import { I18nProvider } from "./i18n";
 import { activeModel } from "./core";
 import { transformMatrix } from "./viewer/native-math";
@@ -12,11 +12,13 @@ import "./styles.css";
 import "./workcell-report.css";
 import "./photo-report.css";
 
-type CatalogObject = { id: string; label: string; representation: string; notes: string[]; observations: { photo: number }[]; measurements: Record<string, any>; visibleHeightNative?: number; visibleHeightRangeNative?: number[]; visibleHeightByPhoto?: Record<string, number> };
+type GroundSample = { valueNative: number | null; pointNative: number[]; footNative: number[]; reason?: string; source?: string; sourcePhotos?: number[]; rangeNative?: number[] };
+type CatalogObject = { id: string; label: string; representation: string; notes: string[]; observations: { photo: number }[]; measurements: Record<string, any>; visibleHeightNative?: number; visibleHeightRangeNative?: number[]; visibleHeightByPhoto?: Record<string, number>; groundDistance?: { byPhoto: Record<string, GroundSample>; feature?: GroundSample | null; rangeNative?: number[]; source: string; reason?: string } };
 type PhotoReportData = { experiment?: { title: string; summary: string; reportURL: string; timingLabel: string }; bendAnalysis?: BendAnalysis; inclinationAnalysis?: InclinationAnalysis; revision: Revision; assetURLs: Record<string, string>; objects: CatalogObject[]; geometry: { anchor: { nativeHeight: number; nativeWidth: number; assumedHeightM: number; assumedWidthM: number; assumptions?: string[] }; floor: { status: string } }; timing: { oneShotSeconds?: number }; nativeToMetersDefault: number };
 function PhotoReport({ data }: { data: PhotoReportData }) {
   const [imageId, setImageId] = useState("photo-4"), [entityId, setEntityId] = useState<string | null>(data.experiment ? "v-guard-left" : "emergency-button"), [observationId, setObservationId] = useState<string | null>(null);
   const [height, setHeight] = useState(data.geometry.anchor.assumedHeightM * 100), [width, setWidth] = useState(data.geometry.anchor.assumedWidthM * 100), [axis, setAxis] = useState("height"), [exporting, setExporting] = useState(false), [exportError, setExportError] = useState("");
+  const [showGroundDistance, setShowGroundDistance] = useState(false);
   const anchor = data.geometry.anchor, valid = Number.isFinite(height) && Number.isFinite(width) && height > 0 && width > 0;
   const scaleH = height / 100 / anchor.nativeHeight, scaleW = width / 100 / anchor.nativeWidth;
   const nativeToMeters = valid ? axis === "height" ? scaleH : scaleW : data.nativeToMetersDefault;
@@ -40,7 +42,16 @@ function PhotoReport({ data }: { data: PhotoReportData }) {
   const visibleHeight = selected?.observedExtentAvailable !== true ? undefined : (record?.id === "robot" ? record.visibleHeightByPhoto?.[photo] : record?.visibleHeightNative);
   const inclination = data.inclinationAnalysis?.revisionId === revision.id ? data.inclinationAnalysis.items.find(row => row.entityId === entityId) : undefined;
   const bend = data.bendAnalysis?.revisionId === revision.id ? data.bendAnalysis.items.find(row => row.entityId === entityId) : undefined;
-  const physicalHeight = record?.measurements.height?.valueNative, clearance = record?.measurements.groundClearance;
+  const physicalHeight = record?.measurements.height?.valueNative, distance = record?.groundDistance;
+  const ground = distance?.feature ?? distance?.byPhoto[photo], groundRange = distance?.feature?.rangeNative ?? distance?.rangeNative;
+  const selectedModel = selected && activeModel(selected);
+  const groundAnnotation: SceneMeasurement | null = showGroundDistance && valid && selected && selectedModel && ground?.valueNative != null ? {
+    revisionId: revision.id, coordinateFrameId: selectedModel.coordinateFrameId, kind: "ground_distance", source: "source_photo_support",
+    value: ground.valueNative, unit: "native", displayLabel: `${displayValue(ground.valueNative)} · 条件估计`, method: "visible-support-to-saved-floor",
+    references: [{ entityId: selected.id, representationId: selectedModel.id, assetId: selectedModel.assetId || null, assetSha256: null, placementState: null, qualityStatus: null }],
+    lines: [{ points: [ground.pointNative, ground.footNative], color: "#27d3d0" }],
+    labelPoint: ground.pointNative.map((v, i) => (v + ground.footNative[i]) / 2), quality: {},
+  } : null;
   async function downloadModel() {
     setExporting(true); setExportError("");
     try {
@@ -74,8 +85,8 @@ function PhotoReport({ data }: { data: PhotoReportData }) {
       <p className="photo-report-scale-result" data-native-to-meters={nativeToMeters}>当前统一比例：1 native = {nativeToMeters.toFixed(5)} m · 换算整体高度 {(anchor.nativeHeight * nativeToMeters * 100).toFixed(1)} cm / 宽度 {(anchor.nativeWidth * nativeToMeters * 100).toFixed(1)} cm</p>
       {!valid && <p role="alert">请输入大于零的有效尺寸。</p>}{mismatch && <p role="status" className="photo-report-warning">高度与宽度推得的比例相差超过 25%。当前仅采用{axis === "height" ? "高度" : "宽度"}统一缩放，请复核整体尺寸假设。</p>}{exportError && <p role="alert">模型导出失败：{exportError}</p>}
     </section>
-    <div id="scene"><ReportScene matchedComparison revision={revision} selection={selection} onSelect={(id, obs) => { setEntityId(id); setObservationId(obs || null); }} imageId={imageId} cameraId={camera?.id || null} onCamera={(id) => { setImageId(id); setObservationId(null); }} onClearSelection={() => setEntityId(null)} inspector={(surface) => selected ? <>
-      <section className="photo-report-object-evidence" data-selected-object={selected.id}><h3>{selected.label}</h3>{bend && <section className="photo-report-angles photo-report-bend" data-bend-entity={selected.id}><h4>本块护板 · 两板面折弯内角</h4>{bend.status === "measured" && bend.result ? <><output>{bend.result.value.toFixed(1)}°</output><p>模型估计 · 摊平为 180°，直角折弯为 90°。</p><p>橙色 / 蓝色：本块板的两个拟合板面；紫色：交线；绿色：折弯内角。</p></> : <p>折弯角度不可用：{bend.reason || bend.status}</p>}</section>}<dl><div><dt>{physicalHeight != null ? "整体高度（输入假设）" : "可见高度估计（按标尺换算）"}</dt><dd data-height-native={physicalHeight ?? visibleHeight ?? "unknown"}>{displayValue(physicalHeight ?? visibleHeight)}</dd></div><div><dt>离地间距（条件估计）</dt><dd>{displayValue(clearance?.valueNative)}</dd></div></dl>{selected.observedExtentAvailable === true && record?.visibleHeightRangeNative && <p>跨照片可见高度范围：{record.visibleHeightRangeNative.map(displayValue).join(" – ")}</p>}<p>来源照片：{[...new Set(record?.observations.map(item => item.photo))].join(" / ") || "无"}</p><p>{record?.representation}</p>{clearance?.source && <p>间距依据：{clearance.source}</p>}{physicalHeight == null && <p>可见高度不代表完整物体的物理尺寸。单视图或遮挡部分保留未知。</p>}</section>
+    <div id="scene"><ReportScene matchedComparison measurementOverride={groundAnnotation} revision={revision} selection={selection} onSelect={(id, obs) => { setEntityId(id); setObservationId(obs || null); setShowGroundDistance(false); }} imageId={imageId} cameraId={camera?.id || null} onCamera={(id) => { setImageId(id); setObservationId(null); }} onClearSelection={() => { setEntityId(null); setShowGroundDistance(false); }} inspector={(surface) => selected ? <>
+      <section className="photo-report-object-evidence" data-selected-object={selected.id}><h3>{selected.label}</h3>{bend && <section className="photo-report-angles photo-report-bend" data-bend-entity={selected.id}><h4>本块护板 · 两板面折弯内角</h4>{bend.status === "measured" && bend.result ? <><output>{bend.result.value.toFixed(1)}°</output><p>模型估计 · 摊平为 180°，直角折弯为 90°。</p><p>橙色 / 蓝色：本块板的两个拟合板面；紫色：交线；绿色：折弯内角。</p></> : <p>折弯角度不可用：{bend.reason || bend.status}</p>}</section>}<dl><div><dt>{physicalHeight != null ? "整体高度（输入假设）" : "可见高度估计（按标尺换算）"}</dt><dd data-height-native={physicalHeight ?? visibleHeight ?? "unknown"}>{displayValue(physicalHeight ?? visibleHeight)}</dd></div><div><dt>{distance?.feature ? "已识别下横杆离地（条件估计）" : `可见下缘离地（照片 ${photo}）`}</dt><dd data-ground-distance-native={ground?.valueNative ?? "unknown"}>{displayValue(ground?.valueNative)}</dd></div></dl>{selected.observedExtentAvailable === true && record?.visibleHeightRangeNative && <p>跨照片可见高度范围：{record.visibleHeightRangeNative.map(displayValue).join(" – ")}</p>}<p>来源照片：{[...new Set(record?.observations.map(item => item.photo))].join(" / ") || "无"}</p><p>{record?.representation}</p>{ground?.valueNative != null && <button type="button" aria-pressed={showGroundDistance} onClick={() => setShowGroundDistance(value => !value)}>{showGroundDistance ? "隐藏离地测量线" : "显示离地测量线"}</button>}{groundRange && <p data-ground-distance-range>跨照片下缘离地范围：{groundRange.map(displayValue).join(" – ")}；反映可见区域差异，不是精度保证。</p>}<p>间距依据：{ground?.source || distance?.source || "缺少来源数据。"}</p>{ground?.valueNative == null && <p>{ground?.reason || distance?.reason || "当前照片没有可用下缘；请切换到来源照片。"}</p>}{physicalHeight == null && <p>可见高度不代表完整物体的物理尺寸。单视图或遮挡部分保留未知。</p>}</section>
       {inclination && <section className="photo-report-angles" data-inclination-entity={selected.id}><h3>板面角度 · 模型估计</h3>
         {surface && <div key={surface.surfaceId} data-inclination-surface={surface.surfaceId}><h4>局部面 {surface.surfaceId}</h4><p>与地面夹角 <strong>{surface.inclinationDeg.toFixed(1)}°</strong>（90° 为垂直）</p><p>偏离垂直 <strong>{surface.deviationFromVerticalDeg.toFixed(1)}°</strong></p><p>{({ non_vertical: "非竖直（模型估计）", vertical: "竖直范围内（模型估计）", direction_unverified: "方向未确认" } as Record<string, string>)[surface.classification] || surface.classification} · 角度离散 {surface.angularSpreadDeg.toFixed(1)}°</p><p>{surface.result.quality.angularErrorDeg == null ? "地面方向误差未记录；相对竖直方向的分类待确认。" : `工程角度误差估计 ${surface.result.quality.angularErrorDeg.toFixed(1)}°，不代表现场标定精度。`}</p></div>}
         {!inclination.surfaces.length && <p>角度不可用：{inclination.reason || inclination.status}</p>}

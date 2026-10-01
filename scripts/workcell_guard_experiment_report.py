@@ -8,7 +8,7 @@ import sys
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parent)]
 from scripts.workcell_photo_report import build as build_report
-from scripts.workcell_photo_oneshot import _build_page, _export_metric_scene
+from scripts.workcell_photo_oneshot import _build_page, _export_metric_scene, _freeze_report_ui
 
 
 def read(path):
@@ -111,7 +111,7 @@ def structural_section(path, root, result):
 <p>A4 缓存输入上的优化增量 {result['wallSeconds']:.2f} 秒；不是一次从照片开始的完整流程耗时。<a href="{base}/results.json">完整结果、参数边界与限制</a></p></section>'''
 
 
-def build(baseline, controls, joint, out, previous=(), extra=(), structural=None):
+def build(baseline, controls, joint, out, viewer_assets, previous=(), extra=(), structural=None):
     if out.exists(): raise ValueError('Report output must be new')
     out.mkdir(parents=True)
     for p in baseline.iterdir():
@@ -135,8 +135,7 @@ def build(baseline, controls, joint, out, previous=(), extra=(), structural=None
     (out/'objects.json').write_text(json.dumps(catalog,ensure_ascii=False))
     data = build_report(out)
     _export_metric_scene(out,data['geometry'])
-    source = Path(__file__).resolve().parents[1]
-    shutil.copytree(source/'web/dist-photo',out/'report-ui')
+    _freeze_report_ui(out, viewer_assets)
     page = _build_page(out,read(baseline/'one-shot.json'))
     data['experiment'] = {'title':'本轮：保形对齐已应用，实物角度尚未测稳',
         'summary':'这里保留完整可点击场景，三块护板采用同一批生成模型的保形对齐结果。下面的角度来自模型；相同规格实物的夹角一致性仍未通过验证。全流程此前实测 334.6 秒，本轮重用已保存结果做对照。',
@@ -261,8 +260,8 @@ def plots(baseline, a1, joint, out):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    for name in ('baseline','controls','joint','out'):p.add_argument('--'+name,type=Path,required=True)
+    for name in ('baseline','controls','joint','out','viewer-assets'):p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--previous',type=Path,action='append',default=[])
     p.add_argument('--extra',type=Path,action='append',default=[])
     p.add_argument('--structural',type=Path,help='Frozen A4 run root; promotes only when its recorded source-fit gate passes')
-    a=p.parse_args();print(build(a.baseline,a.controls,a.joint,a.out,a.previous,a.extra,a.structural))
+    a=p.parse_args();print(build(a.baseline,a.controls,a.joint,a.out,a.viewer_assets,a.previous,a.extra,a.structural))
