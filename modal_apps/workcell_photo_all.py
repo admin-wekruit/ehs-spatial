@@ -129,12 +129,12 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
                                 K = z[f"v{i}_K"].copy(); K[:2] /= 2
                                 views.append({"rays": rays(K, z[f"v{i}_c2w"], depth.shape[1], depth.shape[0]),
                                               "target": z[f"v{i}_mask"][::2, ::2] > 0, "depth": depth})
-                            transform, placement = refine(v, f, [views[i-1] for i in stats['views']])
+                            transform, placement = refine(v, f, [views[i-1] for i in stats['views']], uniform_scale=True)
                             mesh.apply_transform(transform)
                             caster = Caster(v, f)
                             placement.update(generationViews=stats['views'], transform=transform.tolist(),
                                              sourceChecks=[score_view(caster, transform, view) for view in views],
-                                             basis="source masks and estimated depth; not surveyed physical accuracy")
+                                             basis="shape-preserving similarity alignment to source masks and estimated depth; not surveyed physical accuracy")
                             (root / "guard-placement.json").write_text(json.dumps(placement, indent=2))
                         (root / f"{kind}-{name}.glb").write_bytes(mesh.export(file_type="glb"))
                         timing[f"{kind}-{name}"] = {**stats, "modelLoadSeconds": worker["modelLoadSeconds"]}

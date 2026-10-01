@@ -146,10 +146,11 @@ def score_view(caster, transform, view):
     return {"iou": iou, "boundary": boundary, "p50": p50, "loss": float(1 - iou + 2 * boundary + min(p50 if p50 is not None else 1, 1))}
 
 
-def refine(vertices, faces, views, max_iterations=100):
+def refine(vertices, faces, views, max_iterations=100, *, uniform_scale=False):
     """assemble_lucida_scene.refine: bounded Nelder-Mead over translation (x 0.3 of the model's size), rotation vector
     (<= 0.65 rad) and per-axis log scale (<= 0.4) about the model's centre, from the source-camera placement. Returns
-    (4x4 applied to world vertices, record); identity when nothing beats the start."""
+    (4x4 applied to world vertices, record); identity when nothing beats the start.
+    uniform_scale uses a Sim(3) transform, preserving the mesh's intrinsic angles."""
     from scipy.optimize import minimize
     from scipy.spatial.transform import Rotation
     caster = Caster(vertices, faces)
@@ -158,7 +159,8 @@ def refine(vertices, faces, views, max_iterations=100):
 
     def candidate(x):
         t = np.eye(4)
-        t[:3, :3] = Rotation.from_rotvec(x[3:6]).as_matrix() @ np.diag(np.exp(x[6:9]))
+        scales = np.repeat(np.exp(x[6]), 3) if uniform_scale else np.exp(x[6:9])
+        t[:3, :3] = Rotation.from_rotvec(x[3:6]).as_matrix() @ np.diag(scales)
         t[:3, 3] = centre - t[:3, :3] @ centre + x[:3] * radius
         return t
 
@@ -174,9 +176,10 @@ def refine(vertices, faces, views, max_iterations=100):
             return 100. + float(x @ x)
         count[0] += 1
         return score(candidate(x))[0]
-    simplex = np.zeros((10, 9))
-    simplex[1:] = np.diag([.015] * 3 + [.04] * 3 + [.04] * 3)
-    fit = minimize(objective, np.zeros(9), method="Nelder-Mead", options={"initial_simplex": simplex, "maxiter": max_iterations,
+    n = 7 if uniform_scale else 9
+    simplex = np.zeros((n + 1, n))
+    simplex[1:] = np.diag([.015] * 3 + [.04] * (n - 3))
+    fit = minimize(objective, np.zeros(n), method="Nelder-Mead", options={"initial_simplex": simplex, "maxiter": max_iterations,
                                                                             "xatol": .002, "fatol": .001})
     final = candidate(fit.x) if fit.fun < initial_loss else np.eye(4)
     final_loss, per = score(final)
