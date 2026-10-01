@@ -89,3 +89,47 @@ Runnable checks: `scripts/check_workcell_guard_joint.py`,
 `scripts/check_workcell_photo_report.py`, and `web/checks/photo-report-check.mjs`.
 Use `scripts/workcell_guard_experiment_report.py` to package the reviewed A1 scene
 and experiment evidence with the existing report UI.
+
+## A4: shared structural model from silhouettes
+
+The A3 real-data route never reached the shared optimizer: it first required two
+independently supported plane initializers. These photos did not provide them.
+Consequently the published A1 scene still showed independent generated geometry,
+including its original 3.4139-degree difference. Uniform alignment alone cannot
+remove that difference, and a metric button scale cannot change any angle.
+
+A4 initializes two planar-sheet outlines per board from A1, then optimizes one
+shared left/right angle plus each board's rigid pose, two widths and hinge height
+against the original SAM silhouettes in the unchanged source cameras. Generated
+outlines are a template assumption; stripes are not treated as observed creases.
+Five automatic starts and a fixed-angle sensitivity profile share a 180-second
+budget. This is a cached geometry experiment, not a new full oneshot benchmark.
+
+Promotion requires convergence, supported viewer annotations and the preregistered
+A1 image-fit limits: each board's mean/median IoU may drop at most 0.02; no source
+view may drop over 0.08. Both exported GLBs are independently read back to verify
+their actual two-sheet angles. Equal parameters are a user-supplied specification,
+not independent evidence of physical accuracy. The physical angle stays null;
+center remains independent, and invisible thickness remains unknown.
+
+A4 completed on `ap-uaenSkErLzMb6PkCTlChvb` in 47.98 function seconds
+(44.04 seconds of fitting/export). The exported left/right angles are
+104.27020985 / 104.27020969 degrees. Mean board silhouette IoU improves
+0.66678 -> 0.72784 on the left and 0.64792 -> 0.67494 on the right. Left
+photo 4 drops 0.76244 -> 0.72519, within the predeclared per-view limit;
+do not describe all source views as improved. The source-fit gate passes.
+
+The angle is NOT identified by these silhouettes: fixed-angle profile candidates
+104.27, 120, 150 and 174 degrees all satisfy the conditional image-fit criterion.
+These are discrete sensitivity samples, not a confidence interval. Publish as a
+same-specification structural model with a prominent ambiguity note, never as a
+104.27-degree physical measurement. Accurate measurement needs independently
+constraining panel/crease correspondences with calibrated cameras, or a supplied
+CAD/specification angle; scale from the button does not provide that constraint.
+
+The first A4 allocation `ap-qtjmoU783CbserXWPx5b3L` completed fitting/export but
+failed JSON serialization of a NumPy boolean. It is recorded as failed, costs
+retained, and superseded by B. The boolean is now explicitly a builtin bool, and
+the Modal runner checks every subprocess return code before recording success.
+A/B resource estimates total $0.16824 (call-window $0.19559), not invoice totals.
+Both outputs are under `research-notes/workcell-guard-silhouette-2026-09-30-{a,b}`.

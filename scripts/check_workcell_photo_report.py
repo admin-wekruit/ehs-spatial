@@ -43,12 +43,38 @@ for entity in doc['entities']:
         assert item['visibleHeightNative'] is None
     for rep in [*entity['representations'],*entity['modelVariants'].values()]:
         path=root/report['assetURLs'][rep['assetId']]
-        mesh=trimesh.load(path,force='scene').to_geometry()
+        exported=trimesh.load(path,force='scene')
+        mesh=exported.to_geometry()
         assert np.isfinite(mesh.vertices).all() and len(mesh.faces)>0
         assert np.allclose(mesh.bounds,[rep['bounds']['min'],rep['bounds']['max']],atol=1e-5)
+        source=rep['sourceRefs'][0]; scene=trimesh.load(root/source['file'],force='scene')
+        parts=[scene.geometry[scene.graph[node][1]] for node in source['nodes']]
+        if all(p.visual.kind=='texture' and 'color' in p.visual.vertex_attributes for p in parts):
+            output=next(iter(exported.geometry.values()))
+            assert np.array_equal(trimesh.visual.color.to_rgba(output.visual.vertex_attributes['color']),np.concatenate([trimesh.visual.color.to_rgba(p.visual.vertex_attributes['color']) for p in parts])), 'photo vertex colors must survive report export'
+            if all(p.visual.material.doubleSided for p in parts):
+                assert output.visual.material.doubleSided, 'two-sided sheets must survive report export'
     if entity['id']=='floor':
         assert max(abs(mesh.vertices[:,2]+entity['currentModelTransform']['position'][2]))<1e-5
     for obs in item['observations']:
         c=doc['cameras'][obs['photo']-1];x0,y0,x1,y1=obs['box']
         assert 0<=x0<x1<=c['width'] and 0<=y0<y1<=c['height']
+structural=report.get('experiment',{}).get('structuralModel')
+if structural and structural['promotionAllowed']:
+    from ehs_spatial.platform.scene_measurements import fitted_bend
+    assert structural['measurementAngleDeg'] is None
+    scene=trimesh.load(root/'workcell-metric.glb',force='scene')
+    for side in ('left','right'):
+        entity_id='v-guard-'+side
+        annotation=next(row for row in report['bendAnalysis']['items'] if row['entityId']==entity_id)
+        assert abs(annotation['result']['value']-structural['sharedAngleDeg'])<.002
+        source=trimesh.load(root/objects[entity_id]['model']['file'],force='scene')
+        triangles=[]
+        for node in scene.graph.nodes_geometry:
+            if not node.startswith(entity_id+':'): continue
+            matrix,geometry=scene.graph[node]; original=source.geometry[source.graph[node.split(':',1)[1]][1]]
+            assert np.array_equal(scene.geometry[geometry].visual.vertex_attributes['color'],original.visual.vertex_attributes['color']), 'metric download must retain source colors'
+            part=scene.geometry[geometry].copy(); part.apply_transform(matrix)
+            triangles.append(part.triangles)
+        assert abs(fitted_bend(np.concatenate(triangles))['value']-structural['sharedAngleDeg'])<.002, 'download and displayed angle must use the same geometry'
 print('PASS: shared schema, object coverage, source-camera transform, model bounds and unknown dimensions;',len(objects),'objects')

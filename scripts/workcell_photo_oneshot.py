@@ -293,7 +293,10 @@ def _export_metric_scene(root, geometry):
         source = cached[spec["file"]]
         for node in spec["nodes"]:
             matrix, geometry_id = source.graph.get(node)
-            mesh = source.geometry[geometry_id].copy()
+            original = source.geometry[geometry_id]
+            mesh = original.copy()
+            if original.visual.kind == 'texture' and 'color' in original.visual.vertex_attributes:
+                mesh.visual.vertex_attributes['color'] = original.visual.vertex_attributes['color'].copy()
             name = item["id"] + ":" + node
             scene.add_geometry(mesh, node_name=name, geom_name=name, transform=transform @ matrix)
     scene.metadata.update(units="meters", scale_status="user_dimension_hypothesis",

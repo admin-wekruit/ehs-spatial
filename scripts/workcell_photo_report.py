@@ -66,12 +66,20 @@ def build(root):
         parts = []
         for node in spec['nodes']:
             matrix, mesh_id = scene.graph.get(node)
-            mesh = scene.geometry[mesh_id].copy()
+            original = scene.geometry[mesh_id]
+            mesh = original.copy()
+            if original.visual.kind == 'texture' and 'color' in original.visual.vertex_attributes:
+                mesh.visual.vertex_attributes['color'] = original.visual.vertex_attributes['color'].copy()
             mesh.apply_transform(transform @ matrix)
             parts.append(mesh)
         if not parts:
             raise ValueError(f"{item['id']}: no model nodes")
         mesh = trimesh.util.concatenate(parts)
+        # trimesh concatenation drops glTF COLOR_0 and can reset sidedness.
+        if all(p.visual.kind == 'texture' and 'color' in p.visual.vertex_attributes for p in parts):
+            mesh.visual.vertex_attributes['color'] = np.concatenate([trimesh.visual.color.to_rgba(p.visual.vertex_attributes['color']) for p in parts])
+            if all(p.visual.material.doubleSided for p in parts):
+                mesh.visual.material.doubleSided = True
         if not np.isfinite(mesh.vertices).all() or not len(mesh.faces):
             raise ValueError(f"{item['id']}: invalid mesh")
         center = mesh.bounds.mean(0)

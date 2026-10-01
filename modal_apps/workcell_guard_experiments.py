@@ -41,7 +41,7 @@ def experiment(payload: bytes, mode: str):
         root = Path(temp)/'input'; root.mkdir()
         out = Path(temp)/'output'; out.mkdir()
         unpack(payload, root)
-        code_files = [Path('/repo/scripts')/name for name in ('workcell_guard_joint.py','check_workcell_guard_joint.py','workcell_guard_controls.py','workcell_guard_dense.py') if (Path('/repo/scripts')/name).exists()]
+        code_files = [Path('/repo/scripts')/name for name in ('workcell_guard_joint.py','check_workcell_guard_joint.py','workcell_guard_controls.py','workcell_guard_dense.py','workcell_guard_silhouette.py') if (Path('/repo/scripts')/name).exists()]
         code_files += [Path('/repo/fast_report/x7.py')]
         (out/'implementation-manifest.json').write_text(json.dumps({str(p.relative_to('/repo')):hashlib.sha256(p.read_bytes()).hexdigest() for p in code_files},indent=2))
         env = os.environ.copy(); env['PYTHONPATH'] = '/repo:/repo/scripts'
@@ -84,8 +84,10 @@ def experiment(payload: bytes, mode: str):
             run('dense', prefix+'from scripts.workcell_guard_dense import run; run(root,out/"LoFTR-COLMAP-cameras",[Path(p) for p in sys.argv[3:]],root/"control/cameras.json")',900)
         elif mode == 'dense-replay':
             run('dense_replay', prefix+'from scripts.workcell_guard_joint import build; build(root,out/"LoFTR-COLMAP-cameras/joint",cameras=root/"control/cameras.json",tracks=root/"control/tracks.json",sources=[Path(p) for p in sys.argv[3:]])',600)
+        elif mode == 'silhouette':
+            run('silhouette', prefix+'from scripts.workcell_guard_silhouette import run; run(root,out/"A4-shared-silhouette",[Path(p) for p in sys.argv[3:]])',600)
         else:
-            raise ValueError('Expected controls, joint, dense or dense-replay')
+            raise ValueError('Expected controls, joint, dense, dense-replay or silhouette')
         (out/'run.json').write_text(json.dumps({'records':records, 'containerWallSeconds':time.monotonic()-started}, indent=2))
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode='w:gz') as archive:
@@ -96,7 +98,7 @@ def experiment(payload: bytes, mode: str):
 
 
 @app.local_entrypoint()
-def main(baseline: str, out: str, sources: str, mode: str = 'controls', control: str = ''):
+def main(baseline: str, out: str, sources: str, mode: str = 'controls', control: str = '', alignment: str = ''):
     root = Path(baseline); destination = Path(out)
     if destination.exists(): raise ValueError('Use a fresh experiment output directory')
     source_paths = [Path(p) for p in sources.split(',')]
@@ -114,6 +116,10 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
             for p in [directory/'cameras.json',directory/'tracks.json',*sorted((directory/'model').glob('*.bin'))]:
                 name = 'control/'+str(p.relative_to(directory))
                 hashes[name] = hashlib.sha256(p.read_bytes()).hexdigest(); archive.add(p,arcname=name)
+        if alignment:
+            for filename in ('guard-left.glb','guard-right.glb','results.json'):
+                p=Path(alignment)/filename; name='a1/'+filename
+                hashes[name]=hashlib.sha256(p.read_bytes()).hexdigest(); archive.add(p,arcname=name)
     destination.mkdir(parents=True)
     (destination/'input-manifest.json').write_text(json.dumps({'baseline':str(root),'mode':mode,'sha256':hashes},indent=2))
     start = time.monotonic()
@@ -130,6 +136,9 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
                       estimateUsd=rate*result['containerWallSeconds'],callWindowEstimateUsd=rate*elapsed,
                       usdPerSecond=rate, rateSource='https://modal.com/pricing', rateCheckedDate='2026-09-30',
                       estimateBasis='reserved-resource list rate; call window includes scheduling; build time excluded; not invoice')
+        records = json.loads((destination/'run.json').read_text())['records']
+        if any(record.get('returncode') != 0 for record in records.values()):
+            raise RuntimeError('Experiment subprocess failed; inspect saved run.json and logs')
     except Exception as exc:
         ledger.update(status='failed', callSeconds=time.monotonic()-start, error=type(exc).__name__)
         raise
