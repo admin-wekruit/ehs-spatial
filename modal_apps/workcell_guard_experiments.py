@@ -41,8 +41,8 @@ def experiment(payload: bytes, mode: str):
         root = Path(temp)/'input'; root.mkdir()
         out = Path(temp)/'output'; out.mkdir()
         unpack(payload, root)
-        code_files = [Path('/repo/scripts')/name for name in ('workcell_guard_joint.py','check_workcell_guard_joint.py','workcell_guard_controls.py','workcell_guard_dense.py','workcell_guard_silhouette.py') if (Path('/repo/scripts')/name).exists()]
-        code_files += [Path('/repo/fast_report/x7.py')]
+        code_files = [Path('/repo/scripts')/name for name in ('workcell_guard_joint.py','check_workcell_guard_joint.py','workcell_guard_controls.py','workcell_guard_dense.py','workcell_guard_silhouette.py','workcell_photo_metrology.py','check_workcell_photo_metrology.py','workcell_photo_geometry.py','workcell_photo_calibration.py','workcell_photo_objects.py','workcell_photo_oneshot.py','check_workcell_camera_pixels.py') if (Path('/repo/scripts')/name).exists()]
+        code_files += [Path('/repo/fast_report/x7.py'), Path('/repo/ehs_spatial/measurements.py')]
         (out/'implementation-manifest.json').write_text(json.dumps({str(p.relative_to('/repo')):hashlib.sha256(p.read_bytes()).hexdigest() for p in code_files},indent=2))
         env = os.environ.copy(); env['PYTHONPATH'] = '/repo:/repo/scripts'
         sources = [str(root/f'source-{i}.jpg') for i in range(1,5)]
@@ -86,8 +86,23 @@ def experiment(payload: bytes, mode: str):
             run('dense_replay', prefix+'from scripts.workcell_guard_joint import build; build(root,out/"LoFTR-COLMAP-cameras/joint",cameras=root/"control/cameras.json",tracks=root/"control/tracks.json",sources=[Path(p) for p in sys.argv[3:]])',600)
         elif mode == 'silhouette':
             run('silhouette', prefix+'from scripts.workcell_guard_silhouette import run; run(root,out/"A4-shared-silhouette",[Path(p) for p in sys.argv[3:]])',600)
+        elif mode in ('metrology', 'metrology-square-pixels'):
+            from concurrent.futures import ThreadPoolExecutor
+            code = prefix+'import json; from scripts.workcell_photo_metrology import build; '
+            args = 'sources=[Path(p) for p in sys.argv[3:]],reference=json.loads((root/"reference.json").read_text())'
+            def square_pixels():
+                run('square_pixel_cameras', prefix+'from scripts.workcell_guard_controls import colmap; colmap(root,out/"square-pixel-control",[Path(p) for p in sys.argv[3:]],square_pixels=True)',360)
+                if records['square_pixel_cameras'].get('returncode') == 0:
+                    run('metrology_square_pixels',code+'build(root,out/"square-pixel-cameras",'+args+',cameras=out/"square-pixel-control/cameras.json")',600)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                jobs = [pool.submit(run, 'metrology_original', code+'build(root,out/"original-cameras",'+args+')',600)]
+                if mode == 'metrology-square-pixels':
+                    jobs.append(pool.submit(square_pixels))
+                elif (root/'control/cameras.json').is_file():
+                    jobs.append(pool.submit(run, 'metrology_refined', code+'build(root,out/"refined-cameras",'+args+',cameras=root/"control/cameras.json")',600))
+                for job in jobs: job.result()
         else:
-            raise ValueError('Expected controls, joint, dense, dense-replay or silhouette')
+            raise ValueError('Expected controls, joint, dense, dense-replay, silhouette, metrology or metrology-square-pixels')
         (out/'run.json').write_text(json.dumps({'records':records, 'containerWallSeconds':time.monotonic()-started}, indent=2))
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode='w:gz') as archive:
@@ -98,9 +113,16 @@ def experiment(payload: bytes, mode: str):
 
 
 @app.local_entrypoint()
-def main(baseline: str, out: str, sources: str, mode: str = 'controls', control: str = '', alignment: str = ''):
+def main(baseline: str, out: str, sources: str, mode: str = 'controls', control: str = '', alignment: str = '', measurements: str = ''):
     root = Path(baseline); destination = Path(out)
     if destination.exists(): raise ValueError('Use a fresh experiment output directory')
+    reference = None
+    if mode in ('metrology', 'metrology-square-pixels'):
+        if not measurements: raise ValueError('Metrology requires --measurements with known reference dimensions')
+        from scripts.workcell_photo_calibration import load_measurements
+        config = load_measurements(measurements)
+        # Only reference dimensions enter the solver; check distances stay on the caller.
+        reference = json.dumps({'schemaVersion':1,'reference':config['reference']}).encode()
     source_paths = [Path(p) for p in sources.split(',')]
     if len(source_paths) != 4 or not all(p.is_file() for p in source_paths): raise ValueError('Four source photos required')
     files = [*root.glob('frame_*.json.gz'), *root.glob('photo-*.png')]
@@ -111,6 +133,10 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
     with tarfile.open(fileobj=buffer, mode='w:gz') as archive:
         for path, name in [(p,p.name) for p in files]+[(p,f'source-{i}.jpg') for i,p in enumerate(source_paths,1)]:
             hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest(); archive.add(path, arcname=name)
+        if reference is not None:
+            item = tarfile.TarInfo('reference.json'); item.size = len(reference)
+            hashes[item.name] = hashlib.sha256(reference).hexdigest()
+            archive.addfile(item, io.BytesIO(reference))
         if control:
             directory = Path(control)
             for p in [directory/'cameras.json',directory/'tracks.json',*sorted((directory/'model').glob('*.bin'))]:
@@ -121,12 +147,15 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
                 p=Path(alignment)/filename; name='a1/'+filename
                 hashes[name]=hashlib.sha256(p.read_bytes()).hexdigest(); archive.add(p,arcname=name)
     destination.mkdir(parents=True)
-    (destination/'input-manifest.json').write_text(json.dumps({'baseline':str(root),'mode':mode,'sha256':hashes},indent=2))
+    control_result = Path(control)/'results.json' if control else None
+    control_model = json.loads(control_result.read_text()).get('cameraModel') if control_result and control_result.is_file() else None
+    (destination/'input-manifest.json').write_text(json.dumps({'baseline':str(root),'mode':mode,
+        'control':control or None,'controlCameraModel':control_model,'sha256':hashes},indent=2))
     start = time.monotonic()
     rate = 2*.000694+16*.0000131+80*.00000222
     ledger = {'mode':'ephemeral modal run','hardware':'2 x A100-80GB; 16 CPU; 80 GiB',
               'actualBilledUsd':None, 'status':'started', 'usdPerSecond':rate,
-              'rateSource':'https://modal.com/pricing', 'rateCheckedDate':'2026-09-30',
+              'rateSource':'https://modal.com/pricing', 'rateCheckedDate':'2026-10-01',
               'estimateBasis':'reserved-resource list rate; call window includes scheduling; build time excluded; not invoice'}
     try:
         result = experiment.remote(buffer.getvalue(), mode)
@@ -134,7 +163,7 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
         elapsed = time.monotonic()-start
         ledger.update(status='completed', functionSeconds=result['containerWallSeconds'],callSeconds=elapsed,
                       estimateUsd=rate*result['containerWallSeconds'],callWindowEstimateUsd=rate*elapsed,
-                      usdPerSecond=rate, rateSource='https://modal.com/pricing', rateCheckedDate='2026-09-30',
+                      usdPerSecond=rate, rateSource='https://modal.com/pricing', rateCheckedDate='2026-10-01',
                       estimateBasis='reserved-resource list rate; call window includes scheduling; build time excluded; not invoice')
         records = json.loads((destination/'run.json').read_text())['records']
         if any(record.get('returncode') != 0 for record in records.values()):

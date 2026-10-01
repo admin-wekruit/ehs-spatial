@@ -2,6 +2,8 @@
 
 更新：2026-10-01。范围为四张 BOR1 原图的对象级重建、模型内空间估计、可交互照片报告，以及护板角度实验。本文按当前代码和保存产物核对；代码、报告资产、原始照片、模型权重分别交接。
 
+**本次新增：** [现有四图的按钮标尺 / 3 cm 实验](SUB3-EXPERIMENT-2026-10-01.md)。未要求新增实测相机参数；源观测对照、实现问题修正、原图叠线与支出单独保存。在线入口为 [测量实验页](https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/metrology.html)，页面可返回完整 52 对象 3D。实验页的候选不能自动当作主场景已经更新的准确模型；具体结果、是否达标以实验文档为准。
+
 ## 1. 从哪里接手
 
 | 内容 | 位置 / 状态 |
@@ -13,6 +15,7 @@
 | 报告网址 | https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/ |
 | 已保存的 A4 报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-guard-shared-report-2026-09-30/` |
 | 当前实测标尺报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-measured-reference-2026-10-01-final/`；公开网站同网址更新 |
+| 新增测量实验报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-sub3-report-2026-10-01-final/`；复用前一行完整模型并附加测量实验 |
 
 ```bash
 git clone --branch codex/workcell-photo-speed https://github.com/admin-wekruit/ehs-spatial.git
@@ -76,6 +79,8 @@ A4 是保存输入上的独立实验，再由 workcell_guard_experiment_report.p
 | `fast_report/x7.py`、`fast_report/recgen_fast.py` | RecGen 固定代码/模型、推理参数、投影拟合；保形对齐为旋转 + 平移 + 统一缩放 |
 | `scripts/workcell_guard_{controls,joint,dense,silhouette}.py` | A1 / COLMAP / LIMAP / A2-A3 / LoFTR / A4 实验；保留真实失败与不支持结果 |
 | `scripts/workcell_guard_experiment_report.py::build` | baseline + controls + joint + viewer_assets + 可选 structural → 完整静态报告及 `experiments.html` |
+| `scripts/workcell_photo_metrology.py::build` | 冻结帧/分割 + 原 JPEG + 标尺规格 + 可选相机 → A–D 测量实验、留出照片诊断、原图叠线；不读取检查真值 |
+| `scripts/workcell_metrology_report.py::build` | 已发布完整报告 + 多轮冻结实验 + 检查真值 → 附带 `metrology.html` 的完整报告；保留失败结果与支出 |
 | `web/src/PhotoReport.tsx` | 从相对 URL 加载 `scene-report.json`；对象选择、照片/模型对照、模型角注释、统一尺度和当前照片姿态 GLB 下载 |
 
 公司已有平台可直接使用 `scene-report.json` 中的 `revision.document`、`assetURLs`、`objects`、`geometry`、`bendAnalysis`。`assetURLs` 将资产 ID 映射到相对文件；document 记录 SHA256。`SceneResources.resolveAsset` 是前端资产 URL 接口；资产服务迁移后须保留哈希与引用对应关系。此静态 UI 不需要平台 API，浏览器检查会断言没有 `/api/` 请求。

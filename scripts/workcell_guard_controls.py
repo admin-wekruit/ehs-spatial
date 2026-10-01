@@ -58,7 +58,7 @@ def alignment(root, out):
     return result
 
 
-def _export_reconstruction(recon, originals, scale_pixels, out):
+def _export_reconstruction(recon, originals, out):
     """Rigid+uniform gauge alignment, never a coordinate-wise deformation."""
     ids = sorted(recon.images)
     poses, targets = [], []
@@ -80,7 +80,7 @@ def _export_reconstruction(recon, originals, scale_pixels, out):
     for image_id, p in zip(ids, poses):
         im = recon.images[image_id]; cam = recon.cameras[im.camera_id]
         K = cam.calibration_matrix().copy(); K[:2, 2] -= .5
-        K = np.linalg.inv(scale_pixels) @ K
+        K = np.linalg.inv(originals[im.name]['pixelTransform']) @ K
         p[:3, :3] = R @ p[:3, :3]; p[:3, 3] = scale*R@p[:3, 3]+t
         frames.append({'photo': originals[im.name]['photo'], 'K': K.tolist(), 'pose': p.tolist()})
     tracks = []
@@ -89,7 +89,7 @@ def _export_reconstruction(recon, originals, scale_pixels, out):
         for e in point.track.elements:
             im = recon.images[e.image_id]
             uv = im.points2D[e.point2D_idx].xy - .5
-            uv = np.linalg.inv(scale_pixels) @ np.r_[uv, 1.]
+            uv = np.linalg.inv(originals[im.name]['pixelTransform']) @ np.r_[uv, 1.]
             obs.append({'photo': originals[im.name]['photo'], 'uv': uv[:2].tolist()})
         tracks.append({'id': point_id, 'xyz': (scale*R@point.xyz+t).tolist(), 'observations': obs,
                        'reprojectionErrorControlPixels': float(point.error)})
@@ -99,7 +99,7 @@ def _export_reconstruction(recon, originals, scale_pixels, out):
     write(out/'tracks.json', {'tracks': tracks, 'basis': 'COLMAP SIFT tracks; all-view fit, not held-out truth'})
 
 
-def colmap(root, out, sources):
+def colmap(root, out, sources, *, square_pixels=False):
     import pycolmap
     start = time.monotonic(); out.mkdir(parents=True, exist_ok=True)
     images = out/'images'; images.mkdir()
@@ -117,17 +117,28 @@ def colmap(root, out, sources):
         A = np.array(frame['input_mask_transform']['input_to_canonical_pixel_centres'])
         rgb = np.asarray(ImageOps.exif_transpose(Image.open(source)).convert('RGB'))
         h, w = frame['image']['shape'][:2]
-        crop = cv2.warpAffine(rgb, (S@A)[:2], (w*3, h*3), flags=cv2.INTER_AREA)
+        pixels = S
+        size = (w*3, h*3)
+        if square_pixels:
+            # Fit square pixels in the supplied JPEG, before the neural raster's
+            # anisotropic resize. Each view still has its own unknown focal length.
+            factor = 1554 / max(rgb.shape[:2])
+            raw_resize = np.array([[factor, 0, (factor-1)/2], [0, factor, (factor-1)/2], [0, 0, 1.]])
+            pixels = raw_resize @ np.linalg.inv(A)
+            size = tuple(np.ceil(np.array(rgb.shape[1::-1])*factor).astype(int))
+        crop = cv2.warpAffine(rgb, (pixels@A)[:2], size, flags=cv2.INTER_AREA)
         name = f'photo-{i}.png'; Image.fromarray(crop).save(images/name)
-        K = S @ _array(frame['intrinsics']); K[:2, 2] += .5
-        pose = _array(frame['camera_poses']); originals[name] = {'photo': i, 'pose': pose}
-        reader = pycolmap.ImageReaderOptions(camera_model='PINHOLE', camera_params=','.join(map(str, [K[0,0], K[1,1], K[0,2], K[1,2]])))
+        K = pixels @ _array(frame['intrinsics']); K[:2, 2] += .5
+        pose = _array(frame['camera_poses']); originals[name] = {'photo': i, 'pose': pose, 'pixelTransform': pixels}
+        camera_model = 'SIMPLE_PINHOLE' if square_pixels else 'PINHOLE'
+        parameters = [float(np.sqrt(K[0,0]*K[1,1])), K[0,2], K[1,2]] if square_pixels else [K[0,0], K[1,1], K[0,2], K[1,2]]
+        reader = pycolmap.ImageReaderOptions(camera_model=camera_model, camera_params=','.join(map(str, parameters)))
         pycolmap.extract_features(database, images, image_names=[name], camera_mode=pycolmap.CameraMode.PER_IMAGE,
                                  reader_options=reader, extraction_options=extraction, device=pycolmap.Device.cpu)
     with pycolmap.Database.open(database) as db:
         for im in db.read_all_images():
             cam = db.read_camera(im.camera_id)
-            camera_lines.append(f'{cam.camera_id} PINHOLE {cam.width} {cam.height} '+' '.join(map(str, cam.params)))
+            camera_lines.append(f'{cam.camera_id} {camera_model} {cam.width} {cam.height} '+' '.join(map(str, cam.params)))
             world_to_cam = np.linalg.inv(originals[im.name]['pose'])
             q = Rotation.from_matrix(world_to_cam[:3,:3]).as_quat()[[3,0,1,2]]
             image_lines.extend([f'{im.image_id} '+' '.join(map(str, [*q, *world_to_cam[:3,3]]))+f' {cam.camera_id} {im.name}', ''])
@@ -148,10 +159,12 @@ def colmap(root, out, sources):
     pycolmap.bundle_adjustment(recon, options=ba)
     model = out/'model'; model.mkdir(); recon.write(model)
     recon.export_PLY(out/'sparse.ply')
-    _export_reconstruction(recon, originals, S, out)
+    _export_reconstruction(recon, originals, out)
     result = {'status': 'completed', 'version': pycolmap.__version__, 'seconds': time.monotonic()-start,
               'beforeBa': before, 'afterBa': {'points': recon.num_points3D(), 'meanErrorPx': recon.compute_mean_reprojection_error()},
-              'registeredImages': recon.num_reg_images(), 'basis': 'SIFT matches; triangulation from MapAnything initial poses; camera+point BA with fixed principal points; no lens calibration truth'}
+              'registeredImages': recon.num_reg_images(), 'cameraModel': camera_model,
+              'squareRawPixelsAssumed': square_pixels,
+              'basis': 'SIFT matches; triangulation from MapAnything initial poses; camera+point BA with fixed principal points; no lens calibration truth'}
     write(out/'results.json', result)
     return result
 
@@ -166,14 +179,17 @@ def limap_control(colmap_dir, out, root, sources, *, guard_only=False):
     start = time.monotonic(); out.mkdir(parents=True, exist_ok=True)
     recon = pycolmap.Reconstruction(colmap_dir/'model')
     originals, lines = {}, {}
-    S = np.array([[3., 0, 1.], [0, 3., 1.], [0, 0, 1.]])
+    canonical = {row['photo']: np.asarray(row['K']) for row in json.loads((colmap_dir/'cameras.json').read_text())['frames']}
     for image_id, im in recon.images.items():
         i = int(im.name.split('-')[1].split('.')[0])
+        camera = recon.cameras[im.camera_id]
+        K = camera.calibration_matrix().copy(); K[:2, 2] -= .5
+        S = K @ np.linalg.inv(canonical[i])
         frame = _frame(root, i)
         A = np.array(frame['input_mask_transform']['input_to_canonical_pixel_centres'])
         rgb = np.asarray(ImageOps.exif_transpose(Image.open(sources[i-1])).convert('RGB'))
         h, w = frame['image']['shape'][:2]
-        crop = cv2.warpAffine(rgb, (S@A)[:2], (w*3,h*3), flags=cv2.INTER_AREA)
+        crop = cv2.warpAffine(rgb, (S@A)[:2], (camera.width,camera.height), flags=cv2.INTER_AREA)
         segments = pytlsd.lsd(cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY))
         # Bound exhaustive matching; keep real lines longer than 25 control pixels.
         lengths = np.linalg.norm(segments[:,:2]-segments[:,2:4], axis=1)
@@ -190,7 +206,7 @@ def limap_control(colmap_dir, out, root, sources, *, guard_only=False):
         keep = keep[np.argsort(-lengths[keep])[:500]]
         # LSD uses pixel centers at integer coordinates; COLMAP uses +0.5.
         lines[image_id] = segments[keep,:4]+.5
-        originals[im.name] = {'photo':i,'pose':_array(frame['camera_poses'])}
+        originals[im.name] = {'photo':i,'pose':_array(frame['camera_poses']),'pixelTransform':S}
     dbpath = out/'structure_database.db'
     limap.scene.create_structure_db(dbpath)
     with limap.scene.StructureDatabase.open(dbpath) as db:
@@ -219,7 +235,7 @@ def limap_control(colmap_dir, out, root, sources, *, guard_only=False):
     solver = ba.create_point_line_bundle_adjuster(options, config, holistic)
     summary = solver.solve()
     model = out/'model'; model.mkdir(); holistic.write(model); holistic.write_text(model)
-    _export_reconstruction(holistic.point_recon, originals, S, out)
+    _export_reconstruction(holistic.point_recon, originals, out)
     result = {'status':'completed','version':'2.0.0','seconds':time.monotonic()-start,
               'detectedLinesPerPhoto':{str(originals[recon.images[i].name]['photo']):len(v) for i,v in lines.items()},
               'lines3D':line_count,'scope':'guard-only' if guard_only else 'scene','pointLineBaSummary':str(summary),
