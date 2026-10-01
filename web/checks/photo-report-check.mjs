@@ -7,6 +7,9 @@ import { createRequire } from 'node:module';
 const { chromium } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const assets = path.resolve(process.argv[2]), out = path.resolve(process.argv[3] || '/tmp/panoptes-photo-check');
 const web = path.resolve(new URL('..', import.meta.url).pathname), payload = JSON.parse(fs.readFileSync(path.join(assets, 'scene-report.json')));
+const baseHeightCm = payload.geometry.anchor.assumedHeightM * 100;
+const heightText = factor => `${(baseHeightCm / 100 * factor).toFixed(3)} m`;
+const measured = !!payload.geometry.calibration;
 const viewerAssets = process.env.VIEWER_ASSETS || path.join(assets, 'page', 'viewer-assets');
 fs.mkdirSync(out, { recursive: true });
 const mime = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.json': 'application/json', '.png': 'image/png', '.glb': 'model/gltf-binary' };
@@ -86,7 +89,7 @@ try {
   const canvas = await page.locator('.report-comparison-model canvas').boundingBox();
   await page.mouse.click(canvas.x + pixel[0] / pixel[2] / sourceCamera.width * canvas.width, canvas.y + pixel[1] / pixel[2] / sourceCamera.height * canvas.height);
   assert.equal(await page.locator('[data-selected-object]').getAttribute('data-selected-object'), 'emergency-button', 'model canvas picks button from robot selection');
-  assert.equal(await page.locator('[data-height-native]').textContent(), '0.200 m');
+  assert.equal(await page.locator('[data-height-native]').textContent(), heightText(1));
   const buttonGround = payload.objects.find(o => o.id === 'emergency-button').groundDistance;
   const distanceLabel = factor => `${(buttonGround.byPhoto['4'].valueNative * payload.nativeToMetersDefault * factor).toFixed(3)} m`;
   assert.equal(await page.locator('[data-ground-distance-native]').textContent(), distanceLabel(1));
@@ -94,10 +97,10 @@ try {
   await page.getByRole('button', { name: '显示离地测量线', exact: true }).click();
   const groundLabel = page.locator('[data-pane="spatial"] .native-stage svg text').filter({ hasText: `${distanceLabel(1)} · 条件估计` });
   await groundLabel.waitFor();
-  await page.getByLabel('按钮整体高度厘米').fill('40');
+  await page.getByLabel('按钮整体高度厘米').fill(String(baseHeightCm * 2));
   await page.locator('[data-pane="spatial"] .native-stage svg text').filter({ hasText: `${distanceLabel(2)} · 条件估计` }).waitFor();
   assert.equal(await page.locator('[data-ground-distance-native]').textContent(), distanceLabel(2));
-  await page.getByLabel('按钮整体高度厘米').fill('20');
+  await page.getByLabel('按钮整体高度厘米').fill(String(baseHeightCm));
   await page.waitForFunction(expected => +document.querySelector('[data-model-loaded]').dataset.modelLoaded === expected, expectedModels);
   await page.screenshot({ path: path.join(out, 'button-ground-distance.png'), fullPage: true });
   await page.getByRole('button', { name: '隐藏离地测量线', exact: true }).click();
@@ -109,7 +112,7 @@ try {
     const download = await pending, target = path.join(out, `${height}.glb`); await download.saveAs(target);
     const buf = fs.readFileSync(target); assert.equal(buf.readUInt32LE(0), 0x46546c67); return JSON.parse(buf.subarray(20, 20 + buf.readUInt32LE(12)).toString());
   }
-  const first = await downloadAt(20), second = await downloadAt(40);
+  const first = await downloadAt(baseHeightCm), second = await downloadAt(baseHeightCm * 2);
   const group = gltf => gltf.nodes.find(node => node.name === 'Workcell — metres, Y up');
   const columnLengths = node => [0, 4, 8].map(i => Math.hypot(...node.matrix.slice(i, i + 3)));
   assert.deepEqual(columnLengths(group(second)), columnLengths(group(first)).map(v => 2 * v), 'exported geometry must scale uniformly');
@@ -131,9 +134,9 @@ try {
   const firstBounds = worldBounds(first), secondBounds = worldBounds(second), floorBounds = worldBounds(first, 'floor');
   for(let k=0;k<3;k++) for(let j=0;j<2;j++) assert.ok(Math.abs(secondBounds[k][j] - 2*firstBounds[k][j]) < 1e-6, 'world geometry bounds double');
   assert.ok(Math.max(...floorBounds[1].map(Math.abs)) < 1e-5, 'exported floor is horizontal at Y=0');
-  assert.equal(await page.locator('[data-height-native]').textContent(), '0.400 m');
+  assert.equal(await page.locator('[data-height-native]').textContent(), heightText(2));
   assert.equal(second.nodes.filter(node => node.extras?.entityId).length, payload.revision.document.entities.filter(entity => entity.representations.length).length, 'export all active geometry objects');
-  await page.getByLabel('按钮整体高度厘米').fill('20'); await slider.fill('50');
+  await page.getByLabel('按钮整体高度厘米').fill(String(baseHeightCm)); await slider.fill('50');
   await page.locator('.report-matched-comparison .report-scene-photo-switch button').filter({ hasText: '照片 1' }).click();
   assert.equal(await page.locator('.report-comparison-stage').getAttribute('data-camera-id'), 'camera-1');
   await page.locator('.report-matched-comparison .report-scene-photo-switch button').filter({ hasText: '照片 4' }).click();
@@ -214,14 +217,36 @@ try {
     await page.locator('[aria-label="已保存的折弯分析"] select').selectOption(row.entityId);
     await page.locator('[data-pane="plan"] .native-stage svg text').filter({ hasText: `${Number(row.result.value.toPrecision(4))}°` }).waitFor();
   }
-  await page.getByLabel('标尺轴').selectOption('width');
-  const widthScale = Number(await page.locator('[data-native-to-meters]').getAttribute('data-native-to-meters'));
-  assert.ok(Math.abs(widthScale - .2 / payload.geometry.anchor.nativeWidth) < 1e-10);
-  await page.getByLabel('按钮整体高度厘米').fill('80');
-  assert.equal(await page.locator('.photo-report-warning').count(), 1);
+  if (measured) {
+    assert.equal(await page.getByLabel('标尺轴').count(), 0, 'main-body diameter cannot reuse old envelope width as a scale');
+    assert.equal(await page.locator('[data-measured-reference]').count(), 1);
+    for (const row of payload.measurementEvaluation.comparisons) {
+      const comparison = page.locator(`[data-measurement-comparison="${row.objectId}"]`);
+      const expected = factor => `${(row.estimateNative * payload.nativeToMetersDefault * factor * 100).toFixed(1)} cm`;
+      assert.equal(await comparison.locator('[data-comparison-estimate]').textContent(), expected(1));
+      const truth = await comparison.locator('[data-comparison-truth]').textContent();
+      await page.getByLabel('按钮整体高度厘米').fill(String(baseHeightCm * 2));
+      assert.equal(await comparison.locator('[data-comparison-estimate]').textContent(), expected(2));
+      assert.equal(await comparison.locator('[data-comparison-truth]').textContent(), truth, 'independent ground truth cannot scale with the estimate');
+      await page.getByLabel('按钮整体高度厘米').fill(String(baseHeightCm));
+    }
+    assert.equal(payload.measurementEvaluation.groundTruthUsedForCalibration, false);
+    const row = payload.measurementEvaluation.comparisons[0];
+    await page.locator(`[data-measurement-comparison="${row.objectId}"] button`).click();
+    assert.equal(await page.locator('[data-selected-object]').getAttribute('data-selected-object'), row.objectId);
+    assert.equal(await page.getByRole('button', {name:'隐藏离地测量线',exact:true}).count(), 1);
+    await page.locator('.photo-report-evaluation').screenshot({path:path.join(out,'measurement-comparison.png')});
+  } else {
+    await page.getByLabel('标尺轴').selectOption('width');
+    const widthScale = Number(await page.locator('[data-native-to-meters]').getAttribute('data-native-to-meters'));
+    assert.ok(Math.abs(widthScale - payload.geometry.anchor.assumedWidthM / payload.geometry.anchor.nativeWidth) < 1e-10);
+    await page.getByLabel('按钮整体高度厘米').fill('80');
+    assert.equal(await page.locator('.photo-report-warning').count(), 1);
+    await page.getByLabel('标尺轴').selectOption('height');
+  }
   await page.getByLabel('按钮整体高度厘米').fill('0');
   assert.equal(await page.getByRole('button', { name: '下载当前模型 GLB' }).isDisabled(), true);
-  await page.getByLabel('按钮整体高度厘米').fill('20'); await page.getByLabel('标尺轴').selectOption('height');
+  await page.getByLabel('按钮整体高度厘米').fill(String(baseHeightCm));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('.report-scene-section-tabs button').filter({ hasText: '场景对象' }).click();
   await page.locator('[data-entity-id="robot"] > button').first().click();
@@ -230,5 +255,5 @@ try {
   await page.screenshot({ path: path.join(out, 'mobile.png'), fullPage: true });
   assert.deepEqual(apiRequests, [], 'offline saved analyses must not call remote APIs');
   assert.deepEqual(errors, [], 'no browser runtime errors');
-  console.log(JSON.stringify({ pass: true, objects: payload.objects.length, checks: ['list and inspector', 'single-view dimensions unknown', 'center-handle mouse/touch/keyboard drag', 'slider 0/50/100 stable viewport', 'photo and model selection', 'photo camera switch', '20/40 cm geometry export', 'free 3D actual orbit changes canvas', 'ground-plane grid and world XYZ', 'observed lower edge to floor with 20/40 cm measurement-line scaling', 'per-board saved bend and isolated fold arcs', 'width scale and mismatch', 'mobile list and inspector', payload.inclinationAnalysis ? 'saved plane card and actual SVG annotation' : 'missing analysis remains usable', 'zero API requests'], screenshot: path.join(out, 'desktop.png') }));
+  console.log(JSON.stringify({ pass: true, objects: payload.objects.length, checks: ['list and inspector', 'single-view dimensions unknown', 'center-handle mouse/touch/keyboard drag', 'slider 0/50/100 stable viewport', 'photo and model selection', 'photo camera switch', 'reference-height/double-height geometry export', 'free 3D actual orbit changes canvas', 'ground-plane grid and world XYZ', 'observed lower edge to floor with reference-height measurement-line scaling', 'per-board saved bend and isolated fold arcs', measured ? 'measured feature identity and independent validation values' : 'width scale and mismatch', 'mobile list and inspector', payload.inclinationAnalysis ? 'saved plane card and actual SVG annotation' : 'missing analysis remains usable', 'zero API requests'], screenshot: path.join(out, 'desktop.png') }));
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

@@ -22,6 +22,47 @@ EXTRA_WORDS = ('light curtain', 'work platform', 'control cabinet', 'signal ligh
                'cable tray', 'instruction poster', 'transparent safety panel', 'floor marking')
 
 
+def button_basis(geometry):
+    anchor = geometry['anchor']
+    normal = np.asarray(anchor['normal'], float); normal /= np.linalg.norm(normal)
+    up = np.asarray(geometry['floor']['normal'], float); up /= np.linalg.norm(up)
+    upright = up-normal*np.dot(up, normal); upright /= np.linalg.norm(upright)
+    return np.column_stack((np.cross(upright, normal), upright, normal))
+
+
+def button_meshes(geometry):
+    """Shared component construction; known part sizes never alter observed bounds."""
+    anchor = geometry['anchor']
+    center = np.asarray(anchor['centerNative'], float)
+    basis = button_basis(geometry)
+    width, height = float(anchor['nativeWidth']), float(anchor['nativeHeight'])
+    if not np.isfinite([width, height]).all() or min(width, height) <= 0:
+        raise ValueError('Invalid button envelope')
+    features = geometry.get('calibration', {}).get('reference', {}).get('features')
+    if features:
+        scale = anchor['mPerNative']
+        width, height = features['mainBodyDiameterM']/scale, features['wholeComponentHeightM']/scale
+    meshes = {}
+    for name, color, fraction, y, radius in [('gray-base', [105,110,115,255], .32, -.34, None),
+                                            ('yellow-body', [245,196,23,255], .43, .035, None),
+                                            ('red-cap', [207,32,33,255], .25, .375, .43)]:
+        # ponytail: retain the existing three-part height partition; measured part heights would replace these fractions.
+        if features and name != 'gray-base':
+            radius = (features['redActuatorDiameterM']/scale if name == 'red-cap' else width)/2
+        elif radius is not None:
+            radius *= width
+        spec = {'kind':'box', 'dimensions':[width*(.8 if name=='gray-base' else 1), height*fraction, width*.45]} if radius is None else {
+            'kind':'cylinder', 'radius':radius, 'height':height*fraction, 'segments':32}
+        primitive = primitive_mesh(spec)
+        mesh = trimesh.Trimesh(primitive.vertices, primitive.faces, process=False)
+        if radius is not None:
+            mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1,0,0]))
+        mesh.vertices = (mesh.vertices + [0, height*y, 0]) @ basis.T + center
+        mesh.visual.vertex_colors = color
+        meshes['emergency-button-'+name] = mesh
+    return meshes
+
+
 def _project(points, frame):
     local = (np.asarray(points) - frame['pose'][:3, 3]) @ frame['pose'][:3, :3]
     uv = local @ frame['K'].T
@@ -271,28 +312,8 @@ def build(root, sources):
         if obs: floor_obs.append(obs)
     add('floor', 'Floor', 'floor', 'floor-fitted.glb', nodes, floor_obs, 'fitted local plane', [geometry['floor']['status']])
     anchor = geometry['anchor']
-    center = np.asarray(anchor['centerNative'], float)
-    normal = np.asarray(anchor['normal'], float); normal /= np.linalg.norm(normal)
-    upright = up-normal*np.dot(up, normal); upright /= np.linalg.norm(upright)
-    right = np.cross(upright, normal)
-    basis = np.column_stack((right, upright, normal))
-    width, height = float(anchor['nativeWidth']), float(anchor['nativeHeight'])
-    if not np.isfinite([width, height]).all() or min(width, height) <= 0:
-        raise ValueError('Invalid button envelope')
     button_nodes = []
-    for name, color, fraction, y, radius in [('gray-base', [105,110,115,255], .32, -.34, None),
-                                            ('yellow-body', [245,196,23,255], .43, .035, None),
-                                            ('red-cap', [207,32,33,255], .25, .375, .43)]:
-        # Component partition and unseen thickness are explicit rendering assumptions.
-        spec = {'kind':'box', 'dimensions':[width*(.8 if name=='gray-base' else 1), height*fraction, width*.45]} if radius is None else {
-            'kind':'cylinder', 'radius':width*radius, 'height':height*fraction, 'segments':32}
-        primitive = primitive_mesh(spec)
-        mesh = trimesh.Trimesh(primitive.vertices, primitive.faces, process=False)
-        if radius is not None:
-            mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1,0,0]))
-        mesh.vertices = (mesh.vertices + [0, height*y, 0]) @ basis.T + center
-        mesh.visual.vertex_colors = color
-        node = 'emergency-button-'+name
+    for node, mesh in button_meshes(geometry).items():
         scene.add_geometry(mesh, node_name=node, geom_name=node); button_nodes.append(node)
     button_obs = []
     for view in anchor['views']:

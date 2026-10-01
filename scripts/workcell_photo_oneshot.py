@@ -24,6 +24,7 @@ import trimesh
 
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
 # Three.js 0.178.0 npm package, MIT. See docs/workcell-photo/HANDOFF.md for acquisition.
 VIEWER_ASSET_SHA256 = {
     "LICENSE": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601",
@@ -309,9 +310,13 @@ def _export_metric_scene(root, geometry):
                 mesh.visual.vertex_attributes['color'] = original.visual.vertex_attributes['color'].copy()
             name = item["id"] + ":" + node
             scene.add_geometry(mesh, node_name=name, geom_name=name, transform=transform @ matrix)
-    scene.metadata.update(units="meters", scale_status="user_dimension_hypothesis",
-                          button_height_m=geometry["anchor"]["assumedHeightM"],
-                          button_width_m=geometry["anchor"]["assumedWidthM"])
+    scene.metadata.update(units="meters")
+    if geometry.get('calibration'):
+        scene.metadata.update(scale_status='user_measured_reference', calibration=geometry['calibration'])
+    else:
+        scene.metadata.update(scale_status="user_dimension_hypothesis",
+                              button_height_m=geometry["anchor"]["assumedHeightM"],
+                              button_width_m=geometry["anchor"]["assumedWidthM"])
     (root / "workcell-metric.glb").write_bytes(scene.export(file_type="glb"))
 
 
@@ -362,6 +367,9 @@ def _build_page(root, metrics):
               "objects.json", "object-extras.glb", "scene-report.json")
     for name in assets:
         shutil.copyfile(root / name, page / name)
+    for name in ('measurements.json', 'measurement-evaluation.json'):
+        if (root/name).is_file():
+            shutil.copyfile(root/name, page/name)
     for model in root.glob("entity-*.glb"):
         shutil.copyfile(model, page / model.name)
     for evidence in [*root.glob("geometry-*.jpg"), *root.glob("geometry-*.png")]:
@@ -376,7 +384,7 @@ def _build_page(root, metrics):
                        "cameraToWorld": _array(frame["camera_poses"]).tolist()})
     times = metrics["stageTiming"]
     data = {"frames": frames, "quality": metrics["robotQuality"], "cartQuality": metrics["cartQuality"],
-            "geometry": metrics["geometry"],
+            "geometry": json.loads((root/"geometry.json").read_text()),
             "timing": {"oneShotSeconds": metrics["oneShotWallSeconds"],
                        "geometrySeconds": times["geometrySeconds"],
                        "segmentationSeconds": times["segmentationSeconds"],
@@ -399,7 +407,10 @@ def _self_check():
     print("workcell_photo_oneshot self-check passed")
 
 
-def run(images, out, diameter_m, height_m, viewer_assets):
+def run(images, out, diameter_m, height_m, viewer_assets, measurements=None):
+    from scripts.workcell_photo_calibration import apply_measurements, load_measurements, resolve_dimensions
+    measured = load_measurements(measurements) if measurements else None
+    diameter_m, height_m = resolve_dimensions(measured, diameter_m, height_m)
     if len(images) != 4 or len(set(images)) != 4 or any(not p.is_file() for p in images):
         raise ValueError("Exactly four distinct, readable source photos are required")
     if not all(np.isfinite(v) and v > 0 for v in (diameter_m, height_m)):
@@ -448,6 +459,10 @@ def run(images, out, diameter_m, height_m, viewer_assets):
     _mask_sheet(out, seg, ("yellow safety post", "black bollard", "emergency stop button"), "extra-mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("cart",), "cart-mask-sheet.jpg", cart_seg)
     geometry = json.loads((out / "geometry.json").read_text())
+    if measured:
+        geometry = apply_measurements(out, measured)
+        from scripts.workcell_photo_report import build as build_report
+        build_report(out)
     _anchor_sheet(out, images, geometry["anchor"])
     _export_metric_scene(out, geometry)
     metrics = {"oneShotWallSeconds": round(time.monotonic() - began, 2),
@@ -474,8 +489,9 @@ def main():
     parser.add_argument("--images", type=Path, nargs=4)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--viewer-assets", type=Path, help="Three.js 0.178.0 runtime directory; see docs/workcell-photo/HANDOFF.md")
-    parser.add_argument("--button-diameter-m", type=float, default=.2)
-    parser.add_argument("--button-height-m", type=float, default=.2)
+    parser.add_argument("--button-diameter-m", type=float, help="Legacy whole-envelope width; cannot combine with --measurements")
+    parser.add_argument("--button-height-m", type=float)
+    parser.add_argument("--measurements", type=Path, help="Measured reference and independent evaluation JSON")
     parser.add_argument("--self-check", action="store_true")
     args = parser.parse_args()
     if args.self_check:
@@ -484,7 +500,7 @@ def main():
     if not args.images or not args.out or not args.viewer_assets:
         parser.error("--images, --out and --viewer-assets are required")
     run([p.resolve() for p in args.images], args.out.resolve(),
-        args.button_diameter_m, args.button_height_m, args.viewer_assets.resolve())
+        args.button_diameter_m, args.button_height_m, args.viewer_assets.resolve(), args.measurements)
 
 
 if __name__ == "__main__":

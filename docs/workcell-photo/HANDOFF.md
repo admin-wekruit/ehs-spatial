@@ -1,25 +1,25 @@
-# 四照片工作单元：公司内部接手说明
+# 四照片工作单元：公开源码接手说明
 
-更新：2026-09-30。范围为四张 BOR1 原图的对象级重建、模型内空间估计、可交互照片报告，以及护板角度实验。本文按当前代码和保存产物核对；代码、报告资产、原始照片、模型权重分别交接。
+更新：2026-10-01。范围为四张 BOR1 原图的对象级重建、模型内空间估计、可交互照片报告，以及护板角度实验。本文按当前代码和保存产物核对；代码、报告资产、原始照片、模型权重分别交接。
 
 ## 1. 从哪里接手
 
 | 内容 | 位置 / 状态 |
 |---|---|
-| 源代码 | https://github.com/admin-wekruit/ehs-spatial ，私有仓库，分支 `codex/workcell-photo-speed` |
+| 源代码 | https://github.com/admin-wekruit/ehs-spatial ，公开仓库，分支 `codex/workcell-photo-speed` |
 | 当前工作目录 | `/Users/adam/.codex/worktrees/panoptes-workcell-photo-speed` |
-| 固定交付版本 | release/tag `workcell-photo-handoff-2026-09-30`；用下方命令查询实际远端状态和 commit |
+| 固定交付版本 | 当前源码 release/tag `workcell-measured-reference-2026-10-01`；原始复现数据仍取 `workcell-photo-handoff-2026-09-30` |
 | 静态报告资产仓库 | https://github.com/admin-wekruit/panoptes-workcell-report ，分支 `main` |
 | 报告网址 | https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/ |
 | 已保存的 A4 报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-guard-shared-report-2026-09-30/` |
-| 本轮离地距离修正报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-ground-distance-2026-09-30-final/`；复现包中同时提供 `current-report/page/` |
+| 当前实测标尺报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-measured-reference-2026-10-01-final/`；公开网站同网址更新 |
 
 ```bash
 git clone --branch codex/workcell-photo-speed https://github.com/admin-wekruit/ehs-spatial.git
 git clone https://github.com/admin-wekruit/panoptes-workcell-report.git
 ```
 
-团队需要私有源仓库及其 release 访问权限。发布流程将原图和复现资料放入该私有仓库的 release 附件；源 Git 不包含大数据、模型权重、凭据、`node_modules` 或推理虚拟环境。下载前用第 6 节命令核对固定 release、目标提交和附件；上方稳定网址不单独证明所看的版本。
+源码与 release 已公开，可匿名访问。原图和复现资料位于公开 release 附件；源 Git 不包含大数据、模型权重、凭据、`node_modules` 或推理虚拟环境。下载前用第 6 节命令核对固定 release、目标提交和附件；上方稳定网址不单独证明所看的版本。
 
 ## 2. 当前结果与明确限制
 
@@ -27,11 +27,22 @@ git clone https://github.com/admin-wekruit/panoptes-workcell-report.git
 - 当前报告含 52 个对象记录、97 个来源观察、136 个关联网格节点。这些是产物统计，不是经现场核验的物体识别准确率。
 - 左右护板的 A4 结构模型共用 **104.2702°** 参数，来自用户提供的“同规格同角”先验及照片轮廓拟合。缓存输入上的拟合/导出为 **44.04 秒**；这不含 MapAnything、SAM、OWLv2 和 RecGen 重跑。
 - **真实折弯角不可唯一确定**：104.27°、120°、150°、174° 的离散候选均通过本次条件照片贴合门槛。这些采样值不是置信区间。`measurementAngleDeg` 仍为 `null`。中间护板仍无受支持的实物折弯角，不参与左右共享参数。
-- 整套红帽 + 黄体 + 灰底急停组件的默认高/宽均为 0.20 m，是输入假设；没有现场尺寸真值。界面选定高度或宽度作为全场统一尺度，不能靠调整厘米标尺确定护板角度。未知板厚、遮挡后的完整尺寸保留未知。
+- 用户于 2026-10-01 提供现场尺寸：红色触发按钮直径 **4 cm**、圆形主体最大直径 **8.5 cm**、高度 **10 cm**，记录于 `docs/workcell-photo/measurements-2026-10-01.json`。高度暂对应红帽＋黄体＋灰底（不含支架），该部位对应待确认。当前使用高度确定统一尺度；两个直径分别约束对应标尺部件，不能用旧整套轮廓宽替代主体直径。
 - A4 通过的是相对 A1 的轮廓拟合门槛。左板平均 IoU 0.66678 → 0.72784、右板 0.64792 → 0.67494；左板照片 4 从 0.76244 降为 0.72519，不能宣称所有视图均改善。
-- 本轮用 `objects[].groundDistance` 记录各来源照片的可见下沿到拟合地面的距离，保留跨照片范围；至少需要两个有可用观测的来源视角，单视图保持未知。已识别围栏下横杆独立保留 feature。默认 20 cm 高度标尺下，照片 4 急停组件可见下缘约 **2.1187 m**，跨照片约 **2.1187–2.1500 m**；识别到的围栏下横杆约 **0.34256 m**。这些是当前模型条件估计；可见下沿不自动等于被遮挡的完整物体底面，也没有现场厘米精度保证。
-- 本轮离地线和路径移植仅重算保存结果及报告，没有新增 GPU 推理调用，历史 334.60 秒完整运行成绩保持原定义。
+- `objects[].groundDistance` 保留各照片可见下缘到拟合地面的距离；至少两个有效来源视角，单视图保持未知。10 cm 高度标尺下，识别到的围栏下横杆约 **17.13 cm**；两侧光幕外壳下缘的多视角中位数约 **14.36 / 15.71 cm**。独立实测为围栏 **20 cm**、光幕 **24 cm**，分别偏低约 **2.87 / 9.64 / 8.29 cm**。实测离地距离仅用于评估，没有进入尺度、相机或地面拟合；照片间范围不是精度保证。
+- 本轮实测标尺换算、参考部件建模与误差报告只使用保存结果，没有新增 GPU 推理调用，历史 334.60 秒完整运行成绩保持原定义。
 - 这份静态报告没有自动完成 EHS 规则判定。浏览器可加载、照片对齐、模型内量距一致、真实物理精度分别验证；不能以一个代替另一个。
+
+
+### 2026-10-01 实测标尺与独立评估
+
+当前测量配置是 `docs/workcell-photo/measurements-2026-10-01.json`。公开网站、`geometry.calibration`、`measurement-evaluation.json` 和米制 GLB 使用同一尺度。`--measurements` 在付费运行前校验，报告重封装也接受同一参数。参考模型采用已知整体高度和两个不同部件的直径；部件之间的高度分配仍为建模假设。模型修改仅涉及参考按钮，其他对象的 native 几何与相机、地面保持原样。
+
+不要把旧 `anchor.nativeWidth` 当成圆盘直径：按 10 cm 高度换算，旧整套轮廓宽约 12.52 cm，原算法没有单独可靠提取主圆盘或红帽直径。当前两个直径用于已知参考模型及照片投影诊断，尚未用于独立求尺度。卡片、3D 垂线和表格会随用户改动的换算高度同步变化；现场独立实测值不变。下载的评估 JSON 为提供的 10 cm 基准结果。
+
+离地估计保留误差。围栏取现有已识别横杆；光幕对象为黄色外壳的观测下缘，使用全部有效照片的中位数，不能挑最接近 24 cm 的单张照片。被遮挡的底端、地面误差及未确认的现场量尺端点仍可能使比较失配。评估检查会改变实测目标，确认所有估计和模型保持不变。
+
+2026-09-30 的原始复现包及其静态页面保留旧版本。先下载该包获得原图/相机/分割等输入，再 checkout 当前源码、按下文带 `--measurements` 的命令生成当前报告。不要把包中旧页面当作已应用新尺寸的结果。
 
 ## 3. 实际链路与代码边界
 
@@ -54,7 +65,7 @@ A4 是保存输入上的独立实验，再由 workcell_guard_experiment_report.p
 
 | 模块 | 输入 → 输出 / 团队接入点 |
 |---|---|
-| `scripts/workcell_photo_oneshot.py::run` | 四个 `Path`、新输出目录、宽/高 m、固定 Three.js 资源目录 → 完整运行目录与 `page/`；新目录保护保留历史证据 |
+| `scripts/workcell_photo_oneshot.py::run` | 四个 `Path`、新输出目录、明确的测量配置或宽/高假设、固定 Three.js 资源目录 → 完整运行目录与 `page/`；新目录保护保留历史证据 |
 | `modal_apps/workcell_photo_all.py::reconstruct` | 四个图片 bytes、文本词表、宽/高 → gzip tar bytes 与容器计时；实际 Modal 作业边界 |
 | `scripts/workcell_map_worker.py` | 原图 → `frame_0001..0004.json.gz` 与 `photo-1..4.png`；保存 canonical raster、K、C2W、点图、置信度、有效 mask、原图到 canonical 变换 |
 | `scripts/workcell_sam_worker.py` | `words.json`、原图、后到的 `cart-boxes.json` → `sam3.json`、`cart-masks.json`；RLE 为 Fortran 顺序 |
@@ -93,7 +104,7 @@ A4 是保存输入上的独立实验，再由 workcell_guard_experiment_report.p
 e73931b6cdf68775ddafbc949c392c0ea2908f4dec671a4935e4c09361ae66ec  image_04.jpg
 ```
 
-原图通过私有 release 的复现包 `inputs/image_01..04.jpg` 交接。Pages 提供的 `photo-*.png` 是 canonical 图片，不等价于原始 JPEG；原图不在 oneshot 返回的 tar 中，也不加入公共 Pages。不能仅 clone Pages 就声称可以重跑原图全部步骤。
+原图通过公开 release 的复现包 `inputs/image_01..04.jpg` 交接。Pages 提供的 `photo-*.png` 是 canonical 图片，不等价于原始 JPEG；原图不在 oneshot 返回的 tar 中，也不加入公共 Pages。不能仅 clone Pages 就声称可以重跑原图全部步骤。
 
 | 依赖 | 当前代码 / 缓存约定 |
 |---|---|
@@ -157,7 +168,7 @@ python3 -m http.server 8765 --bind 127.0.0.1 --directory ../panoptes-workcell-re
 PYTHONPATH=.:scripts .venv/bin/python scripts/workcell_photo_oneshot.py \
   --images /company/workcell/inputs/image_01.jpg /company/workcell/inputs/image_02.jpg \
            /company/workcell/inputs/image_03.jpg /company/workcell/inputs/image_04.jpg \
-  --button-height-m 0.20 --button-diameter-m 0.20 \
+  --measurements docs/workcell-photo/measurements-2026-10-01.json \
   --viewer-assets /company/workcell/current-report/page/viewer-assets \
   --out /company/workcell/runs/raw-001
 ```
@@ -198,13 +209,14 @@ PYTHONPATH=.:scripts .venv/bin/python scripts/workcell_guard_experiment_report.p
   --previous "$ARTIFACTS/workcell-guard-joint-2026-09-30-a" \
   --previous "$DENSE" --previous "$ARTIFACTS/workcell-guard-silhouette-2026-09-30-a" \
   --extra "$REPLAY" --structural "$STRUCTURAL" \
+  --measurements docs/workcell-photo/measurements-2026-10-01.json \
   --viewer-assets /company/workcell/current-report/page/viewer-assets \
   --out "$ARTIFACTS/report-new"
 ```
 
 该命令使用当前代码重新生成离地字段和 UI，复现本轮 A4 + 离地距离报告；只消费保存数据，先完成前端 build。封装共用 oneshot 的 UI/资源冻结逻辑。A1 保形对齐不会改变生成网格原有折弯角；A2/A3、COLMAP/LIMAP/LoFTR 产物属于实验对照，不能在实验中仅更新相机后把旧模型标成新测量。最初 controls 调用中的 LIMAP 失败已在日志保留，后续 joint-b 才有成功的原生 LIMAP 结果；全场两条稳定线、护板限定区域零条稳定线。
 
-## 6. 私有 release 复现包
+## 6. 公开 release 复现包
 
 | 交付包 | 最小内容与能力 |
 |---|---|
@@ -214,7 +226,7 @@ PYTHONPATH=.:scripts .venv/bin/python scripts/workcell_guard_experiment_report.p
 | 原图包 | 上述四张 JPEG 与 SHA256；全流程和原图证据重算必需 |
 | 权重包 | 四个 Modal volume 中实际用到的缓存和 RecGen/DINO manifest 引用；通过公司模型存储交接，遵循各自许可 |
 
-复现包位于私有源仓库的固定 release `workcell-photo-handoff-2026-09-30`。发布流程使用按允许清单构造的 `workcell-photo-reproduction-2026-09-30.tar.gz` 和 `SHA256SUMS`；包含原图与上述实验资料，不含模型权重、凭据、原始日志、已有 archive 或重复历史 page/report-ui。包内 `MANIFEST.json` 保存逐文件相对路径和 SHA256，`current-report/validation.json` 保存最终报告验证记录。下列 `gh release view` 用于核对固定版本及远端附件，再下载并验证校验和。团队需先用有该私有仓库访问权限的 GitHub 账号登录 `gh`。
+原始复现包位于公开源仓库的固定 release `workcell-photo-handoff-2026-09-30`。发布流程使用按允许清单构造的 `workcell-photo-reproduction-2026-09-30.tar.gz` 和 `SHA256SUMS`；包含原图与上述实验资料，不含模型权重、凭据、原始日志、已有 archive 或重复历史 page/report-ui。包内 `MANIFEST.json` 保存逐文件相对路径和 SHA256，`current-report/validation.json` 保存最终报告验证记录。下列 `gh release view` 用于核对固定版本及远端附件，再下载并验证校验和。使用 `gh` 的下载示例需先配置 CLI；也可直接从公开 release 网页下载，无需仓库成员权限。
 
 ```bash
 gh release view workcell-photo-handoff-2026-09-30 --repo admin-wekruit/ehs-spatial \
@@ -248,12 +260,12 @@ tar -xzf workcell-photo-reproduction-2026-09-30.tar.gz -C /company/workcell
 
 ```bash
 cd /company/ehs-spatial
-git fetch origin tag workcell-photo-handoff-2026-09-30
-git switch --detach workcell-photo-handoff-2026-09-30
+git fetch origin tag workcell-measured-reference-2026-10-01
+git switch --detach workcell-measured-reference-2026-10-01
 git rev-parse HEAD
 ```
 
-当前 GitHub Pages 的 canonical 照片、模型和展示证据足够看报告；它没有 frame gzip、NPZ、完整 SAM 原响应或四张原始 JPEG。这些由私有 release 附件传递，权重另行通过公司模型存储交接。下载包后也可直接运行 `python3 -m http.server 8765 --bind 127.0.0.1 --directory /company/workcell/current-report/page`，打开 `http://127.0.0.1:8765/`。`current-report/page/` 是静态交付目录；需要 Python 几何/相机检查时，先执行第 5 节保存数据上的报告封装，生成带帧文件的 `$ARTIFACTS/report-new`，再运行第 7 节检查。
+当前 GitHub Pages 的 canonical 照片、模型和展示证据足够看报告；它没有 frame gzip、NPZ、完整 SAM 原响应或四张原始 JPEG。这些由公开 release 附件传递，权重另行通过公司模型存储交接。下载包后也可直接运行 `python3 -m http.server 8765 --bind 127.0.0.1 --directory /company/workcell/current-report/page`，打开 `http://127.0.0.1:8765/`。`current-report/page/` 是静态交付目录；需要 Python 几何/相机检查时，先执行第 5 节保存数据上的报告封装，生成带帧文件的 `$ARTIFACTS/report-new`，再运行第 7 节检查。
 
 要重现历史实验输入，用各目录 `input-manifest.json` 核对文件 SHA256，`implementation-manifest.json` 核对相应代码。历史清单会记录 Adam 的绝对路径，但身份应按哈希而非路径判断。`recgen-plan-*.json` 中的云容器临时路径也不是可直接在新机器运行的脚本；全流程重新创建这些计划。
 
@@ -266,6 +278,7 @@ PYTHONPATH=.:scripts .venv/bin/python scripts/workcell_photo_oneshot.py --self-c
 PYTHONPATH=.:scripts .venv/bin/python scripts/check_workcell_recgen_worker.py
 PYTHONPATH=.:scripts .venv/bin/python scripts/check_workcell_photo_portability.py
 PYTHONPATH=.:scripts .venv/bin/python scripts/check_workcell_ground_distance.py
+PYTHONPATH=.:scripts .venv/bin/python scripts/check_workcell_photo_calibration.py
 PYTHONPATH=.:scripts .venv/bin/python scripts/check_workcell_metric_export.py
 PYTHONPATH=.:scripts .venv/bin/python scripts/workcell_photo_geometry_check.py "$BASELINE"
 PYTHONPATH=.:scripts .venv/bin/python scripts/check_workcell_photo_objects.py "$BASELINE"
@@ -311,4 +324,4 @@ CUDA_VISIBLE_DEVICES=0 /opt/mapanything/bin/python -c \
 
 ## 9. 接手时第一步
 
-先确认私有 release 已发布，下载并验哈希，checkout 固定 tag，再运行静态报告与不收费的结构/浏览器检查。重跑模型前接收权重清单。接公司平台时，以原图 SHA256 → 帧坐标/相机 → mask/对象身份 → 模型/观测几何 → 条件量距 → report JSON → 浏览器/导出 GLB 为验收顺序。完整新环境重跑、单 A100 迁移测速和物理精度验证尚未由本 handoff 代为完成。
+先确认公开 release 的版本，下载并验哈希，checkout 当前源码的固定 tag，再运行静态报告与不收费的结构/浏览器检查。重跑模型前接收权重清单。接公司平台时，以原图 SHA256 → 帧坐标/相机 → mask/对象身份 → 模型/观测几何 → 条件量距 → report JSON → 浏览器/导出 GLB 为验收顺序。完整新环境重跑、单 A100 迁移测速和物理精度验证尚未由本 handoff 代为完成。

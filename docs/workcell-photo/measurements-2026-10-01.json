@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "reference": {
+    "objectId": "emergency-button",
+    "scope": "whole component: red cap, yellow body, gray lower housing; mounting bracket excluded",
+    "scopeStatus": "pending_confirmation",
+    "provenance": {
+      "kind": "user_supplied_standard_dimensions",
+      "date": "2026-10-01",
+      "statement": "Red actuator diameter 4 cm; main circular body's maximum diameter 8.5 cm; component height 10 cm.",
+      "scopeNote": "Whether the supplied 10 cm includes the gray lower housing is awaiting confirmation."
+    },
+    "features": {
+      "wholeComponentHeightM": 0.10,
+      "mainBodyDiameterM": 0.085,
+      "redActuatorDiameterM": 0.04
+    }
+  },
+  "evaluation": {
+    "targets": [
+      {
+        "objectId": "fence-0",
+        "feature": "fence bottom to ground",
+        "groundTruthM": 0.20,
+        "provenance": "User independently supplied fence bottom distance on 2026-10-01.",
+        "associationStatus": "Recognized lower rail; exact physical endpoint correspondence unconfirmed."
+      },
+      {
+        "objectId": "post-box-1",
+        "feature": "light-curtain housing bottom to ground",
+        "groundTruthM": 0.24,
+        "provenance": "User independently supplied light-curtain bottom distance on 2026-10-01.",
+        "associationStatus": "Yellow light-curtain housing mask; exact physical endpoint correspondence unconfirmed."
+      },
+      {
+        "objectId": "post-box-2",
+        "feature": "light-curtain housing bottom to ground",
+        "groundTruthM": 0.24,
+        "provenance": "User independently supplied light-curtain bottom distance on 2026-10-01.",
+        "associationStatus": "Yellow light-curtain housing mask; exact physical endpoint correspondence unconfirmed."
+      }
+    ]
+  }
+}

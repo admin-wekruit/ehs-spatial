@@ -111,11 +111,13 @@ def structural_section(path, root, result):
 <p>A4 缓存输入上的优化增量 {result['wallSeconds']:.2f} 秒；不是一次从照片开始的完整流程耗时。<a href="{base}/results.json">完整结果、参数边界与限制</a></p></section>'''
 
 
-def build(baseline, controls, joint, out, viewer_assets, previous=(), extra=(), structural=None):
+def build(baseline, controls, joint, out, viewer_assets, previous=(), extra=(), structural=None, measurements=None):
+    from scripts.workcell_photo_calibration import apply_measurements, load_measurements
+    measured = load_measurements(measurements) if measurements else None
     if out.exists(): raise ValueError('Report output must be new')
     out.mkdir(parents=True)
     for p in baseline.iterdir():
-        if p.is_file() and (p.suffix in ('.glb','.png','.jpg') or p.name in ('geometry.json','objects.json','guard-partition.json','guard-input.npz','cart-input.npz','guard-mask-selection.json') or p.name.startswith('frame_')):
+        if p.is_file() and (p.suffix in ('.glb','.png','.jpg') or p.name in ('geometry.json','objects.json','guard-partition.json','guard-input.npz','cart-input.npz','guard-mask-selection.json','measurements.json') or p.name.startswith('frame_')):
             if not p.name.startswith('entity-'): shutil.copy2(p,out/p.name)
     align = controls/'A1-similarity'
     for p in align.glob('*.glb'): shutil.copy2(p,out/p.name)
@@ -133,10 +135,14 @@ def build(baseline, controls, joint, out, viewer_assets, previous=(), extra=(), 
         center['notes'] = [note for note in center['notes'] if '左右模型角差' not in note]
         center['notes'].append('A4 仅约束左右板；本中间板保持 A1 生成分片和保形对齐，不参与共享夹角。')
     (out/'objects.json').write_text(json.dumps(catalog,ensure_ascii=False))
+    if measured:
+        apply_measurements(out, measured)
     data = build_report(out)
     _export_metric_scene(out,data['geometry'])
     _freeze_report_ui(out, viewer_assets)
-    page = _build_page(out,read(baseline/'one-shot.json'))
+    metrics = read(baseline/'one-shot.json')
+    metrics['geometry'] = data['geometry']
+    page = _build_page(out,metrics)
     data['experiment'] = {'title':'本轮：保形对齐已应用，实物角度尚未测稳',
         'summary':'这里保留完整可点击场景，三块护板采用同一批生成模型的保形对齐结果。下面的角度来自模型；相同规格实物的夹角一致性仍未通过验证。全流程此前实测 334.6 秒，本轮重用已保存结果做对照。',
         'reportURL':'experiments.html','timingLabel':'对齐增量'}
@@ -206,6 +212,7 @@ def build(baseline, controls, joint, out, viewer_assets, previous=(), extra=(), 
     structural_html = structural_section(structural_path,structural,structural_result) if structural_result else ''
     headline = '模型已一致，真实夹角仍无法唯一确定' if promoted else '两块同规格护板，为什么还没有测成一样？'
     current_scene = '主场景的左右板已采用上方 A4 先验约束模型，中间板保持 A1。' if promoted else '完整场景继续显示经过保形对齐的 A1 模型。'
+    measurement_boundary = ('用户提供的按钮标准尺寸与独立离地真值详见主报告；仅按钮整体高度定尺度。围栏与光幕真值仅用于独立误差评估。照片几何仍有误差。' if data['geometry'].get('calibration') else '按钮整体高/宽 20 cm 仍是可调整输入假设。')
     page_text=f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>护板角度实验 · Panoptes</title><style>body{{font:17px/1.65 system-ui,sans-serif;background:#f5f6f2;color:#182824;margin:0}}main{{max-width:1050px;margin:auto;padding:40px 22px}}h1{{font-size:36px;line-height:1.25}}h2{{margin-top:38px}}a{{color:#14675b}}.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px}}article{{background:white;border:1px solid #d6ddd5;border-radius:12px;padding:18px}}img{{width:100%;border-radius:10px}}.lead{{font-size:21px}}.note{{color:#53645f}}.action{{display:inline-block;background:#195e52;color:white;padding:12px 18px;border-radius:7px;text-decoration:none}}li{{margin:5px 0}}table{{border-collapse:collapse;width:100%;font-size:15px}}td,th{{padding:8px;text-align:left;border-bottom:1px solid #c9d4cc}}figure{{margin:0}}.structural{{background:#eef5eb;border:2px solid #557351;border-radius:12px;padding:20px}}</style><main>
 <p>PANOPTES · 四张照片 · 同一批输入对照</p><h1>{headline}</h1>
@@ -222,7 +229,7 @@ def build(baseline, controls, joint, out, viewer_assets, previous=(), extra=(), 
 <h2>历史对照 3 · 各条几何路线的实际结果</h2><p>A2 左右独立求解；A3 在相同观测上尝试共享夹角。没有足够支持的路线不会把强制相等当成测准。历史实验候选模型可下载；{current_scene}</p><details><summary>展开 {len(rows)} 条路线的结果、模型与失败原因</summary><div class="cards">{''.join(rows)}</div></details>
 <h2>4. 本轮耗时与花费</h2><p>原完整照片流程实测 <strong>334.6 秒</strong>。本轮重用这次运行的相机初值、分割及生成模型，比较几何增量；未把缓存对照耗时冒充一次全流程速度。</p>
 <p>COLMAP 增量 {col['seconds']:.1f} 秒；各临时云容器实际工作时段 {', '.join(f'{x:.1f}' for x in run_times)} 秒。按固定 2×A100 配置估算 ${estimates:.3f}；含调度调用窗口估算 ${calls:.3f}，均不是账单金额。</p>
-<h2>测量边界</h2><p>按钮整体高/宽 20 cm 仍是可调整输入假设。统一定尺度不能修正夹角。角度的现场真值尚未提供；本轮不宣称厘米或角度准确度达标。板厚及不可见完整尺寸保留未知。</p>
+<h2>测量边界</h2><p>{measurement_boundary}统一定尺度不能修正夹角。角度的现场真值尚未提供；本轮不宣称厘米或角度准确度达标。板厚及不可见完整尺寸保留未知。</p>
 <p><a href="experiment-data/summary.json">下载本轮摘要</a> · <a href="https://github.com/colmap/colmap">COLMAP</a> · <a href="https://github.com/cvg/limap">LIMAP</a> · <a href="https://github.com/zju3dv/LoFTR">LoFTR</a></p></main></html>'''
     (page/'experiments.html').write_text(page_text)
     plots(baseline,a1,joint,evidence)
@@ -264,4 +271,5 @@ if __name__=='__main__':
     p.add_argument('--previous',type=Path,action='append',default=[])
     p.add_argument('--extra',type=Path,action='append',default=[])
     p.add_argument('--structural',type=Path,help='Frozen A4 run root; promotes only when its recorded source-fit gate passes')
-    a=p.parse_args();print(build(a.baseline,a.controls,a.joint,a.out,a.viewer_assets,a.previous,a.extra,a.structural))
+    p.add_argument('--measurements',type=Path,help='Measured reference and independent evaluation JSON')
+    a=p.parse_args();print(build(a.baseline,a.controls,a.joint,a.out,a.viewer_assets,a.previous,a.extra,a.structural,a.measurements))

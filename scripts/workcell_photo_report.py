@@ -82,6 +82,9 @@ def build(root):
                                   'widthM': geometry['anchor']['assumedWidthM']}]},
         'ground': {'normal': [0, 0, 1], 'offset': 0, 'plane': [0, 0, 1, 0]},
         'source': 'rigid transform of current MapAnything world; original projection preserved'}]
+    if geometry.get('calibration'):
+        doc['coordinateFrames'][0]['scale']['sourceRefs'] = [{'kind': 'user_measured_reference',
+            'primaryAxis': 'wholeComponentHeight', **geometry['calibration']['reference']}]
     urls, scene_cache = {}, {}
     def asset(path, aid, kind, **metadata):
         path = Path(path)
@@ -206,5 +209,9 @@ def build(root):
               'coverage': catalog['coverage'], 'geometry': geometry, 'sceneTransformNative': transform.tolist(),
               'nativeToMetersDefault': scale, 'timing': {},
               'bendAnalysis': bend_analysis}
+    if (root/'measurements.json').is_file():
+        from scripts.workcell_photo_calibration import load_measurements, measurement_evaluation
+        result['measurementEvaluation'] = measurement_evaluation(catalog['objects'], geometry, load_measurements(root/'measurements.json'))
+        (root/'measurement-evaluation.json').write_text(json.dumps(result['measurementEvaluation'], ensure_ascii=False, indent=2)+'\n')
     (root / 'scene-report.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
     return result
