@@ -155,7 +155,8 @@ def report(runs, out):
                 images.append(f'<figure><a href="run-{number}/{name}"><img src="run-{number}/{name}" alt="{labels[ident]}照片{photo}原图边缘对照" loading="lazy"></a><figcaption>{labels[ident]} · 照片 {photo}</figcaption></figure>')
         body = f'''<h2>第 {number} 轮 · {html.escape(run.name)}</h2>
 <p>缓存几何上的原图端边重算：{ledger['functionSeconds']:.2f} s；预留资源价格估算 ${ledger['estimateUsd']:.3f}。不是完整照片→模型的延迟；账单金额未获取。</p>
-<div class="pictures">{''.join(images)}</div><p>橙线：拟合起点的模型底面投影；绿线：本轮原图候选。C 轮围栏起点包含与共同地面的刚体对齐。没有绿线表示这一视角没有通过提取检查，不能理解为旧模型已正确。</p>
+<p><strong>看图方式：</strong>橙色四边形＝拟合前 3D 长方体底面投到照片上的轮廓；绿色短线＝照片里的外壳/横杆下沿候选。两者不贴合就是正在检查的错位。</p>
+<div class="pictures">{''.join(images)}</div><p>C 起围栏的拟合起点包含与共同地面的刚体对齐。没有绿线表示这一视角没有通过提取检查，不能理解为旧模型已正确。</p>
 <ul>{''.join(counts)}</ul><ul>{''.join(fits)}</ul>
 <p><a href="run-{number}/bottom-fits.json">拟合与留出结果 JSON</a> · <a href="run-{number}/source-boundaries.json">源边缘及拒绝原因</a> · <a href="run-{number}/spend-ledger.json">本轮支出记录</a></p>'''
         sections.append(body if number == len(runs) else f'<details><summary>查看第 {number} 轮记录</summary>{body}</details>')
@@ -163,13 +164,13 @@ def report(runs, out):
     page = f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Panoptes · 物理下沿修正</title><style>body{{font:16px/1.65 system-ui,sans-serif;background:#f5f6f2;color:#182824;margin:0}}main{{max-width:1100px;margin:auto;padding:28px 20px}}h1{{font-size:30px;line-height:1.25}}h2{{font-size:22px}}a{{color:#14675b}}section,details{{background:white;border:1px solid #d6ddd5;border-radius:12px;padding:20px;margin:18px 0}}.pictures{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}}figure{{margin:0}}img{{max-width:100%;max-height:460px;object-fit:contain;background:#f5f6f2}}summary{{cursor:pointer}}@media(max-width:600px){{main{{padding:16px 12px}}section,details{{padding:14px}}}}</style></head><body><main>
 <a href="../?view=model&measurement=endpoints#scene">← 返回完整 3D、照片和卡尺</a>
-<h1>物理下沿：已修提取错误，主模型替换尚未通过</h1>
+<h1>物理下沿：原图与模型错位检查</h1>
 <section><p>之前完成了共同地面和模型卡尺，但光幕网格仍取单图深度分位数，左右围栏的下沿来源也不等价。因此此前不能宣称已经量到同一条物理下沿。</p>
 <p>本轮修正：分开围栏的原图边界与深度过滤轮廓；同时处理左右围栏；光幕端边必须直接连接到壳体，排除线缆和支架；前面板、侧翼仍须跨图确认身份。</p>
 <p><strong>本页实验没有替换默认场景模型，也没有证明左右高度已准确。</strong> 相等约束只作为对照；20/24 cm 检查值未参与拟合，当前米制标尺仍未通过联合验证。</p>
 <p>三维写回助手会重新加载导出的 GLB 检查实际底面；但数值收敛不能让错误部位获得替换资格。现阶段的阻点是同一部位在多张原图中的稳定对应。</p></section>
 <p>A/B 使用此前完整推理中的模型；C 起使用当前公开报告的模型并复用同次推理的相机、SAM 与点图。初始光幕模型不同，不能将轮次差异当作单因素消融。C 触发 600 s 上限；D 将已有的线对拒绝检查提前，避免对明显无效线对继续做立杆拓扑计算。后续同边实验要求光幕各视角共同选择一条模型边，避免每张照片独立换面。<a href="../real2sim/real2sim.html">此前 Real2sim 纹理与相机实验</a></p>
-<section>{sections[-1]}</section>{''.join(sections[:-1])}
+<section id="latest">{sections[-1]}</section>{''.join(sections[:-1])}
 <p>本页 {len(runs)} 次临时双 A100 实验资源价格合计估算 ${cost:.3f}，非实际账单。使用冻结的相机、点图与当前共同地面；不是新一轮完整 oneshot。</p>
 </main></body></html>'''
     (out / 'index.html').write_text(page)
