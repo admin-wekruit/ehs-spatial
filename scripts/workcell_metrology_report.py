@@ -9,7 +9,8 @@ import shutil
 
 from scripts.workcell_photo_calibration import load_measurements
 
-LABELS = {'fence-0': '围栏下横杆', 'post-box-1': '右光幕（按钮侧）', 'post-box-2': '左光幕'}
+LABELS = {'fence-0': '右围栏下横杆', 'fence-1': '左围栏下横杆',
+          'post-box-1': '右光幕（按钮侧）', 'post-box-2': '左光幕'}
 ROUTES = {'A': '本路线输入几何 + 10 cm 高度标尺（新深度分支会重新生成）', 'B': '只重新拟合按钮直径标尺',
           'C': '重新拟合实体下沿和附近地面', 'D': '新下沿、地面和直径标尺组合',
           'J': '三个已知尺寸与相机、场景特征共同求解'}
@@ -168,6 +169,7 @@ def build(baseline, runs, out, measurements, depth_runs=()):
     frozen = [(run, p, p.read_bytes()) for run in reversed(runs) for p in sorted(run.rglob('results.json'))
               if 'routes' in json.loads(p.read_text())]
     config = load_measurements(measurements)
+    check_ids = tuple(row['objectId'] for row in config['evaluation']['targets'])
     out.mkdir(parents=True)
     page = out / 'page'
     shutil.copytree(baseline / 'page', page)
@@ -253,7 +255,7 @@ def build(baseline, runs, out, measurements, depth_runs=()):
     latest_result = json.loads((page / latest['source']).read_text()) if latest else {}
     primary = 'J' if 'J' in latest_result.get('routes', {}) else ('D' if latest_result.get('calibration', {}).get('new', {}).get('status') == 'available' else 'C')
     primary_rows = [row for row in latest['comparisons'] if row['route'] == primary] if latest else []
-    pass_route = len(primary_rows) == len(LABELS) and all(row['below3cm'] for row in primary_rows)
+    pass_route = len(primary_rows) == len(check_ids) and all(row['below3cm'] for row in primary_rows)
     headline = '当前主对照在三处检查点均小于 3 cm；仍需检查可观测性与模型一致性。' if pass_route else '现有四图实验尚未达到三处离地误差都小于 3 cm。'
     duration = sum(r['functionSeconds'] for r in ledger if r.get('functionSeconds') is not None)
     cost = sum(r['estimateUsd'] for r in ledger if r.get('estimateUsd') is not None)
@@ -284,7 +286,8 @@ def build(baseline, runs, out, measurements, depth_runs=()):
     joint = latest_result.get('jointReference', {})
     scale_note = (('三个已知尺寸联合求解的尺度' if joint.get('status') == 'available' else '联合求解未通过；没有可用的新尺度') if primary == 'J' else
                   '通过源观测验证的圆直径尺度' if primary == 'D' else '原 10 cm 整体高度尺度')
-    for identity, label in LABELS.items():
+    for identity in check_ids:
+        label = LABELS[identity]
         if latest is None:
             truth = next(row['groundTruthM'] for row in config['evaluation']['targets'] if row['objectId'] == identity)
             overview.append(f'<tr><th scope="row">{label}</th><td>—</td><td>未输出预测</td><td>{cm(truth)}</td><td>最新原相机路线未完成；详见运行记录</td></tr>')
@@ -343,7 +346,7 @@ def build(baseline, runs, out, measurements, depth_runs=()):
                 found_routes.add(route)
                 chosen = [row for row in item['comparisons'] if row['route'] == route]
                 values = {row['objectId']: row for row in chosen}
-                cells = ''.join(f'<td>{cm(values[key]["estimateM"])}</td>' if key in values else '<td>未输出</td>' for key in LABELS)
+                cells = ''.join(f'<td>{cm(values[key]["estimateM"])}</td>' if key in values else '<td>未输出</td>' for key in check_ids)
                 source_status = '联合标定候选' if route == 'J' else '原相机 + 新下沿 / 地面（条件估计）'
                 status_text = '、'.join({'conditional': '条件估计', 'available': '源观测支持', 'unsupported': '未知 / 未通过'}.get(value, value) for value in sorted({row['status'] for row in chosen}))
                 comparison_rows.append(f'<tr><th scope="row">{esc(item["variantLabel"])} · {route}</th>{cells}'

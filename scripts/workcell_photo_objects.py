@@ -306,6 +306,7 @@ def build(root, sources):
                 if obs: rows.append(obs)
         item = add(f'fence-{pi}', f'Safety fence section {pi+1}', 'safety fence', 'fence-fitted.glb', nodes, rows,
                    'fitted structural members; inferred continuations', geometry['fence']['assumptions'])
+        item['geometryPlaneIndex'] = pi
         clearance = next((c for c in geometry['clearances'] if c['id'] == f'fence-plane-{pi}-lower-rail'), None)
         if clearance and len(rows) > 1:
             item['measurements']['groundClearance'] = {'valueNative': clearance.get('heightNative'), 'status': 'conditional-model-estimate',

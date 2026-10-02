@@ -126,6 +126,68 @@ def main():
          'observedViewHeightRangeNative': [height, height]}
         for index, height in enumerate((.2, .7))]}
     assert _legacy({'id': 'fence-0', 'geometryPlaneIndex': 1}, selected_plane)['heightNative'] == .7
+    assert _legacy({'id': 'fence-1'}, selected_plane)['heightNative'] == .7
+    for invalid in (True, -1, .5, '1'):
+        try:
+            _legacy({'id': 'fence-1', 'geometryPlaneIndex': invalid}, selected_plane)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Invalid fence plane identity was accepted')
+
+    # Both physical rail lower faces follow their own plane through the same
+    # raw-pixel triangulation and common-ground measurement path. The old
+    # association clearances deliberately disagree with the true source edges.
+    fence_geometry = {**selected_plane, 'fence': {'planes': [], 'beams': []}}
+    for plane, depth in enumerate((0., .3)):
+        fence_geometry['fence']['planes'].append({'normal': [0., 1., 0.], 'offset': -depth})
+        for photo, frame in frames.items():
+            raw_edges = []
+            for height in (.50, .45):
+                line = np.array([[-.15, depth, height], [.15, depth, height]])
+                raw_edges.append(_pixels(_project(line, frame)[0], np.linalg.inv(A)).tolist())
+            fence_geometry['fence']['beams'].append({'id': f'plane-{plane}-photo-{photo}',
+                'plane': plane, 'horizontal': True, 'sourcePhoto': photo,
+                'heightNative': .45, 'rawEdges': raw_edges})
+    fence_catalog = {ident: {'id': ident, 'observations': []} for ident in TARGETS}
+    association = {ident: {'pointNative': [0., 0., .2]} for ident in TARGETS}
+    fence_frames = {photo: {**frame, 'initialK': frame['K'], 'initialPose': frame['pose']}
+                    for photo, frame in frames.items()}
+    fence_drawings = {photo: {'selected': [], 'candidates': []} for photo in frames}
+    def detected_bottoms(item, geometry, frames, up):
+        # RGB/topology extraction has its real-image algorithm check in
+        # check_workcell_fence_bottom.py; this check isolates its shared caller.
+        plane = metrology._fence_plane_index(item)
+        rows = []
+        for beam in geometry['fence']['beams']:
+            if beam['plane'] == plane:
+                raw = beam['rawEdges'][1]
+                rows.append({'photo': beam['sourcePhoto'], 'rawEnds': raw,
+                             'uv': _pixels(raw, A).tolist(), 'sourceBeam': beam['id'],
+                             'planeIndex': plane,
+                             'identityEvidence': {'independentlySupported': True}})
+        return rows, []
+    with patch('workcell_fence_bottom.fence_bottom_candidates', side_effect=detected_bottoms):
+        source_edges, _ = metrology._object_edges(fence_catalog, {}, fence_geometry,
+                                                  fence_frames, up, association, fence_drawings)
+    fences = [row for row in source_edges if row['id'].startswith('fence-')]
+    assert {row['id'] for row in fences} == {'fence-0', 'fence-1'}
+    for plane, row in enumerate(fences):
+        assert row['status'] == 'unsupported', row
+        assert row['bottomEdge']['physicalPromotionAllowed'] is False
+        assert np.allclose(row['bottomEdge']['pointNative'][1:], [plane * .3, .45])
+        assert all(obs['sourceBeam'].startswith(f'plane-{plane}-') for obs in row['bottomEdge']['observations'])
+    shared_floor = {'status': 'available', 'normal': [0., 0., 1.], 'offset': 0.,
+                    'patches': [{'objectId': row['id'], 'status': 'available', 'residualP95Native': 0.}
+                                for row in fences]}
+    rail_distances = _measure(fences, shared_floor, frames, up)
+    assert all(row['heightNative'] is None for row in rail_distances)
+    assert all(np.isclose(row['bottomEdge']['pointNative'][2], .45) for row in rail_distances)
+    # Isolate measurement arithmetic with the known synthetic identities;
+    # the actual RGB caller above must not promote an unverified face.
+    rail_distances = _measure([{**row, 'status': 'edge_supported'} for row in fences], shared_floor, frames, up)
+    assert all(np.isclose(row['heightNative'], .45) for row in rail_distances)
+    assert all(row['localFloor']['normal'] == shared_floor['normal'] for row in rail_distances)
 
     # A connected yellow-colored background wedge was entering the convex hull.
     # Its local RGB appearance differs from the body; no physical dimensions or
@@ -178,6 +240,39 @@ def main():
     ends, detail = _terminal_edges(rgb, mask, [0., 1.], 1, np.eye(3))
     assert ends, detail
     assert all(abs(np.mean(row['rawEnds'], axis=0)[1] - 227) < 3 for row in ends), ends
+    assert all(len(set(row['faceSideIds'])) == 2 for row in ends)
+    # A real RGB edge can have a three-pixel desaturated yellow blur outside it.
+    # Test the detected edge location, not a newly chosen threshold contour.
+    blurred_rgb = np.full((280, 140, 3), 135, np.uint8)
+    blurred_rgb[25:220, 50:80] = [235, 205, 15]
+    blurred_rgb[220:223, 50:80] = cv2.cvtColor(np.uint8([[[25, 75, 200]]]), cv2.COLOR_HSV2RGB)[0, 0]
+    blurred_mask = np.zeros(blurred_rgb.shape[:2], np.uint8); blurred_mask[25:223, 50:80] = 1
+    blurred_lines = np.array([[[50., 25.], [50., 222.]], [[80., 25.], [80., 222.]], [[50., 219.5], [80., 219.5]]])
+    with patch.object(cv2, 'createLineSegmentDetector') as detector:
+        detector.return_value.detect.return_value = [(blurred_lines - [38., 13.]).astype(np.float32).reshape(-1, 1, 4)]
+        blurred, _ = _terminal_edges(blurred_rgb, blurred_mask, [0., 1.], 1, np.eye(3))
+    assert blurred and abs(np.mean(blurred[0]['rawEnds'], axis=0)[1] - 219.5) < .01, blurred
+    # One long side establishes orientation; the observed short opposite side
+    # still bounds the terminal face. Do not fabricate missing side pixels.
+    local_rgb = np.full((560, 180, 3), 135, np.uint8); local_rgb[25:500, 50:110] = [235, 205, 15]
+    local_mask = np.zeros(local_rgb.shape[:2], np.uint8); local_mask[25:500, 50:110] = 1
+    local_lines = np.array([[[50., 25.], [50., 500.]], [[110., 430.], [110., 500.]], [[50., 500.], [110., 500.]]])
+    with patch.object(cv2, 'createLineSegmentDetector') as detector:
+        detector.return_value.detect.return_value = [(local_lines - [30., 5.]).astype(np.float32).reshape(-1, 1, 4)]
+        local_end, _ = _terminal_edges(local_rgb, local_mask, [0., 1.], 1, np.eye(3))
+    assert local_end and abs(np.mean(local_end[0]['rawEnds'], axis=0)[1] - 500) < .01, local_end
+    # Two short fragments of ONE long side diverge when extrapolated. Their
+    # apparent 6.2px span formerly passed as two sides of a fictitious face.
+    degenerate_rgb = np.full((240, 100, 3), 135, np.uint8)
+    degenerate_rgb[20:206, 42:59] = [235, 205, 15]
+    degenerate_mask = np.zeros(degenerate_rgb.shape[:2], np.uint8)
+    degenerate_mask[20:206, 42:59] = 1
+    raw_lines = np.array([[[50., 20.], [50., 193.]], [[49.65, 195.], [48.55, 199.]],
+                          [[50.35, 195.], [51.45, 199.]], [[46.9, 205.], [53.1, 205.]]])
+    with patch.object(cv2, 'createLineSegmentDetector') as detector:
+        detector.return_value.detect.return_value = [(raw_lines - [30., 8.]).astype(np.float32).reshape(-1, 1, 4)]
+        degenerate, diagnostic = _terminal_edges(degenerate_rgb, degenerate_mask, [0., 1.], 1, np.eye(3))
+    assert not degenerate and diagnostic['rejectionCounts']['sameSideGroup'] == 1, diagnostic
     noisy_mask = mask.copy()
     noisy_mask[227:254, 48:83] = 1
     noisy_ends, noisy_detail = _terminal_edges(rgb, noisy_mask, [.15, 1.], 1, np.eye(3))
@@ -237,6 +332,38 @@ def main():
     assert len(front) == 1 and front[0]['fragmentCount'] == 1
     assert .18 * front[0]['faceWidthRawPx'] <= front[0]['visibleLengthRawPx'] < .18 * front[0]['bodyWidthRawPx']
     assert front[0]['gapIntervalsRawPx'] == []
+    assert front[0]['partIdentity']['frontOrSide'] == 'unresolved'
+    assert not front[0]['partIdentity']['commonBottomPlaneSupported'], 'Stepped faces became one physical plane'
+    assert any(row['partIdentity']['otherFaceColorFurtherAlongImageAxis'] for row in faces), 'An image-higher face was silently discarded instead of tagged'
+
+    # A narrow face beside a wide flange must not borrow the union width to
+    # label a detached mounting bracket as its physical terminal edge.
+    bracket_rgb = np.full((620, 200, 3), 135, np.uint8)
+    bracket_rgb[25:480, 30:110] = [220, 180, 10]
+    bracket_rgb[25:520, 112:145] = [235, 205, 15]
+    bracket_rgb[25:60, 30:145] = [235, 205, 15]
+    bracket_rgb[555:563, 112:145] = [65, 65, 65]
+    bracket_mask = np.zeros(bracket_rgb.shape[:2], np.uint8)
+    bracket_mask[25:563, 30:145] = 1
+    bracket_ends, _ = _terminal_edges(bracket_rgb, bracket_mask, [0., 1.], 1, np.eye(3))
+    assert any(abs(np.mean(row['rawEnds'], axis=0)[1] - 520) < 2 for row in bracket_ends), bracket_ends
+    assert all(min(abs(np.mean(row['rawEnds'], axis=0)[1] - y) for y in (480, 520)) < 2 for row in bracket_ends), bracket_ends
+
+    # Green/yellow wire and a nearby neutral bracket both lie inside the broad
+    # SAM envelope. Neither is continuously connected housing/endcap support.
+    contact_rgb = np.full((620, 180, 3), 135, np.uint8)
+    contact_rgb[25:520, 50:130] = [235, 205, 15]
+    contact_rgb[520:528, 50:130] = [75, 75, 75]
+    contact_mask = np.zeros(contact_rgb.shape[:2], np.uint8); contact_mask[25:580, 50:130] = 1
+    cable_rgb = contact_rgb.copy(); cable_rgb[528:555, 82:101] = [120, 150, 70]
+    cable_ends, cable_detail = _terminal_edges(cable_rgb, contact_mask, [0., 1.], 1, np.eye(3))
+    assert cable_ends and all(abs(np.mean(row['rawEnds'], axis=0)[1] - 528) < 2 for row in cable_ends), cable_ends
+    assert all(row['directHousingContactFraction'] >= .6 and row['housingContactDepthRawPx'] > 3 for row in cable_ends)
+    nearby_rgb = contact_rgb.copy(); nearby_rgb[538:544, 50:130] = [65, 65, 65]
+    nearby_ends, nearby_detail = _terminal_edges(nearby_rgb, contact_mask, [0., 1.], 1, np.eye(3))
+    assert nearby_ends and all(abs(np.mean(row['rawEnds'], axis=0)[1] - 528) < 2 for row in nearby_ends), nearby_ends
+    assert nearby_detail['rejectionCounts']['disconnectedFaceEnd'] > 0, nearby_detail
+    json.dumps({'cable': cable_ends, 'nearby': nearby_ends, 'faces': faces}, allow_nan=False)
 
     angle = np.arange(2048) * 2 * np.pi / 2048
     circle = np.c_[.06 * np.cos(angle), .06 * np.sin(angle), np.full(len(angle), 1.4)]
@@ -414,7 +541,7 @@ def main():
              patch.object(metrology, '_overlays', return_value=[]):
             metrology.apply_source_clearances(root, [root / f'source-{i}.jpg' for i in range(4)])
         assert floor_path.read_bytes() == before, 'Unsupported ground changed the display plane'
-    print('PASS: crop/C2W, RGB contour refinement, fence plane identity, stale-anchor circle signs, noisy-line gauge, fragmented sides, split endcap/gaps, occlusion, floor sensitivity, source-ground bridge, truth exclusion, JSON/metric contract')
+    print('PASS: crop/C2W, RGB contour refinement, both fence lower edges and common ground, distinct terminal sides, stale-anchor circle signs, noisy-line gauge, fragmented sides, split endcap/gaps, connected housing contact, cable/bracket rejection, stepped-face ambiguity, occlusion, floor sensitivity, source-ground bridge, truth exclusion, JSON/metric contract')
 
 
 if __name__ == '__main__':

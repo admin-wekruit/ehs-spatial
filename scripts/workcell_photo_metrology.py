@@ -25,7 +25,7 @@ from workcell_photo_objects import _project
 from workcell_photo_oneshot import _array, _frame, _mask, _response
 
 
-TARGETS = ('fence-0', 'post-box-1', 'post-box-2')
+TARGETS = ('fence-0', 'fence-1', 'post-box-1', 'post-box-2')
 FEATURES = ('wholeComponentHeightM', 'mainBodyDiameterM', 'redActuatorDiameterM')
 
 
@@ -131,12 +131,22 @@ def _load(root, sources, cameras):
     return geometry, catalog, segmentation, frames, candidates, metadata
 
 
+def _fence_plane_index(item):
+    suffix = item['id'].removeprefix('fence-')
+    if not item['id'].startswith('fence-') or not suffix.isdecimal():
+        raise ValueError('Fence identity must name its source plane')
+    index = item.get('geometryPlaneIndex', int(suffix))
+    if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+        raise ValueError('Fence source plane index must be a nonnegative integer')
+    return index
+
+
 def _legacy(item, geometry):
     floor = geometry['floor']
     norm = np.linalg.norm(floor['normal'])
     up, offset = np.asarray(floor['normal']) / norm, floor['offset'] / norm
-    if item['id'] == 'fence-0':
-        plane_index = item.get('geometryPlaneIndex', 0)
+    if item['id'].startswith('fence-'):
+        plane_index = _fence_plane_index(item)
         feature = next((row for row in geometry.get('clearances', []) if row['id'] == f'fence-plane-{plane_index}-lower-rail'), None)
         if feature:
             return {'status': 'available', 'reason': None,
@@ -464,6 +474,15 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
     if count < 2:
         return [], {'reason': 'No yellow housing component'}
     largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    # The broad association color range also contains green/yellow cables.
+    # Match the long housing's dominant hue before asking where it terminates.
+    housing_hue = float(np.median(hsv[:, :, 0][labels == largest]))
+    housing_value = float(np.median(hsv[:, :, 2][labels == largest]))
+    yellow &= abs(hsv[:, :, 0].astype(float) - housing_hue) <= 8.
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(yellow.astype(np.uint8))
+    if count < 2:
+        return [], {'reason': 'No consistent housing hue supports a terminal face'}
+    largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
     y, x = np.where(labels == largest)
     pts = np.c_[x, y]
     predicted_down = _unit(np.asarray(down))
@@ -504,6 +523,7 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
         else:
             groups.append([(index, line, length)])
     axis_lines, axis_ids, directions, lengths, side_support, observed_lengths = [], [], [], [], [], []
+    local_face_sides = []
     for group in groups:
         points = np.concatenate([row[1] for row in group])
         vx, vy, x, y = cv2.fitLine(points, cv2.DIST_L2, 0, .01, .01).ravel()
@@ -511,9 +531,15 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
         intervals = _interval_union(sorted(row[1] @ axis) for row in group)
         visible = sum(b - a for a, b in intervals)
         observed_lengths.append(visible)
+        ident = min(row[0] for row in group)
+        for _, line, _ in group:
+            samples = line[0] + np.linspace(.1, .9, 9)[:, None] * (line[1] - line[0])
+            obscured = (_sample(blocked, samples) | _sample(blocked, samples + rough_across * 2) |
+                        _sample(blocked, samples - rough_across * 2)).mean()
+            if visible >= rough_width * 4 or obscured <= .22:
+                local_face_sides.append((ident, (line + origin).tolist(), float(visible)))
         if visible < rough_width * 4:
             continue
-        ident = min(row[0] for row in group)
         side_support.append({'id': ident, 'sourceSegmentIndices': [row[0] for row in group],
                              'rawSegments': [(row[1] + origin).tolist() for row in group],
                              'visibleLengthRawPx': visible,
@@ -546,6 +572,9 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
     if len(body) == 0 or np.ptp(body @ down) < width * 4:
         return [], {'reason': 'Color support is not a long housing'}
     termination = np.max(body @ down)
+    # A short dark endcap may continue the colored face. Background, colored
+    # wires and disconnected brackets cannot bridge the gap to that face.
+    endcap = (hsv[:, :, 1] < 65) & (hsv[:, :, 2] < housing_value * .5)
     # Short endcap sides can continue an otherwise long housing edge. Their
     # endpoint contact distinguishes the outer end from an internal color seam.
     side_ends = []
@@ -565,8 +594,9 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
     counts = {key: 0 for key in ('tooShort', 'outsideBodyAcross', 'notTransverse', 'span',
                                  'notNearColorEnd', 'insufficientColorAbove', 'colorContinuesBelow',
                                  'occluded', 'noSideEndContact', 'lowerColorContinuation',
-                                 'innerEndcapSeam', 'samMaskContinuesBelow', 'faceWidthUnsupported',
-                                 'insufficientVisibleSpan', 'combinedCollinearFragments', 'accepted')}
+                                 'innerEndcapSeam', 'samMaskContinuesBelow', 'faceWidthUnsupported', 'sameSideGroup',
+                                 'insufficientVisibleSpan', 'combinedCollinearFragments', 'accepted',
+                                 'disconnectedFaceEnd', 'imageAxisStepAmbiguity')}
     def reject(reason, line, near=False):
         counts[reason] += 1
         if near:
@@ -597,7 +627,13 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
         # a long group's unobserved gap cannot supply a virtual local side.
         side_positions = []
         axial = float(center @ down)
-        for ident, raw_side in zip(axis_ids, axis_lines):
+        # The image axis needs long aggregate support; a locally visible face
+        # side only needs support at least as long as this terminal fragment.
+        # Requiring both to span four whole-body widths discarded real short
+        # sides near an occluded end, despite an independently established axis.
+        for ident, raw_side, observed_length in local_face_sides:
+            if observed_length < length:
+                continue
             edge = np.asarray(raw_side) - origin
             extent = sorted(edge @ down)
             if axial < extent[0] - width * .65 or axial > extent[1] + width * .65:
@@ -611,12 +647,22 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
         if left is None or right is None or right[0] - left[0] < 4:
             reject('faceWidthUnsupported', line, True)
             continue
+        if left[1] == right[1]:
+            reject('sameSideGroup', line, True)
+            continue
         face_width = right[0] - left[0]
         face_ids = [left[1], right[1]]
+        # Contact distances belong to this face too. Using the connected
+        # front+side union width let a remote mounting bracket borrow yellow
+        # pixels and side support from far above its own terminal edge.
         samples = line[0] + np.linspace(.12, .88, 9)[:, None] * vector
-        above = max(float(_sample(retained, samples - down * width * distance).mean()) for distance in (.12, .3, .6))
-        below = float(_sample(retained, samples + down * width * .35).mean())
-        outside = float(_sample(support, samples + down * max(3., width * .08)).mean())
+        above = max(float(_sample(retained, samples - down * face_width * distance).mean()) for distance in (.12, .3, .6))
+        # Match the existing four-raw-pixel RGB boundary band: JPEG blur can
+        # retain low-saturation yellow immediately outside a real LSD edge.
+        below = max(min(float(_sample(retained, samples + down * (max(4., distance) + delta)).mean())
+                        for delta in (0., 2.))
+                    for distance in (face_width * .08, face_width * .18, face_width * .35))
+        outside = float(_sample(support, samples + down * max(3., face_width * .08)).mean())
         if outside > .33:
             counts['samMaskContinuesBelow'] += 1
         if above < .44:
@@ -625,17 +671,31 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
         if below > .22:
             reject('colorContinuesBelow', line, True)
             continue
+        connected = np.ones(len(samples), bool)
+        reaches_color = np.zeros(len(samples), bool)
+        contact_depth = np.full(len(samples), np.nan)
+        for distance in np.arange(1.5, max(3., face_width * .35) + 1., 1.):
+            points = samples - down * distance
+            colored = _sample(retained, points)
+            first_contact = connected & colored & ~reaches_color
+            contact_depth[first_contact] = distance
+            reaches_color |= connected & colored
+            connected &= colored | _sample(endcap, points) | reaches_color
+        contact_fraction = float(reaches_color.mean())
+        if contact_fraction < .6:
+            reject('disconnectedFaceEnd', line, True)
+            continue
         obstruction = float((_sample(blocked, samples) |
-                             _sample(blocked, samples + down * max(3., width * .08))).mean())
+                             _sample(blocked, samples + down * max(3., face_width * .08))).mean())
         contacts = []
         for endpoint in line:
             for side_end in side_ends:
                 delta = endpoint - side_end
                 gap = float(delta @ down)
-                if -4. <= gap <= width * .65:
+                if -4. <= gap <= face_width * .65:
                     contacts.append((abs(float(delta @ across)), gap))
         side_contact, side_gap = min(contacts, default=(1e6, 1e6))
-        if side_contact > max(4., width * .15):
+        if side_contact > max(4., face_width * .15):
             reject('noSideEndContact', line, True)
             continue
         # A same-instance yellow continuation below an occluding paper edge
@@ -655,6 +715,8 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
                            'faceWidthRawPx': float(face_width), 'faceSideEdgesRaw': [left[2], right[2]],
                            'faceWidthBasis': 'locally observed fragments of supported collinear RGB sides at this terminal segment',
                            'aboveColorFraction': above, 'belowColorFraction': below,
+                           'directHousingContactFraction': contact_fraction,
+                           'housingContactDepthRawPx': float(np.median(contact_depth[reaches_color])),
                            'belowInstanceFraction': outside,
                            'obstructionFraction': obstruction,
                            'sideEndContactRawPx': side_contact,
@@ -672,7 +734,7 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
             if other['faceSideIds'] != candidate['faceSideIds']:
                 continue
             separation = other['position'] - candidate['position']
-            if not 2 < separation < width * .65:
+            if not 2 < separation < candidate['faceWidthRawPx'] * .65:
                 continue
             other_edge = np.asarray(other['rawEnds']) - origin
             other_span = sorted(other_edge @ across)
@@ -692,6 +754,22 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
         else:
             for segment in row['rawSegments']:
                 reject('insufficientVisibleSpan', np.asarray(segment) - origin, True)
+    # Pixel ordering across faces is not physical height ordering: perspective
+    # can reverse it. Retain separate local faces and expose the ambiguity.
+    for candidate in candidates:
+        line = np.asarray(candidate['rawEnds']) - origin
+        span = sorted(line @ across)
+        lower = body[(body @ down > candidate['position'] + max(3., candidate['faceWidthRawPx'] * .12)) &
+                     ((body @ across < span[0] - 2) | (body @ across > span[1] + 2))]
+        other_face_extends = len(lower) > max(20., candidate['faceWidthRawPx'] ** 2 * .12)
+        counts['imageAxisStepAmbiguity'] += int(other_face_extends)
+        candidate['partIdentity'] = {
+            'name': 'yellow_housing_terminal_face', 'localFaceSideIds': candidate['faceSideIds'],
+            'frontOrSide': 'unresolved', 'crossPhotoIdentity': 'unverified',
+            'frontFaceStatus': 'unsupported_without_cross_view_identity',
+            'otherFaceColorFurtherAlongImageAxis': bool(other_face_extends),
+            'scope': 'Directly connected visible terminal face along the requested image axis; front/side identity needs cross-view correspondence.',
+            'commonBottomPlaneSupported': False}
     candidates.sort(key=lambda row: (-row['score'], -row['position']))
     counts['accepted'] = len(candidates)
     return candidates[:6], {'candidateCount': len(candidates), 'longSideEdgesRaw': axis_lines,
@@ -705,7 +783,8 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
                             'axisDeviationDeg': float(np.degrees(np.arccos(np.clip(down @ predicted_down, -1, 1)))),
                             'axisSource': 'collinear visible RGB side fragments adjacent to the same yellow housing; gaps excluded from support length',
                             'widthRawPx': float(width), 'sourceColorPixels': len(body),
-                            'scope': 'visible yellow housing end edge; occluded width remains unknown'}
+                            'housingHueOpenCV': housing_hue, 'housingHueTolerance': 8.,
+                            'scope': 'connected visible housing terminal face; front/side and cross-view identity unverified; stepped faces are not one bottom plane'}
 
 
 def _interval_union(intervals):
@@ -818,10 +897,31 @@ def _line_fit(rows, frames, up):
             'sourcePhotos': sorted({row['photo'] for row in rows}), 'observations': rows}
 
 
-def _match_edges(candidates, frames, up, lowest=False):
+def _match_edges(candidates, frames, up, lowest=False, *, require_identity_anchor=False, fence_plane=None):
+    plane_association = None
+    if fence_plane is not None:
+        index = fence_plane['index']
+        normal = np.asarray(fence_plane['normal'], float)
+        norm = np.linalg.norm(normal)
+        offset = float(fence_plane['offset'])
+        if (not isinstance(index, int) or isinstance(index, bool) or index < 0 or
+                normal.shape != (3,) or not np.isfinite(normal).all() or norm < 1e-9 or not np.isfinite(offset)):
+            raise ValueError('Invalid current fence plane association')
+        scatter = fence_plane.get('residualP95Native')
+        if scatter is not None and (not np.isfinite(scatter) or scatter < 0):
+            raise ValueError('Invalid source fence plane scatter')
+        normal, offset = normal / norm, offset / norm
+        # The current structured plane identifies the fence instance, not its
+        # exact front/rear rail face. Never mix explicitly different instances.
+        candidates = [row for row in candidates if row.get('planeIndex') == index]
+        plane_association = {'planeIndex': index, 'normal': normal.tolist(), 'offset': offset,
+                             'residualP95Native': scatter,
+                             'scope': 'Source-depth fence instance plane, not an identified rail face or calibrated metric reference; scatter excludes camera and face-identity error.'}
     fits = []
     for a, b in itertools.combinations(candidates, 2):
         if a['photo'] == b['photo']:
+            continue
+        if require_identity_anchor and not any(row.get('identityEvidence', {}).get('independentlySupported') is True for row in (a, b)):
             continue
         try:
             fitted = _line_fit([a, b], frames, up)
@@ -868,10 +968,28 @@ def _match_edges(candidates, frames, up, lowest=False):
             except (ValueError, np.linalg.LinAlgError):
                 pass
     fitted['pixelSensitivityPointsNative'] = sensitivity
+    if require_identity_anchor:
+        fitted['identityAnchorPhotos'] = sorted({row['photo'] for row in fitted['observations']
+            if row.get('identityEvidence', {}).get('independentlySupported') is True})
+        # Even exact reprojection + finite overlap can join different parallel
+        # faces into a false 3D line. Part topology does not establish face-level
+        # correspondence. Keep the solve for experiments, never promote it.
+        fitted['physicalPromotionAllowed'] = False
+        fitted['identityStatus'] = 'conditional_same_face_unverified'
+        fitted['identityTransfer'] = 'At least one view supports lower-rail part identity. Finite overlap and reprojection support a geometric hypothesis only; the same physical rail face across views remains unverified.'
+    if plane_association is not None:
+        points = np.asarray(fitted['sharedSegmentsNative']).reshape(-1, 3)
+        distance = abs(points @ normal + offset)
+        plane_association.update(maxDistanceNative=float(distance.max()),
+                                 signedDistancesNative=(points @ normal + offset).tolist(),
+                                 withinSourceScatter=bool(np.all(distance <= scatter)) if scatter is not None else None)
+        # Record existing fit scatter when available, without using the old
+        # depth plane to force this RGB solve or claim exact face correspondence.
+        fitted['fencePlaneAssociation'] = plane_association
     return fitted
 
 
-def _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings):
+def _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings, *, diagnostics_path=None):
     objects, diagnostics = [], []
     initial_frames = {photo: {**frame, 'K': frame['initialK'], 'pose': frame['initialPose']} for photo, frame in frames.items()}
     for ident in TARGETS:
@@ -879,19 +997,11 @@ def _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings)
         initial = np.asarray(legacy[ident]['pointNative'], float) if legacy[ident]['pointNative'] else None
         bottom, top, views = [], [], []
         try:
-            if ident == 'fence-0':
-                plane_index = item.get('geometryPlaneIndex', 0)
-                plane = geometry['fence']['planes'][plane_index]
-                beams = sorted((row for row in geometry['fence']['beams'] if row['plane'] == plane_index and row['horizontal']), key=lambda row: row['heightNative'])
-                for photo in frames:
-                    for row in [row for row in beams if row['sourcePhoto'] == photo][:10]:
-                        edges = []
-                        for edge in row['rawEdges']:
-                            uv = _pixels(edge, frames[photo]['A'])
-                            xyz = _intersect(uv, initial_frames[photo]['K'], initial_frames[photo]['pose'], np.asarray(plane['normal']), plane['offset'])
-                            edges.append((float(np.mean(xyz @ up)), edge, uv))
-                        _, edge, uv = min(edges, key=lambda e: e[0])
-                        bottom.append({'photo': photo, 'rawEnds': edge, 'uv': uv.tolist(), 'score': 1., 'sourceBeam': row['id']})
+            if ident.startswith('fence-'):
+                from workcell_fence_bottom import fence_bottom_candidates
+                bottom, views = fence_bottom_candidates(item, geometry, initial_frames, up)
+                for row in bottom:
+                    drawings[row['photo']]['candidates'].append({**row, 'objectId': ident})
             else:
                 centers = []
                 for observation in item['observations']:
@@ -924,13 +1034,24 @@ def _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings)
                     drawings[photo]['candidates'].extend({**row, 'objectId': ident} for row in found)
                 if initial is None and centers:
                     initial = np.median(centers, axis=0)
+            if diagnostics_path is not None:
+                partial = diagnostics + [{'id': ident, 'bottomCandidates': bottom, 'topCandidates': top, 'views': views}]
+                Path(diagnostics_path).write_text(json.dumps({'objects': objects, 'objectEdges': partial}, allow_nan=False))
+                print(json.dumps({'phase': 'edge_matching', 'id': ident, 'bottomCandidates': len(bottom), 'topCandidates': len(top)}), flush=True)
             if initial is None or not np.isfinite(initial).all():
                 raise ValueError('No source-only association point for this object')
-            fitted = _match_edges(bottom, frames, up, lowest=ident == 'fence-0')
+            fence_plane = None
+            if ident.startswith('fence-'):
+                index = _fence_plane_index(item)
+                fence_plane = {**geometry['fence']['planes'][index], 'index': index}
+            fitted = _match_edges(bottom, frames, up, require_identity_anchor=ident.startswith('fence-'), fence_plane=fence_plane)
             result = {'id': ident, 'status': 'edge_supported', 'reason': None, 'bottomEdge': fitted,
                       'axisNative': up.tolist(), 'topEdge': None,
-                      'identity': 'observed lower fence rail' if ident == 'fence-0' else 'yellow housing; light-curtain semantic identity unconfirmed',
+                      'identity': 'observed lower fence rail' if ident.startswith('fence-') else 'yellow housing; light-curtain semantic identity unconfirmed',
                       'scope': 'visible rigid bottom edge; occluded portions and hardware are not measured'}
+            if ident.startswith('fence-'):
+                result.update(_unavailable('Same physical rail face is unverified; bottomEdge retains experimental multiview geometry'),
+                              identity='lower-rail part candidate; cross-view face identity unverified')
             if top:
                 try:
                     result['topEdge'] = _match_edges(top, frames, up)
@@ -942,6 +1063,9 @@ def _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings)
             result = _unavailable(str(error), id=ident, bottomEdge=None, topEdge=None)
         objects.append(result)
         diagnostics.append({'id': ident, 'bottomCandidates': bottom, 'topCandidates': top, 'views': views})
+        if diagnostics_path is not None:
+            Path(diagnostics_path).write_text(json.dumps({'objects': objects, 'objectEdges': diagnostics}, allow_nan=False))
+            print(json.dumps({'phase': 'edge_matched', 'id': ident, 'status': result['status']}), flush=True)
     return objects, diagnostics
 
 
@@ -1217,7 +1341,8 @@ def _route(label, objects, scale):
 
 def _overlays(out, frames, drawings, objects):
     files = []
-    colors = {'fence-0': (0, 255, 255), 'post-box-1': (0, 230, 0), 'post-box-2': (255, 120, 0)}
+    colors = {'fence-0': (0, 255, 255), 'fence-1': (255, 255, 0),
+              'post-box-1': (0, 230, 0), 'post-box-2': (255, 120, 0)}
     for photo, frame in frames.items():
         image = cv2.cvtColor(frame['rgb'], cv2.COLOR_RGB2BGR)
         drawing = drawings[photo]
