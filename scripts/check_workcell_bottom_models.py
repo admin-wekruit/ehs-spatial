@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 import trimesh
 
-from workcell_bottom_models import apply_bottom_models, _world
+from workcell_bottom_models import apply_bottom_models, apply_housing_models, _world
 import workcell_physical_bottoms as physical_bottoms
 from workcell_physical_bottoms import _items, _ordered_bottom
 
@@ -194,6 +194,150 @@ def check():
         print('PASS: stale-floor rigid initialization preserves distances and rejects noncoplanar faces; reordered fence identity; missing section rejected before fitting; tilted shared ground; nested transforms; complete section and original rail; initialized top preserved; texture/colors and untouched nodes; readonly source preserved')
 
 
+def check_housing():
+    """Producer-to-catalog contract, actual mesh terminal and one ground agree."""
+    from workcell_endpoint_estimate import estimate
+    from workcell_photo_report import _ground_distance
+    with tempfile.TemporaryDirectory(prefix='workcell-housing-check-') as directory:
+        root, candidates = Path(directory)/'run', Path(directory)/'candidates'
+        root.mkdir(); candidates.mkdir()
+        normal = np.array([.2, -.3, 1.]); normal /= np.linalg.norm(normal)
+        ground = {'normal': normal.tolist(), 'offset': -.4}
+        floor = trimesh.geometry.align_vectors([0., 0., 1.], normal)
+        floor[:3, 3] = .4*normal
+        node_transform = trimesh.transformations.rotation_matrix(.4, [2., 1., 3.])
+        node_transform[:3, 3] = [-.3, .8, 1.2]
+        # Open observed face, nonhorizontal terminal: never force equal bottom heights.
+        vertices = np.array([[-.1, 0, .35], [.1, 0, .38], [.1, 0, 2.], [-.1, 0, 2.]])
+        mesh = trimesh.Trimesh(vertices=trimesh.transform_points(vertices, np.linalg.inv(node_transform) @ floor),
+                               faces=[[0, 1, 2], [0, 2, 3]], process=False)
+        mesh.visual.vertex_colors = [240, 200, 30, 255]
+        scene = trimesh.Scene(); scene.add_geometry(mesh, node_name='housing-face', transform=node_transform)
+        scene.export(candidates/'housing.glb')
+        posts = trimesh.Scene(); old = trimesh.creation.box([.2, .2, 1.])
+        old.apply_translation([0, 0, 2.5]); old.apply_transform(floor)
+        posts.add_geometry(old, node_name='box-1'); posts.export(root/'posts.glb')
+        fences = trimesh.Scene(); rail = trimesh.creation.box([3., .02, .2])
+        rail.apply_translation([1., 0, .4]); rail.apply_transform(floor)
+        fences.add_geometry(rail, node_name='section-0-continued-3'); fences.export(root/'fence-fitted.glb')
+        geometry = {'floor': ground, 'anchor': {'referenceFit': {'status': 'unsupported', 'mPerNative': None}},
+                    'physicalClearances': {'ground': ground, 'objects': [{'id': 'fence-0', 'status': 'unsupported', 'reason': 'fixture'}]}}
+        observations = [{'photo': photo, 'source': f'SAM yellow safety post; instance {photo}',
+                         'polygons': [[[0, 0], [10, 0], [10, 10]]]} for photo in (1, 2, 3)]
+        catalog = {'objects': [{'id': ident, 'model': {'file': 'posts.glb', 'nodes': ['box-1']},
+                               'observations': deepcopy(observations), 'measurements': {}}
+                              for ident in ('post-box-1', 'post-box-2')]}
+        (root/'geometry.json').write_text(json.dumps(geometry))
+        (root/'objects.json').write_text(json.dumps(catalog))
+        files = {path.name: path.read_bytes() for path in root.iterdir()}
+        source_observations = [{**row, 'partId': 'housing_lower_terminal', 'rawSegments': [[[0, 10], [10, 10]]],
+            'faceSideIds': [4, 7], 'faceSideEdgesRaw': [[[0, 0], [0, 10]], [[10, 0], [10, 10]]]}
+            for row in observations[:2]]
+        surfaces = [{**row, 'partId': 'selected_visible_housing_face',
+            'bottomRawSegments': [[[0, 10], [10, 10]]] if row['photo'] != 3 else [],
+            'topRawSegments': [[[0, 0], [10, 0]]] if row['photo'] != 2 else [],
+            'fullSideSegmentsRaw': [[[[0, 0], [0, 10]]], [[[10, 0], [10, 10]]]],
+            'faceSideIds': [4, 7], 'faceSideEdgesRaw': [[[0, 0], [0, 10]], [[10, 0], [10, 10]]],
+            'observedBoundaryNames': ['side_0', 'side_1'] + (['bottom'] if row['photo'] != 3 else []) + (['top'] if row['photo'] != 2 else [])}
+            for row in observations]
+        ambiguity = {'resolved': False, 'supportedAssignments': 2,
+                     'scope': 'Selected visible-face terminal; front-versus-wing identity unverified'}
+        supported = {'id': 'post-box-1', 'status': 'supported_candidate', 'physicalValidation': 'none',
+            'geometryScope': 'Source-supported open visible housing face; back and thickness unknown',
+            'sourceSurfaceObservations': surfaces,
+            'model': {'file': 'housing.glb', 'nodes': ['housing-face'],
+                      'sha256': hashlib.sha256((candidates/'housing.glb').read_bytes()).hexdigest()},
+            'lowerBoundary': {'partId': 'housing_lower_terminal', 'vertices': [{'node': 'housing-face', 'vertexIndex': i} for i in (0, 1)],
+                              'scope': 'Selected observed face terminal; whole-housing minimum and front-versus-wing identity unverified',
+                              'terminalPartAmbiguity': ambiguity,
+                              'sourceObservations': source_observations},
+            'fitGate': {'accepted': True, 'converged': True, 'parameterCount': 6, 'jacobianRank': 6,
+                        'rankSource': 'source_reprojection_without_priors', 'sourceViews': [1, 2, 3],
+                        'terminalPartAmbiguity': ambiguity,
+                        'sourcePixelTransforms': {str(photo): [[.2, 0, 0], [0, .2, 0], [0, 0, 1]] for photo in (1, 2, 3)},
+                        'reprojectionByPhoto': [{'photo': photo, 'rmsRawPx': 4., 'maxRawPx': 4.5, 'thresholdRawPx': 5.} for photo in (1, 2, 3)],
+                        'exportedModelReprojectionByPhoto': [{'photo': photo, 'rmsRawPx': 4., 'maxRawPx': 4.5, 'thresholdRawPx': 5.} for photo in (1, 2, 3)],
+                        'leaveOnePhotoOut': [{'photo': photo, 'converged': True, 'parameterCount': 6, 'jacobianRank': 6,
+                                            'maxRawPx': 9., 'thresholdRawPx': 10.} for photo in (1, 2, 3)]}}
+        result = {'ground': ground, 'sourceFiles': {name: hashlib.sha256(files[name]).hexdigest() for name in ('geometry.json', 'objects.json')},
+                  'items': [supported, {'id': 'post-box-2', 'status': 'unsupported', 'reason': 'Unobservable along-face direction'}]}
+        invalid = []
+        candidate = deepcopy(result); candidate['items'][0]['fitGate']['jacobianRank'] = 5; invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['fitGate']['leaveOnePhotoOut'][0]['maxRawPx'] = 11; invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['fitGate']['reprojectionByPhoto'][0]['thresholdRawPx'] = 10; invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['lowerBoundary']['sourceObservations'][0]['source'] = 'other instance'; invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['lowerBoundary']['sourceObservations'][0]['faceSideIds'] = [4, 4]; invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['sourceSurfaceObservations'][2]['source'] = 'other top-only instance'; invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['sourceSurfaceObservations'][2]['observedBoundaryNames'].append('bottom'); invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['lowerBoundary']['sourceObservations'][1]['photo'] = 3; invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['lowerBoundary']['sourceObservations'].pop(); invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['lowerBoundary']['terminalPartAmbiguity'] = {}; invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['sourceSurfaceObservations'][0]['topRawSegments'] = []; candidate['items'][0]['sourceSurfaceObservations'][0]['observedBoundaryNames'].remove('top'); invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['fitGate'].update(parameterCount=8, jacobianRank=8); invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['model']['sha256'] = 'stale'; invalid.append(candidate)
+        candidate = deepcopy(result); candidate['items'][0]['lowerBoundary']['vertices'][0]['vertexIndex'] = 90; invalid.append(candidate)
+        candidate = deepcopy(result); candidate['ground']['offset'] += .1; invalid.append(candidate)
+        before = deepcopy(catalog)
+        for candidate in invalid:
+            try:
+                apply_housing_models(root, candidate, candidates, catalog)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError('Invalid housing evidence entered the actual report')
+            assert catalog == before
+            assert files == {path.name: path.read_bytes() for path in root.iterdir()}
+        # A bottom seen once is still model geometry supported by all surface
+        # views; preserve that narrower source count instead of inventing edges.
+        single_bottom = deepcopy(result)
+        single_bottom['items'][0]['lowerBoundary']['sourceObservations'] = [deepcopy(source_observations[0])]
+        partial = single_bottom['items'][0]['sourceSurfaceObservations'][1]
+        partial.update(bottomRawSegments=[], topRawSegments=[[[0, 0], [10, 0]]],
+                       observedBoundaryNames=['side_0', 'side_1', 'top'])
+        single_root = Path(directory)/'single-bottom'; single_root.mkdir()
+        for name, data in files.items():
+            (single_root/name).write_bytes(data)
+        apply_housing_models(single_root, single_bottom, candidates, deepcopy(catalog))
+        single_measurement = next(row for row in json.loads((single_root/'physical-clearances.json').read_text())['objects'] if row['id'] == 'post-box-1')
+        assert single_measurement['sourcePhotos'] == [1] and single_measurement['surfaceSupportPhotos'] == [1, 2, 3]
+        assert not single_measurement['wholeHousingMinimumVerified']
+        manifest = apply_housing_models(root, result, candidates, catalog)
+        assert manifest['modelUpdates'] == 1 and not manifest['acceptedForPhysicalUse']
+        assert manifest['physicalValidation'] == 'none' and manifest['mPerNative'] is None
+        assert all(item['observations'] == observations for item in catalog['objects'])
+        assert catalog['objects'][1]['model'] == before['objects'][1]['model']
+        assert (root/'posts.glb').read_bytes() == files['posts.glb']
+        assert (root/'post-box-1-physical.glb').read_bytes() == (candidates/'housing.glb').read_bytes()
+        updated_geometry = json.loads((root/'geometry.json').read_text())
+        assert updated_geometry['anchor'] == geometry['anchor']
+        measured = next(row for row in updated_geometry['physicalClearances']['objects'] if row['id'] == 'post-box-1')
+        assert abs(measured['heightNative']-.35) < 1e-6
+        assert np.allclose(measured['bottomHeightRangeNative'], [.35, .38], atol=1e-6)
+        assert measured['rangeNative'] is None, 'Edge height spread is not measurement uncertainty'
+        assert measured['sourcePhotos'] == [1, 2] and measured['surfaceSupportPhotos'] == [1, 2, 3]
+        assert not measured['wholeHousingMinimumVerified'] and measured['measurementScope'] == 'visible_face_lower_terminal'
+        assert catalog['objects'][0]['physicalBottom']['terminalPartAmbiguity'] == ambiguity
+        assert np.allclose(np.array(measured['pointNative'])-measured['footNative'], measured['heightNative']*normal)
+        report_transform = np.linalg.inv(floor)
+        sidebar = _ground_distance(catalog['objects'][0], updated_geometry, report_transform)
+        assert sidebar['feature']['valueNative'] == measured['heightNative']
+        endpoints = json.loads((root/'model-endpoint-estimate.json').read_text())
+        light = next(row for row in endpoints['objects'] if row['objectId'] == 'post-box-1')
+        assert np.isclose(light['heightNative'], measured['heightNative'], atol=1e-9, rtol=0) and light['modelEvidence']['modelSha256'] == supported['model']['sha256']
+        assert 'percentile' not in light['provenance'] and 'posts.glb' not in endpoints['sourceFiles']
+        assert light['terminalPartAmbiguity'] == ambiguity and not light['wholeHousingMinimumVerified']
+        assert 'whole-housing minimum unverified' in light['provenance']
+        assert all(hashlib.sha256((root/name).read_bytes()).hexdigest() == digest for name, digest in endpoints['sourceFiles'].items())
+        (root/'post-box-1-physical.glb').write_bytes(files['posts.glb'])
+        try:
+            estimate(root)
+        except ValueError as error:
+            assert 'stale' in str(error)
+        else:
+            raise AssertionError('Changed model retained an apparently current terminal estimate')
+    print('PASS: housing gate/data rank/held-out checks; full anchor plus partial bottom/top views; exact surface and terminal observation identity; missing edges not fabricated; terminal ambiguity preserved; visible-face scope only; resolution gate; exported model hash; actual transformed terminal -> catalog/sidebar/endpoints; unknown scale unchanged; unsupported opposite side; no initializer replacement')
+
+
 def cached_smoke(root):
     """Optional readonly real-GLB round trip; zero fit translation is not accuracy."""
     root = Path(root)
@@ -227,5 +371,6 @@ if __name__ == '__main__':
     parser.add_argument('--baseline', type=Path, help='Optional frozen real run for readonly small-GLB smoke')
     args = parser.parse_args()
     check()
+    check_housing()
     if args.baseline:
         cached_smoke(args.baseline)

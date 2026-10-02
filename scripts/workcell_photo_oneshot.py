@@ -388,10 +388,10 @@ def _build_page(root, metrics):
               "objects.json", "object-extras.glb", "scene-report.json")
     for name in assets:
         shutil.copyfile(root / name, page / name)
-    for name in ('measurements.json', 'measurement-evaluation.json', 'physical-clearances.json', 'structural-result.json', 'workcell-metric.glb', 'workcell-native.glb', 'workcell-conditional.glb'):
+    for name in ('measurements.json', 'measurement-evaluation.json', 'physical-clearances.json', 'structural-result.json', 'housing-models.json', 'model-endpoint-estimate.json', 'workcell-metric.glb', 'workcell-native.glb', 'workcell-conditional.glb'):
         if (root/name).is_file():
             shutil.copyfile(root/name, page/name)
-    for model in [*root.glob("entity-*.glb"), *root.glob("guard-*-initializer.glb"), *root.glob("structural-*.jpg"), *root.glob("raw-image-features-*.jpg")]:
+    for model in [*root.glob("entity-*.glb"), *root.glob("post-box-*-physical.glb"), *root.glob("guard-*-initializer.glb"), *root.glob("structural-*.jpg"), *root.glob("raw-image-features-*.jpg")]:
         shutil.copyfile(model, page / model.name)
     for evidence in [*root.glob("geometry-*.jpg"), *root.glob("geometry-*.png")]:
         shutil.copyfile(evidence, page / evidence.name)

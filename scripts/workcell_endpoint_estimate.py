@@ -39,10 +39,49 @@ def estimate(root):
     if not np.isfinite(norm) or norm <= 0:
         raise ValueError('Invalid ground normal')
     normal, offset = normal / norm, float(ground['offset']) / norm
-    posts = trimesh.load(root / 'posts.glb', force='scene')
+    catalog_path = root / 'objects.json'
+    catalog = {item['id']: item for item in json.loads(catalog_path.read_text())['objects']} if catalog_path.is_file() else {}
+    source_files = {'fence-fitted.glb', 'physical-clearances.json'}
+    if catalog_path.is_file():
+        source_files.add('objects.json')
+
+    def housing_terminal(ident):
+        evidence = catalog.get(ident, {}).get('physicalBottom')
+        if evidence is None:
+            return None
+        model = catalog[ident]['model']; name = model['file']; path = (root / name).resolve()
+        if (root.resolve() not in path.parents or evidence['modelFile'] != name or
+                hashlib.sha256(path.read_bytes()).hexdigest() != evidence['modelSha256']):
+            raise ValueError('Housing terminal model binding is stale: ' + ident)
+        scene = trimesh.load(path, force='scene', process=False)
+        points = []
+        for ref in evidence['vertices']:
+            node, index = ref['node'], ref['vertexIndex']
+            if node not in model['nodes'] or type(index) is not int:
+                raise ValueError('Housing terminal references another object: ' + ident)
+            matrix, mesh_id = scene.graph[node]
+            vertices = scene.geometry[mesh_id].vertices
+            if not 0 <= index < len(vertices):
+                raise ValueError('Housing terminal vertex is absent: ' + ident)
+            points.append(trimesh.transform_points([vertices[index]], matrix)[0])
+        points = np.asarray(points)
+        if len(points) < 2 or not np.isfinite(points).all():
+            raise ValueError('Housing terminal has no finite exported edge: ' + ident)
+        source_files.add(name)
+        return points[np.argmin(points @ normal)], points, evidence
+
+    current_light = housing_terminal('post-box-1')
+    if current_light is None:
+        selected = catalog.get('post-box-1', {}).get('model')
+        if selected is not None and selected != {'file': 'posts.glb', 'nodes': ['box-1']}:
+            raise ValueError('Selected housing geometry needs an explicit physicalBottom terminal binding')
+        posts = trimesh.load(root / 'posts.glb', force='scene')
+        light_face = _bottom_face(posts, 'box-1', normal)
+        light_point = light_face.mean(0)
+        source_files.add('posts.glb')
+    else:
+        light_point, light_face, _ = current_light
     fences = trimesh.load(root / 'fence-fitted.glb', force='scene')
-    light_face = _bottom_face(posts, 'box-1', normal)
-    light_point = light_face.mean(0)
     rail_face = _bottom_face(fences, 'section-0-continued-3', normal)
     center = rail_face.mean(0)
     _, _, vectors = np.linalg.svd(rail_face - center, full_matrices=False)
@@ -69,19 +108,36 @@ def estimate(root):
                 'bottomFaceHeightRangeNative': [float(heights.min()), float(heights.max())],
                 'rangeMeaning': 'Actual mesh bottom-face extent, not physical measurement uncertainty'}
 
-    light = record('post-box-1', 'box-1', light_point, light_face,
-                   'Displayed upright primitive, bottom-face center; source depth percentile envelope')
+    if current_light is None:
+        light = record('post-box-1', 'box-1', light_point, light_face,
+                       'Displayed upright primitive, bottom-face center; source depth percentile envelope')
+    else:
+        light = record('post-box-1', current_light[2]['vertices'][0]['node'], light_point, light_face,
+                       'Lowest vertex of the selected visible-face terminal read from the actual source-supported GLB; same inferred floor; whole-housing minimum unverified')
+        light['modelEvidence'] = current_light[2]
+        light.update(measurementScope='visible_face_lower_terminal', wholeHousingMinimumVerified=False,
+                     terminalPartAmbiguity=current_light[2]['terminalPartAmbiguity'])
     fence = record('fence-0', 'section-0-continued-3', rail_point, rail_face,
-                   'Displayed inferred continuation of observed lower rail; nearest point to curtain bottom center along bottom-face centerline')
+                   'Displayed inferred continuation of observed lower rail; nearest point to the selected curtain terminal along bottom-face centerline')
     fence.update(bottomCenterlineEndsNative=ends.tolist(), closestAlongRailFraction=fraction)
+    objects = [light, fence]
+    current_left = housing_terminal('post-box-2')
+    if current_left is not None:
+        point, vertices, evidence = current_left
+        left = record('post-box-2', evidence['vertices'][0]['node'], point, vertices,
+                      'Lowest vertex of the selected visible-face terminal read from the actual source-supported GLB; same inferred floor; whole-housing minimum unverified')
+        left['modelEvidence'] = evidence
+        left.update(measurementScope='visible_face_lower_terminal', wholeHousingMinimumVerified=False,
+                    terminalPartAmbiguity=evidence['terminalPartAmbiguity'])
+        objects.append(left)
     difference = light['heightNative'] - fence['heightNative']
     return {'schemaVersion': 1, 'status': 'conditional_model_estimate', 'mPerNative': None,
             'scope': 'Actual displayed model endpoints against the current saved floor; does not certify physical dimensions',
             'ground': {'normal': normal.tolist(), 'offset': offset}, 'sceneTransformNative': T.tolist(),
-            'objects': [light, fence], 'lightMinusFenceNative': difference,
+            'objects': objects, 'lightMinusFenceNative': difference,
             'sign': 'light_higher' if difference > 0 else 'light_lower' if difference < 0 else 'equal',
             'sourceFiles': {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
-                            for name in ('posts.glb', 'fence-fitted.glb', 'physical-clearances.json')}}
+                            for name in sorted(source_files)}}
 
 
 def _pixels(points, affine):

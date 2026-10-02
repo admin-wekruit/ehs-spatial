@@ -80,6 +80,30 @@ def _preview_options(runs, page):
 
 
 def _preview_markup(choices):
+    """Optional calipers use native coordinates under the model's one transform.
+
+    Run: PYTHONPATH=. python -m doctest scripts/workcell_metrology_report.py
+
+    >>> page = _preview_markup([{'measurements': [{'pointNative': [1, 2, 3], 'footNative': [1, 0, 3], 'label': '条件估计'}]}])
+    >>> all(part in page for part in ('next.add(line)', 'next.add(marker)', 'next.add(label)', 'row.measurements??[]'))
+    True
+    >>> 'point.applyQuaternion' not in page and 'foot.applyQuaternion' not in page
+    True
+    >>> _preview_markup([{'measurements': [{'pointNative': [1, float('nan'), 3], 'footNative': [1, 0, 3], 'label': 'bad'}]}])
+    Traceback (most recent call last):
+        ...
+    ValueError: Preview calipers require finite native endpoints and a nonempty label
+    """
+    for row in choices:
+        if not isinstance(row.get('measurements', []), list):
+            raise ValueError('Preview measurements must be a list')
+        for measurement in row.get('measurements', []):
+            if (not isinstance(measurement, dict) or
+                    not isinstance(measurement.get('label'), str) or not measurement['label'].strip() or
+                    any(not isinstance(measurement.get(key), (list, tuple)) or len(measurement[key]) != 3 or
+                        any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+                            for value in measurement[key]) for key in ('pointNative', 'footNative'))):
+                raise ValueError('Preview calipers require finite native endpoints and a nonempty label')
     if not choices:
         return '<section><h2>本轮可旋转模型</h2><p>本轮尚无已导出的候选模型；完整 52 对象场景可从顶部入口打开。</p></section>'
     payload = json.dumps(choices, ensure_ascii=False).replace('<', '\\u003c')
@@ -116,11 +140,33 @@ async function show(index){
       next.position.copy(new THREE.Vector3(...row.base).applyQuaternion(next.quaternion).negate());}
     active.add(next);const box=new THREE.Box3().setFromObject(next), center=box.getCenter(new THREE.Vector3());
     const size=Math.max(...box.getSize(new THREE.Vector3()).toArray(),.01);
+    for(const measurement of row.measurements??[]){
+      // Native endpoints inherit next's ground transform exactly once.
+      const point=new THREE.Vector3(...measurement.pointNative), foot=new THREE.Vector3(...measurement.footNative);
+      const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([point,foot]),
+        new THREE.LineBasicMaterial({color:0x79ffac,depthTest:false,depthWrite:false}));
+      line.renderOrder=20;next.add(line);
+      for(const position of [point,foot]){
+        const marker=new THREE.Mesh(new THREE.SphereGeometry(size*.005,12,8),
+          new THREE.MeshBasicMaterial({color:0x79ffac,depthTest:false,depthWrite:false}));
+        marker.position.copy(position);marker.renderOrder=21;next.add(marker);
+      }
+      const surface=document.createElement('canvas'), ctx=surface.getContext('2d');
+      const font='600 36px system-ui, sans-serif';ctx.font=font;
+      surface.width=Math.ceil(ctx.measureText(measurement.label).width)+32;surface.height=64;
+      ctx.font=font;ctx.fillStyle='rgba(8,33,23,.94)';ctx.fillRect(0,0,surface.width,surface.height);
+      ctx.strokeStyle='#79ffac';ctx.lineWidth=2;ctx.strokeRect(1,1,surface.width-2,surface.height-2);
+      ctx.fillStyle='#eafff1';ctx.textBaseline='middle';ctx.fillText(measurement.label,16,32);
+      const texture=new THREE.CanvasTexture(surface);texture.colorSpace=THREE.SRGBColorSpace;
+      const label=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false,depthWrite:false}));
+      label.position.copy(point).add(foot).multiplyScalar(.5);label.center.set(0,.5);
+      label.scale.set(size*.08*surface.width/surface.height,size*.08,1);label.renderOrder=22;next.add(label);
+    }
     const grid=new THREE.GridHelper(size*1.5,12,0x93abb1,0x334951);grid.position.set(center.x,row.floor?0:box.min.y,center.z);active.add(grid);
     const axes=new THREE.AxesHelper(size*.25);axes.position.copy(grid.position);active.add(axes);
     controls.target.copy(center);camera.position.copy(center).add(new THREE.Vector3(1,.7,1).multiplyScalar(size*1.3));
     camera.near=size/1000;camera.far=size*100;camera.updateProjectionMatrix();controls.update();
-    status.textContent='已加载 '+row.assets.length+' 个模型 · '+row.label+' · 原生单位';
+    status.textContent='已加载 '+row.assets.length+' 个模型 · '+row.label+' · 原生单位'+(row.measurements?.length?' · '+row.measurements.length+' 条离地卡尺':'');
     canvas.dataset.world=row.world;canvas.dataset.kind=row.kind;
   }catch(error){dispose(next);if(current===ticket)status.textContent='模型加载失败：'+error.message;}
 }

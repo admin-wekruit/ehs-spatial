@@ -170,6 +170,39 @@ def main():
     with patch('workcell_fence_bottom.fence_bottom_candidates', side_effect=detected_bottoms):
         source_edges, _ = metrology._object_edges(fence_catalog, {}, fence_geometry,
                                                   fence_frames, up, association, fence_drawings)
+    # A whole-face solver requests only RGB post candidates. It must neither
+    # access a fence catalog/geometry entry nor run unused 3D line matching.
+    post_ids = ('post-box-1', 'post-box-2')
+    post_catalog = {ident: {'id': ident, 'observations': [{'photo': 1, 'source': 'instance 0'}]}
+                    for ident in post_ids}
+    post_frames = {1: {**fence_frames[1], 'rgb': np.zeros((40, 40, 3), np.uint8)}}
+    post_legacy = {ident: association[ident] for ident in post_ids}
+    terminal = {'photo': 1, 'rawEnds': [[5., 5.], [10., 5.]], 'uv': [[5., 5.], [10., 5.]]}
+    fresh_drawings = lambda: {1: {'selected': [], 'candidates': []}}
+    with patch.object(metrology, '_response', return_value={'rle': [None]}), \
+            patch.object(metrology, '_raw_mask', return_value=np.ones((40, 40), np.uint8)), \
+            patch.object(metrology, '_terminal_edges', return_value=([terminal], {'source': 'same RGB lines'})) as extract, \
+            patch('workcell_fence_bottom.fence_bottom_candidates', side_effect=AssertionError('Unrequested fence work')), \
+            patch.object(metrology, '_match_edges', side_effect=AssertionError('Unused 3D matching')):
+        only_edges, only_diagnostics = metrology._object_edges(post_catalog, {'prompts': []}, {}, post_frames,
+            up, post_legacy, fresh_drawings(), targets=post_ids, match_edges=False)
+        assert extract.call_count == 4  # bottom and top, once for each post
+        assert all(row['status'] == 'candidates_only' and row['bottomEdge'] is None for row in only_edges)
+    with patch.object(metrology, '_response', return_value={'rle': [None]}), \
+            patch.object(metrology, '_raw_mask', return_value=np.ones((40, 40), np.uint8)), \
+            patch.object(metrology, '_terminal_edges', return_value=([terminal], {'source': 'same RGB lines'})), \
+            patch.object(metrology, '_match_edges', return_value={'observations': [terminal]}) as match:
+        matched_edges, matched_diagnostics = metrology._object_edges(post_catalog, {'prompts': []}, {}, post_frames,
+            up, post_legacy, fresh_drawings(), targets=post_ids)
+        assert match.call_count == 4 and all(row['status'] == 'edge_supported' for row in matched_edges)
+    assert only_diagnostics == matched_diagnostics, 'Skipping unused line fits changed the RGB source candidates'
+    for invalid_targets in (('post-box-1', 'post-box-1'), ('unknown',)):
+        try:
+            metrology._object_edges({}, {}, {}, {}, up, {}, {}, targets=invalid_targets, match_edges=False)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Invalid requested target set was silently accepted')
     fences = [row for row in source_edges if row['id'].startswith('fence-')]
     assert {row['id'] for row in fences} == {'fence-0', 'fence-1'}
     for plane, row in enumerate(fences):
@@ -261,6 +294,71 @@ def main():
         detector.return_value.detect.return_value = [(local_lines - [30., 5.]).astype(np.float32).reshape(-1, 1, 4)]
         local_end, _ = _terminal_edges(local_rgb, local_mask, [0., 1.], 1, np.eye(3))
     assert local_end and abs(np.mean(local_end[0]['rawEnds'], axis=0)[1] - 500) < .01, local_end
+    # Interior seams must not permanently split two real bottom fragments
+    # into different narrow faces. Keep the outer observed-side hypothesis;
+    # its unobserved middle span remains a gap, never manufactured evidence.
+    seam_rgb = np.full((640, 200, 3), 135, np.uint8)
+    seam_rgb[20:560, 30:150] = [235, 205, 15]
+    seam_rgb[560:567, 30:150] = [75, 75, 75]
+    seam_rgb[60:560, 69:72] = [95, 95, 95]
+    seam_rgb[60:560, 109:112] = [95, 95, 95]
+    seam_mask = np.zeros(seam_rgb.shape[:2], np.uint8); seam_mask[20:567, 30:150] = 1
+    seam_lines = np.array([[[30., 20.], [30., 567.]], [[150., 20.], [150., 567.]],
+                           [[70., 60.], [70., 560.]], [[110., 60.], [110., 560.]],
+                           [[30., 567.], [65., 567.]], [[115., 567.], [150., 567.]]])
+    with patch.object(cv2, 'createLineSegmentDetector') as detector:
+        detector.return_value.detect.return_value = [seam_lines.astype(np.float32).reshape(-1, 1, 4)]
+        seam_ends, seam_detail = _terminal_edges(seam_rgb, seam_mask, [0., 1.], 1, np.eye(3))
+    broad = [row for row in seam_ends if abs(row['faceWidthRawPx'] - 120.) < .01]
+    assert len(broad) == 1 and broad[0]['fragmentCount'] == 2, (seam_ends, seam_detail)
+    assert broad[0]['gapIntervalsRawPx'] and abs(broad[0]['visibleLengthRawPx'] - 70.) < .01
+    assert len({tuple(row['faceSideIds']) for row in seam_ends}) > 1, 'Hypothesis became an asserted physical face'
+
+    # The final output cap must not undo broad-face retention. Twelve genuine
+    # internal reflection lines create >12 plausible pairs whose short widths
+    # score higher than the outer face's two disjoint 20px end fragments.
+    many_rgb = np.full((980, 260, 3), 135, np.uint8)
+    many_rgb[20:920, 30:210] = [235, 205, 15]
+    many_rgb[920:927, 30:210] = [75, 75, 75]
+    many_mask = np.zeros(many_rgb.shape[:2], np.uint8); many_mask[20:927, 30:210] = 1
+    interiors = np.linspace(55., 185., 12)
+    for x in interiors:
+        many_rgb[60:920, round(x):round(x)+1] = [210, 180, 15]
+    many_lines = np.array([[[30., 20.], [30., 927.]], [[210., 20.], [210., 927.]],
+                           *[[[x, 60.], [x, 920.]] for x in interiors],
+                           [[30., 927.], [50., 927.]], [[190., 927.], [210., 927.]]])
+    with patch.object(cv2, 'createLineSegmentDetector') as detector:
+        detector.return_value.detect.return_value = [many_lines.astype(np.float32).reshape(-1, 1, 4)]
+        many_ends, many_detail = _terminal_edges(many_rgb, many_mask, [0., 1.], 1, np.eye(3))
+    assert many_detail['candidateCount'] > 12 and len(many_ends) == 12, many_detail
+    outer = [row for row in many_ends if row['faceSideIds'] == [0, 1]]
+    assert len(outer) == 1 and outer[0]['fragmentCount'] == 2, [row['faceWidthRawPx'] for row in many_ends]
+    assert abs(outer[0]['visibleLengthRawPx'] - 40.) < .01 and len(outer[0]['gapIntervalsRawPx']) == 1
+    assert len({tuple(row['faceSideIds']) for row in many_ends}) == 12
+    assert many_detail['candidateLimitDiscarded'] == len(many_detail['omittedCandidateFaces'])
+    assert all(row['partIdentity']['frontOrSide'] == 'unresolved' for row in many_ends)
+
+    # A much longer adjacent wing used to remove this broad terminal through
+    # both the global near-end and global color-continuation conditions.
+    step_rgb = np.full((880, 210, 3), 135, np.uint8)
+    step_rgb[20:600, 30:130] = [235, 205, 15]
+    step_rgb[20:800, 136:170] = [235, 205, 15]
+    step_rgb[20:50, 30:170] = [235, 205, 15]
+    step_mask = np.zeros(step_rgb.shape[:2], np.uint8)
+    step_mask[20:600, 30:130] = 1; step_mask[20:800, 136:170] = 1; step_mask[20:50, 30:170] = 1
+    step_lines = np.array([[[30., 20.], [30., 600.]], [[130., 20.], [130., 600.]],
+                           [[136., 20.], [136., 800.]], [[170., 20.], [170., 800.]],
+                           [[30., 600.], [130., 600.]], [[136., 800.], [170., 800.]]])
+    with patch.object(cv2, 'createLineSegmentDetector') as detector:
+        detector.return_value.detect.return_value = [step_lines.astype(np.float32).reshape(-1, 1, 4)]
+        stepped, step_detail = _terminal_edges(step_rgb, step_mask, [0., 1.], 1, np.eye(3))
+    assert any(abs(np.mean(row['rawEnds'], axis=0)[1] - 600.) < .01 for row in stepped), step_detail
+    assert any(abs(np.mean(row['rawEnds'], axis=0)[1] - 800.) < .01 for row in stepped), step_detail
+    assert all(not row['partIdentity']['commonBottomPlaneSupported'] for row in stepped)
+    assert any(row['reason'] == 'notNearColorEnd' and row.get('faceSideIds') == [0, 3]
+               and row['rawEnds'] == step_lines[4].tolist() for row in step_detail['nearEndRejectedEdges']), step_detail
+    assert step_detail['rejectionCounts']['topologyChecks'] <= step_detail['rejectionCounts']['facePairHypotheses']
+
     # Two short fragments of ONE long side diverge when extrapolated. Their
     # apparent 6.2px span formerly passed as two sides of a fictitious face.
     degenerate_rgb = np.full((240, 100, 3), 135, np.uint8)

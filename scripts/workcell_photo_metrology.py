@@ -523,7 +523,7 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
         else:
             groups.append([(index, line, length)])
     axis_lines, axis_ids, directions, lengths, side_support, observed_lengths = [], [], [], [], [], []
-    local_face_sides = []
+    local_face_sides, side_group_lines = [], {}
     for group in groups:
         points = np.concatenate([row[1] for row in group])
         vx, vy, x, y = cv2.fitLine(points, cv2.DIST_L2, 0, .01, .01).ravel()
@@ -532,6 +532,7 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
         visible = sum(b - a for a, b in intervals)
         observed_lengths.append(visible)
         ident = min(row[0] for row in group)
+        side_group_lines[ident] = (np.asarray([x, y], float), axis.astype(float))
         for _, line, _ in group:
             samples = line[0] + np.linspace(.1, .9, 9)[:, None] * (line[1] - line[0])
             obscured = (_sample(blocked, samples) | _sample(blocked, samples + rough_across * 2) |
@@ -563,15 +564,20 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
     # Occluded body pieces remain only when collinear and larger than a cap pixel.
     retained = np.zeros_like(yellow)
     for label in range(1, count):
+        # AREA is exactly the old len(np.where(labels == label)[0]); reject
+        # specks before allocating/scanning another full-image boolean array.
+        if stats[label, cv2.CC_STAT_AREA] < max(20, width * width * .12):
+            continue
         y, x = np.where(labels == label)
         coordinates = np.c_[x, y]
-        if len(x) >= max(20, width * width * .12) and low - width * .2 <= np.median(coordinates @ across) <= high_side + width * .2:
+        if low - width * .2 <= np.median(coordinates @ across) <= high_side + width * .2:
             retained |= labels == label
     y, x = np.where(retained)
     body = np.c_[x, y]
     if len(body) == 0 or np.ptp(body @ down) < width * 4:
         return [], {'reason': 'Color support is not a long housing'}
-    termination = np.max(body @ down)
+    body_axial, body_across = body @ down, body @ across
+    face_color_cache = {}
     # A short dark endcap may continue the colored face. Background, colored
     # wires and disconnected brackets cannot bridge the gap to that face.
     endcap = (hsv[:, :, 1] < 65) & (hsv[:, :, 2] < housing_value * .5)
@@ -596,11 +602,12 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
                                  'occluded', 'noSideEndContact', 'lowerColorContinuation',
                                  'innerEndcapSeam', 'samMaskContinuesBelow', 'faceWidthUnsupported', 'sameSideGroup',
                                  'insufficientVisibleSpan', 'combinedCollinearFragments', 'accepted',
-                                 'disconnectedFaceEnd', 'imageAxisStepAmbiguity')}
-    def reject(reason, line, near=False):
+                                 'disconnectedFaceEnd', 'imageAxisStepAmbiguity',
+                                 'facePairHypotheses', 'facePairLimitDiscarded', 'topologyChecks')}
+    def reject(reason, line, near=False, **detail):
         counts[reason] += 1
         if near:
-            rejected.append({'rawEnds': (line + origin).tolist(), 'reason': reason})
+            rejected.append({'rawEnds': (line + origin).tolist(), 'reason': reason, **detail})
     for segment_index, line in enumerate(lines):
         vector = line[1] - line[0]
         length = np.linalg.norm(vector)
@@ -612,15 +619,11 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
         if not low - .3 * width <= side <= high_side + .3 * width:
             reject('outsideBodyAcross', line)
             continue
-        near_end = abs(center @ down - termination) <= width * .65
         if abs(direction @ down) > .5:
-            reject('notTransverse', line, near_end)
+            reject('notTransverse', line)
             continue
         if length > 2.2 * width:
-            reject('span', line, near_end)
-            continue
-        if not near_end:
-            reject('notNearColorEnd', line)
+            reject('span', line, True)
             continue
         # Width belongs to this RGB face, not the connected yellow union of
         # front and rear flanges. Locally observed side fragments must bound it;
@@ -640,89 +643,136 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
                 continue
             delta = edge[1] - edge[0]
             intersection = edge[0] + delta * ((axial - edge[0] @ down) / (delta @ down))
-            side_positions.append((float(intersection @ across), ident, raw_side))
+            side_positions.append((float(intersection @ across), ident, raw_side, observed_length))
         span = sorted(line @ across)
-        left = max((row for row in side_positions if row[0] <= span[0] + 1.5), default=None, key=lambda row: row[0])
-        right = min((row for row in side_positions if row[0] >= span[1] - 1.5), default=None, key=lambda row: row[0])
-        if left is None or right is None or right[0] - left[0] < 4:
+        # A dark seam/reflection is another supported line, not proof that it
+        # bounds this face. Keep competing enclosing pairs instead of binding
+        # every terminal fragment to its nearest (often internal) side lines.
+        lefts = [row for row in side_positions if row[0] <= span[0] + 1.5]
+        rights = [row for row in side_positions if row[0] >= span[1] - 1.5]
+        pairs = {}
+        for left in lefts:
+            for right in rights:
+                face_width = right[0] - left[0]
+                if not 4 <= face_width <= 2.2 * width:
+                    continue
+                if left[1] == right[1]:
+                    reject('sameSideGroup', line, True, faceSideIds=[left[1], right[1]])
+                    continue
+                key = (left[1], right[1])
+                # Keep real local fragments, choosing the closest observed
+                # axial support for repeated fragments of the same side pair.
+                gap = sum(min(abs(np.asarray(row[2]) @ down - origin @ down - axial))
+                          for row in (left, right))
+                if key not in pairs or gap < pairs[key][0]:
+                    pairs[key] = (gap, left, right)
+        if not pairs:
             reject('faceWidthUnsupported', line, True)
             continue
-        if left[1] == right[1]:
-            reject('sameSideGroup', line, True)
-            continue
-        face_width = right[0] - left[0]
-        face_ids = [left[1], right[1]]
-        # Contact distances belong to this face too. Using the connected
-        # front+side union width let a remote mounting bracket borrow yellow
-        # pixels and side support from far above its own terminal edge.
-        samples = line[0] + np.linspace(.12, .88, 9)[:, None] * vector
-        above = max(float(_sample(retained, samples - down * face_width * distance).mean()) for distance in (.12, .3, .6))
-        # Match the existing four-raw-pixel RGB boundary band: JPEG blur can
-        # retain low-saturation yellow immediately outside a real LSD edge.
-        below = max(min(float(_sample(retained, samples + down * (max(4., distance) + delta)).mean())
-                        for delta in (0., 2.))
-                    for distance in (face_width * .08, face_width * .18, face_width * .35))
-        outside = float(_sample(support, samples + down * max(3., face_width * .08)).mean())
-        if outside > .33:
-            counts['samMaskContinuesBelow'] += 1
-        if above < .44:
-            reject('insufficientColorAbove', line, True)
-            continue
-        if below > .22:
-            reject('colorContinuesBelow', line, True)
-            continue
-        connected = np.ones(len(samples), bool)
-        reaches_color = np.zeros(len(samples), bool)
-        contact_depth = np.full(len(samples), np.nan)
-        for distance in np.arange(1.5, max(3., face_width * .35) + 1., 1.):
-            points = samples - down * distance
-            colored = _sample(retained, points)
-            first_contact = connected & colored & ~reaches_color
-            contact_depth[first_contact] = distance
-            reaches_color |= connected & colored
-            connected &= colored | _sample(endcap, points) | reaches_color
-        contact_fraction = float(reaches_color.mean())
-        if contact_fraction < .6:
-            reject('disconnectedFaceEnd', line, True)
-            continue
-        obstruction = float((_sample(blocked, samples) |
-                             _sample(blocked, samples + down * max(3., face_width * .08))).mean())
-        contacts = []
-        for endpoint in line:
-            for side_end in side_ends:
-                delta = endpoint - side_end
-                gap = float(delta @ down)
-                if -4. <= gap <= face_width * .65:
-                    contacts.append((abs(float(delta @ across)), gap))
-        side_contact, side_gap = min(contacts, default=(1e6, 1e6))
-        if side_contact > max(4., face_width * .15):
-            reject('noSideEndContact', line, True)
-            continue
-        # A same-instance yellow continuation below an occluding paper edge
-        # disqualifies that edge as a body termination.
-        continuation = body[(body @ down > center @ down + width) &
-                            (abs(body @ across - side) < width * .65)]
-        if len(continuation) > width * width * .12:
-            reject('lowerColorContinuation', line, True)
-            continue
-        raw = line + origin
-        terminal_witnesses.append({'rawEnds': raw.tolist(), 'position': float(center @ down), 'faceSideIds': face_ids})
-        if obstruction > .22:
-            reject('occluded', line, True)
-            continue
-        candidates.append({'photo': photo, 'rawEnds': raw.tolist(), 'uv': _pixels(raw, A).tolist(),
-                           'sourceSegmentIndex': segment_index, 'faceSideIds': face_ids,
-                           'faceWidthRawPx': float(face_width), 'faceSideEdgesRaw': [left[2], right[2]],
-                           'faceWidthBasis': 'locally observed fragments of supported collinear RGB sides at this terminal segment',
-                           'aboveColorFraction': above, 'belowColorFraction': below,
-                           'directHousingContactFraction': contact_fraction,
-                           'housingContactDepthRawPx': float(np.median(contact_depth[reaches_color])),
-                           'belowInstanceFraction': outside,
-                           'obstructionFraction': obstruction,
-                           'sideEndContactRawPx': side_contact,
-                           'sideEndAxialGapRawPx': side_gap,
-                           'visibleLengthRawPx': float(length), 'bodyWidthRawPx': float(width),
-                           'score': above * min(1., length / width), 'position': float(center @ down)})
+        hypotheses = list(pairs.values())
+        # ponytail: at most 24 pair hypotheses per observed segment. Retain
+        # tight, wide and strongest-supported alternatives; if this cap is hit,
+        # diagnostics expose it for a later explicit face-association upgrade.
+        ordered = [sorted(hypotheses, key=lambda row: row[2][0] - row[1][0]),
+                   sorted(hypotheses, key=lambda row: -(row[2][0] - row[1][0])),
+                   sorted(hypotheses, key=lambda row: -min(row[1][3], row[2][3]))]
+        chosen = {}
+        for ranking in ordered:
+            for row in ranking[:8]:
+                chosen[(row[1][1], row[2][1])] = row
+        counts['facePairLimitDiscarded'] += len(hypotheses) - len(chosen)
+        for _, left, right in chosen.values():
+            counts['facePairHypotheses'] += 1
+            face_width = right[0] - left[0]
+            face_ids = [left[1], right[1]]
+            # Contact distances belong to this face too. Using the connected
+            # front+side union width let a remote mounting bracket borrow yellow
+            # pixels and side support from far above its own terminal edge.
+            samples = line[0] + np.linspace(.12, .88, 9)[:, None] * vector
+            above = max(float(_sample(retained, samples - down * face_width * distance).mean()) for distance in (.12, .3, .6))
+            # Match the existing four-raw-pixel RGB boundary band: JPEG blur can
+            # retain low-saturation yellow immediately outside a real LSD edge.
+            below = max(min(float(_sample(retained, samples + down * (max(4., distance) + delta)).mean())
+                            for delta in (0., 2.))
+                        for distance in (face_width * .08, face_width * .18, face_width * .35))
+            outside = float(_sample(support, samples + down * max(3., face_width * .08)).mean())
+            if outside > .33:
+                counts['samMaskContinuesBelow'] += 1
+            if above < .44:
+                reject('insufficientColorAbove', line, True)
+                continue
+            if below > .22:
+                reject('colorContinuesBelow', line, True)
+                continue
+            # The same physical face supplies BOTH terminal proximity and
+            # continuation checks. Adjacent longer wings cannot veto this end.
+            # Cache exact pixel membership between its observed side lines.
+            key = tuple(face_ids)
+            if key not in face_color_cache:
+                bounds = []
+                for row in (left, right):
+                    point, delta = side_group_lines[row[1]]
+                    bounds.append(point @ across + (body_axial - point @ down) *
+                                  (delta @ across) / (delta @ down))
+                face_color_cache[key] = body_axial[(body_across >= bounds[0] + 1.5) &
+                                                   (body_across <= bounds[1] - 1.5)]
+            face_color = face_color_cache[key]
+            termination = float(face_color.max()) if len(face_color) else None
+            if termination is None or abs(axial - termination) > face_width * .65:
+                reject('notNearColorEnd', line, True, faceSideIds=face_ids,
+                       faceWidthRawPx=float(face_width), faceColorTerminationAxialRawPx=termination,
+                       lineAxialRawPx=axial, scope='pixels between this face side pair only')
+                continue
+            if np.count_nonzero(face_color > axial + face_width) > face_width * face_width * .12:
+                reject('lowerColorContinuation', line, True, faceSideIds=face_ids)
+                continue
+            counts['topologyChecks'] += 1
+            connected = np.ones(len(samples), bool)
+            reaches_color = np.zeros(len(samples), bool)
+            contact_depth = np.full(len(samples), np.nan)
+            for distance in np.arange(1.5, max(3., face_width * .35) + 1., 1.):
+                points = samples - down * distance
+                colored = _sample(retained, points)
+                first_contact = connected & colored & ~reaches_color
+                contact_depth[first_contact] = distance
+                reaches_color |= connected & colored
+                connected &= colored | _sample(endcap, points) | reaches_color
+            contact_fraction = float(reaches_color.mean())
+            if contact_fraction < .6:
+                reject('disconnectedFaceEnd', line, True)
+                continue
+            obstruction = float((_sample(blocked, samples) |
+                                 _sample(blocked, samples + down * max(3., face_width * .08))).mean())
+            contacts = []
+            for endpoint in line:
+                for side_end in side_ends:
+                    delta = endpoint - side_end
+                    gap = float(delta @ down)
+                    if -4. <= gap <= face_width * .65:
+                        contacts.append((abs(float(delta @ across)), gap))
+            side_contact, side_gap = min(contacts, default=(1e6, 1e6))
+            if side_contact > max(4., face_width * .15):
+                reject('noSideEndContact', line, True)
+                continue
+            raw = line + origin
+            terminal_witnesses.append({'rawEnds': raw.tolist(), 'position': float(center @ down), 'faceSideIds': face_ids})
+            if obstruction > .22:
+                reject('occluded', line, True)
+                continue
+            candidates.append({'photo': photo, 'rawEnds': raw.tolist(), 'uv': _pixels(raw, A).tolist(),
+                               'sourceSegmentIndex': segment_index, 'faceSideIds': face_ids,
+                               'faceWidthRawPx': float(face_width), 'faceSideEdgesRaw': [left[2], right[2]],
+                               'faceWidthBasis': 'competing observed side pairs; terminal color and continuation confined to this pair',
+                               'faceColorTerminationAxialRawPx': termination,
+                               'aboveColorFraction': above, 'belowColorFraction': below,
+                               'directHousingContactFraction': contact_fraction,
+                               'housingContactDepthRawPx': float(np.median(contact_depth[reaches_color])),
+                               'belowInstanceFraction': outside,
+                               'obstructionFraction': obstruction,
+                               'sideEndContactRawPx': side_contact,
+                               'sideEndAxialGapRawPx': side_gap,
+                               'visibleLengthRawPx': float(length), 'bodyWidthRawPx': float(width),
+                               'score': above * min(1., length / width), 'position': float(center @ down)})
     outer = []
     for candidate in candidates:
         edge = np.asarray(candidate['rawEnds']) - origin
@@ -772,7 +822,35 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
             'commonBottomPlaneSupported': False}
     candidates.sort(key=lambda row: (-row['score'], -row['position']))
     counts['accepted'] = len(candidates)
-    return candidates[:6], {'candidateCount': len(candidates), 'longSideEdgesRaw': axis_lines,
+    selected = list(range(len(candidates)))
+    if len(candidates) > 12:
+        # Coverage scores prefer narrow seam-bounded faces. Spend the fixed
+        # output budget on distinct observed side pairs and spatially different
+        # boundaries; neither the widest nor the nearest pair is declared true.
+        features = []
+        for row in candidates:
+            sides = []
+            for ident in row['faceSideIds']:
+                point, direction = side_group_lines[ident]
+                sides.append(point @ across + (row['position'] - point @ down) *
+                             (direction @ across) / (direction @ down))
+            features.append([*sides, row['position']])
+        features = np.asarray(features) / width
+        selected, represented = [0], {tuple(candidates[0]['faceSideIds'])}
+        distance = np.linalg.norm(features - features[0], axis=1)
+        while len(selected) < 12:
+            remaining = [i for i in range(len(candidates)) if i not in selected]
+            unseen = [i for i in remaining if tuple(candidates[i]['faceSideIds']) not in represented]
+            index = max(unseen or remaining, key=lambda i: distance[i])
+            selected.append(index)
+            represented.add(tuple(candidates[index]['faceSideIds']))
+            distance = np.minimum(distance, np.linalg.norm(features - features[index], axis=1))
+    omitted = [{key: row[key] for key in ('faceSideIds', 'faceWidthRawPx', 'rawSegments', 'score')}
+               for i, row in enumerate(candidates) if i not in selected]
+    return [candidates[i] for i in selected], {'candidateCount': len(candidates), 'returnedCandidateCount': len(selected),
+                            'candidateLimitDiscarded': len(omitted), 'omittedCandidateFaces': omitted,
+                            'candidateSelection': 'Highest coverage seed, then unseen side-pair identities with maximal distance from retained left/right/terminal coordinates; not physical identity verification',
+                            'maxFacePairsPerSegment': 24, 'longSideEdgesRaw': axis_lines,
                             'sideSupportGroups': side_support,
                             'sideFragmentCount': len(side_fragments),
                             'requiredObservedSideLengthRawPx': float(rough_width * 4),
@@ -989,10 +1067,15 @@ def _match_edges(candidates, frames, up, lowest=False, *, require_identity_ancho
     return fitted
 
 
-def _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings, *, diagnostics_path=None):
+def _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings, *, diagnostics_path=None,
+                  targets=TARGETS, match_edges=True):
+    """Shared RGB extraction; callers fitting whole faces can omit line solves."""
+    targets = tuple(targets)
+    if len(targets) != len(set(targets)) or any(ident not in TARGETS for ident in targets):
+        raise ValueError('Requested edge targets must be distinct known object identities')
     objects, diagnostics = [], []
     initial_frames = {photo: {**frame, 'K': frame['initialK'], 'pose': frame['initialPose']} for photo, frame in frames.items()}
-    for ident in TARGETS:
+    for ident in targets:
         item = catalog[ident]
         initial = np.asarray(legacy[ident]['pointNative'], float) if legacy[ident]['pointNative'] else None
         bottom, top, views = [], [], []
@@ -1037,35 +1120,39 @@ def _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings,
             if diagnostics_path is not None:
                 partial = diagnostics + [{'id': ident, 'bottomCandidates': bottom, 'topCandidates': top, 'views': views}]
                 Path(diagnostics_path).write_text(json.dumps({'objects': objects, 'objectEdges': partial}, allow_nan=False))
-                print(json.dumps({'phase': 'edge_matching', 'id': ident, 'bottomCandidates': len(bottom), 'topCandidates': len(top)}), flush=True)
-            if initial is None or not np.isfinite(initial).all():
-                raise ValueError('No source-only association point for this object')
-            fence_plane = None
-            if ident.startswith('fence-'):
-                index = _fence_plane_index(item)
-                fence_plane = {**geometry['fence']['planes'][index], 'index': index}
-            fitted = _match_edges(bottom, frames, up, require_identity_anchor=ident.startswith('fence-'), fence_plane=fence_plane)
-            result = {'id': ident, 'status': 'edge_supported', 'reason': None, 'bottomEdge': fitted,
-                      'axisNative': up.tolist(), 'topEdge': None,
-                      'identity': 'observed lower fence rail' if ident.startswith('fence-') else 'yellow housing; light-curtain semantic identity unconfirmed',
-                      'scope': 'visible rigid bottom edge; occluded portions and hardware are not measured'}
-            if ident.startswith('fence-'):
-                result.update(_unavailable('Same physical rail face is unverified; bottomEdge retains experimental multiview geometry'),
-                              identity='lower-rail part candidate; cross-view face identity unverified')
-            if top:
-                try:
-                    result['topEdge'] = _match_edges(top, frames, up)
-                except ValueError as error:
-                    result['topEdgeReason'] = str(error)
-            for row in fitted['observations']:
-                drawings[row['photo']]['selected'].append({**row, 'objectId': ident})
+                print(json.dumps({'phase': 'edge_matching' if match_edges else 'edge_candidates', 'id': ident, 'bottomCandidates': len(bottom), 'topCandidates': len(top)}), flush=True)
+            if match_edges:
+                if initial is None or not np.isfinite(initial).all():
+                    raise ValueError('No source-only association point for this object')
+                fence_plane = None
+                if ident.startswith('fence-'):
+                    index = _fence_plane_index(item)
+                    fence_plane = {**geometry['fence']['planes'][index], 'index': index}
+                fitted = _match_edges(bottom, frames, up, require_identity_anchor=ident.startswith('fence-'), fence_plane=fence_plane)
+                result = {'id': ident, 'status': 'edge_supported', 'reason': None, 'bottomEdge': fitted,
+                          'axisNative': up.tolist(), 'topEdge': None,
+                          'identity': 'observed lower fence rail' if ident.startswith('fence-') else 'yellow housing; light-curtain semantic identity unconfirmed',
+                          'scope': 'visible rigid bottom edge; occluded portions and hardware are not measured'}
+                if ident.startswith('fence-'):
+                    result.update(_unavailable('Same physical rail face is unverified; bottomEdge retains experimental multiview geometry'),
+                                  identity='lower-rail part candidate; cross-view face identity unverified')
+                if top:
+                    try:
+                        result['topEdge'] = _match_edges(top, frames, up)
+                    except ValueError as error:
+                        result['topEdgeReason'] = str(error)
+                for row in fitted['observations']:
+                    drawings[row['photo']]['selected'].append({**row, 'objectId': ident})
+            else:
+                result = {'id': ident, 'status': 'candidates_only', 'bottomEdge': None, 'topEdge': None,
+                          'reason': 'RGB candidates extracted; 3D edge matching was not requested'}
         except (ValueError, np.linalg.LinAlgError, cv2.error) as error:
             result = _unavailable(str(error), id=ident, bottomEdge=None, topEdge=None)
         objects.append(result)
         diagnostics.append({'id': ident, 'bottomCandidates': bottom, 'topCandidates': top, 'views': views})
         if diagnostics_path is not None:
             Path(diagnostics_path).write_text(json.dumps({'objects': objects, 'objectEdges': diagnostics}, allow_nan=False))
-            print(json.dumps({'phase': 'edge_matched', 'id': ident, 'status': result['status']}), flush=True)
+            print(json.dumps({'phase': 'edge_matched' if match_edges else 'edge_candidates_extracted', 'id': ident, 'status': result['status']}), flush=True)
     return objects, diagnostics
 
 

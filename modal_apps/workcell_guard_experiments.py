@@ -49,11 +49,15 @@ def experiment(payload: bytes, mode: str, joint_max_nfev: int = 100):
         code_files += [Path('/repo/fast_report/x7.py'), Path('/repo/ehs_spatial/measurements.py')]
         if mode in ('metrology-joint-button', 'metrology-depth', 'real2sim', 'real2sim-details'):
             code_files += [Path('/repo/scripts')/name for name in ('workcell_button_bundle.py', 'check_workcell_button_bundle.py')]
-        if mode in ('real2sim', 'real2sim-details', 'physical-bottoms'):
+        if mode in ('real2sim', 'real2sim-details', 'physical-bottoms', 'post-shells'):
             code_files += [Path('/repo/scripts')/name for name in ('workcell_real2sim_experiment.py', 'workcell_post_faces.py', 'workcell_photo_texture.py')]
-        if mode == 'physical-bottoms':
+        if mode in ('physical-bottoms', 'post-shells'):
             code_files += [Path('/repo/scripts')/name for name in ('workcell_fence_bottom.py', 'workcell_physical_bottoms.py',
                 'workcell_bottom_fit.py', 'workcell_bottom_models.py')]
+        if mode == 'post-shells':
+            code_files += [Path('/repo/scripts')/name for name in ('workcell_photo_report.py',
+                'workcell_endpoint_estimate.py', 'check_workcell_post_faces.py', 'check_workcell_bottom_models.py',
+                'check_workcell_photo_report_endpoints.py')]
         if mode == 'metrology-depth':
             code_files += [Path('/repo/scripts')/name for name in ('workcell_depth_metrology.py', 'check_workcell_depth_metrology.py')]
         (out/'implementation-manifest.json').write_text(json.dumps({str(p.relative_to('/repo')):hashlib.sha256(p.read_bytes()).hexdigest() for p in code_files},indent=2))
@@ -110,6 +114,26 @@ def experiment(payload: bytes, mode: str, joint_max_nfev: int = 100):
         elif mode == 'physical-bottoms':
             run('physical_bottoms', prefix+'from scripts.workcell_physical_bottoms import build; '
                 'build(root, out/"physical-bottoms", [Path(p) for p in sys.argv[3:]])', 600)
+        elif mode == 'post-shells':
+            run('post_shells', prefix+'import json, shutil; '
+                'from scripts.workcell_post_faces import build_multiview, build_volume_candidates; '
+                'from scripts.workcell_bottom_models import apply_housing_models; '
+                'result=build_multiview(root,[Path(p) for p in sys.argv[3:]],out/"post-shells",orientation="free",compare_orientation=True); '
+                '(out/"post-shells/housing-fit.json").write_text(json.dumps(result,indent=2,allow_nan=False)); '
+                'build_volume_candidates(root,[Path(p) for p in sys.argv[3:]],result,out/"post-shells"); '
+                'catalog=json.loads((root/"objects.json").read_text()); '
+                'applied=apply_housing_models(root,result,out/"post-shells",catalog); '
+                '(out/"housing-application.json").write_text(json.dumps(applied,indent=2,allow_nan=False)); '
+                '(root/"objects.json").write_text(json.dumps(catalog,ensure_ascii=False,indent=2)); '
+                'from scripts.workcell_photo_report import build; report=build(root); '
+                'from scripts.workcell_photo_oneshot import _export_metric_scene; _export_metric_scene(root,report); '
+                'updated=out/"updated"; updated.mkdir(); '
+                'names=("posts.glb","objects.json","geometry.json","physical-clearances.json",'
+                '"scene-report.json","model-endpoint-estimate.json","housing-models.json","measurement-evaluation.json","floor-fitted.glb","fence-fitted.glb",'
+                '"workcell-conditional.glb","workcell-metric.glb","workcell-native.glb"); '
+                '[shutil.copy2(root/name,updated/name) for name in names if (root/name).is_file()]; '
+                '[shutil.copy2(p,updated/p.name) for pattern in ("entity-post-box-*.glb","post-box-*-physical.glb") '
+                'for p in root.glob(pattern)]', 600)
         elif mode in ('real2sim', 'real2sim-details'):
             run('real2sim', prefix+'from scripts.workcell_real2sim_experiment import run; '
                 f'run(root,out/"real2sim",[Path(p) for p in sys.argv[3:]],max_nfev={joint_max_nfev},details_only={mode == "real2sim-details"})',
@@ -211,7 +235,7 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
     if len(source_paths) != 4 or not all(p.is_file() for p in source_paths): raise ValueError('Four source photos required')
     files = [*root.glob('frame_*.json.gz'), *root.glob('photo-*.png')]
     files += [root/name for name in ('geometry.json','sam3.json','objects.json')]
-    if mode == 'physical-bottoms':
+    if mode in ('physical-bottoms', 'post-shells'):
         files += [root/name for name in ('posts.glb','fence-fitted.glb','physical-clearances.json')]
     else:
         files += [root/name for name in ('guard-input.npz','guard-placement.json','guard-partition.json',
@@ -219,6 +243,14 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
     if mode in ('real2sim', 'real2sim-details'):
         files += [root/name for name in ('posts.glb', 'posts-source.json', 'physical-clearances.json',
                                          'fence-fitted.glb', 'floor-fitted.glb', 'structural-result.json')]
+    if mode == 'post-shells':
+        catalog = json.loads((root/'objects.json').read_text())
+        models = {spec['file'] for item in catalog['objects']
+                  for spec in [item.get('model'), *item.get('modelsByPhoto', {}).values()] if spec}
+        files += [root/name for name in sorted(models)]
+        files += [root/name for name in ('measurements.json', 'model-endpoint-estimate.json',
+            'reference-input.json', 'geometry-timing.json') if (root/name).is_file()]
+        files = list(dict.fromkeys(files))
     if not all(p.is_file() for p in files): raise ValueError('Incomplete frozen baseline')
     buffer = io.BytesIO(); hashes = {}
     with tarfile.open(fileobj=buffer, mode='w:gz') as archive:
@@ -246,6 +278,7 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
     control_result = Path(control)/'results.json' if control else None
     control_model = json.loads(control_result.read_text()).get('cameraModel') if control_result and control_result.is_file() else None
     (destination/'input-manifest.json').write_text(json.dumps({'baseline':str(root),'mode':mode,'jointMaxNfev':joint_max_nfev,
+        'driverSha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'control':control or None,'controlCameraModel':control_model,'sha256':hashes},indent=2))
     start = time.monotonic()
     rate = 2*.000694+16*.0000131+80*.00000222

@@ -51,6 +51,8 @@ def _ground_distance(item, geometry, transform):
               'source': '多视角实体底边到同一拟合地面的垂直距离。'}
     physical = geometry.get('physicalClearances', {})
     row = next((r for r in physical.get('objects', []) if r['id'] == item['id']), None)
+    if item.get('physicalBottom'):
+        result['source'] = '当前模型可见面的指定下沿到统一地面的距离；完整外壳最低点尚未确认。'
     if row is None or row.get('status') != 'conditional':
         result['reason'] = (row or {}).get('reason', '没有跨照片确认的实体底边；离地距离未知。')
         return result
@@ -60,8 +62,9 @@ def _ground_distance(item, geometry, transform):
         result['reason'] = '实体底边或地面投影证据无效；离地距离未知。'
         return result
     height = row.get('heightNative'); photos = sorted(set(row.get('sourcePhotos', [])))
+    surface_photos = sorted(set(row.get('surfaceSupportPhotos', photos))) if item.get('physicalBottom') else photos
     if (not isinstance(height, (float, int)) or not np.isfinite(height) or height < 0
-            or len(photos) < 2 or endpoints.shape != (2, 3) or not np.isfinite(endpoints).all()):
+            or not photos or len(surface_photos) < 2 or endpoints.shape != (2, 3) or not np.isfinite(endpoints).all()):
         result['reason'] = '实体底边或地面投影证据无效；离地距离未知。'
         return result
     normal = np.asarray(geometry['floor']['normal'], float)
@@ -73,7 +76,7 @@ def _ground_distance(item, geometry, transform):
             or not np.allclose(endpoints[0]-endpoints[1], height*normal, atol=1e-7)):
         raise ValueError('Physical clearance and displayed floor refer to different planes')
     point, foot = trimesh.transform_points(endpoints, transform).tolist()
-    result.update(sourcePhotos=photos, rangeNative=row.get('rangeNative'))
+    result.update(sourcePhotos=photos, surfaceSupportPhotos=surface_photos, rangeNative=row.get('rangeNative'))
     result['feature'] = {'valueNative': height, 'pointNative': point, 'footNative': foot,
                          'sourcePhotos': photos, 'rangeNative': row.get('rangeNative'),
                          'source': result['source'], 'status': row['status'],
@@ -296,9 +299,7 @@ def build(root):
             raise ValueError('Model endpoint inspection uses a different floor')
         conditional = measurement_scale.get('evidence')
         factor = measurement_scale['nativeToMeters']
-        if factor is None:
-            raise ValueError('Endpoint centimetre inspection requires an explicit model measurement scale')
-        lo, hi = measurement_scale['rangeNativeToMeters']
+        limits = measurement_scale['rangeNativeToMeters']
         endpoints = []
         for row in measured['objects']:
             point, foot = trimesh.transform_points([row['pointNative'], row['footNative']], transform)
@@ -306,17 +307,19 @@ def build(root):
             if not np.isfinite([*point, *foot, height]).all() or not np.allclose(point-foot, [0, 0, height], atol=1e-7) or abs(foot[2]) > 1e-7:
                 raise ValueError('Invalid model endpoint or floor projection')
             endpoints.append({**row, 'pointNative': point.tolist(), 'footNative': foot.tolist(),
-                'label': '光幕底端' if row['objectId'] == 'post-box-1' else '邻近围栏下沿',
-                'estimateCm': height * factor * 100,
-                'rangeCm': [height * lo * 100, height * hi * 100]})
+                'label': ({'post-box-1': '右侧光幕可见面下沿', 'post-box-2': '左侧光幕可见面下沿'}[row['objectId']]
+                          if row.get('measurementScope') == 'visible_face_lower_terminal' else
+                          {'post-box-1': '右侧光幕底端', 'post-box-2': '左侧光幕底端', 'fence-0': '邻近围栏下沿'}[row['objectId']]),
+                'estimateCm': height * factor * 100 if factor is not None else None,
+                'rangeCm': [height * limit * 100 for limit in limits] if limits is not None else None})
         by_id = {row['objectId']: row for row in endpoints}
         delta = by_id['post-box-1']['heightNative'] - by_id['fence-0']['heightNative']
         result['endpointEstimation'] = {'status': 'conditional_unvalidated', 'photo': 4,
-            'method': '读取当前 GLB 的光幕底面中心，以及紧邻它的围栏底面中心线；围栏此段为模型推断延伸。沿同一地面法向测量。',
+            'method': '读取当前显示网格中指定的光幕下沿与邻近围栏下沿，沿同一地面法向测量；部位来源见端点记录。',
             'scale': {'mPerNative': factor, 'source': measurement_scale['source']},
             'endpoints': endpoints,
-            'difference': {'valueNative': delta, 'valueCm': delta * factor * 100,
-                'rangeCm': sorted([delta * lo * 100, delta * hi * 100]),
+            'difference': {'valueNative': delta, 'valueCm': delta * factor * 100 if factor is not None else None,
+                'rangeCm': sorted(delta * limit * 100 for limit in limits) if limits is not None else None,
                 'description': '光幕底端高度减去邻近围栏下沿高度。'},
             'scaleEvidence': conditional, 'sourceFiles': measured['sourceFiles'],
             'rangeMeaning': '仅为固定模型端点在标尺表面深度第 5/95 百分位下的敏感性；不包含模型、地面或轴心深度系统误差。',

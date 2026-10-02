@@ -1,4 +1,5 @@
-"""Write explicit native-world bottom-fit previews; never replace source models."""
+"""Export bottom-fit previews and integrate evidence-checked housing candidates."""
+from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
@@ -58,6 +59,222 @@ def _appearance_equal(a, b):
         if left is not None and not np.array_equal(np.asarray(left), np.asarray(right)):
             return False
     return True
+
+
+def apply_housing_models(root, result, candidate_root, catalog):
+    """Install source-supported geometry, retaining the exact catalog observations.
+
+    Supported rows need model/file/nodes, geometryScope, physicalValidation=none,
+    sourceSurfaceObservations and lowerBoundary(partId, scope, vertices,
+    sourceObservations). Surface observations retain every fitted view; the
+    terminal subset contains only actually observed bottom segments. Missing
+    terminals remain empty, while real side fragments and catalog identity are
+    retained. fitGate needs
+    accepted, converged, parameterCount, jacobianRank, sourceViews and
+    reprojectionByPhoto(photo, rmsRawPx, maxRawPx, thresholdRawPx), and recorded
+    sourcePixelTransforms. Each view's preregistered limit is max(3, one saved
+    canonical pixel mapped into raw pixels). These admit a conditional model, not surveyed
+    dimensions; an open visible face never becomes a complete housing claim.
+    """
+    root, candidate_root = Path(root).resolve(), Path(candidate_root).resolve()
+    geometry = json.loads((root / 'geometry.json').read_text())
+    normal = np.asarray(geometry['floor']['normal'], float)
+    length = np.linalg.norm(normal)
+    if normal.shape != (3,) or not np.isfinite(normal).all() or length <= 0:
+        raise ValueError('Housing integration requires a finite shared floor')
+    normal, offset = normal / length, float(geometry['floor']['offset']) / length
+    supplied = np.asarray(result['ground']['normal'], float)
+    supplied_length = np.linalg.norm(supplied)
+    if (supplied.shape != (3,) or not np.isfinite(supplied).all() or supplied_length <= 0 or
+            not np.isfinite([offset, result['ground']['offset']]).all() or
+            not np.allclose(supplied / supplied_length, normal, atol=1e-9, rtol=0) or
+            not np.isclose(result['ground']['offset'] / supplied_length, offset, atol=1e-9, rtol=0)):
+        raise ValueError('Housing candidate and report must use the same ground')
+    source_files = result.get('sourceFiles', {})
+    if not {'geometry.json', 'objects.json'} <= source_files.keys():
+        raise ValueError('Housing candidate requires frozen geometry and catalog hashes')
+    for name, digest in source_files.items():
+        path = (root / name).resolve()
+        if root not in path.parents or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise ValueError('Housing source is missing or stale: ' + name)
+    expected = {'post-box-1', 'post-box-2'}
+    items = result.get('items', [])
+    if len(items) != 2 or {row['id'] for row in items} != expected:
+        raise ValueError('Housing result must account for both distinct light curtains')
+    updated = deepcopy(catalog)
+    objects = {row['id']: row for row in updated['objects']}
+    if not expected <= objects.keys():
+        raise ValueError('Housing catalog is missing a source object')
+    measurements, files, records = {}, {}, []
+    for row in items:
+        ident, item = row['id'], objects[row['id']]
+        if row.get('status') == 'unsupported':
+            if not row.get('reason'):
+                raise ValueError(ident + ': unsupported geometry needs an explicit reason')
+            measurements[ident] = {'id': ident, 'status': 'unsupported', 'reason': row['reason']}
+            item['measurements']['groundClearance'] = {'valueNative': None, 'status': 'unsupported', 'source': row['reason']}
+            records.append({'id': ident, 'status': 'unsupported', 'reason': row['reason'], 'modelUpdated': False})
+            continue
+        if row.get('status') != 'supported_candidate' or row.get('physicalValidation') != 'none' or not row.get('geometryScope'):
+            raise ValueError(ident + ': only explicitly scoped, unvalidated supported candidates can be integrated')
+        gate, boundary = row['fitGate'], row['lowerBoundary']
+        count, rank = gate.get('parameterCount'), gate.get('jacobianRank')
+        if (gate.get('accepted') is not True or gate.get('converged') is not True or
+                gate.get('rankSource') != 'source_reprojection_without_priors' or
+                type(count) is not int or count <= 0 or type(rank) is not int or rank != count):
+            raise ValueError(ident + ': housing fit must converge with full parameter rank')
+        surfaces, observations = row['sourceSurfaceObservations'], boundary['sourceObservations']
+        photos = [entry['photo'] for entry in surfaces]
+        bottom_photos = [entry['photo'] for entry in observations]
+        if (boundary.get('partId') != 'housing_lower_terminal' or
+                boundary.get('scope') != 'Selected observed face terminal; whole-housing minimum and front-versus-wing identity unverified' or
+                len(photos) < 2 or len(set(photos)) != len(photos) or
+                any(type(photo) is not int or photo not in (1, 2, 3, 4) for photo in photos) or
+                sorted(gate.get('sourceViews', [])) != sorted(photos) or not bottom_photos or
+                len(set(bottom_photos)) != len(bottom_photos) or not set(bottom_photos) <= set(photos)):
+            raise ValueError(ident + ': distinct surface views and their actual visible-terminal subset are required')
+        complete_anchors = 0
+        for observation in surfaces:
+            if not any(original['photo'] == observation['photo'] and original['source'] == observation.get('source')
+                       for original in item['observations']):
+                raise ValueError(ident + ': fitted source association differs from the catalog')
+            bottom, top = observation['bottomRawSegments'], observation['topRawSegments']
+            side_fragments = observation['fullSideSegmentsRaw']
+            sides = np.asarray(observation['faceSideEdgesRaw'], float)
+            side_ids = observation['faceSideIds']
+            if (observation.get('partId') != 'selected_visible_housing_face' or
+                    len(side_fragments) != 2 or not all(side_fragments) or not (bottom or top) or
+                    sides.shape != (2, 2, 2) or not np.isfinite(sides).all() or np.any(np.linalg.norm(np.diff(sides, axis=1), axis=2) <= 1e-8) or
+                    len(side_ids) != 2 or side_ids[0] == side_ids[1]):
+                raise ValueError(ident + ': surface correspondence lacks distinct supported sides and a real terminal')
+            for segments in [bottom, top, *side_fragments]:
+                if not segments:
+                    continue
+                segments = np.asarray(segments, float)
+                if (segments.ndim != 3 or segments.shape[1:] != (2, 2) or not np.isfinite(segments).all() or
+                        np.any(np.linalg.norm(np.diff(segments, axis=1), axis=2) <= 1e-8)):
+                    raise ValueError(ident + ': observed face boundary contains an invalid source segment')
+            named = observation['observedBoundaryNames']
+            if ('bottom' in named) != bool(bottom) or ('top' in named) != bool(top):
+                raise ValueError(ident + ': missing source terminals must not be fabricated or relabeled')
+            complete_anchors += bool(bottom and top)
+        if not complete_anchors:
+            raise ValueError(ident + ': joint partial surfaces need an observed complete-face anchor')
+        if sorted(bottom_photos) != sorted(source['photo'] for source in surfaces if source['bottomRawSegments']):
+            raise ValueError(ident + ': terminal evidence must contain exactly the actual bottom-support subset')
+        for observation in observations:
+            surface = next(source for source in surfaces if source['photo'] == observation['photo'])
+            if (observation.get('partId') != boundary['partId'] or observation.get('source') != surface['source'] or
+                    observation.get('faceSideIds') != surface['faceSideIds'] or
+                    not np.array_equal(observation.get('rawSegments'), surface['bottomRawSegments']) or
+                    not np.array_equal(observation.get('faceSideEdgesRaw'), surface['faceSideEdgesRaw'])):
+                raise ValueError(ident + ': terminal evidence changed the selected source surface or part')
+        if not isinstance(gate.get('terminalPartAmbiguity'), dict) or boundary.get('terminalPartAmbiguity') != gate['terminalPartAmbiguity']:
+            raise ValueError(ident + ': terminal-part ambiguity evidence must remain attached to the selected boundary')
+        residuals = gate.get('reprojectionByPhoto', [])
+        if len(residuals) != len(photos) or sorted(entry['photo'] for entry in residuals) != sorted(photos):
+            raise ValueError(ident + ': every source view needs a reprojection check')
+        exported_residuals = gate.get('exportedModelReprojectionByPhoto', [])
+        if len(exported_residuals) != len(photos) or sorted(entry['photo'] for entry in exported_residuals) != sorted(photos):
+            raise ValueError(ident + ': every source view needs an exported-model reprojection check')
+        for entry in [*residuals, *exported_residuals]:
+            rms, maximum = entry['rmsRawPx'], entry['maxRawPx']
+            affine = np.asarray(gate['sourcePixelTransforms'][str(entry['photo'])], float)
+            if affine.shape != (3, 3) or not np.isfinite(affine).all() or abs(np.linalg.det(affine)) < 1e-12:
+                raise ValueError(ident + ': invalid recorded source pixel transform')
+            threshold = max(3., float(np.linalg.norm(np.linalg.inv(affine)[:2, :2], 2)))
+            if (not np.isfinite([rms, maximum, entry['thresholdRawPx']]).all() or
+                    not np.isclose(entry['thresholdRawPx'], threshold, atol=1e-8, rtol=0) or
+                    not 0 <= rms <= maximum <= threshold):
+                raise ValueError(ident + ': housing reprojection exceeds its preregistered source-resolution gate')
+        held_out = gate.get('leaveOnePhotoOut', [])
+        if len(held_out) != len(photos) or sorted(entry['photo'] for entry in held_out) != sorted(photos):
+            raise ValueError(ident + ': every source photo needs an actual held-out fit')
+        for entry in held_out:
+            threshold = 2 * next(source['thresholdRawPx'] for source in residuals if source['photo'] == entry['photo'])
+            count, rank = entry.get('parameterCount'), entry.get('jacobianRank')
+            if (entry.get('converged') is not True or type(count) is not int or count != gate['parameterCount'] or
+                    type(rank) is not int or rank != count or not np.isfinite([entry['maxRawPx'], entry['thresholdRawPx']]).all() or
+                    not np.isclose(entry['thresholdRawPx'], threshold, atol=1e-8, rtol=0) or
+                    not 0 <= entry['maxRawPx'] <= threshold):
+                raise ValueError(ident + ': held-out housing geometry is unsupported by the fixed gate')
+        model = row['model']; source = (candidate_root / model['file']).resolve()
+        if candidate_root not in source.parents or source.suffix != '.glb' or not source.is_file():
+            raise ValueError(ident + ': model must be an exported candidate GLB')
+        data = source.read_bytes()
+        if hashlib.sha256(data).hexdigest() != model.get('sha256'):
+            raise ValueError(ident + ': exported model hash differs from the evidence-checked model')
+        scene = trimesh.load(source, force='scene', process=False)
+        nodes = model['nodes']
+        if not nodes or len(set(nodes)) != len(nodes) or set(nodes) != set(scene.graph.nodes_geometry):
+            raise ValueError(ident + ': candidate model must contain exactly its named object nodes')
+        world = {node: _world(scene, node) for node in nodes}
+        if any(not len(points) or not np.isfinite(points).all() for points in world.values()):
+            raise ValueError(ident + ': candidate model contains invalid vertices')
+        references = boundary['vertices']
+        if len(references) < 2 or len({(ref['node'], ref['vertexIndex']) for ref in references}) != len(references):
+            raise ValueError(ident + ': distinct exported terminal vertices are required')
+        points = []
+        for ref in references:
+            node, index = ref['node'], ref['vertexIndex']
+            if node not in world or type(index) is not int or not 0 <= index < len(world[node]):
+                raise ValueError(ident + ': terminal vertex does not belong to the exported model')
+            points.append(world[node][index])
+        points = np.asarray(points); heights = points @ normal + offset
+        if np.ptp(points, axis=0).max() <= 1e-8 or np.min(heights) < 0:
+            raise ValueError(ident + ': degenerate terminal or terminal below the shared floor')
+        point = points[np.argmin(heights)]; height = float(np.min(heights)); foot = point - height * normal
+        filename = ident + '-physical.glb'
+        digest = hashlib.sha256(data).hexdigest()
+        files[filename] = data
+        evidence = {'partId': boundary['partId'], 'modelFile': filename, 'modelSha256': digest,
+                    'vertices': deepcopy(references), 'pointsNative': points.tolist(),
+                    'sourceObservations': deepcopy(observations), 'fitGate': deepcopy(gate),
+                    'sourceSurfaceObservations': deepcopy(surfaces), 'scope': boundary['scope'],
+                    'measurementScope': 'visible_face_lower_terminal', 'wholeHousingMinimumVerified': False,
+                    'terminalPartAmbiguity': deepcopy(gate['terminalPartAmbiguity']),
+                    'physicalValidation': 'none', 'geometryScope': row['geometryScope']}
+        measurements[ident] = {'id': ident, 'status': 'conditional', 'pointNative': point.tolist(),
+            'footNative': foot.tolist(), 'heightNative': height, 'sourcePhotos': sorted(bottom_photos),
+            'surfaceSupportPhotos': sorted(photos), 'measurementScope': 'visible_face_lower_terminal',
+            'wholeHousingMinimumVerified': False,
+            'rangeNative': None, 'bottomHeightRangeNative': [float(heights.min()), float(heights.max())],
+            'source': 'Selected visible-face terminal vertices to the same inferred floor; conditional geometry. Whole-housing minimum remains unverified.',
+            'modelEvidence': evidence}
+        item['model'] = {'file': filename, 'nodes': list(nodes)}
+        item['representation'] = row['geometryScope']
+        item['modelDimensionsNative'] = np.ptp(np.concatenate(list(world.values())), axis=0).tolist()
+        item['physicalBottom'] = evidence
+        item['measurements']['groundClearance'] = {'valueNative': height, 'status': 'conditional-model-estimate',
+                                                  'source': 'physicalBottom: selected visible-face terminal; whole-housing minimum unverified; inferred common floor'}
+        item['notes'] = [row['geometryScope'], 'Source-supported candidate; hidden geometry and metric accuracy remain unvalidated.']
+        records.append({'id': ident, 'status': 'conditional_model', 'modelUpdated': True,
+                        'modelFile': filename, 'modelSha256': digest, 'heightNative': height,
+                        'measurementScope': 'visible_face_lower_terminal', 'wholeHousingMinimumVerified': False,
+                        'terminalPartAmbiguity': deepcopy(gate['terminalPartAmbiguity']),
+                        'exportVerified': True, 'physicalValidation': 'none'})
+    physical = geometry.setdefault('physicalClearances', {})
+    physical['ground'] = {**physical.get('ground', {}), 'normal': normal.tolist(), 'offset': offset}
+    physical['objects'] = [row for row in physical.get('objects', []) if row['id'] not in expected] + list(measurements.values())
+    manifest = {'schemaVersion': 1, 'status': 'conditional_models_applied' if files else 'unsupported',
+                'modelUpdates': len(files), 'items': records, 'sourceFiles': source_files,
+                'ground': {'normal': normal.tolist(), 'offset': offset}, 'physicalValidation': 'none',
+                'acceptedForPhysicalUse': False, 'mPerNative': None}
+    # Validate everything before touching the run. New object files preserve the
+    # old initializer; subsequent report export reads these exact hashed bytes.
+    with tempfile.TemporaryDirectory(prefix='.housing-write-', dir=root) as temporary:
+        temporary = Path(temporary)
+        for name, data in files.items():
+            (temporary / name).write_bytes(data)
+        for name, value in [('geometry.json', geometry), ('physical-clearances.json', physical), ('housing-models.json', manifest), ('objects.json', updated)]:
+            (temporary / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + ('' if name == 'objects.json' else '\n'))
+        for path in temporary.iterdir():
+            path.replace(root / path.name)
+    catalog.clear(); catalog.update(updated)
+    from workcell_endpoint_estimate import estimate
+    endpoints = estimate(root)
+    (root / 'model-endpoint-estimate.json').write_text(json.dumps(endpoints, indent=2, allow_nan=False) + '\n')
+    return manifest
 
 
 def apply_bottom_models(root, fit, items, *, out):

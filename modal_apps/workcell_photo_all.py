@@ -199,6 +199,8 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
             if reference:
                 from scripts.workcell_photo_calibration import apply_measurements
                 apply_measurements(root, {'schemaVersion': 1, 'reference': reference})
+            from scripts.workcell_endpoint_estimate import estimate
+            (root/'model-endpoint-estimate.json').write_text(json.dumps(estimate(root), indent=2, allow_nan=False)+'\n')
             build_report(root)
             complete_end = time.monotonic()
             (root / "models-timing.json").write_text(json.dumps({"models": timing, "containerWallSeconds": model_end - started}))

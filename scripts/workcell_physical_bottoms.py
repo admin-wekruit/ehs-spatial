@@ -177,6 +177,119 @@ def report(runs, out):
     return {'acceptedModelReplacement': False, 'runs': len(runs), 'estimateUsd': cost}
 
 
+def report_housings(run, out, viewer):
+    """Publish visible-face fits and their actual model-application result."""
+    run, out, viewer = Path(run), Path(out), Path(viewer)
+    out.mkdir(parents=True, exist_ok=False)
+    shutil.copytree(run / 'post-shells', out / 'evidence')
+    for name in ('housing-application.json', 'spend-ledger.json', 'implementation-manifest.json', 'input-manifest.json', 'run.json'):
+        shutil.copy2(run / name, out / name)
+    fit = json.loads((out / 'evidence/housing-fit.json').read_text())
+    volume_path = out / 'evidence/volume-candidates.json'
+    volumes = {row['id']: row for row in json.loads(volume_path.read_text())['items'] if row.get('model')} if volume_path.is_file() else {}
+    applied = json.loads((out / 'housing-application.json').read_text())
+    ledger = json.loads((out / 'spend-ledger.json').read_text())
+    scene = json.loads((run / 'updated/scene-report.json').read_text())
+    scale = scene['modelMeasurementScale']['nativeToMeters']
+    labels = {'post-box-1': '右侧光幕', 'post-box-2': '左侧光幕'}
+    items = {row['id']: row for row in fit['items']}
+    sections, choices, measurements = [], [], {}
+    normal = np.asarray(fit['ground']['normal'], float)
+    norm = np.linalg.norm(normal); normal /= norm
+    offset = fit['ground']['offset'] / norm
+    for application in applied['items']:
+        ident = application['id']; item = items[ident]
+        volume = volumes.get(ident)
+        if item.get('heightNative') is not None:
+            value = item['heightNative']
+            height = f'{value * scale * 100:.2f} cm（条件标尺）' if scale is not None else f'{value:.4f} native'
+            state = f'本轮拟合的可见下沿离地 {height}。'
+            state += '已写回主模型。' if application['modelUpdated'] else '独立候选；尚未替换主模型。'
+        else:
+            state = '未替换主模型：' + application['reason']
+        pictures = []
+        image_kind = 'volume' if volume else 'multiview'
+        for picture in sorted((out / 'evidence').rglob(f'{ident}-{image_kind}-photo-*.jpg')):
+            path = html.escape(picture.relative_to(out).as_posix(), quote=True)
+            photo_label = '照片 ' + picture.stem.rsplit('-', 1)[-1]
+            pictures.append(f'<figure><a href="{path}"><img src="{path}" loading="lazy" alt="{labels[ident]}{photo_label}与拟合投影"></a><figcaption>{photo_label}</figcaption></figure>')
+        model = volume.get('model') if volume else item.get('model')
+        model_link = ''
+        if model and (out / 'evidence' / model['file']).is_file():
+            model_path = out / 'evidence' / model['file']
+            if hashlib.sha256(model_path.read_bytes()).hexdigest() != model['sha256']:
+                raise ValueError('Report candidate model hash mismatch: ' + ident)
+            mesh_scene = trimesh.load(model_path, force='scene', process=False)
+            matrix, mesh_name = mesh_scene.graph[model['nodes'][0]]
+            edge = trimesh.transform_points(mesh_scene.geometry[mesh_name].vertices[[0, 1]], matrix)
+            point = edge[np.argmin(edge @ normal)]
+            value = float(point @ normal + offset)
+            if not np.isclose(value, item['heightNative'], atol=1e-6, rtol=0):
+                raise ValueError('Report caliper and fitted lower edge disagree: ' + ident)
+            measurement = {'pointNative': point.tolist(), 'footNative': (point - value * normal).tolist(),
+                           'label': labels[ident] + (f' {value * scale * 100:.2f} cm（条件估计）' if scale is not None else f' {value:.4f} native')}
+            measurements[ident] = {**measurement, 'heightNative': value, 'modelFile': model['file'], 'modelSha256': model['sha256']}
+            path = html.escape('evidence/' + model['file'], quote=True)
+            model_link = f'<a href="{path}">下载本轮候选 GLB（native）</a> · '
+            choices.append({'label': labels[ident] + (' · 封闭外形候选' if volume else ' · 可见面候选'),
+                            'world': 'saved native', 'kind': 'housing-volume' if volume else 'housing-visible-face',
+                            'assets': ['evidence/' + model['file']], 'floor': fit['ground'], 'measurements': [measurement],
+                            'note': ('正面边界来自原图；厚度按多图整物体轮廓拟合，背面为封闭挤出假设。' if volume else
+                                     '本轮从原图拟合的可见面。未重建的背面和厚度不能用来测量。') +
+                                    ('已写回主场景。' if application['modelUpdated'] else '尚未通过逐图检查，主场景保持原模型。')})
+        scope = '封闭实体候选：保留原图拟合正面，补出棱柱厚度。背面、阶梯细节与完整物理尺寸仍未确认。' if volume else '本轮只拟合了可见面；背面与厚度没有重建。'
+        silhouette = ''
+        if volume:
+            old = {row['photo']: row['iou'] for row in volume['before']['views']}
+            improved = sum(row['iou'] > old[row['photo']] for row in volume['after']['views'])
+            silhouette = f'<p>四图平均轮廓重合度（对 SAM 分割）：{volume["before"]["meanIoU"]:.1%} → {volume["after"]["meanIoU"]:.1%}；{improved}/4 个视角改善。含遮挡和分割误差，不是三维物理精度。</p>'
+            if volume['searchAtBound']:
+                silhouette += '<p><strong>厚度搜索触及边界，侧面厚度尚不可靠。</strong></p>'
+        bottom_photos = ' / '.join(str(row['photo']) for row in item.get('lowerBoundary', {}).get('sourceObservations', []))
+        sensitivity = ''
+        if scale is not None and item.get('heightNative') is not None:
+            heights = [item['heightNative'], *[row['heightNative'] for row in item.get('fitGate', {}).get('leaveOnePhotoOut', [])]]
+            sensitivity = f'<p>逐次去掉一张照片重算：{min(heights) * scale * 100:.2f}–{max(heights) * scale * 100:.2f} cm。这是视角敏感范围，尚未包含标尺与地面系统误差。</p>'
+        sections.append(f'''<section><h2>{labels[ident]}</h2><p><strong>{html.escape(state)}</strong></p>
+<p>{scope}</p>{silhouette}<p>底边来源照片：{bottom_photos or '未提取'}；其他照片补充上端和侧边约束。</p>{sensitivity}
+<p>{model_link}<a href="../?photo=4&object={ident}&view=model&measurement=endpoints#scene">查看原报告中的这个物体</a></p>
+<div class="pictures">{''.join(pictures)}</div>
+<details><summary>逐图拟合与可辨识性记录</summary><pre>{html.escape(json.dumps(item.get('fitGate', {}),ensure_ascii=False,indent=2))}</pre></details></section>''')
+    from workcell_metrology_report import _preview_markup
+    if len(volumes) == 2 and len(choices) == 2:
+        context = ['fence-fitted.glb', 'floor-fitted.glb']
+        manifest = json.loads((run / 'input-manifest.json').read_text())
+        if hashlib.sha256((run / 'updated/floor-fitted.glb').read_bytes()).hexdigest() != manifest['sha256']['floor-fitted.glb']:
+            raise ValueError('Report native floor differs from the fitted input ground')
+        for name in context:
+            shutil.copy2(run / 'updated' / name, out / 'evidence' / name)
+        choices.insert(0, {'label': '左右光幕与围栏 · 同一地面', 'world': 'saved native', 'kind': 'housing-volume-context',
+                          'assets': [url for row in choices for url in row['assets']] + ['evidence/' + name for name in context],
+                          'measurements': [value for row in choices for value in row['measurements']],
+                          'floor': fit['ground'], 'note': '两根光幕是本轮实体候选；围栏和地面沿用原报告。左右分别拟合，没有强制同高。'})
+    (out / 'report-measurements.json').write_text(json.dumps({'ground': fit['ground'], 'conditionalMPerNative': scale, 'objects': measurements}, ensure_ascii=False, indent=2) + '\n')
+    if choices:
+        shutil.copytree(viewer, out / 'viewer-assets')
+    estimates = ''
+    if scale is not None and {'post-box-1', 'post-box-2'} <= measurements.keys():
+        right, left = [measurements[key]['heightNative'] * scale * 100 for key in ('post-box-1', 'post-box-2')]
+        estimates = f'<p style="font-size:22px"><strong>下沿离地：右 {right:.2f} cm · 左 {left:.2f} cm · 相差 {abs(right-left):.2f} cm</strong><br><small>按现有按钮条件比例；从下方模型的同一条可见底边读取。</small></p>'
+    page = f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panoptes · 整根光幕与下沿</title><style>body{{font:16px/1.65 system-ui,sans-serif;background:#f5f6f2;color:#182824;margin:0}}main{{max-width:1100px;margin:auto;padding:28px 20px}}h1{{font-size:30px}}a{{color:#14675b}}section{{background:white;border:1px solid #d6ddd5;border-radius:12px;padding:20px;margin:18px 0}}.pictures{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}}figure{{margin:0}}img{{max-width:100%;max-height:560px;object-fit:contain}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}}summary{{cursor:pointer}}</style><main>
+<a href="../?photo=4&object=post-box-1&view=model&measurement=endpoints#scene">← 完整可旋转 3D、照片与卡尺</a>
+<h1>光幕：原图边界与重建核对</h1>
+<p>用原照片中的侧边、上端和下端共同约束可见外壳面。下沿离地沿同一地面法向计算；左右分别拟合，没有强制相等。</p>
+<p>图片青色为本轮模型投影，粉色为{'同一物体的原图 SAM 分割' if volumes else '参与拟合的原图边缘'}。没有拍到的背面与厚度不计作已验证的物理尺寸。</p>
+<p>本页导出 {len(volumes)} 个实体候选，主报告模型更新 {applied['modelUpdates']} 个。现场围栏 20 cm／光幕 24 cm 未用于拟合；当前结果按按钮条件比例换算。</p>
+{estimates}
+{_preview_markup(choices)}
+{''.join(sections)}
+<section><h2>运行记录</h2><p>复用已保存推理后的几何重算：{ledger['functionSeconds']:.2f} 秒；预留资源价格估算 ${ledger['estimateUsd']:.3f}。临时 2×A100；不是完整 oneshot 耗时，实际账单未知。</p>
+<p><a href="evidence/housing-fit.json">拟合和来源 JSON</a> · <a href="housing-application.json">模型写回记录</a> · <a href="spend-ledger.json">支出</a> · <a href="implementation-manifest.json">执行源码哈希</a> · <a href="../bottom-boundaries/">此前底边实验</a></p></section></main></html>'''
+    (out / 'index.html').write_text(page)
+    return {'modelUpdates': applied['modelUpdates'], 'estimateUsd': ledger['estimateUsd']}
+
+
 def _matched_fence_items(items, edges):
     matched = {row['id']: row for row in edges}
     result = []
