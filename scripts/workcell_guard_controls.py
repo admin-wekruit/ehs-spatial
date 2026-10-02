@@ -1,6 +1,9 @@
 """Frozen-data alignment and COLMAP/LIMAP controls; run heavy work on Modal."""
+import hashlib
 import json
 from pathlib import Path
+import subprocess
+import sys
 import time
 
 import cv2
@@ -58,24 +61,26 @@ def alignment(root, out):
     return result
 
 
-def _export_reconstruction(recon, originals, out):
+def _export_reconstruction(recon, originals, out, *, native=False):
     """Rigid+uniform gauge alignment, never a coordinate-wise deformation."""
-    ids = sorted(recon.images)
+    ids = sorted(recon.reg_image_ids())
     poses, targets = [], []
     for image_id in ids:
         im = recon.images[image_id]
         p = np.eye(4); p[:3] = im.cam_from_world().inverse().matrix()
         poses.append(p); targets.append(originals[im.name]['pose'])
-    # Fit orientation from camera orientations; scale/translation from centers.
-    rotations = [b[:3, :3] @ a[:3, :3].T for a, b in zip(poses, targets)]
-    U, _, V = np.linalg.svd(np.sum(rotations, axis=0))
-    correction = np.eye(3); correction[-1, -1] = np.linalg.det(U @ V)
-    R = U @ correction @ V
     a = np.array([p[:3, 3] for p in poses]); b = np.array([p[:3, 3] for p in targets])
-    ac, bc = a-a.mean(0), b-b.mean(0)
-    scale = float(np.sum((ac @ R.T)*bc) / np.sum(ac**2))
-    if not np.isfinite(scale) or scale <= 0: raise ValueError('Invalid COLMAP/native similarity gauge')
-    t = b.mean(0)-scale*R@a.mean(0)
+    R, scale, t = np.eye(3), 1., np.zeros(3)
+    if not native:
+        # Fit orientation from camera orientations; scale/translation from centers.
+        rotations = [target[:3, :3] @ pose[:3, :3].T for pose, target in zip(poses, targets)]
+        U, _, V = np.linalg.svd(np.sum(rotations, axis=0))
+        correction = np.eye(3); correction[-1, -1] = np.linalg.det(U @ V)
+        R = U @ correction @ V
+        ac, bc = a-a.mean(0), b-b.mean(0)
+        scale = float(np.sum((ac @ R.T)*bc) / np.sum(ac**2))
+        if not np.isfinite(scale) or scale <= 0: raise ValueError('Invalid COLMAP/native similarity gauge')
+        t = b.mean(0)-scale*R@a.mean(0)
     frames = []
     for image_id, p in zip(ids, poses):
         im = recon.images[image_id]; cam = recon.cameras[im.camera_id]
@@ -93,10 +98,12 @@ def _export_reconstruction(recon, originals, out):
             obs.append({'photo': originals[im.name]['photo'], 'uv': uv[:2].tolist()})
         tracks.append({'id': point_id, 'xyz': (scale*R@point.xyz+t).tolist(), 'observations': obs,
                        'reprojectionErrorControlPixels': float(point.error)})
-    write(out/'cameras.json', {'frames': frames, 'worldFrame': 'MapAnything native',
-          'gaugeScale': scale, 'cameraCenterAlignmentRmsNative': float(np.sqrt(np.mean(np.sum((scale*a@R.T+t-b)**2, axis=1)))),
-          'gaugeBasis': 'mean camera orientation plus least-squares uniform scale and translation; remaining pose differences retained'})
-    write(out/'tracks.json', {'tracks': tracks, 'basis': 'COLMAP SIFT tracks; all-view fit, not held-out truth'})
+    prefix = 'native-' if native else ''
+    write(out/(prefix+'cameras.json'), {'frames': frames, 'worldFrame': 'COLMAP incremental native' if native else 'MapAnything native',
+          'gaugeScale': scale, 'gaugeRotation': R.tolist(), 'gaugeTranslation': t.tolist(),
+          'cameraCenterAlignmentRmsNative': None if native else float(np.sqrt(np.mean(np.sum((scale*a@R.T+t-b)**2, axis=1)))),
+          'gaugeBasis': 'unaltered incremental reconstruction' if native else 'mean camera orientation plus least-squares uniform scale and translation; remaining pose differences retained'})
+    write(out/(prefix+'tracks.json'), {'tracks': tracks, 'basis': 'COLMAP SIFT tracks; all-view fit, not held-out truth'})
 
 
 def colmap(root, out, sources, *, square_pixels=False):
@@ -107,7 +114,7 @@ def colmap(root, out, sources, *, square_pixels=False):
     # Native source resolution is retained within the exact neural crop; 3x is
     # bounded at 1554 px, not interpolation of the 518 px prediction image.
     S = np.array([[3., 0, 1.], [0, 3., 1.], [0, 0, 1.]])
-    originals = {}; camera_lines = []; image_lines = []
+    originals = {}; camera_lines = []; image_lines = []; source_frames = []
     extraction = pycolmap.FeatureExtractionOptions()
     extraction.num_threads = 8
     extraction.max_image_size = 1800
@@ -130,6 +137,8 @@ def colmap(root, out, sources, *, square_pixels=False):
         name = f'photo-{i}.png'; Image.fromarray(crop).save(images/name)
         K = pixels @ _array(frame['intrinsics']); K[:2, 2] += .5
         pose = _array(frame['camera_poses']); originals[name] = {'photo': i, 'pose': pose, 'pixelTransform': pixels}
+        source_frames.append({'name': name, 'photo': i, 'pose': pose.tolist(), 'pixelTransform': pixels.tolist(),
+                              'inputToCanonicalPixelCentres': A.tolist(), 'sourceSha256': hashlib.sha256(Path(source).read_bytes()).hexdigest()})
         camera_model = 'SIMPLE_PINHOLE' if square_pixels else 'PINHOLE'
         parameters = [float(np.sqrt(K[0,0]*K[1,1])), K[0,2], K[1,2]] if square_pixels else [K[0,0], K[1,1], K[0,2], K[1,2]]
         reader = pycolmap.ImageReaderOptions(camera_model=camera_model, camera_params=','.join(map(str, parameters)))
@@ -143,6 +152,8 @@ def colmap(root, out, sources, *, square_pixels=False):
             q = Rotation.from_matrix(world_to_cam[:3,:3]).as_quat()[[3,0,1,2]]
             image_lines.extend([f'{im.image_id} '+' '.join(map(str, [*q, *world_to_cam[:3,3]]))+f' {cam.camera_id} {im.name}', ''])
     pycolmap.match_exhaustive(database, device=pycolmap.Device.cpu)
+    write(out/'source-frames.json', {'frames': source_frames, 'cameraModel': camera_model,
+                                    'poseUse': 'Gauge alignment after independent mapping only; never an incremental initialization.'})
     initialized = out/'initialized'; initialized.mkdir()
     (initialized/'cameras.txt').write_text('\n'.join(camera_lines)+'\n')
     (initialized/'images.txt').write_text('\n'.join(image_lines)+'\n')
@@ -165,6 +176,81 @@ def colmap(root, out, sources, *, square_pixels=False):
               'registeredImages': recon.num_reg_images(), 'cameraModel': camera_model,
               'squareRawPixelsAssumed': square_pixels,
               'basis': 'SIFT matches; triangulation from MapAnything initial poses; camera+point BA with fixed principal points; no lens calibration truth'}
+    write(out/'results.json', result)
+    return result
+
+
+def _incremental_worker(control, out):
+    """Fresh pose estimation from the same feature DB; no initial reconstruction."""
+    import pycolmap
+
+    control, out = Path(control), Path(out)
+    metadata = json.loads((control/'source-frames.json').read_text())
+    if metadata['cameraModel'] != 'SIMPLE_PINHOLE':
+        raise ValueError('Independent control requires the same raw-square-pixel camera model')
+    originals = {row['name']: {**row, 'pose': np.asarray(row['pose']), 'pixelTransform': np.asarray(row['pixelTransform'])}
+                 for row in metadata['frames']}
+    expected = {f'photo-{p}.png' for p in range(1, 5)}
+    if set(originals) != expected:
+        raise ValueError('Independent control requires exactly the four source images')
+    options = pycolmap.IncrementalPipelineOptions()
+    options.num_threads = 8
+    options.min_model_size = 4
+    options.ba_refine_focal_length = True
+    options.ba_refine_principal_point = False
+    options.ba_refine_extra_params = False
+    options.triangulation.ignore_two_view_tracks = False
+    write(out/'options.json', {'numThreads': 8, 'minModelSize': 4, 'refineFocalLength': True,
+                              'refinePrincipalPoint': False, 'refineExtraParams': False,
+                              'ignoreTwoViewTracks': False, 'inputReconstruction': None,
+                              'otherOptions': 'pycolmap defaults', 'version': pycolmap.__version__})
+    models = out/'native-models'; models.mkdir()
+    reconstructions = pycolmap.incremental_mapping(control/'database.db', control/'images', models, options=options)
+    records, eligible = [], []
+    for index, recon in sorted(reconstructions.items()):
+        names = sorted(recon.images[i].name for i in recon.reg_image_ids())
+        records.append({'model': index, 'registeredImages': names, 'points': recon.num_points3D(),
+                        'meanReprojectionErrorControlPx': recon.compute_mean_reprojection_error() if recon.num_points3D() else None})
+        if set(names) == expected and recon.num_points3D() >= 12:
+            eligible.append((recon.num_points3D(), index, recon))
+    result = {'status': 'unsupported', 'reason': 'No single incremental model registered all four source images with sufficient points',
+              'models': records, 'initialPoseSource': 'None; incremental mapping from matched RGB images',
+              'initialIntrinsicsSource': 'Same DB SIMPLE_PINHOLE focal/principal point initialization as the neural-pose control',
+              'camerasFile': None, 'tracksFile': None, 'version': pycolmap.__version__}
+    if eligible:
+        _, index, recon = max(eligible, key=lambda row: (row[0], -row[1]))
+        _export_reconstruction(recon, originals, out, native=True)
+        _export_reconstruction(recon, originals, out)
+        result.update(status='completed', reason=None, selectedModel=index,
+                      camerasFile='cameras.json', tracksFile='tracks.json', nativeCamerasFile='native-cameras.json',
+                      nativeTracksFile='native-tracks.json',
+                      scope='Four-view registration is not physical calibration. Export gauge changes coordinates only; old depth/models are not transported.')
+    write(out/'results.json', result)
+
+
+def incremental_colmap(control, out, *, max_seconds=180):
+    """Bounded same-DB pose-initialization control; preserves partial maps/logs."""
+    control, out = Path(control).resolve(), Path(out).resolve()
+    if isinstance(max_seconds, bool) or not 1 <= max_seconds <= 600:
+        raise ValueError('Independent mapping needs a 1–600 second bound')
+    if not all((control/name).is_file() for name in ('database.db', 'source-frames.json')):
+        raise ValueError('Run colmap(square_pixels=True) once and retain its same feature DB')
+    out.mkdir(parents=True, exist_ok=False)
+    started = time.monotonic()
+    database_sha = hashlib.sha256((control/'database.db').read_bytes()).hexdigest()
+    command = [sys.executable, '-c', 'import sys; from scripts.workcell_guard_controls import _incremental_worker; _incremental_worker(sys.argv[1],sys.argv[2])', str(control), str(out)]
+    try:
+        with (out/'incremental.log').open('w') as log:
+            completed = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=max_seconds)
+        if completed.returncode:
+            raise RuntimeError(f'Incremental worker exit {completed.returncode}; see incremental.log')
+        result = json.loads((out/'results.json').read_text())
+    except (subprocess.TimeoutExpired, RuntimeError) as error:
+        result = {'status': 'unsupported', 'reason': str(error), 'camerasFile': None, 'tracksFile': None,
+                  'partialModels': sorted(p.name for p in (out/'native-models').glob('*') if p.is_dir())}
+    result.update(seconds=time.monotonic()-started, maxSeconds=max_seconds, databaseSha256=database_sha,
+                  sourceMetadataSha256=hashlib.sha256((control/'source-frames.json').read_bytes()).hexdigest(),
+                  officialApi='https://colmap.github.io/pycolmap/pycolmap.html#pycolmap.incremental_mapping')
     write(out/'results.json', result)
     return result
 

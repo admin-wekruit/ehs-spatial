@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -46,8 +47,10 @@ def experiment(payload: bytes, mode: str, joint_max_nfev: int = 100):
         unpack(payload, root)
         code_files = [Path('/repo/scripts')/name for name in ('workcell_guard_joint.py','check_workcell_guard_joint.py','workcell_guard_controls.py','workcell_guard_dense.py','workcell_guard_silhouette.py','workcell_photo_metrology.py','check_workcell_photo_metrology.py','workcell_photo_geometry.py','workcell_photo_calibration.py','workcell_photo_objects.py','workcell_photo_oneshot.py','check_workcell_camera_pixels.py') if (Path('/repo/scripts')/name).exists()]
         code_files += [Path('/repo/fast_report/x7.py'), Path('/repo/ehs_spatial/measurements.py')]
-        if mode in ('metrology-joint-button', 'metrology-depth'):
+        if mode in ('metrology-joint-button', 'metrology-depth', 'real2sim', 'real2sim-details'):
             code_files += [Path('/repo/scripts')/name for name in ('workcell_button_bundle.py', 'check_workcell_button_bundle.py')]
+        if mode in ('real2sim', 'real2sim-details'):
+            code_files += [Path('/repo/scripts')/name for name in ('workcell_real2sim_experiment.py', 'workcell_post_faces.py', 'workcell_photo_texture.py')]
         if mode == 'metrology-depth':
             code_files += [Path('/repo/scripts')/name for name in ('workcell_depth_metrology.py', 'check_workcell_depth_metrology.py')]
         (out/'implementation-manifest.json').write_text(json.dumps({str(p.relative_to('/repo')):hashlib.sha256(p.read_bytes()).hexdigest() for p in code_files},indent=2))
@@ -58,10 +61,18 @@ def experiment(payload: bytes, mode: str, joint_max_nfev: int = 100):
             start = time.monotonic()
             command = ['python', '-c', code, str(root), str(out), *sources]
             try:
-                p = subprocess.run(command, capture_output=True, text=True, env=env, timeout=timeout)
-                (out/f'{name}.log').write_text(p.stdout+'\n'+p.stderr)
+                p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     text=True, env=env, start_new_session=True)
+                stdout, stderr = p.communicate(timeout=timeout)
+                (out/f'{name}.log').write_text(stdout+'\n'+stderr)
                 records[name] = {'returncode': p.returncode, 'seconds': time.monotonic()-start}
             except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                stdout, stderr = p.communicate()
+                (out/f'{name}.log').write_text(stdout+'\n'+stderr)
                 records[name] = {'status':'timeout', 'seconds':time.monotonic()-start}
             print(json.dumps({name:records[name]}), flush=True)
         prefix = 'from pathlib import Path; import sys; root=Path(sys.argv[1]); out=Path(sys.argv[2]); '
@@ -93,6 +104,10 @@ def experiment(payload: bytes, mode: str, joint_max_nfev: int = 100):
             run('dense_replay', prefix+'from scripts.workcell_guard_joint import build; build(root,out/"LoFTR-COLMAP-cameras/joint",cameras=root/"control/cameras.json",tracks=root/"control/tracks.json",sources=[Path(p) for p in sys.argv[3:]])',600)
         elif mode == 'silhouette':
             run('silhouette', prefix+'from scripts.workcell_guard_silhouette import run; run(root,out/"A4-shared-silhouette",[Path(p) for p in sys.argv[3:]])',600)
+        elif mode in ('real2sim', 'real2sim-details'):
+            run('real2sim', prefix+'from scripts.workcell_real2sim_experiment import run; '
+                f'run(root,out/"real2sim",[Path(p) for p in sys.argv[3:]],max_nfev={joint_max_nfev},details_only={mode == "real2sim-details"})',
+                300 if mode == 'real2sim-details' else 1500)
         elif mode == 'metrology-depth':
             from concurrent.futures import ThreadPoolExecutor
             from scripts.workcell_depth_metrology import depth_run_path
@@ -173,7 +188,7 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
         raise ValueError('Joint iteration cap must be between 1 and 400')
     if destination.exists(): raise ValueError('Use a fresh experiment output directory')
     reference = None
-    if mode in ('metrology', 'metrology-square-pixels', 'metrology-joint-button', 'metrology-depth'):
+    if mode in ('metrology', 'metrology-square-pixels', 'metrology-joint-button', 'metrology-depth', 'real2sim', 'real2sim-details'):
         if not measurements: raise ValueError('Metrology requires --measurements with known reference dimensions')
         from scripts.workcell_photo_calibration import load_measurements
         config = load_measurements(measurements)
@@ -191,6 +206,9 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
     files = [*root.glob('frame_*.json.gz'), *root.glob('photo-*.png')]
     files += [root/name for name in ('geometry.json','sam3.json','objects.json','guard-input.npz',
               'guard-placement.json','guard-partition.json','guard-multi.glb','guard-left.glb','guard-center.glb','guard-right.glb')]
+    if mode in ('real2sim', 'real2sim-details'):
+        files += [root/name for name in ('posts.glb', 'posts-source.json', 'physical-clearances.json',
+                                         'fence-fitted.glb', 'floor-fitted.glb', 'structural-result.json')]
     if not all(p.is_file() for p in files): raise ValueError('Incomplete frozen baseline')
     buffer = io.BytesIO(); hashes = {}
     with tarfile.open(fileobj=buffer, mode='w:gz') as archive:

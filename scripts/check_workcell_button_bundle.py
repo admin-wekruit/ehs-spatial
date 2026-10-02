@@ -5,6 +5,94 @@ import json
 import numpy as np
 
 
+def camera_and_selection_contract():
+    """Bounded regression: known C2W projection and scarce cross-camera tracks."""
+    from workcell_button_bundle import _project_raw, _select_tracks, _track_coverage
+    pose = np.eye(4)
+    pose[:3, :3] = [[0., 0., 1.], [0., 1., 0.], [-1., 0., 0.]]
+    pose[:3, 3] = [1., 2., 3.]
+    A = np.array([[.225, 0., -.3875], [0., .333, -12.8335], [0., 0., 1.]])
+    K = np.array([[1800., 0., 1000.], [0., 1800., 750.], [0., 0., 1.]])
+    uv, depth = _project_raw([[3., 2.1, 2.8]], {'pose': pose, 'K': A @ K, 'A': A})
+    assert np.allclose(uv, [[1180., 840.]]) and np.allclose(depth, [2.])
+    frames = {p: {'rawShape': [1200, 1600]} for p in range(1, 5)}
+    tracks = []
+    for photos, count in [([1, 2], 120), ([3, 4], 240), ([2, 3], 7), ([1, 4], 5), ([1, 2, 3, 4], 3)]:
+        for index in range(count):
+            # Sparse links deliberately share cells; dominant pairs cover many.
+            cell = index % 36 if count > 10 else 0
+            tracks.append({'id': len(tracks), 'xyz': [0., 0., 3.], 'initialMaxErrorRawPx': .1,
+                           'observations': [{'photo': p, 'uvRaw': [30.+(cell % 6)*260, 30.+(cell//6)*190]} for p in photos]})
+    old = _select_tracks(tracks, frames, 60, 'spatial_round_robin')
+    new = _select_tracks(tracks, frames, 60, 'connectivity_balanced')
+    original, old_graph, graph = (_track_coverage(rows, frames) for rows in (tracks, old, new))
+    assert len(old) == len(new) == 60 and len({t['id'] for t in new}) == 60
+    assert graph['connected']
+    assert graph['tracksByPair']['2-3'] == original['tracksByPair']['2-3']
+    assert graph['tracksByPair']['2-3'] > old_graph['tracksByPair']['2-3']
+    assert graph['trackLengthCounts']['4'] == 3
+    reversed_result = _select_tracks(list(reversed(tracks)), frames, 60, 'connectivity_balanced')
+    assert [t['id'] for t in reversed_result] == [t['id'] for t in new]
+    uncapped_old = _select_tracks(tracks, frames, len(tracks), 'spatial_round_robin')
+    uncapped_new = _select_tracks(list(reversed(tracks)), frames, len(tracks), 'connectivity_balanced')
+    assert [t['id'] for t in uncapped_new] == [t['id'] for t in uncapped_old]
+    disconnected = [t for t in tracks if {o['photo'] for o in t['observations']} in ({1, 2}, {3, 4})]
+    assert not _track_coverage(disconnected, frames)['connected']
+    print('PASS: known C2W/raw pixels, scarce-pair coverage, unique deterministic capped tracks, disconnected-source diagnosis')
+
+
+def reconstruction_export_contract():
+    """Native and aligned exports preserve projection under one similarity gauge."""
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+    from types import SimpleNamespace
+    from scipy.spatial.transform import Rotation
+    from workcell_guard_controls import _export_reconstruction
+    from workcell_button_bundle import _project_raw
+
+    rotation = Rotation.from_rotvec([.2, -.3, .1]).as_matrix()
+    offset, scale = np.array([.4, -.2, .7]), 1.7
+    pixels = np.array([[2., 0., .5], [0., 3., 1.], [0., 0., 1.]])
+    K = np.array([[600., 0., 320.], [0., 900., 240.], [0., 0., 1.]])
+    Kcolmap = K.copy(); Kcolmap[:2, 2] += .5
+    xyz = np.array([.3, .2, 4.])
+    images, originals, poses, elements = {}, {}, {}, []
+    for photo, center in enumerate(([0., 0., 0.], [.8, -.2, .1], [-.3, .7, -.2], [.2, -.5, .2]), 1):
+        pose = np.eye(4); pose[:3, :3] = Rotation.from_rotvec([.01*photo, -.02*photo, .015*photo]).as_matrix()
+        pose[:3, 3] = center; poses[photo] = pose
+        uv = _project_raw([xyz], {'pose': pose, 'K': K, 'A': np.eye(3)})[0][0]
+        inverse = SimpleNamespace(matrix=lambda p=pose: p[:3].copy())
+        transform = SimpleNamespace(inverse=lambda inverse=inverse: inverse)
+        name = f'photo-{photo}.png'
+        images[photo] = SimpleNamespace(name=name, camera_id=1, cam_from_world=lambda transform=transform: transform,
+                                       points2D=[SimpleNamespace(xy=uv + .5)])
+        target = pose.copy(); target[:3, :3] = rotation @ pose[:3, :3]
+        target[:3, 3] = scale*rotation@pose[:3, 3] + offset
+        originals[name] = {'photo': photo, 'pose': target, 'pixelTransform': pixels}
+        elements.append(SimpleNamespace(image_id=photo, point2D_idx=0))
+    recon = SimpleNamespace(images=images, cameras={1: SimpleNamespace(calibration_matrix=lambda: Kcolmap.copy())},
+                            points3D={7: SimpleNamespace(xyz=xyz, error=.2, track=SimpleNamespace(elements=elements))},
+                            reg_image_ids=lambda: list(images))
+    with TemporaryDirectory() as temp:
+        root = Path(temp)
+        for native in (True, False):
+            _export_reconstruction(recon, originals, root, native=native)
+            prefix = 'native-' if native else ''
+            camera_doc = json.loads((root/(prefix+'cameras.json')).read_text())
+            track = json.loads((root/(prefix+'tracks.json')).read_text())['tracks'][0]
+            expected = xyz if native else scale*rotation@xyz + offset
+            assert np.allclose(track['xyz'], expected)
+            assert camera_doc['worldFrame'] == ('COLMAP incremental native' if native else 'MapAnything native')
+            assert abs(camera_doc['gaugeScale'] - (1. if native else scale)) < 1e-12
+            for frame, observation in zip(camera_doc['frames'], track['observations']):
+                if native: assert np.allclose(frame['pose'], poses[frame['photo']])
+                else: assert np.allclose(frame['pose'], originals[f"photo-{frame['photo']}.png"]['pose'])
+                frame.update(A=np.eye(3), K=np.asarray(frame['K']), pose=np.asarray(frame['pose']))
+                projected, _ = _project_raw([track['xyz']], frame)
+                assert np.allclose(projected[0], observation['uv'])
+    print('PASS: original COLMAP gauge retained; aligned cameras/points preserve raw projection and pixel centres')
+
+
 def legacy_missing_coupling():
     # A measured change in either diameter leaves the old height-only scale
     # unchanged. Three independently computed scales cannot enforce one object.
@@ -166,6 +254,8 @@ def fixed_camera_axial_reference():
 
 
 def main():
+    camera_and_selection_contract()
+    reconstruction_export_contract()
     fixed_camera_axial_reference()
     occluded_support_directions()
     observability_and_seed()

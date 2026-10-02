@@ -7,6 +7,7 @@ the two circular diameters enter projection inside the same camera/point fit.
 An unsupported fit is saved as a diagnostic candidate, never a metric result.
 """
 import hashlib
+import itertools
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -134,7 +135,86 @@ def _support_validity(row):
     return np.r_[np.asarray(masks, bool), True]
 
 
-def _prepare(frames, tracks, observations, max_tracks, *, refine_cameras=True):
+def _track_coverage(tracks, photos):
+    pairs = {pair: 0 for pair in itertools.combinations(sorted(photos), 2)}
+    counts = {p: 0 for p in photos}
+    lengths = {str(n): 0 for n in range(2, len(photos) + 1)}
+    for track in tracks:
+        observed = sorted(o['photo'] for o in track['observations'])
+        lengths[str(len(observed))] += 1
+        for photo in observed:
+            counts[photo] += 1
+        for pair in itertools.combinations(observed, 2):
+            pairs[pair] += 1
+    # Four cameras permit exhaustive graph cuts. Count distinct tracks crossing
+    # each cut, not pairwise edges that overcount a three/four-view track.
+    cuts = []
+    photos = sorted(photos)
+    for size in range(len(photos)):
+        for extra in itertools.combinations(photos[1:], size):
+            side = {photos[0], *extra}
+            if len(side) == len(photos):
+                continue
+            crossing = sum(bool(side & {o['photo'] for o in t['observations']}) and
+                           bool(set(photos) - side & {o['photo'] for o in t['observations']}) for t in tracks)
+            cuts.append({'photos': sorted(side), 'otherPhotos': sorted(set(photos) - side), 'crossingTracks': crossing})
+    weakest = min(cuts, key=lambda c: c['crossingTracks'])
+    return {'tracksByPhoto': counts, 'tracksByPair': {f'{a}-{b}': n for (a, b), n in pairs.items()},
+            'trackLengthCounts': lengths, 'connected': weakest['crossingTracks'] > 0, 'weakestCut': weakest}
+
+
+def _select_tracks(tracks, frames, maximum, mode):
+    """Keep the historical selector as an explicit controlled experiment arm."""
+    if mode not in ('spatial_round_robin', 'connectivity_balanced'):
+        raise ValueError('Unknown track selection experiment arm')
+    ordered = sorted(tracks, key=lambda t: (-len(t['observations']), t['initialMaxErrorRawPx'], str(t['id'])))
+
+    def cells(track):
+        return [(o['photo'], *np.floor(np.asarray(o['uvRaw']) / np.asarray(frames[o['photo']].get('rawShape', [1200, 1600]))[::-1] * 6).astype(int))
+                for o in sorted(track['observations'], key=lambda o: o['photo'])]
+
+    kept = []
+    # Balancing allocates a limited track budget. With no truncation, preserve
+    # the original parameter/residual order and its numerical solver behavior.
+    if mode == 'spatial_round_robin' or len(tracks) <= maximum:
+        bins = {}
+        for track in ordered:
+            bins.setdefault(cells(track)[0], []).append(track)
+        while bins and len(kept) < maximum:
+            for cell in sorted(bins):
+                kept.append(bins[cell].pop(0))
+                if not bins[cell]:
+                    del bins[cell]
+                if len(kept) == maximum:
+                    break
+        return kept
+    memberships = [tuple(itertools.combinations(sorted(o['photo'] for o in t['observations']), 2)) for t in ordered]
+    locations = [cells(t) for t in ordered]
+    available = {pair: {i for i, pairs in enumerate(memberships) if pair in pairs}
+                 for pair in itertools.combinations(sorted(frames), 2)}
+    capacity = {pair: len(indices) for pair, indices in available.items()}
+    pair_counts = dict.fromkeys(available, 0)
+    cell_counts = {}
+    # ponytail: four photos and a 180-track cap make this bounded greedy pass
+    # small. It cannot create missing cross-view tracks; retain capacity evidence.
+    while any(available.values()) and len(kept) < maximum:
+        pair = min((p for p, ids in available.items() if ids), key=lambda p: (pair_counts[p], capacity[p], p))
+        index = min(available[pair], key=lambda i: (-len(ordered[i]['observations']),
+                    sum(pair_counts[p] for p in memberships[i]) / len(memberships[i]),
+                    sum(cell_counts.get(cell, 0) for cell in locations[i]),
+                    ordered[i]['initialMaxErrorRawPx'], str(ordered[i]['id'])))
+        kept.append(ordered[index])
+        for p in memberships[index]:
+            pair_counts[p] += 1
+            available[p].remove(index)
+        for cell in locations[index]:
+            cell_counts[cell] = cell_counts.get(cell, 0) + 1
+    return kept
+
+
+def _prepare(frames, tracks, observations, max_tracks, *, refine_cameras=True, track_selection='spatial_round_robin'):
+    if isinstance(max_tracks, bool) or not isinstance(max_tracks, int) or max_tracks <= 0:
+        raise ValueError('Track cap must be a positive integer')
     if set(frames) != {1, 2, 3, 4}:
         raise ValueError('Exactly four source cameras are required')
     for frame in frames.values():
@@ -195,28 +275,17 @@ def _prepare(frames, tracks, observations, max_tracks, *, refine_cameras=True):
             continue
         selected.append({'id': track.get('id', len(selected)), 'xyz': xyz.tolist(), 'observations': clean,
                          'initialMaxErrorRawPx': max(errors)})
-    # ponytail: a deterministic spatial round-robin caps sparse BA at 180 points;
-    # expand this source-driven cap if larger image sets require more coverage.
-    bins, kept = {}, []
-    for track in sorted(selected, key=lambda t: (-len(t['observations']), t['initialMaxErrorRawPx'], str(t['id']))):
-        o = min(track['observations'], key=lambda o: o['photo'])
-        raw = np.asarray(o['uvRaw'])
-        shape = frames[o['photo']].get('rawShape', [1200, 1600])
-        cell = (o['photo'], *np.floor(raw / np.asarray(shape[::-1]) * 6).astype(int))
-        bins.setdefault(cell, []).append(track)
-    while bins and len(kept) < max_tracks:
-        for cell in sorted(bins):
-            kept.append(bins[cell].pop(0))
-            if not bins[cell]:
-                del bins[cell]
-            if len(kept) == max_tracks:
-                break
-    counts = {p: sum(any(o['photo'] == p for o in t['observations']) for t in kept) for p in frames}
+    kept = _select_tracks(selected, frames, max_tracks, track_selection)
+    coverage = _track_coverage(kept, frames)
+    counts = coverage['tracksByPhoto']
     if min(counts.values()) < 12 or len(kept) < 24:
         raise ValueError(f'Insufficient non-button scene tracks: {counts}')
     return kept, {'inputTracks': len(tracks), 'selectedTracks': len(kept), 'rejected': rejected,
-                  'tracksByPhoto': counts, 'maxTracks': max_tracks,
-                  'selection': 'whole-track exclusion for any button ROI; positive depth, parallax, source reprojection and spatial round-robin only'}
+                  'tracksByPhoto': counts, 'maxTracks': max_tracks, 'method': track_selection,
+                  'eligibleCoverage': _track_coverage(selected, frames), 'selectedCoverage': coverage,
+                  'selectedTrackIds': [t['id'] for t in kept],
+                  'selection': 'unchanged button-ROI, positive-depth, parallax and source-reprojection filters; '+track_selection,
+                  'scope': 'Track graph support only; connectivity does not validate correspondences, cameras, shape or physical scale.'}
 
 
 def _button_seed(frames, observations, reference, axis):
@@ -275,11 +344,12 @@ def _observability(reduced, core_columns, scale_column):
 
 
 def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max_tracks=180, holdouts=True, workers=1,
-          refine_cameras=True):
+          refine_cameras=True, track_selection='spatial_round_robin'):
     """Small synthetic-friendly core. Observations and tracks are in raw/canonical pixels respectively."""
     reference = _reference(reference)
     known = reference['features']
-    scene, selection = _prepare(frames, tracks, observations, max_tracks, refine_cameras=refine_cameras)
+    scene, selection = _prepare(frames, tracks, observations, max_tracks, refine_cameras=refine_cameras,
+                                track_selection=track_selection)
     photos = sorted(frames)
     button_photos = sorted(row['photo'] for row in observations)
     origin = np.asarray(frames[1]['pose'][:3, 3])
@@ -549,7 +619,8 @@ def observe_reference(frame, candidate):
             'occlusionStatus': 'unconfirmed; complete-color and bottom-face hypothesis tested by withheld projection'}
 
 
-def build(root, out, sources, reference, cameras, tracks, *, max_nfev=100, max_tracks=180, workers=2):
+def build(root, out, sources, reference, cameras, tracks, *, max_nfev=100, max_tracks=180, workers=2,
+          track_selection='spatial_round_robin'):
     from workcell_photo_metrology import _load
 
     start = time.monotonic()
@@ -576,7 +647,8 @@ def build(root, out, sources, reference, cameras, tracks, *, max_nfev=100, max_t
         initial = {'axisNative': up}
         track_data = json.loads(Path(tracks).read_text()) if isinstance(tracks, (str, Path)) else tracks
         result, camera_data, track_data = solve(compact, track_data['tracks'], evidence, reference, initial,
-                                               max_nfev=max_nfev, max_tracks=max_tracks, workers=workers)
+                                               max_nfev=max_nfev, max_tracks=max_tracks, workers=workers,
+                                               track_selection=track_selection)
         source_hash = hashlib.sha256(json.dumps(source_inputs, sort_keys=True).encode()).hexdigest()
         camera_data['sourceHash'] = source_hash
         camera_bytes = (json.dumps(camera_data, indent=2, allow_nan=False) + '\n').encode()

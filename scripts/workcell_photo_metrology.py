@@ -714,7 +714,7 @@ def _interval_union(intervals):
         if high <= low:
             continue
         if result and low <= result[-1][1]:
-            result[-1][1] = max(result[-1][1], high)
+            result[-1][1] = max(result[-1][1], float(high))
         else:
             result.append([float(low), float(high)])
     return result
