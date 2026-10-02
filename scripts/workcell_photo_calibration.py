@@ -134,9 +134,11 @@ def apply_measurements(root, measurements):
                              'heightM': height*scale if scale is not None else None,
                              'widthM': width*scale if scale is not None else None},
         'diagnostics': {'referenceFit': fit, 'envelopeUsedForCalibration': False},
-        'renderingAssumptions': [
+        'renderingAssumptions': ([
             'Three supplied dimensions constrain one perspective-fit 3D button; component heights and gray housing shape are fitted nuisance parameters.',
-            'Saved scene cameras stay fixed. Unsupported candidates are visual hypotheses and do not establish a metric scale.']}
+            'Saved scene cameras stay fixed. Source-view validation is conditional, not surveyed accuracy.'] if scale is not None else [
+            'The failed 3D calibration candidate is diagnostic only and does not replace the main model.',
+            'The main button retains its image-supported envelope display; part-height proportions and unseen thickness are rendering assumptions, not measured dimensions.'])}
     anchor.update(mPerNative=scale, assumedHeightM=features['wholeComponentHeightM'],
                   assumedWidthM=features['mainBodyDiameterM'], scope=reference['scope'],
                   status='three-dimension 3D reference fit' if scale is not None else '3D reference scale unsupported',

@@ -34,12 +34,16 @@ def button_meshes(geometry):
     """Shared component construction; known part sizes never alter observed bounds."""
     anchor = geometry['anchor']
     fit = anchor.get('referenceFit', {})
-    if fit.get('fittedNuisanceParameters') is not None:
+    if fit.get('status') == 'available':
+        if fit.get('fittedNuisanceParameters') is None:
+            raise ValueError('Accepted reference fit is missing its 3D geometry')
         if not fit.get('camerasFixed'):
             raise ValueError('Cannot place a refitted-camera button into the original scene')
         from scripts.workcell_metrology_models import reference_meshes
         names = {'gray-housing': 'gray-base', 'yellow-body': 'yellow-body', 'red-actuator': 'red-cap'}
         return {'emergency-button-'+names[name]: mesh for name, mesh in reference_meshes(fit['fittedNuisanceParameters']).items()}
+    # Rejected calibration candidates belong in their diagnostic export. Keep
+    # the existing image-supported display envelope independent of that fit.
     center = np.asarray(anchor['centerNative'], float)
     basis = button_basis(geometry)
     width, height = float(anchor['nativeWidth']), float(anchor['nativeHeight'])
@@ -283,7 +287,8 @@ def build(root, sources):
                 if _inside(points, best, frames) > .2:
                     rows.append(best)
         item = add('post-'+node, word.title()+' '+node.split('-')[-1], word, 'posts.glb', [node], observations(rows),
-                   'image-supported primitive', ['Cross-view links require projected mesh support inside the instance mask. Primitive thickness is assumed.'])
+                   'image-supported primitive', ['Cross-view links require projected mesh support inside the instance mask. Primitive thickness is assumed.',
+                   'Axis is constrained perpendicular to the inferred ground for display; it is not a measured physical axis.'])
         item['modelDimensionsNative'] = np.ptp(points, axis=0).tolist()
         represented_posts.append((item, rows))
     fence, fence_nodes = _nodes(root, 'fence-fitted.glb')

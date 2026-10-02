@@ -31,10 +31,16 @@ body:has(.photo-report) { background: #f7f8f3; color: #243c31; }
 @media (max-width: 760px) { .photo-report { padding: 0 12px 30px; }.photo-report-header nav { gap: 10px; }.photo-report-brand { font-size: 16px; }.photo-report-overview { display: block; padding-top: 20px; }.photo-report-overview dl { gap: 35px; }.photo-report h1 { font-size: 25px; }.photo-report-scale { padding: 12px; }.report-comparison-stage { min-height: 300px; } }
 .report-comparison-model .native-stage { background: #dfe5dc !important; }
 
-.report-scene-primary-views { display: grid; grid-template-columns: 1fr 1fr; flex: 0 0 auto; gap: 8px; padding: 10px; border-bottom: 1px solid #cdd5cc; background: #edf2e7; }
+.report-scene-primary-views { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); flex: 0 0 auto; gap: 8px; padding: 10px; border-bottom: 1px solid #cdd5cc; background: #edf2e7; }
 .report-scene-primary-views button { display: grid; gap: 4px; text-align: left; padding: 10px 14px; border: 1px solid #8ca38b; border-radius: 3px; background: #fbfcf7; color: #315a45; }
 .report-scene-primary-views button[aria-pressed="true"] { background: #315a45; color: #fff; }
 .report-scene-primary-views strong { font-size: 14px; }.report-scene-primary-views small { font-size: 11px; font-weight: 400; }
+.report-scene-primary-views button:disabled { opacity: .55; cursor: not-allowed; }
+.photo-report-focus { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 0; color: #315a45; }
+.photo-report-focus button { padding: 8px 12px; border: 1px solid #8ca38b; border-radius: 3px; background: #fbfcf7; color: inherit; }
+.photo-report-focus button[aria-pressed="true"] { background: #315a45; color: #fff; }
+.photo-report-focus small { color: #66786b; }
+@media (max-width: 1100px) { .report-scene-primary-views { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .photo-report-angles { border-bottom: 1px solid #cdd5cc; padding-bottom: 12px; margin-bottom: 15px; }
 .photo-report-angles h3 { font-size: 14px; margin: 0 0 12px; }.photo-report-angles h4 { font-size: 12px; margin: 12px 0 5px; }

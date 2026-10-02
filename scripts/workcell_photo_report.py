@@ -20,6 +20,31 @@ LABELS = {'robot': '工业机器人', 'cart': '载料运输车', 'floor': '地�
           'light curtain': '光幕', 'work platform': '平台/护板可见表面', 'control cabinet': '控制柜'}
 
 
+def _source_points(frame, transform):
+    """Retain predicted pixel points/colors; the sole geometry change is rigid Z-up."""
+    from scripts.workcell_photo_oneshot import _array
+    points, rgb, valid = (_array(frame[key]) for key in ('pts3d', 'image', 'non_ambiguous_mask'))
+    if points.ndim != 3 or points.shape[-1] != 3 or rgb.shape != points.shape or valid.shape != points.shape[:2]:
+        raise ValueError('Raw point, RGB and validity rasters disagree')
+    valid = valid.astype(bool) & np.isfinite(points).all(-1)
+    transformed = np.full(points.shape, np.nan, np.float32)
+    transformed[valid] = trimesh.transform_points(points[valid], transform)
+    return transformed, rgb, valid
+
+
+def _observation_point_mask(observation, shape):
+    """Reuse saved source polygons; do not substitute a model or bounding box."""
+    import cv2
+    mask = np.zeros(shape, np.uint8)
+    polygons = observation.get('polygons') or ([observation['polygon']] if observation.get('polygon') else [])
+    for polygon in polygons:
+        pixels = np.asarray(polygon, float)
+        if pixels.ndim != 2 or pixels.shape[1] != 2 or len(pixels) < 3 or not np.isfinite(pixels).all():
+            raise ValueError('Invalid saved source polygon')
+        cv2.fillPoly(mask, [np.rint(pixels).astype(np.int32)], 1)
+    return mask.astype(bool)
+
+
 def _ground_distance(item, geometry, transform):
     """Use the multiview physical edge; visible point-cloud extrema are not endpoints."""
     result = {'byPhoto': {}, 'rangeNative': None, 'sourcePhotos': [], 'feature': None,
@@ -71,7 +96,7 @@ def build(root):
     if geometry.get('calibration'):
         doc['coordinateFrames'][0]['scale']['sourceRefs'] = [{'kind': 'user_measured_reference',
             'primaryAxis': 'joint3DReference', **geometry['calibration']['reference']}]
-    urls, scene_cache = {}, {}
+    urls, scene_cache, source_frames = {}, {}, {}
     def asset(path, aid, kind, **metadata):
         path = Path(path)
         data = path.read_bytes()
@@ -81,8 +106,30 @@ def build(root):
                             'metadata': {'name': path.name, **metadata}})
         urls[aid] = path.name
         return aid
+
+    def point_representation(name, xyz, rgb, refs, **provenance):
+        from fast_report.layers import points_glb
+        if not len(xyz):
+            return None
+        payload, point_metadata = points_glb(xyz, rgb, point_size=0)
+        filename = f'entity-points-{name}.glb'
+        (root / filename).write_bytes(payload)
+        aid = asset(root / filename, 'asset-points-'+name, 'geometry',
+                    **point_metadata, pointCount=len(xyz), **provenance)
+        return {'id': 'rep-points-'+name, 'kind': 'point_cloud', 'assetId': aid,
+                'coordinateFrameId': frame_id,
+                'transform': {'coordinateFrameId': frame_id, 'position': [0, 0, 0],
+                              'quaternion': [0, 0, 0, 1], 'scale': [1, 1, 1]},
+                'bounds': {'min': xyz.min(0).tolist(), 'max': xyz.max(0).tolist()},
+                'placementState': 'confirmed', 'sourceValidity': 'current',
+                'sourceKind': 'predicted_source_point_cloud',
+                'placementNote': 'Source pixel/depth correspondence only; model-inferred geometry, not surveyed ground truth',
+                'sourceRefs': refs}
+
+    context_representations, context_observations = [], []
     for i in range(1, 5):
         f = _frame(root, i)
+        source_frames[i] = _source_points(f, transform)
         image = asset(root / f'photo-{i}.png', f'photo-{i}', 'source_image', photo=i)
         doc['geometryBindings'][image] = {'cameraId': f'camera-{i}', 'geometrySolutionId': 'oneshot-mapanything'}
         h, w = f['image']['shape'][:2]
@@ -90,6 +137,24 @@ def build(root):
         doc['cameras'].append({'id': f'camera-{i}', 'imageId': image, 'coordinateFrameId': frame_id,
                               'width': w, 'height': h, 'K': _array(f['intrinsics']).tolist(),
                               'cameraToWorld': pose.tolist(), 'sourceRefs': [{'photo': i}]})
+        oid = f'obs-source-points-{i}'
+        context_observations.append(oid)
+        doc['observations'].append({'id': oid, 'revision': 1, 'imageId': image,
+            'originalPixelBox': [0, 0, w, h], 'originalPixelPolygons': [],
+            'boxConvention': 'edges_xyxy_right_bottom_exclusive',
+            'sourceRefs': [{'file': f'frame_{i:04d}.json.gz', 'photo': i}]})
+        points, rgb, valid = source_frames[i]
+        context = point_representation(f'capture-photo-{i}', points[valid], rgb[valid],
+            [{'file': f'frame_{i:04d}.json.gz', 'photo': i, 'imageId': image, 'observationId': oid, 'revision': 1}],
+            source='MapAnything saved pts3d/image/non_ambiguous_mask; all finite valid source pixels',
+            sampling='none', units='native', groundTruth=False)
+        if context is not None:
+            context_representations.append(context)
+    if context_representations:
+        doc['entities'].append({'id': 'source-capture-points', 'label': '四张照片的推断点云（非真值）',
+            'observationRefs': context_observations, 'representations': context_representations, 'visible': True, 'sourceContext': True,
+            'associationState': 'association_pending',
+            'physicalDimensionsUnknown': True, 'modelOrientationUnknown': True})
 
     def representation(item, spec, suffix):
         filename = spec['file']
@@ -139,7 +204,7 @@ def build(root):
         if 'button' in item['id']:
             label = '红黄急停按钮'
         item['label'] = label
-        observations = []
+        observations, point_representations = [], []
         for j, obs in enumerate(item['observations']):
             oid = f"obs-{item['id']}-{obs['photo']}-{j}"
             observations.append(oid)
@@ -147,6 +212,19 @@ def build(root):
                 'originalPixelBox': obs['box'], 'originalPixelPolygons': obs.get('polygons') or ([obs['polygon']] if obs.get('polygon') else []),
                 'polygonCoordinateConvention': 'pixel_centers', 'boxConvention': 'edges_xyxy_right_bottom_exclusive',
                 'sourceRefs': [{'photo': obs['photo'], 'evidence': obs.get('source', obs.get('evidence', 'current observation'))}]})
+            points, colors, valid = source_frames[obs['photo']]
+            support = valid & _observation_point_mask(obs, valid.shape)
+            xyz, rgb = points[support], colors[support]
+            # ponytail: cap duplicated selectable subsets; the context cloud
+            # above retains every valid source point without subsampling.
+            stride = max(1, (len(xyz) + 11999) // 12000)
+            point_rep = point_representation(f"{item['id']}-photo-{obs['photo']}-{j}", xyz[::stride], rgb[::stride],
+                [{'observationId': oid, 'imageId': f"photo-{obs['photo']}", 'revision': 1,
+                  'file': f"frame_{obs['photo']:04d}.json.gz"}],
+                source='Saved object source polygons rasterized on the original predicted pixel grid',
+                rawSupportedPointCount=len(xyz), samplingStride=stride, units='native', groundTruth=False)
+            if point_rep is not None:
+                point_representations.append(point_rep)
         photos = {o['photo'] for o in item['observations']}
         samples = [o for o in item['observations'] if o.get('observedMeasurements', {}).get('status') == 'available']
         item['visibleHeightByPhoto'] = {str(o['photo']): o['observedMeasurements']['dimensions_native']['height'] for o in samples}
@@ -171,7 +249,7 @@ def build(root):
         variants = {key: representation(item, spec, '-photo-'+key) for key, spec in item.get('modelsByPhoto', {}).items()}
         rep = variants.get('4') or (representation(item, item['model'], '') if (item.get('model') or {}).get('nodes') else None)
         entity = {'id': item['id'], 'label': label, 'observationRefs': observations,
-                  'associationState': 'association_pending', 'representations': [rep] if rep else [],
+                  'associationState': 'association_pending', 'representations': ([rep] if rep else []) + point_representations,
                   'activeModelRepresentationId': rep['id'] if rep else None, 'currentModelTransform': rep['transform'] if rep else None,
                   'measurements': measurements, 'visible': True, 'sourceContext': False,
                   'physicalDimensionsUnknown': True, 'modelOrientationUnknown': True,

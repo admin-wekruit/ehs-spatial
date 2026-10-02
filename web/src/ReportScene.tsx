@@ -214,9 +214,10 @@ export function Extent({ entity, document }: { entity: Entity; document: SceneDo
 
 export function ReportScene({
   revision, selection, onSelect, imageId, cameraId, onCamera,
-  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false, measurementOverride,
+  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false, measurementOverride, initialView,
 }: {
   matchedComparison?: boolean;
+  initialView?: "photo" | "point_cloud" | "model" | "compare";
   measurementOverride?: SceneMeasurement | null;
   revision: Revision;
   selection: Selection;
@@ -235,11 +236,11 @@ export function ReportScene({
 }) {
   const { t, language } = useI18n(), container = useRef<HTMLElement>(null),
     objectList = useRef<HTMLDivElement>(null), objectSearch = useRef<HTMLInputElement>(null), currentPreviewKey = useRef(""), panePrefix = useId();
-  const [layer, setLayer] = useState<Layer>(() => revision.document.entities.some(entity =>
+  const [layer, setLayer] = useState<Layer>(() => initialView === "point_cloud" ? "point_cloud" : revision.document.entities.some(entity =>
     !entity.sourceContext && activeModel(entity)?.sourceValidity !== "stale" && activeModel(entity)) ? "model" : "observed_surface"),
     [cadLayer, setCadLayer] = useState<"model" | "observed_surface">("model"),
     [allBounds, setAllBounds] = useState(false), [showPath, setShowPath] = useState(true),
-    [focused, setFocused] = useState<Pane | null>(null),
+    [focused, setFocused] = useState<Pane | null>(initialView === "photo" ? "photo" : initialView === "model" || initialView === "point_cloud" ? "spatial" : null),
     [mobileSection, setMobileSection] = useState("views"),
     [search, setSearch] = useState(""),
     [fullscreenError, setFullscreenError] = useState(false),
@@ -248,12 +249,12 @@ export function ReportScene({
     [modelPreview, setModelPreview] = useState<{ key: string; image: string } | null>(null),
     [modelLoads, setModelLoads] = useState<{ revisionId: string; states: RepresentationLoadState[] } | null>(null),
     [expandedEntities, setExpandedEntities] = useState<Set<string>>(() => new Set());
-  const [comparing, setComparing] = useState(matchedComparison), [wipe, setWipe] = useState(50);
+  const [comparing, setComparing] = useState(matchedComparison && (!initialView || initialView === "compare")), [wipe, setWipe] = useState(50);
   const { analysisAvailable, bendAnalysis: savedBendAnalysis, inclinationAnalysis: savedInclinationAnalysis } = useSceneResources();
   const document = revision.document,
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
-  const [cloudWithModels, setCloudWithModels] = useState(true);
+  const [cloudWithModels, setCloudWithModels] = useState(!matchedComparison);
   const hasSplats = !!splatAnnotation(document), [splats, setSplats] = useState(true);
   const hasMotion = document.entities.some(entity => (entity as any).motion === "dynamic"), [part, setPart] = useState<"all" | "static" | "dynamic">("all");
   const hasSkeleton = document.entities.some(entity => (entity.representations || []).some(rep => (rep as any).sourceKind === "moving_object_skeleton")), [skeleton, setSkeleton] = useState(false);
@@ -533,10 +534,14 @@ export function ReportScene({
           </footer>
         </aside>
         <div className="report-scene-center" id={`${panePrefix}-views`}>
-          {matchedComparison && <nav className="report-scene-primary-views" aria-label="照片对比与自由旋转">
+          {matchedComparison && <nav className="report-scene-primary-views" aria-label="照片、点云与模型">
+            <button aria-pressed={!comparing && focused === "photo"} onClick={() => chooseView("photo")}><strong>原始照片</strong><small>点击物体查看对应证据</small></button>
             <button aria-pressed={comparing} onClick={() => { setComparing(true); setLayer("model"); setMobileSection("views"); }}><strong>照片 / 模型对比</strong><small>拖动分界线核对 · 相机固定</small></button>
-            <button aria-pressed={!comparing && focused === "spatial"} onClick={() => { setLayer("model"); chooseView("spatial"); }}><strong>可旋转 3D</strong><small>拖动旋转 · 滚轮缩放</small></button>
+            <button disabled={!hasPointCloud} aria-pressed={!comparing && focused === "spatial" && layer === "point_cloud"} onClick={() => { setLayer("point_cloud"); chooseView("spatial"); }}><strong>原始点云</strong><small>{hasPointCloud ? "所选照片深度点 · 可旋转" : "本报告未附原始点云"}</small></button>
+            <button aria-pressed={!comparing && focused === "spatial" && layer === "model"} onClick={() => { setLayer("model"); chooseView("spatial"); }}><strong>可旋转 3D 模型</strong><small>拖动旋转 · 滚轮缩放</small></button>
           </nav>}
+          {matchedComparison && !comparing && focused === "spatial" && <nav className="report-scene-photo-switch" aria-label="三维证据来源照片">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>照片 {i + 1}</button>)}</nav>}
+          {matchedComparison && !comparing && focused === "spatial" && layer === "point_cloud" && <p className="report-scene-notice" data-point-cloud-image-id={imageId}>当前只显示照片 {images.findIndex(image => image.imageId === imageId) + 1} 的深度估计点，没有补成实体表面。拖动旋转、滚轮缩放；可从左侧列表或点云选择物体。未通过标尺验证的距离仍不能读作厘米。</p>}
           <nav className="report-scene-view-switch" aria-label={t("sceneViews")}>
             <button className="report-scene-quad" aria-pressed={!focused && !comparing} onClick={() => chooseView(null)}>{t("sceneQuad")}</button>
             {paneOrder.map((pane) => <button key={pane} aria-pressed={!comparing && focused === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(viewNames[pane])}</button>)}
@@ -552,7 +557,7 @@ export function ReportScene({
               <div className="report-comparison-model" style={{ clipPath: `inset(0 0 0 ${wipe}%)` }}>
                 <SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="photo" cameraId={camera?.id || null} showSourcePhoto={false}
                   onAssetStates={(revisionId, states) => setModelLoads({ revisionId, states })}
-                  layers={{ measurement, modelOnly: true, generated_mesh: true, primitive: true, showCandidates: true, editable: false, opacity: 1, imageId, observations: document.observations, showBounds: allBounds, cameraPath: false }} />
+                  layers={{ measurement, modelOnly: true, generated_mesh: true, primitive: true, point_cloud: cloudWithModels && hasPointCloud, showCandidates: true, editable: false, opacity: 1, imageId, observations: document.observations, showBounds: allBounds, cameraPath: false }} />
               </div>
               <div className="report-comparison-divider" style={{ left: `${wipe}%` }} role="slider" tabIndex={0} aria-label="拖动照片模型分界线" aria-valuemin={0} aria-valuemax={100} aria-valuenow={wipe}
                 onPointerDown={event => { event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); event.currentTarget.setPointerCapture(event.pointerId); moveComparison(event); }}

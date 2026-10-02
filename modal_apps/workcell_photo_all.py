@@ -175,6 +175,10 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
                 physical = pool.submit(apply_source_clearances, root, [Path(path) for path in sources])
                 structural = pool.submit(fit_shared_guards, root, root/'a4', [Path(path) for path in sources])
                 physical.result(); structural.result()
+            # Physical-edge fitting can replace the ground plane. Refresh models
+            # and their existing catalog together before integrating A4 geometry.
+            report._posts(root, seg)
+            catalog = build_objects(root, [Path(path) for path in sources])
             _, structural_result = structural_models(root/'a4', root, catalog)
             initializers = {}
             for side in ('left', 'right'):

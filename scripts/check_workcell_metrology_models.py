@@ -21,6 +21,32 @@ def main():
     dims = {'wholeComponentHeightM': .10, 'mainBodyDiameterM': .085, 'redActuatorDiameterM': .04}
     source = {'status': 'unsupported', 'mPerNative': None, 'candidateMPerNative': .5,
               'knownDimensions': dims, 'fittedNuisanceParameters': shape, 'reason': 'held-out contour failed'}
+    from workcell_photo_objects import button_meshes
+    geometry = {'floor': {'normal': [0., 1., 0.]}, 'anchor': {
+        'normal': [0., 0., 1.], 'centerNative': [1., 2., 3.],
+        'nativeWidth': .17, 'nativeHeight': .2}}
+    envelope = button_meshes(geometry)
+    geometry['anchor']['referenceFit'] = copy.deepcopy(source)
+    geometry['anchor']['referenceFit']['camerasFixed'] = True
+    # Reproduce the rejected fit's implausible housing; it must not replace
+    # the prior display geometry merely because its parameters exist.
+    geometry['anchor']['referenceFit']['fittedNuisanceParameters']['grayWidth'] = 20.
+    rejected = button_meshes(geometry)
+    assert envelope.keys() == rejected.keys()
+    for name in envelope:
+        assert np.array_equal(envelope[name].vertices, rejected[name].vertices)
+    geometry['anchor']['referenceFit'] = {**source, 'status': 'available',
+        'mPerNative': .5, 'camerasFixed': True}
+    promoted = button_meshes(geometry)
+    assert np.allclose(np.ptp(np.concatenate([m.vertices for m in promoted.values()]), axis=0),
+                       np.ptp(np.concatenate([m.vertices for m in __import__('workcell_metrology_models').reference_meshes(shape).values()]), axis=0))
+    geometry['anchor']['referenceFit'].pop('fittedNuisanceParameters')
+    try:
+        button_meshes(geometry)
+    except ValueError as error:
+        assert 'missing its 3D geometry' in str(error)
+    else:
+        raise AssertionError('Accepted scale without accepted geometry was displayed')
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         out = root / 'unsupported'

@@ -74,4 +74,12 @@ result = render(noEdge); assert.equal(result.ground, '未知'); assert.equal(res
 assert.equal(render(data, 0).scale, 'unknown'); assert.equal(render(data, NaN).scale, 'unknown');
 const stale = structuredClone(data); stale.geometry.anchor.referenceFit.status = 'unsupported'; assert.equal(render(stale).scale, 'unknown');
 const inconsistent = structuredClone(data); inconsistent.geometry.anchor.referenceFit.mPerNative = .6; assert.equal(render(inconsistent).scale, 'unknown', 'fit and accepted anchor scale must agree');
-console.log('PASS: accepted scale, proportional three dimensions, unchanged GT, 52-model metric/native exports, null scale, no bbox fallback');
+const clouds = structuredClone(data), subject = clouds.revision.document.entities[1];
+subject.representations[0].kind = 'generated_mesh';
+subject.representations.push({ id: 'source-points-photo4', kind: 'point_cloud', assetId: 'cloud', sourceRefs: [{ imageId: 'photo-4', observationId: 'obs4' }] });
+subject.modelVariants = { '4': { ...subject.representations[0], id: 'model-photo4' } };
+const photoSubject = render(clouds).scene.props.revision.document.entities[1];
+assert.equal(photoSubject.activeModelRepresentationId, 'model-photo4');
+assert.deepEqual(Array.from(photoSubject.representations, r => r.id), ['model-photo4', 'source-points-photo4'], 'Changing model pose must retain source point evidence');
+assert.equal(subject.representations[0].id, 'rep-1', 'Photo selection must not mutate saved representations');
+console.log('PASS: accepted scale, proportional three dimensions, unchanged GT, 52-model metric/native exports, null scale, no bbox fallback, photo-model variants preserve source points');

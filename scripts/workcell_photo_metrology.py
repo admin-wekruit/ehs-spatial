@@ -782,11 +782,23 @@ def _line_fit(rows, frames, up):
             visible.append(sorted(spans))
         intervals.append(_interval_union(visible))
         errors.append(max(error))
-    shared_intervals = _interval_union([max(a[0], b[0]), min(a[1], b[1])]
-                                       for view_a, view_b in itertools.combinations(intervals, 2)
-                                       for a in view_a for b in view_b)
+    overlaps = [(i, j, [max(a[0], b[0]), min(a[1], b[1])])
+                for i, j in itertools.combinations(range(len(intervals)), 2)
+                for a in intervals[i] for b in intervals[j]
+                if max(a[0], b[0]) < min(a[1], b[1])]
+    shared_intervals = _interval_union(span for _, _, span in overlaps)
     if not shared_intervals:
         raise ValueError('No common visible segment between two source views')
+    # Infinite-line agreement cannot make a distant visible fragment support
+    # this edge. Every counted view must join the same finite-overlap group.
+    connected = {0}
+    for _ in intervals:
+        reached = connected | {j for i, j, _ in overlaps if i in connected} | {i for i, j, _ in overlaps if j in connected}
+        if reached == connected:
+            break
+        connected = reached
+    if len(connected) != len(intervals):
+        raise ValueError('No common visible segment connects every source view')
     shared = max(shared_intervals, key=lambda span: span[1] - span[0])
     all_visible = _interval_union(span for view in intervals for span in view)
     full = [all_visible[0][0], all_visible[-1][1]]

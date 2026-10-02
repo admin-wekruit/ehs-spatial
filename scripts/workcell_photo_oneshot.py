@@ -200,6 +200,14 @@ def _posts(root, seg):
     frame = _frame(root, 4)
     points, colors = _array(frame["pts3d"]), _array(frame["image"])
     valid = _array(frame["non_ambiguous_mask"]).astype(bool)
+    normal = np.asarray(json.loads((root / "geometry.json").read_text())["floor"]["normal"], float)
+    if normal.shape != (3,) or not np.isfinite(normal).all() or np.linalg.norm(normal) <= 0:
+        raise ValueError("Post models require a finite nonzero ground normal")
+    normal /= np.linalg.norm(normal)
+    transform = trimesh.geometry.align_vectors([0, 1, 0], normal)
+    # ponytail: upright is the existing display prior, not a measured post axis.
+    # Fit in the actual ground frame; source multiview edges must replace this prior for metrology.
+    local_points = points @ transform[:3, :3]
     scene, records = trimesh.Scene(), []
     for word, kind in (("yellow safety post", "box"), ("black bollard", "cylinder")):
         response = _response(seg, 4, word)
@@ -209,7 +217,7 @@ def _posts(root, seg):
             if score >= .8 and mask.sum() >= 200:
                 candidates.append((score, mask))
         for number, (score, mask) in enumerate(sorted(candidates, key=lambda row: -row[0])[:2], 1):
-            cloud = points[mask]
+            cloud = local_points[mask]
             low, high = np.percentile(cloud, [2, 98], axis=0)
             center = np.median(cloud, axis=0)
             if kind == "box":
@@ -220,12 +228,15 @@ def _posts(root, seg):
                 mesh = trimesh.creation.cylinder(radius=radius, height=float(high[1] - low[1]), sections=32)
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
             mesh.apply_translation([center[0], (low[1] + high[1]) / 2, center[2]])
+            mesh.apply_transform(transform)
             color = np.median(colors[mask], axis=0).astype(np.uint8)
             mesh.visual.vertex_colors = np.tile(np.r_[color, 255], (len(mesh.vertices), 1))
             label = f"{kind}-{number}"
             scene.add_geometry(mesh, node_name=label, geom_name=label)
             records.append({"name": label, "sourcePhoto": 4, "score": score,
-                            "supportedPixels": int(mask.sum()), "kind": kind})
+                            "supportedPixels": int(mask.sum()), "kind": kind,
+                            "groundNormalNative": normal.tolist(),
+                            "axisStatus": "upright display prior; not a measured physical axis"})
     if len(records) != 4:
         raise ValueError(f"Expected two yellow and two black posts, got {len(records)}")
     (root / "posts.glb").write_bytes(scene.export(file_type="glb"))
