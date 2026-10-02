@@ -1,5 +1,9 @@
 # 四照片工作单元：公开源码接手说明
 
+**2026-10-02 高度入口修正：** 主报告无指定对象时默认照片 4 的右光幕，打开可旋转模型和底边离地对比。实验页原 `#models` 也先定位围栏/光幕高度入口；护板外观比较保留在后面的 `#appearance-models`。沿用既有模型条件估计（围栏 18.55 cm、右光幕 24.71 cm、高差 +6.16 cm），没有新推理或精度改善结论。
+
+**云端证据存储：** 已使用现有 Supabase 项目 `WeKruit-VALET`（`unistzvhgvgjyzotwzxr`）的公开 `downloads` bucket，独立前缀 `panoptes-workcell-2026-10-02/`。首个 [围栏与光幕证据包](https://unistzvhgvgjyzotwzxr.supabase.co/storage/v1/object/public/downloads/panoptes-workcell-2026-10-02/workcell-height-evidence.zip) 已上传并匿名下载验证：1,482,481 bytes，SHA-256 `b5b1df1b00bf3cd4d6eab2299752e841040643cf9c13a7f015fd678928913421`。包含当前已公开的模型、照片 4、结构化报告及文件哈希；未迁移其他项目数据。公开 bucket 只用于已公开的报告产物，原始研究缓存和凭据不在此包。
+
 **最新工程实验：** [Real2sim 对照结果](REAL2SIM-EXPERIMENT-2026-10-01.md)。相机均衡未提高留出精度；独立 COLMAP 分为两组。护板提供原图纹理 GLB 对照；光幕没有受支持的新面。未替换主场景几何或接受米制尺度。
 
 更新：2026-10-01。范围为四张 BOR1 原图的对象级重建、模型内空间估计、可交互照片报告，以及护板角度实验。本文按当前代码和保存产物核对；代码、报告资产、原始照片、模型权重分别交接。

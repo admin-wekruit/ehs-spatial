@@ -148,6 +148,28 @@ def build(baseline, run, out, main_report='../index.html', retry_run=None, sourc
         copies[target] = source
         return target.as_posix()
 
+    height_entry = ''
+    baseline_report = baseline / 'page/scene-report.json'
+    if baseline_report.is_file():
+        saved_report = _read(baseline_report, ('geometry',))
+        endpoint = saved_report.get('endpointEstimation')
+        if endpoint:
+            _required(endpoint, ('status', 'endpoints', 'difference', 'method', 'scale'), 'baseline endpoint estimate')
+            if endpoint['status'] != 'conditional_unvalidated':
+                raise ValueError('Height entry requires the recorded conditional model estimate')
+            by_id = {row['objectId']: row for row in endpoint['endpoints']}
+            labels = {'fence-0': '围栏下横杆底边离地', 'post-box-1': '光幕壳体底边离地'}
+            values = [(labels[ident], _number(by_id[ident]['estimateCm'], 2)) for ident in labels]
+            values.append(('底边离地高差（光幕 − 围栏）', _number(endpoint['difference']['valueCm'], 2)))
+            cards = ''.join(f'<article><h3>{_esc(label)}</h3><strong style="font-size:28px">{value} cm</strong></article>' for label, value in values)
+            truth = [f"{labels[row['objectId']]} {_number(100 * row['groundTruthM'], 2)} cm" for row in
+                     saved_report.get('measurementEvaluation', {}).get('comparisons', []) if row['objectId'] in labels]
+            truth_text = '<p>现场提供的对照值：' + '；'.join(truth) + '。数值在开发中已知，未输入本组估计；不是盲测精度验证，实物端点对应仍待确认。</p>' if truth else ''
+            source = asset(baseline, 'page/scene-report.json', 'baseline-height-report.json')
+            scene_link = main_report.split('?', 1)[0].split('#', 1)[0] + '?photo=4&object=post-box-1&view=model&measurement=endpoints#scene'
+            height_entry = f'''<section id="models" style="background:#eef2e9;border:2px solid #8ca38b" aria-label="围栏与光幕底边离地入口"><h1>围栏与光幕：底边离地</h1><p>以下为已有 GLB 模型底边到同一推断地面的条件估计，尚未通过物理精度验证。</p><div class="cards">{cards}</div>{truth_text}
+<p><a style="display:inline-block;background:#315a45;color:white;padding:12px 18px;border-radius:6px;text-decoration:none" href="{_esc(scene_link)}">查看照片 4 · 围栏与光幕底边离地模型</a></p><details><summary>估计来源与限制</summary><p>{_esc(endpoint['method'])}</p><p>{_esc(endpoint['scale']['source'])}</p><a href="{_esc(source)}">已有端点估计原始 JSON</a></details></section>'''
+
     # Retain the recorded diagnostics, excluding feature DBs and original rasters.
     provenance = {'runs': [], 'selectedStages': {},
         'timing': 'Original and retry runs remain separate; neither is a fresh photo-to-model latency.'}
@@ -336,9 +358,9 @@ def build(baseline, run, out, main_report='../index.html', retry_run=None, sourc
     page = f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>细节与几何实验 · Panoptes</title>
 <style>body{{font:16px/1.65 system-ui,sans-serif;background:#f5f6f2;color:#182824;margin:0}}main{{max-width:1100px;margin:auto;padding:32px 20px}}h1{{font-size:32px;line-height:1.25}}h2{{margin:36px 0 12px}}a{{color:#14675b}}section,article{{background:white;border:1px solid #d6ddd5;border-radius:12px;padding:20px;margin:18px 0}}.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}}figure{{margin:0}}img{{width:100%;border-radius:6px}}.muted{{color:#53645f}}table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{padding:9px;text-align:left;border-bottom:1px solid #d6ddd5;vertical-align:top}}.scroll{{overflow:auto}}select{{font:inherit;padding:8px;max-width:100%}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}}summary{{cursor:pointer}}canvas{{border-radius:8px}}@media(max-width:600px){{main{{padding:20px 12px}}section,article{{padding:14px}}h1{{font-size:26px}}}}</style></head><body><main>
 <p><a href="{_esc(main_report)}">← 返回完整 52 对象主报告</a> · <a href="real2sim-data/results.json">本次完整结果 JSON</a></p>
-<h1>细节与几何实验</h1><p>初次运行状态：{_esc(STATUS.get(result['status'], result['status']))}。初次墙钟时间 {_number(result['wallSeconds'], 2)} 秒，复用冻结输入；不是从四张照片开始的完整耗时。</p>{retry_html}
+{height_entry}{'<h2>其他细节与几何实验</h2>' if height_entry else '<h1>细节与几何实验</h1>'}<p>初次运行状态：{_esc(STATUS.get(result['status'], result['status']))}。初次墙钟时间 {_number(result['wallSeconds'], 2)} 秒，复用冻结输入；不是从四张照片开始的完整耗时。</p>{retry_html}
 <p>下方显示实际导出的模型与观测记录。源图自洽、训练误差与独立留出分开报告；本页不会把候选自动写回主场景。拟合使用离地评估真值：{'是' if result['groundTruthUsedForFitting'] else '否'}。</p>
-{_preview_markup(choices)}
+{_preview_markup(choices).replace('id="models"', 'id="appearance-models"', 1) if height_entry else _preview_markup(choices)}
 <section><h2>1. 护板：照片纹理前后</h2><p>上方选择器可切换同一护板的纹理前后实际 GLB。覆盖率是纹理像素来源比例，不是形状准确率；未覆盖处和反面仍有未知。</p><p><strong>尚未确认整体外观更好；本轮模型仅作对照，未接入主流程。</strong></p>{texture_table}</section>
 <section><h2>2. 光幕：原图可见面候选</h2><p>开放面保留未知厚度和未接受的米制。若导出候选，其逐图叠图用青色显示候选面、粉色显示 RGB 端边、橙色显示旧模型底面。</p>{post_html}{diagnostic_html}{rejected}</section>
 <section><h2>3. 相机与按钮检验</h2>{''.join(camera_sections)}{button_table}<h3>整颗按钮留一照片验证</h3>
@@ -398,6 +420,19 @@ def check():
         assert json.loads((report.parent / 'real2sim-data/results.json').read_text()) == record
         assert json.loads((report.parent / 'real2sim-data/retry/results.json').read_text()) == retry_record
         assert '0.30 秒' in report.read_text() and '0.40 秒' in report.read_text()
+        (root / 'baseline/page').mkdir()
+        (root / 'baseline/page/scene-report.json').write_text(json.dumps({'geometry': {}, 'endpointEstimation': {
+            'status': 'conditional_unvalidated', 'endpoints': [{'objectId': 'fence-0', 'estimateCm': 18.550266},
+                {'objectId': 'post-box-1', 'estimateCm': 24.710656}], 'difference': {'valueCm': 6.16039},
+            'method': 'saved model endpoints', 'scale': {'source': 'conditional source'}},
+            'measurementEvaluation': {'comparisons': [{'objectId': 'fence-0', 'groundTruthM': .2},
+                {'objectId': 'post-box-1', 'groundTruthM': .24}]}}))
+        report = build(root / 'baseline', run, root / 'height-report', retry_run=retry)
+        body = report.read_text()
+        assert all(value in body for value in ('18.55 cm', '24.71 cm', '6.16 cm', '20.00 cm', '24.00 cm'))
+        assert body.count('id="models"') == 1 and '现场提供的对照值' in body and '不是盲测精度验证' in body
+        assert '../index.html?photo=4&amp;object=post-box-1&amp;view=model&amp;measurement=endpoints#scene' in body
+        assert '已有端点估计原始 JSON' in body
         record['records']['textures'] = {'status': 'completed', 'seconds': .2}
         path.write_text(json.dumps(record))
         try:
