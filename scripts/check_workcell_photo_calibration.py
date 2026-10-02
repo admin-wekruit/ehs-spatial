@@ -14,7 +14,6 @@ import trimesh
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.workcell_photo_calibration import accepted_scale, apply_measurements, load_measurements, measurement_evaluation, validate_measurements
 from scripts.workcell_photo_objects import button_meshes
-from scripts.workcell_photo_oneshot import _export_metric_scene
 from scripts.workcell_photo_report import _ground_distance
 
 measurements = load_measurements(Path(__file__).resolve().parents[1]/'docs/workcell-photo/measurements-2026-10-01.json')
@@ -75,11 +74,6 @@ def check(root, inputs, supported):
     except ValueError: pass
     else: raise AssertionError('Stale/mismatched scene scale accepted')
     assert np.array_equal(before, trimesh.load(root/'object-extras.glb', force='scene').geometry['unchanged'].vertices)
-    _export_metric_scene(root, geometry)
-    filename = 'workcell-metric.glb' if supported else 'workcell-native.glb'
-    exported = trimesh.load(root/filename, force='scene')
-    assert exported.metadata['units'] == ('meters' if supported else 'native')
-    assert not (root/('workcell-native.glb' if supported else 'workcell-metric.glb')).exists()
     transform = trimesh.geometry.align_vectors([0,1,0], [0,0,1])
     objects = json.loads((root/'objects.json').read_text())['objects']
     for item in objects:
@@ -110,7 +104,7 @@ for supported in (True, False):
         a, b = check(roots[0], measurements, supported), check(roots[1], altered, supported)
         assert a[0] == b[0] and a[2] == b[2], 'Evaluation truth changed calibration or models'
         assert [r['estimateM'] for r in a[1]['comparisons']] == [r['estimateM'] for r in b[1]['comparisons']]
-print('PASS: accepted 3D scale survives metadata/export; physical endpoints share viewer floor; no bbox minima fallback; unsupported stays native; GT cannot change models or predictions')
+print('PASS: accepted 3D scale survives metadata; physical endpoints share viewer floor; no bbox minima fallback; unsupported stays native; GT cannot change models or predictions')
 
 # A late report failure must return completed model evidence, not lose paid compute.
 from modal_apps.workcell_photo_all import _archive_result

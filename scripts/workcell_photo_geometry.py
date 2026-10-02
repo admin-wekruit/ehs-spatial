@@ -689,6 +689,7 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2, reference
                            'quality': 'provisional multiview line triangulation; inspect source edges',
                            'lineFitResidualNative': fit['lineFitResidualNative'],
                            'viewPlaneCondition': fit['viewPlaneCondition'],
+                           'observedViewPointsNative': [r['pointNative'] for r in bars],
                            'observedViewHeightRangeNative': [min(r['heightNative'] for r in bars), max(r['heightNative'] for r in bars)],
                            'method': 'modeled lower rail face to modeled floor along floor normal; section fitted by multiview image lines'})
     evidence = []

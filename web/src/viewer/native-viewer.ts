@@ -245,8 +245,11 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     const ground=doc.coordinateFrames.find((f:any)=>f.id===frameId)?.ground,n=ground?.normal;
     if(datumEnabled&&Array.isArray(n)&&n.length===3&&n.every(Number.isFinite)&&Math.hypot(...n)>1e-8&&Number.isFinite(ground.offset)){
       const origin=add(center,scale(n,-(dot(n,center)+ground.offset)/dot(n,n))),up=unit(n),reference=Math.abs(up[0])<.9?[1,0,0]:[0,1,0];
-      const a=unit(add(reference,scale(up,-dot(reference,up)))),b=cross(up,a),step=radius/6,span=step*8;
+      const modelScale=layers.measurementScale?.nativeToMeters;
+      const metres=Number.isFinite(modelScale)&&modelScale>0?modelScale:null;
+      const a=unit(add(reference,scale(up,-dot(reference,up)))),b=cross(up,a),step=metres ? .5/metres : radius/6,span=step*8;
       groundSVG.setAttribute('data-native-origin',JSON.stringify(origin));
+      groundSVG.setAttribute('data-native-step',String(step));
       // ponytail: 34 cosmetic grid lines stay on the saved floor; no new geometry or measurement asset.
       for(let i=-8;i<=8;i++)for(const [along,across] of [[a,b],[b,a]]){
         const mid=add(origin,scale(across,i*step)),start=add(mid,scale(along,-span)),end=add(mid,scale(along,span));
@@ -258,7 +261,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
         if(axis){axis.setAttribute('data-ground-axis',labels[k]);axis.setAttribute('data-native-start',JSON.stringify(origin));axis.setAttribute('data-native-end',JSON.stringify(end));}
         if(p){const label=document.createElementNS(svg.namespaceURI,'text');label.textContent=labels[k];for(const[name,value]of Object.entries({x:p[0]+5,y:p[1]-5,fill:colors[k],stroke:'#111b21','stroke-width':3,'paint-order':'stroke','font-size':16,'font-weight':700,'data-ground-axis-label':labels[k]}))label.setAttribute(name,String(value));svg.append(label);}
       }
-      const p=project(origin);if(p){const label=document.createElementNS(svg.namespaceURI,'text');label.textContent=options.locale==='en'?'Estimated ground · world XYZ':'地面估计 · 世界 XYZ';for(const[name,value]of Object.entries({x:p[0]+7,y:p[1]+18,fill:'#bacdd3',stroke:'#111b21','stroke-width':3,'paint-order':'stroke','font-size':12}))label.setAttribute(name,String(value));svg.append(label);}
+      const p=project(origin);if(p){const label=document.createElementNS(svg.namespaceURI,'text');label.textContent=(options.locale==='en'?'Estimated ground · world XYZ':'地面估计 · 世界 XYZ')+(metres?(options.locale==='en'?' · grid 50 cm (model scale)':' · 每格 50 cm（模型标尺）'):'');for(const[name,value]of Object.entries({x:p[0]+7,y:p[1]+18,fill:'#bacdd3',stroke:'#111b21','stroke-width':3,'paint-order':'stroke','font-size':12}))label.setAttribute(name,String(value));svg.append(label);}
     }
     const measurement=layers.measurement;
     if(measurement?.revisionId===revisionId&&measurement.coordinateFrameId===frameId){

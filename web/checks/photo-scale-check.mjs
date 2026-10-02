@@ -18,7 +18,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 vm.runInNewContext(compiled, {
   exports: module.exports, module,
   require: id => {
-    if (id === 'react') return { ...React, useState: initial => [state++ === 3 ? height : state === 1 ? selectedPhoto : state === 2 ? 'fence-0' : state === 7 ? true : state === 8 ? endpointLines ?? initial : initial, () => {}], useMemo: fn => fn() };
+    if (id === 'react') return { ...React, useEffect: () => {}, useState: initial => [state++ === 3 ? height : state === 1 ? selectedPhoto : state === 2 ? 'fence-0' : state === 7 ? true : state === 8 ? endpointLines ?? initial : initial, () => {}], useMemo: fn => fn() };
     if (id === 'react/jsx-runtime') return require(id);
     if (id === 'react-dom/client') return { createRoot: () => ({ render() {} }) };
     if (id === './ReportScene') return { ReportScene };
@@ -41,7 +41,7 @@ const data = {
   assetURLs: Object.fromEntries(entities.map((_, i) => [`asset-${i}`, `${i}.glb`])),
   objects: [{ id: 'fence-0', label: '围栏', measurements: {}, observations: [{ photo: 1 }, { photo: 2 }], notes: [], groundDistance: { feature, byPhoto: { '4': { ...feature, valueNative: 99 } } } }],
   geometry: { anchor: { nativeHeight: .001, nativeWidth: 999, assumedHeightM: .1, mPerNative: .5, referenceFit: { status: 'available', mPerNative: .5, candidateMPerNative: 7 } }, floor: { status: 'conditional' }, calibration: { nativeToMeters: .5, reference: { scopeStatus: 'confirmed', features: { wholeComponentHeightM: .1, mainBodyDiameterM: .085, redActuatorDiameterM: .04 } } } },
-  timing: {}, nativeToMetersDefault: 123,
+  timing: {}, nativeToMetersDefault: 123, modelMeasurementScale: { nativeToMeters: .5, status: 'accepted_3d_reference', source: 'test' },
   measurementEvaluation: { comparisons: [{ objectId: 'fence-0', label: '围栏', estimateNative: .4, groundTruthM: .24, sourcePhotos: [1, 2], byPhoto: {}, rangeNative: [.39, .41] }] },
 };
 function render(payload, cm = 10) {
@@ -61,7 +61,7 @@ assert.deepEqual(dimensions, ['8.0 cm', '17.0 cm', '20.0 cm']);
 assert.equal(result.nodes.find(n => 'data-comparison-truth' in n.props).props.children, '24.0 cm');
 await result.nodes.find(n => n.type === 'button' && n.props.children === '下载当前模型 GLB').props.onClick();
 assert.equal(exported.userData.units, 'metres'); assert.equal(exported.children[0].scaleValue, 1); assert.equal(exported.children[0].children.length, 52);
-const unsupported = structuredClone(data); unsupported.geometry.anchor.mPerNative = null; unsupported.geometry.anchor.referenceFit.status = 'unsupported';
+const unsupported = structuredClone(data); unsupported.geometry.anchor.mPerNative = null; unsupported.geometry.anchor.referenceFit.status = 'unsupported'; unsupported.modelMeasurementScale = {nativeToMeters:null,status:'uncalibrated',source:'test'};
 for (const cm of [10, 20, 0, NaN]) {
   result = render(unsupported, cm); assert.equal(result.scale, 'unknown'); assert.equal(result.ground, '未知');
   assert.equal(result.scene.props.revision.document.coordinateFrames[0].scale.status, 'uncalibrated');
@@ -85,6 +85,7 @@ assert.deepEqual(Array.from(photoSubject.representations, r => r.id), ['model-ph
 assert.equal(subject.representations[0].id, 'rep-1', 'Photo selection must not mutate saved representations');
 const conditional = structuredClone(unsupported);
 conditional.revision.document.entities[0].representations[0].coordinateFrameId = 'workcell-floor';
+conditional.modelMeasurementScale = {nativeToMeters:.5,rangeNativeToMeters:[.45,.55],evidence:{conditionalMPerNative:.5},status:'conditional_unvalidated',source:'test'};
 conditional.endpointEstimation = { status: 'conditional_unvalidated', photo: 4, method: 'source endpoints', scale: { mPerNative: .5, source: 'button-only conditional scale' }, endpoints: [
   { objectId: 'fence-0', label: '围栏下沿', pointNative: [5, 7, .3], footNative: [5, 7, 0], heightNative: .3, estimateCm: 15, rangeCm: [14, 16] },
   { objectId: 'post-box-1', label: '光幕底端', pointNative: [1, 2, .4], footNative: [1, 2, 0], heightNative: .4, estimateCm: 20, rangeCm: [19, 21] },
@@ -93,15 +94,30 @@ endpointLines = true;
 result = render(conditional);
 assert.equal(result.scale, 'unknown', 'conditional endpoint estimates cannot promote the accepted scene scale');
 assert.equal(result.ground, '未知', 'endpoint estimates cannot overwrite the physical groundDistance card');
-assert.equal(result.nodes.find(n => 'data-endpoint-difference' in n.props).props.children[0], '5.0');
-assert.equal(walk(result.scene.props.inspector(null)).find(n => n.props?.['aria-label'] === '当前模型的高低估计').type, 'section', 'the estimate must remain visible inside the fullscreen inspector');
+assert.equal(result.nodes.find(n => 'data-endpoint-difference' in n.props).props.children, '5.00 cm');
+assert.equal(walk(result.scene.props.inspector(null)).find(n => n.props?.['aria-label'] === '围栏与光幕底边离地估计').type, 'section', 'the estimate must remain visible inside the fullscreen inspector');
 const annotation = result.scene.props.measurementOverride;
 assert.equal(annotation.method, 'conditional-endpoint-comparison');
 assert.equal(annotation.coordinateFrameId, 'workcell-floor');
 assert.deepEqual(Array.from(annotation.lines[3].points, point => Array.from(point)), [[5, 7, .4], [5, 7, .3]], 'high-low difference must follow floor Z; endpoint array order must not change the meaning');
-assert.equal(render(conditional, 20).scene.props.measurementOverride.displayLabel, annotation.displayLabel, 'independent conditional estimate does not silently track the scale trial');
+assert.match(render(conditional, 20).scene.props.measurementOverride.displayLabel, /10.00 cm/, 'all model measurements track the same explicit scale');
+result = render(conditional, 20);
+assert.equal(result.scene.props.measurementScale.nativeToMeters, 1);
+await result.nodes.find(n => n.type === 'button' && n.props.children === '下载条件标尺模型 GLB').props.onClick();
+assert.equal(exported.children[0].scaleValue, 1);
+assert.equal(exported.userData.scaleStatus, 'conditional_unvalidated');
+assert.equal(exported.userData.groundTruth, false);
+const scaleMetadata = JSON.parse(JSON.stringify(exported.userData.modelMeasurementScale));
+assert.deepEqual(scaleMetadata.rangeNativeToMeters, [.9,1.1]);
+assert.equal(scaleMetadata.uniformReferenceRatio, 2);
+assert.deepEqual(scaleMetadata.currentReferenceDimensionsM, {wholeComponentHeightM:.2,mainBodyDiameterM:.17,redActuatorDiameterM:.08});
+assert.deepEqual(scaleMetadata.baseModelMeasurementScale.rangeNativeToMeters, [.45,.55]);
+assert.equal(scaleMetadata.baseModelMeasurementScale.evidence.conditionalMPerNative,.5);
+assert.equal(scaleMetadata.evidence, undefined, 'baseline evidence must not masquerade as the current trial');
+assert.match(scaleMetadata.source, /同比试算/);
+assert.equal(result.scene.props.revision.document.coordinateFrames[0].scale.nativeToMeters, null, 'conditional scale never becomes accepted physical scale');
 selectedPhoto = 'photo-3';
 assert.notEqual(render(conditional).scene.props.measurementOverride?.method, 'conditional-endpoint-comparison', 'photo4 source endpoints must not be projected into another source photo');
 selectedPhoto = 'photo-4'; endpointLines = undefined; reportLocation.href = 'https://example.test/report/?measurement=endpoints';
 assert.equal(render(conditional).scene.props.measurementOverride.method, 'conditional-endpoint-comparison', 'the shared URL enables annotations without another click');
-console.log('PASS: accepted scale, 52-model exports, no bbox fallback, source points preserved, separate conditional endpoint estimates and floor-normal difference');
+console.log('PASS: accepted scale, 52-model exports, no bbox fallback, source points preserved, unified conditional model scale/export and floor-normal difference');

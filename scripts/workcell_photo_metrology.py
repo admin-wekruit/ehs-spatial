@@ -20,7 +20,7 @@ from scipy.optimize import least_squares
 from scipy.spatial import ConvexHull, QhullError
 
 from workcell_guard_joint import _features, _unit
-from workcell_photo_geometry import _anchor_candidates, _consensus, _edge_overlap, _intersect, _raw_mask, _rays
+from workcell_photo_geometry import _anchor_candidates, _clearance, _consensus, _edge_overlap, _intersect, _raw_mask, _rays
 from workcell_photo_objects import _project
 from workcell_photo_oneshot import _array, _frame, _mask, _response
 
@@ -141,7 +141,7 @@ def _legacy(item, geometry):
         if feature:
             return {'status': 'available', 'reason': None,
                     **{key: feature[key] for key in ('pointNative', 'footNative', 'heightNative', 'sourcePhotos')},
-                    'rangeNative': feature['observedViewHeightRangeNative'], 'localFloor': {'normal': up.tolist(), 'offset': offset},
+                    'rangeNative': feature.get('observedViewHeightRangeNative'), 'localFloor': {'normal': up.tolist(), 'offset': offset},
                     'method': 'saved source rail feature and saved floor'}
     rows = []
     for observation in item['observations']:
@@ -1138,6 +1138,23 @@ def source_physical_clearances(geometry, catalog, segmentation, frames, *, camer
             'wallSeconds': time.monotonic() - start}
 
 
+def refresh_ground_caches(geometry):
+    """Reproject saved measurement points onto the final plane, without moving models."""
+    normal = np.asarray(geometry['floor']['normal'], float)
+    offset = float(geometry['floor']['offset'])
+    if normal.shape != (3,) or not np.isfinite(normal).all() or np.linalg.norm(normal) < 1e-8 or not np.isfinite(offset):
+        raise ValueError('Finite nonzero final ground required')
+    length = np.linalg.norm(normal); normal, offset = normal / length, offset / length
+    for row in geometry.get('clearances', []) + geometry.get('fence', {}).get('beams', []):
+        height, foot = _clearance(np.asarray(row['pointNative'], float), normal, offset)
+        row.update(heightNative=height, footNative=foot.tolist())
+    for row in geometry.get('clearances', []):
+        # A height range cannot be rotated to another plane without its source points.
+        points = np.asarray(row.get('observedViewPointsNative', []), float).reshape(-1, 3)
+        heights = points @ normal + offset
+        row['observedViewHeightRangeNative'] = [float(heights.min()), float(heights.max())] if len(points) else None
+
+
 def apply_source_clearances(root, sources):
     """Cloud/main-flow bridge after objects.json exists; no scale is required."""
     import trimesh
@@ -1171,6 +1188,7 @@ def apply_source_clearances(root, sources):
                              ('normal', 'offset', 'supportPoints', 'residualP95Native', 'sourcePhotos', 'method')},
                              'status': 'conditional local floor fit; concrete-floor semantic identity unverified',
                              'displayExtent': 'existing fitted footprint projected onto the physical-clearance ground plane'}
+        refresh_ground_caches(geometry)
     geometry['physicalClearances'] = result
     serialized = json.dumps(result, indent=2, allow_nan=False) + '\n'
     geometry_serialized = json.dumps(geometry, indent=2, allow_nan=False) + '\n'
@@ -1192,7 +1210,7 @@ def _route(label, objects, scale):
             row.update(heightM=None, rangeM=None)
         else:
             row.update(heightM=obj['heightNative'] * scale,
-                       rangeM=[v * scale for v in obj['rangeNative']])
+                       rangeM=[v * scale for v in obj['rangeNative']] if obj.get('rangeNative') is not None else None)
         rows.append(row)
     return {'label': label, 'scaleMPerNative': scale, 'objects': rows}
 

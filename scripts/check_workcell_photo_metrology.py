@@ -334,9 +334,8 @@ def main():
     else:
         raise AssertionError('Foot outside the saved plane was accepted')
 
-    # Integration persists one native plane for inference and the viewer,
-    # preserving the floor model node even when it has a nonidentity transform.
-    # An absent metric scale never prevents native physical-edge geometry.
+    # Publishing a tilted, translated floor refreshes all derived clearances
+    # without moving source points or meshes to force equal object heights.
     with tempfile.TemporaryDirectory(prefix='physical-clearance-bridge-') as directory:
         root = Path(directory)
         floor = trimesh.Scene()
@@ -347,11 +346,26 @@ def main():
         floor_path = root / 'floor-fitted.glb'
         floor_path.write_bytes(floor.export(file_type='glb'))
         old_floor = {'normal': [0., 0., 1.], 'offset': -.3}
-        ground = {'status': 'available', 'normal': normal.tolist(), 'offset': 0.,
-                  'supportPoints': 24, 'residualP95Native': .002, 'sourcePhotos': [1, 2], 'method': 'synthetic source support'}
-        physical = {'ground': ground, 'objects': [grounded, {'id': 'post-box-2', **metrology._unavailable('one source view')}],
+        ground = {'status': 'available', 'normal': normal.tolist(), 'offset': -.12,
+                  'supportPoints': 24, 'residualP95Native': .002, 'sourcePhotos': [1, 2], 'method': 'synthetic source support',
+                  'patches': [{'objectId': 'post-box-1', 'status': 'available', 'residualP95Native': .002}]}
+        physical = {'ground': ground, 'objects': _measure([{'id': 'post-box-1', 'status': 'edge_supported',
+                    'bottomEdge': tested_edge, 'topEdge': None}], ground, frames, up) +
+                    [{'id': 'post-box-2', **metrology._unavailable('one source view')}],
                     'coordinateSystem': 'MapAnything native'}
-        synthetic_geometry = {'floor': old_floor, 'anchor': {'mPerNative': None}}
+        clearances = [{'id': f'fence-plane-{i}-lower-rail', 'pointNative': [x, .2, .6],
+                       'footNative': [x, .2, .3], 'heightNative': .3, 'sourcePhotos': [1, 2],
+                       'observedViewHeightRangeNative': [.29, .31]}
+                      for i, x in enumerate((-.8, .8))]
+        clearances[0]['observedViewPointsNative'] = [[-.9, .2, .59], [-.7, .2, .61]]
+        beams = [{'id': f'beam-{i}', 'pointNative': row['pointNative'], 'footNative': row['footNative'],
+                  'heightNative': row['heightNative'], 'endsNative': [[x, .1, .65], [x, .3, .65]]}
+                 for i, (row, x) in enumerate(zip(clearances, (-.8, .8)))]
+        synthetic_geometry = {'floor': old_floor, 'anchor': {'mPerNative': None},
+                              'clearances': copy.deepcopy(clearances), 'fence': {'beams': copy.deepcopy(beams)}}
+        source_path = root / 'fence-fitted.glb'
+        source_bytes = trimesh.creation.box(extents=[.2, .3, 1.]).export(file_type='glb')
+        source_path.write_bytes(source_bytes)
         with patch.object(metrology, '_load', return_value=(synthetic_geometry, {}, {}, {}, [], [])), \
              patch.object(metrology, 'source_physical_clearances', return_value=physical), \
              patch.object(metrology, '_overlays', return_value=[]):
@@ -360,13 +374,38 @@ def main():
         assert saved['floor']['normal'] == ground['normal'] and saved['floor']['offset'] == ground['offset']
         assert saved['physicalClearances'] == json.loads((root / 'physical-clearances.json').read_text())
         assert saved['physicalClearances']['objects'][1]['heightNative'] is None, 'Single-view evidence became a physical distance'
+        for original, refreshed in zip(clearances + beams, saved['clearances'] + saved['fence']['beams']):
+            point, foot = np.asarray(refreshed['pointNative']), np.asarray(refreshed['footNative'])
+            assert refreshed['pointNative'] == original['pointNative'], 'Ground update moved an observed point'
+            assert refreshed.get('endsNative') == original.get('endsNative'), 'Ground update moved source beam ends'
+            assert np.isclose(refreshed['heightNative'], point @ normal + ground['offset'])
+            assert np.isclose(foot @ normal + ground['offset'], 0., atol=1e-9), 'Foot still uses the old ground'
+            assert np.allclose(point - foot, refreshed['heightNative'] * normal)
+        assert saved['clearances'][0]['heightNative'] != saved['clearances'][1]['heightNative'], 'Ground update forced equal heights'
+        heights = np.asarray(clearances[0]['observedViewPointsNative']) @ normal + ground['offset']
+        assert np.allclose(saved['clearances'][0]['observedViewHeightRangeNative'], [heights.min(), heights.max()])
+        assert saved['clearances'][1]['observedViewHeightRangeNative'] is None, 'Old scalar range survived a changed ground'
+        legacy = _legacy({'id': 'fence-0', 'geometryPlaneIndex': 1}, saved)
+        assert legacy['rangeNative'] is None
+        assert _route('saved feature with unknown view range', [legacy], .6)['objects'][0]['rangeM'] is None
+        assert source_path.read_bytes() == source_bytes, 'Ground publication changed the native source GLB'
         loaded = trimesh.load(floor_path, force='scene', process=False)
         assert loaded.graph.nodes_geometry == ['saved-floor-node'], 'Floor node identity changed after objects.json was built'
         matrix, name = loaded.graph['saved-floor-node']
         actual = trimesh.transform_points(loaded.geometry[name].vertices, matrix)
         native = trimesh.transform_points(vertices, transform)
-        expected = native - (native @ normal)[:, None] * normal
-        assert np.allclose(actual, expected, atol=1e-6) and np.max(abs(actual @ normal)) < 1e-6
+        expected = native - (native @ normal + ground['offset'])[:, None] * normal
+        assert np.allclose(actual, expected, atol=1e-6) and np.max(abs(actual @ normal + ground['offset'])) < 1e-6
+        with patch.object(metrology, '_load', return_value=(copy.deepcopy(saved), {}, {}, {}, [], [])), \
+             patch.object(metrology, 'source_physical_clearances', return_value=copy.deepcopy(physical)), \
+             patch.object(metrology, '_overlays', return_value=[]):
+            metrology.apply_source_clearances(root, [root / f'source-{i}.jpg' for i in range(4)])
+        repeated = json.loads((root / 'geometry.json').read_text())
+        assert repeated == saved, 'Repeated publication changed saved ground-derived data'
+        reloaded = trimesh.load(floor_path, force='scene', process=False)
+        repeated_transform, repeated_name = reloaded.graph['saved-floor-node']
+        assert np.allclose(trimesh.transform_points(reloaded.geometry[repeated_name].vertices, repeated_transform), actual, atol=1e-6)
+        assert source_path.read_bytes() == source_bytes
         before = floor_path.read_bytes()
         unsupported = {'ground': {'status': 'unsupported', 'normal': None, 'offset': None},
                        'objects': [{'id': 'post-box-1', **metrology._unavailable('no source edge')}]}

@@ -54,14 +54,21 @@ def _ground_distance(item, geometry, transform):
     if row is None or row.get('status') != 'conditional':
         result['reason'] = (row or {}).get('reason', '没有跨照片确认的实体底边；离地距离未知。')
         return result
-    endpoints = np.asarray([row.get('pointNative'), row.get('footNative')], float)
+    try:
+        endpoints = np.asarray([row.get('pointNative'), row.get('footNative')], float)
+    except (TypeError, ValueError):
+        result['reason'] = '实体底边或地面投影证据无效；离地距离未知。'
+        return result
     height = row.get('heightNative'); photos = sorted(set(row.get('sourcePhotos', [])))
     if (not isinstance(height, (float, int)) or not np.isfinite(height) or height < 0
             or len(photos) < 2 or endpoints.shape != (2, 3) or not np.isfinite(endpoints).all()):
         result['reason'] = '实体底边或地面投影证据无效；离地距离未知。'
         return result
     normal = np.asarray(geometry['floor']['normal'], float)
-    length = np.linalg.norm(normal); normal /= length; offset = geometry['floor']['offset']/length
+    raw_offset = geometry['floor']['offset']
+    if normal.shape != (3,) or not np.isfinite(normal).all() or np.linalg.norm(normal) < 1e-8 or not np.isfinite(raw_offset):
+        raise ValueError('A finite nonzero ground plane is required')
+    length = np.linalg.norm(normal); normal /= length; offset = raw_offset/length
     if (not np.isclose(endpoints[1] @ normal + offset, 0, atol=1e-7)
             or not np.allclose(endpoints[0]-endpoints[1], height*normal, atol=1e-7)):
         raise ValueError('Physical clearance and displayed floor refer to different planes')
@@ -83,10 +90,15 @@ def build(root):
     doc['captureId'] = root.name
     doc['geometryBindings'] = {}
     frame_id = 'workcell-floor'
-    transform = trimesh.geometry.align_vectors(geometry['floor']['normal'], [0, 0, 1])
-    transform[2, 3] = geometry['floor']['offset'] / np.linalg.norm(geometry['floor']['normal'])
+    normal = np.asarray(geometry['floor']['normal'], float)
+    if normal.shape != (3,) or not np.isfinite(normal).all() or np.linalg.norm(normal) < 1e-8 or not np.isfinite(geometry['floor']['offset']):
+        raise ValueError('A finite nonzero ground plane is required')
+    transform = trimesh.geometry.align_vectors(normal / np.linalg.norm(normal), [0, 0, 1])
+    transform[2, 3] = geometry['floor']['offset'] / np.linalg.norm(normal)
     from scripts.workcell_photo_calibration import accepted_scale
     scale = accepted_scale(geometry)
+    from scripts.workcell_conditional_scale import model_measurement_scale
+    measurement_scale = model_measurement_scale(root, geometry)
     doc['coordinateFrames'] = [{'id': frame_id, 'convention': 'opencv',
         'scale': {'status': 'model_estimated' if scale is not None else 'uncalibrated', 'nativeToMeters': scale,
                   'sourceRefs': [{'kind': 'user_dimension_hypothesis', 'heightM': geometry['anchor']['assumedHeightM'],
@@ -272,20 +284,21 @@ def build(root):
     result = {'schemaVersion': 1, 'revision': revision, 'assetURLs': urls, 'objects': catalog['objects'],
               'coverage': catalog['coverage'], 'geometry': geometry, 'sceneTransformNative': transform.tolist(),
               'nativeToMetersDefault': scale, 'timing': {},
-              'bendAnalysis': bend_analysis}
+              'bendAnalysis': bend_analysis, 'modelMeasurementScale': measurement_scale}
     # Explicit inspection artifact: these named endpoints are specific to this capture.
     endpoint_path = root / 'model-endpoint-estimate.json'
     if endpoint_path.is_file():
-        from scripts.workcell_conditional_scale import conditional_scale
         measured = json.loads(endpoint_path.read_text())
         for name, digest in measured['sourceFiles'].items():
             if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
                 raise ValueError('Model endpoint inspection is stale: ' + name)
         if not np.allclose(measured['sceneTransformNative'], transform, atol=1e-7):
             raise ValueError('Model endpoint inspection uses a different floor')
-        conditional = conditional_scale(root, photo=4)
-        factor = conditional['conditionalMPerNative']
-        lo, hi = conditional['rangeMPerNative']
+        conditional = measurement_scale.get('evidence')
+        factor = measurement_scale['nativeToMeters']
+        if factor is None:
+            raise ValueError('Endpoint centimetre inspection requires an explicit model measurement scale')
+        lo, hi = measurement_scale['rangeNativeToMeters']
         endpoints = []
         for row in measured['objects']:
             point, foot = trimesh.transform_points([row['pointNative'], row['footNative']], transform)
@@ -300,7 +313,7 @@ def build(root):
         delta = by_id['post-box-1']['heightNative'] - by_id['fence-0']['heightNative']
         result['endpointEstimation'] = {'status': 'conditional_unvalidated', 'photo': 4,
             'method': '读取当前 GLB 的光幕底面中心，以及紧邻它的围栏底面中心线；围栏此段为模型推断延伸。沿同一地面法向测量。',
-            'scale': {'mPerNative': factor, 'source': '照片 4 的按钮主体直径 8.5 cm；红帽 4 cm 独立交叉检查。地面方向和参考表面深度仍为推断值。'},
+            'scale': {'mPerNative': factor, 'source': measurement_scale['source']},
             'endpoints': endpoints,
             'difference': {'valueNative': delta, 'valueCm': delta * factor * 100,
                 'rangeCm': sorted([delta * lo * 100, delta * hi * 100]),

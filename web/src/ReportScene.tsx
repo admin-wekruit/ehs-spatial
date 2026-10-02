@@ -1,4 +1,4 @@
-import type { SurfacePick } from "./viewer/native-math";
+import type { MeasurementScale, SurfacePick } from "./viewer/native-math";
 import { useEffect, useId, useRef, useState, type ReactNode, type PointerEvent } from "react";
 import { SpatialView } from "./App";
 import { PhotoView } from "./PhotoView";
@@ -214,11 +214,12 @@ export function Extent({ entity, document }: { entity: Entity; document: SceneDo
 
 export function ReportScene({
   revision, selection, onSelect, imageId, cameraId, onCamera,
-  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false, measurementOverride, initialView,
+  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false, measurementOverride, measurementScale, initialView,
 }: {
   matchedComparison?: boolean;
   initialView?: "photo" | "point_cloud" | "model" | "compare";
   measurementOverride?: SceneMeasurement | null;
+  measurementScale?: MeasurementScale;
   revision: Revision;
   selection: Selection;
   onSelect: (entityId: string, observationId?: string) => void;
@@ -293,15 +294,18 @@ export function ReportScene({
   useEffect(() => {
     if (!analysisAvailable && !activeSurface) setMeasurement(savedBend?.status === "measured" ? savedBend.result || null : null);
   }, [analysisAvailable, selected?.id, savedBend, activeSurface]);
-  const activeMeasurement = measurementOverride ?? rawMeasurement;
-  const measurement = (showAngles || activeMeasurement?.unit !== "deg") && activeMeasurement?.revisionId === revision.id && activeMeasurement.references.some(ref => ref.entityId === selected?.id) ? activeMeasurement : null;
-  const [measurePoints,setMeasurePoints]=useState<SurfacePick[]>([]),[pickingPoints,setPickingPoints]=useState(false),[pointError,setPointError]=useState(false),[pointCount,setPointCount]=useState<2|3>(2);
-  useEffect(() => { setMeasureRegion(null); setDrawingRegion(false); setMeasurePoints([]); setPickingPoints(false); }, [revision.id, selection.entityId]);
-  useEffect(()=>{if(layer!=="model"){setMeasurePoints([]);setPickingPoints(false);}},[layer]);
-  function startPointPicking(start:boolean, count:2|3=3) { setPointCount(count); setPickingPoints(start); setMeasurePoints([]); setMeasurement(null); setPointError(false); if(start){setDrawingRegion(false);setLayer("model");setFocused("spatial");setMobileSection("views");} }
+  const [localMeasurement, setLocalMeasurement] = useState<SceneMeasurement | null>(null), [localMeasurementActive, setLocalMeasurementActive] = useState(false);
+  const activeMeasurement = localMeasurementActive ? localMeasurement : measurementOverride ?? rawMeasurement;
+  const measurement = (showAngles || activeMeasurement?.unit !== "deg") && activeMeasurement?.revisionId === revision.id && (localMeasurementActive || activeMeasurement.references.some(ref => ref.entityId === selected?.id)) ? activeMeasurement : null;
+  const [measurePoints,setMeasurePoints]=useState<SurfacePick[]>([]),[pickingPoints,setPickingPoints]=useState(false),[pointError,setPointError]=useState(false),[pointCount,setPointCount]=useState<1|2|3>(2);
+  const measurementGeometryKey = JSON.stringify([revision.id, imageId, geometryOptions.frameId, document.entities.map(entity => [entity.id, entity.visible, entity.currentModelTransform, activeModel(entity)]), document.assets, document.coordinateFrames.map(frame => [frame.id, frame.ground])]);
+  useEffect(() => { setMeasureRegion(null); setDrawingRegion(false); setMeasurePoints([]); setPickingPoints(false); setLocalMeasurement(null); setLocalMeasurementActive(false); setPointError(false); }, [measurementGeometryKey, selection.entityId]);
+  useEffect(()=>{if(layer!=="model"){setMeasurePoints([]);setPickingPoints(false);setLocalMeasurement(null);setLocalMeasurementActive(false);}},[layer]);
+  function startPointPicking(start:boolean, count:1|2|3=3) { setPointCount(count); setPickingPoints(start); setMeasurePoints([]); setLocalMeasurement(null); setLocalMeasurementActive(start); setPointError(false); if(start){setDrawingRegion(false);setLayer("model");chooseView("spatial");} }
   function pickMeasurementPoint(hit:SurfacePick|null) {
     if(!pickingPoints)return;
-    if(!hit||measurePoints.length>0&&hit.coordinateFrameId!==measurePoints[0].coordinateFrameId){setPointError(true);return;}
+    const entity = hit && document.entities.find(entity => entity.id === hit.entityId), rep = entity && activeModel(entity);
+    if(!hit || hit.point.length!==3 || !hit.point.every(Number.isFinite) || hit.coordinateFrameId!==geometryOptions.frameId || !rep || rep.id!==hit.representationId || rep.sourceValidity==="stale" || entity?.visible===false || rep.coordinateFrameId!==hit.coordinateFrameId || (entity?.currentModelTransform||rep.transform).coordinateFrameId!==hit.coordinateFrameId || measurePoints.length>0&&hit.coordinateFrameId!==measurePoints[0].coordinateFrameId){setPointError(true);return;}
     setPointError(false);const next=[...measurePoints,hit].slice(0,pointCount);setMeasurePoints(next);
     if(next.length===pointCount){setPickingPoints(false);setMobileSection("inspector");}
   }
@@ -476,7 +480,7 @@ export function ReportScene({
       </header>
       {(analysisAvailable || bendAnalysis) && <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的折弯分析" : "Saved bend analysis"}>
         <span>{language === "zh" ? bendError ? "折弯分析加载失败，请刷新重试" : !bendAnalysis ? "读取已保存的折弯分析…" : `已计算 ${detectedBends.length} 处折弯角度${incompleteBends ? ` · ${incompleteBends} 个对象计算未完成` : ""}` : bendError ? "Could not load bend analysis; refresh to retry" : !bendAnalysis ? "Loading saved bend analysis…" : `${detectedBends.length} bend angles calculated${incompleteBends ? ` · ${incompleteBends} objects incomplete` : ""}`}</span>
-        <label>{language === "zh" ? "已识别折弯" : "Detected bend"}<select value={detectedBends.some(row => row.entityId === selected?.id) ? selected!.id : ""} onChange={e => { if(e.target.value) { selectEntity(e.target.value); setLayer("model"); if (!analysisAvailable) { setMeasurement(detectedBends.find(row => row.entityId === e.target.value)?.result || null); setShowAngles(true); chooseView("plan"); } } }}>
+        <label>{language === "zh" ? "已识别折弯" : "Detected bend"}<select value={detectedBends.some(row => row.entityId === selected?.id) ? selected!.id : ""} onChange={e => { startPointPicking(false); if(e.target.value) { selectEntity(e.target.value); setLayer("model"); if (!analysisAvailable) { setMeasurement(detectedBends.find(row => row.entityId === e.target.value)?.result || null); setShowAngles(true); chooseView("plan"); } } }}>
           <option value="">{language === "zh" ? "选择有折弯结果的对象" : "Choose an object with a detected bend"}</option>
           {detectedBends.map(row => <option key={row.entityId} value={row.entityId}>{document.entities.find(entity => entity.id === row.entityId)?.label || row.entityId} · {row.result!.value.toFixed(1)}°</option>)}
         </select></label>
@@ -484,7 +488,7 @@ export function ReportScene({
       </div>}
       {(analysisAvailable || inclinationAnalysis) && <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的平面倾角" : "Saved plane inclinations"}>
         <span>{inclinationError ? (language === "zh" ? "平面分析加载失败，请刷新重试" : "Plane analysis could not load") : !inclinationAnalysis ? (language === "zh" ? "读取已保存的平面倾角…" : "Loading saved planes…") : language === "zh" ? `已计算 ${allSurfaces.length} 个平面倾角（${inclinationRows.filter(row=>row.surfaces.length>0).length} 个对象）${incompleteInclinations ? ` · ${incompleteInclinations} 个对象计算未完成` : ""}` : `${allSurfaces.length} plane inclinations calculated (${inclinationRows.filter(row=>row.surfaces.length>0).length} objects)${incompleteInclinations ? ` · ${incompleteInclinations} objects incomplete` : ""}`}</span>
-        <label>{language === "zh" ? "倾斜平面（含待确认估计）" : "Inclined surface (includes unverified estimates)"}<select value={surfaceKey} onChange={e=>{const row=allSurfaces.find(r=>r.key===e.target.value);if(row){selectEntity(row.entityId);setSurfaceKey(row.key);setLayer("model");setPreviewMode("free");if(!analysisAvailable){setShowAngles(true);chooseView("spatial");}}else{setSurfaceKey("");setMeasurement(null);}}}>
+        <label>{language === "zh" ? "倾斜平面（含待确认估计）" : "Inclined surface (includes unverified estimates)"}<select value={surfaceKey} onChange={e=>{startPointPicking(false);const row=allSurfaces.find(r=>r.key===e.target.value);if(row){selectEntity(row.entityId);setSurfaceKey(row.key);setLayer("model");setPreviewMode("free");if(!analysisAvailable){setShowAngles(true);chooseView("spatial");}}else{setSurfaceKey("");setMeasurement(null);}}}>
           <option value="">{language === "zh" ? "选择局部面与地面倾角" : "Select a local surface"}</option>
           {visibleSurfaces.map(row=><option key={row.key} value={row.key}>{document.entities.find(e=>e.id===row.entityId)?.label || row.entityId} · {language === "zh" ? "面" : "surface"} {row.surface.surfaceId} · {row.surface.inclinationDeg.toFixed(1)}°{row.surface.classification==="direction_unverified" ? (language === "zh" ? "（估计）" : " (estimate)") : ""}</option>)}
         </select></label>
@@ -585,10 +589,10 @@ export function ReportScene({
                   {pane === "photo" && showVideo && <VideoView document={document} selectedId={selection.entityId} onSelect={selectEntity} />}
                   {pane === "photo" && !showVideo && <><PhotoView document={document} imageId={imageId} selectedId={selection.entityId} onSelect={selectEntity} draw={draw} onBox={onBox} showBounds={allBounds} />
                     {camera && allBounds && <PhotoAxes revision={revision} camera={camera} layer={layer} selectedId={selection.entityId} observationId={selection.observationId} allBounds={allBounds} />}</>}
-                  {pane === "spatial" && <>{pickingPoints && <div className="cad-measure-guide" role="status">{language === "zh" ? `第 ${measurePoints.length+1}/${pointCount} 点：${(pointCount === 2 ? ["斜边上端点（角的顶点）","同一斜边的下端点"] : ["第一条边上的点","两条边相交的顶点","第二条边上的点"])[measurePoints.length]}。点击模型表面，拖动可旋转。` : `Point ${measurePoints.length+1}/${pointCount}: ${(pointCount === 2 ? ["upper edge endpoint (vertex)","lower endpoint of the same edge"] : ["first edge","shared vertex","second edge"])[measurePoints.length]}. Click the model surface; drag to rotate.`}{pointError && <strong>{language === "zh" ? " 未点到模型表面，请重选。" : " No model surface hit. Try again."}</strong>} <button onClick={()=>startPointPicking(false)}>{language === "zh" ? "取消取点" : "Cancel picking"}</button></div>}<SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
+                  {pane === "spatial" && <>{pickingPoints && <div className="cad-measure-guide" role="status">{language === "zh" ? `第 ${measurePoints.length+1}/${pointCount} 点：点击要测量的模型表面，拖动可旋转。` : `Point ${measurePoints.length+1}/${pointCount}: click the model surface to measure; drag to rotate.`}{pointError && <strong>{language === "zh" ? " 未点到模型表面，请重选。" : " No model surface hit. Try again."}</strong>} <button onClick={()=>startPointPicking(false)}>{language === "zh" ? "取消取点" : "Cancel picking"}</button></div>}<SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
                     modelPreview={previewRequest} onModelPreview={(key, image) => { if (key === currentPreviewKey.current) setModelPreview({ key, image }); }}
                     onAssetStates={(revisionId, states) => setModelLoads({ revisionId, states })} onMeasurementPoint={pickMeasurementPoint}
-                    layers={{ groundDatum: matchedComparison, pickingPoints, measurePoints, measureVertexIndex: pointCount === 2 ? 0 : 1, measurement: layer === "model" || layer === "point_cloud" && measurement?.method === "conditional-endpoint-comparison" ? measurement : null, modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud" || layer === "model" && cloudWithModels && hasPointCloud, allBounds, showBounds: allBounds, cameraPath: showPath, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations, part, skeleton, splats: hasSplats && splats }} />
+                    layers={{ groundDatum: matchedComparison || localMeasurementActive, measurementScale, pickingPoints, measurePoints, measureVertexIndex: pointCount === 2 ? 0 : 1, measurement: layer === "model" || layer === "point_cloud" && measurement?.method === "conditional-endpoint-comparison" ? measurement : null, modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud" || layer === "model" && cloudWithModels && hasPointCloud, allBounds, showBounds: allBounds, cameraPath: showPath, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations, part, skeleton, splats: hasSplats && splats }} />
                     {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
                   {pane === "cad" && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
                   {pane === "cad" && !availability.planEmpty && <CadView key={revision.id + cadLayer} document={document} selectedId={selection.entityId} onSelect={selectPlanEntity} geometryOptions={planOptions} measurement={cadLayer === "model" ? measurement : null} region={cadLayer === "model" ? measureRegion : null} drawingRegion={drawingRegion} onRegion={region => { setMeasureRegion(region); setDrawingRegion(false); setMobileSection("inspector"); }} showPath={showPath} />}
@@ -622,7 +626,7 @@ export function ReportScene({
           <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>
           <div className="report-scene-inspector-content">{selected && (selected as any).motionSummary && <section className="report-motion-summary">
             <h4>{language === "zh" ? "怎么走动的" : "How it moved"}</h4><p>{(selected as any).motionSummary.text}</p>
-            <small>{language === "zh" ? "依据：每个采样视图可见表面的中心投到地面；只用于回答“去了哪、多快、停在哪”，不是逐关节测量。" : "From the visible surface centre per sampled view, on the floor plane."}</small></section>}{analysisAvailable && selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} savedBend={savedBend} savedSurface={activeSurface} inclinationOutcome={inclinationRows.find(r=>r.entityId===selected.id)} onClearSurface={()=>setSurfaceKey("")} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{(typeof inspector === "function" ? inspector(activeSurface) : inspector) ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
+            <small>{language === "zh" ? "依据：每个采样视图可见表面的中心投到地面；只用于回答“去了哪、多快、停在哪”，不是逐关节测量。" : "From the visible surface centre per sampled view, on the floor plane."}</small></section>}{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} geometryKey={measurementGeometryKey} analysisAvailable={analysisAvailable} measurementScale={measurementScale} onLocalResult={setLocalMeasurement} savedBend={savedBend} savedSurface={activeSurface} inclinationOutcome={inclinationRows.find(r=>r.entityId===selected.id)} onClearSurface={()=>setSurfaceKey("")} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{(typeof inspector === "function" ? inspector(activeSurface) : inspector) ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
         </aside>
       </div>
     </section>

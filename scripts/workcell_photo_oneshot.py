@@ -296,44 +296,49 @@ def _bbox_quality(root, seg, kind):
     return rows
 
 
-def _export_metric_scene(root, geometry):
-    """Bake one common scale and floor transform into the downloadable scene."""
-    from scripts.workcell_photo_calibration import accepted_scale
-    scale = accepted_scale(geometry)
-    metric = scale is not None
-    if metric and (not np.isfinite(scale) or scale <= 0):
+def _export_metric_scene(root, report):
+    """Export the exact report assets/poses and its single model measurement scale."""
+    from ehs_spatial.platform.spatial import transform_matrix
+    root = Path(root)
+    measurement_scale = report['modelMeasurementScale']
+    scale = measurement_scale['nativeToMeters']
+    if scale is not None and (not np.isfinite(scale) or scale <= 0):
         raise ValueError("No finite positive reference scale for scene export")
-    factor = scale if metric else 1.0
-    normal = np.asarray(geometry["floor"]["normal"], float)
-    transform = trimesh.geometry.align_vectors(normal, [0, 1, 0])
+    factor = scale if scale is not None else 1.0
+    # Same Z-up -> glTF Y-up rotation as the browser's downloadModel.
+    transform = trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0])
     transform[:3, :3] *= factor
-    transform[1, 3] = factor * float(geometry["floor"]["offset"]) / np.linalg.norm(normal)
     scene = trimesh.Scene()
-    objects = json.loads((root / "objects.json").read_text())["objects"]
-    cached = {}
-    for item in objects:
-        spec = item.get("modelsByPhoto", {}).get("4", item["model"])
-        if not spec or not spec.get("nodes"):
+    document = report['revision']['document']
+    frames = {frame['id']: frame for frame in document['coordinateFrames']}
+    for item in document['entities']:
+        if item.get('sourceContext') or item.get('visible') is False:
             continue
-        if spec["file"] not in cached:
-            cached[spec["file"]] = trimesh.load(root / spec["file"], force="scene")
-        source = cached[spec["file"]]
-        for node in spec["nodes"]:
+        spec = next((r for r in item['representations'] if r['id'] == item.get('activeModelRepresentationId')
+                     and r['kind'] == 'generated_mesh' and r.get('sourceValidity') != 'stale'), None)
+        if spec is None:
+            continue
+        frame = frames[spec['coordinateFrameId']]
+        if not np.allclose(frame['ground']['normal'], [0, 0, 1]) or frame['ground']['offset'] != 0:
+            raise ValueError('Workcell export requires the report floor Z-up frame')
+        placed = transform_matrix(item.get('currentModelTransform') or spec['transform'])
+        source = trimesh.load(root / report['assetURLs'][spec['assetId']], force='scene', process=False)
+        for node in source.graph.nodes_geometry:
             matrix, geometry_id = source.graph.get(node)
             original = source.geometry[geometry_id]
             mesh = original.copy()
             if original.visual.kind == 'texture' and 'color' in original.visual.vertex_attributes:
                 mesh.visual.vertex_attributes['color'] = original.visual.vertex_attributes['color'].copy()
-            name = item["id"] + ":" + node
-            scene.add_geometry(mesh, node_name=name, geom_name=name, transform=transform @ matrix)
-    scene.metadata.update(units="meters" if metric else "native", metricScaleMPerNative=scale)
-    if geometry.get('calibration'):
-        scene.metadata.update(scale_status='accepted_3d_reference' if metric else 'uncalibrated', calibration=geometry['calibration'])
-    else:
-        scene.metadata.update(scale_status="user_dimension_hypothesis",
-                              button_height_m=geometry["anchor"]["assumedHeightM"],
-                              button_width_m=geometry["anchor"]["assumedWidthM"])
-    (root / ("workcell-metric.glb" if metric else "workcell-native.glb")).write_bytes(scene.export(file_type="glb"))
+            name = item['id'] + ':' + node
+            scene.add_geometry(mesh, node_name=name, geom_name=name, transform=transform @ placed @ matrix)
+    scene.metadata.update(units='meters' if scale is not None else 'native', upAxis='Y',
+                          metricScaleMPerNative=scale, scale_status=measurement_scale['status'],
+                          modelMeasurementScale=measurement_scale, ground={'normal': [0, 1, 0], 'offset': 0},
+                          reportRevision=report['revision']['id'], groundTruth=False)
+    name = ('workcell-conditional.glb' if measurement_scale['status'] == 'conditional_unvalidated'
+            else 'workcell-metric.glb' if scale is not None else 'workcell-native.glb')
+    (root / name).write_bytes(scene.export(file_type='glb'))
+    return name
 
 
 def _anchor_sheet(root, sources, anchor):
@@ -383,7 +388,7 @@ def _build_page(root, metrics):
               "objects.json", "object-extras.glb", "scene-report.json")
     for name in assets:
         shutil.copyfile(root / name, page / name)
-    for name in ('measurements.json', 'measurement-evaluation.json', 'physical-clearances.json', 'structural-result.json', 'workcell-metric.glb', 'workcell-native.glb'):
+    for name in ('measurements.json', 'measurement-evaluation.json', 'physical-clearances.json', 'structural-result.json', 'workcell-metric.glb', 'workcell-native.glb', 'workcell-conditional.glb'):
         if (root/name).is_file():
             shutil.copyfile(root/name, page/name)
     for model in [*root.glob("entity-*.glb"), *root.glob("guard-*-initializer.glb"), *root.glob("structural-*.jpg"), *root.glob("raw-image-features-*.jpg")]:
@@ -487,7 +492,7 @@ def run(images, out, diameter_m, height_m, viewer_assets, measurements=None):
         from scripts.workcell_photo_report import build as build_report
         build_report(out)
     _anchor_sheet(out, images, geometry["anchor"])
-    _export_metric_scene(out, geometry)
+    _export_metric_scene(out, json.loads((out / 'scene-report.json').read_text()))
     metrics = {"oneShotWallSeconds": round(time.monotonic() - began, 2),
                "robotQuality": robot_quality, "cartQuality": cart_quality,
                "surfaces": surfaces, "posts": posts, "runs": ledger["runs"], "geometry": geometry,

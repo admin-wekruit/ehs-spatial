@@ -15,6 +15,25 @@ from workcell_photo_metrology import _horizontal, _pixels, _reference, _tangenci
 from workcell_photo_oneshot import _array, _frame
 
 
+def model_measurement_scale(root, geometry):
+    """One explicit scale for model tools; never promote a conditional fit."""
+    from scripts.workcell_photo_calibration import accepted_scale
+    accepted = accepted_scale(geometry)
+    if accepted is not None:
+        return {'status': 'accepted_3d_reference', 'nativeToMeters': accepted,
+                'rangeNativeToMeters': [accepted, accepted],
+                'source': '已通过当前固定相机三维参考拟合的按钮标尺。'}
+    observations = geometry['anchor'].get('referenceFit', {}).get('observations', [])
+    if not (Path(root) / 'reference-input.json').is_file() or not any(o.get('photo') == 4 for o in observations):
+        return {'status': 'uncalibrated', 'nativeToMeters': None, 'rangeNativeToMeters': None,
+                'source': '没有可用于本报告的按钮轮廓标尺；保留原生单位。'}
+    evidence = conditional_scale(root, photo=4)
+    return {'status': evidence['status'], 'nativeToMeters': evidence['conditionalMPerNative'],
+            'rangeNativeToMeters': evidence['rangeMPerNative'],
+            'source': '照片 4 主体直径 8.5 cm 的条件比例；红帽 4 cm 交叉检查。三尺寸联合标定仍未通过。',
+            'evidence': evidence}
+
+
 def raw_support(hull, frame):
     """Native inferred pointmap pixels under the accepted raw-image silhouette."""
     hull = np.asarray(hull, float)

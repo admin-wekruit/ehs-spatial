@@ -138,7 +138,7 @@ def build(baseline, controls, joint, out, viewer_assets, previous=(), extra=(), 
     if measured:
         apply_measurements(out, measured)
     data = build_report(out)
-    _export_metric_scene(out,data['geometry'])
+    _export_metric_scene(out,data)
     _freeze_report_ui(out, viewer_assets)
     metrics = read(baseline/'one-shot.json')
     metrics['geometry'] = data['geometry']
