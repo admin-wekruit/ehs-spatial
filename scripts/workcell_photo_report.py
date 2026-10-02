@@ -273,6 +273,41 @@ def build(root):
               'coverage': catalog['coverage'], 'geometry': geometry, 'sceneTransformNative': transform.tolist(),
               'nativeToMetersDefault': scale, 'timing': {},
               'bendAnalysis': bend_analysis}
+    # Explicit inspection artifact: these named endpoints are specific to this capture.
+    endpoint_path = root / 'model-endpoint-estimate.json'
+    if endpoint_path.is_file():
+        from scripts.workcell_conditional_scale import conditional_scale
+        measured = json.loads(endpoint_path.read_text())
+        for name, digest in measured['sourceFiles'].items():
+            if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
+                raise ValueError('Model endpoint inspection is stale: ' + name)
+        if not np.allclose(measured['sceneTransformNative'], transform, atol=1e-7):
+            raise ValueError('Model endpoint inspection uses a different floor')
+        conditional = conditional_scale(root, photo=4)
+        factor = conditional['conditionalMPerNative']
+        lo, hi = conditional['rangeMPerNative']
+        endpoints = []
+        for row in measured['objects']:
+            point, foot = trimesh.transform_points([row['pointNative'], row['footNative']], transform)
+            height = row['heightNative']
+            if not np.isfinite([*point, *foot, height]).all() or not np.allclose(point-foot, [0, 0, height], atol=1e-7) or abs(foot[2]) > 1e-7:
+                raise ValueError('Invalid model endpoint or floor projection')
+            endpoints.append({**row, 'pointNative': point.tolist(), 'footNative': foot.tolist(),
+                'label': '光幕底端' if row['objectId'] == 'post-box-1' else '邻近围栏下沿',
+                'estimateCm': height * factor * 100,
+                'rangeCm': [height * lo * 100, height * hi * 100]})
+        by_id = {row['objectId']: row for row in endpoints}
+        delta = by_id['post-box-1']['heightNative'] - by_id['fence-0']['heightNative']
+        result['endpointEstimation'] = {'status': 'conditional_unvalidated', 'photo': 4,
+            'method': '读取当前 GLB 的光幕底面中心，以及紧邻它的围栏底面中心线；围栏此段为模型推断延伸。沿同一地面法向测量。',
+            'scale': {'mPerNative': factor, 'source': '照片 4 的按钮主体直径 8.5 cm；红帽 4 cm 独立交叉检查。地面方向和参考表面深度仍为推断值。'},
+            'endpoints': endpoints,
+            'difference': {'valueNative': delta, 'valueCm': delta * factor * 100,
+                'rangeCm': sorted([delta * lo * 100, delta * hi * 100]),
+                'description': '光幕底端高度减去邻近围栏下沿高度。'},
+            'scaleEvidence': conditional, 'sourceFiles': measured['sourceFiles'],
+            'rangeMeaning': '仅为固定模型端点在标尺表面深度第 5/95 百分位下的敏感性；不包含模型、地面或轴心深度系统误差。',
+            'groundTruthUsedForEstimation': False}
     if (root/'measurements.json').is_file():
         from scripts.workcell_photo_calibration import load_measurements, measurement_evaluation
         result['measurementEvaluation'] = measurement_evaluation(catalog['objects'], geometry, load_measurements(root/'measurements.json'))

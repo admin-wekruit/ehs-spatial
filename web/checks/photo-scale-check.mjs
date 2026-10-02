@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url), ts = require('typescript'), React = require('react');
-let state = 0, height = 10, exported, filename;
+let state = 0, height = 10, exported, filename, endpointLines = false, selectedPhoto = 'photo-4';
+const reportLocation = { href: 'https://example.test/report/' };
 class Group {
   children = []; scaleValue = 1; rotation = {}; matrix = { fromArray() {} };
   scale = { setScalar: value => { this.scaleValue = value; } };
@@ -17,7 +18,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 vm.runInNewContext(compiled, {
   exports: module.exports, module,
   require: id => {
-    if (id === 'react') return { ...React, useState: initial => [state++ === 3 ? height : state === 2 ? 'fence-0' : state === 7 ? true : initial, () => {}], useMemo: fn => fn() };
+    if (id === 'react') return { ...React, useState: initial => [state++ === 3 ? height : state === 1 ? selectedPhoto : state === 2 ? 'fence-0' : state === 7 ? true : state === 8 ? endpointLines ?? initial : initial, () => {}], useMemo: fn => fn() };
     if (id === 'react/jsx-runtime') return require(id);
     if (id === 'react-dom/client') return { createRoot: () => ({ render() {} }) };
     if (id === './ReportScene') return { ReportScene };
@@ -30,7 +31,7 @@ vm.runInNewContext(compiled, {
     return {};
   },
   document: { getElementById: () => ({}), createElement: () => ({ click() { filename = this.download; } }) },
-  window: { location: { href: 'https://example.test/report/' } }, URL, Blob, setTimeout: fn => fn(),
+  window: { location: reportLocation }, URL, Blob, setTimeout: fn => fn(),
 }, { filename: 'PhotoReport.tsx' });
 const walk = node => !node || typeof node !== 'object' ? [] : [node, ...[node.props?.children].flat(Infinity).flatMap(walk)];
 const feature = { valueNative: .4, pointNative: [0, 0, .4], footNative: [0, 0, 0], sourcePhotos: [1, 2], rangeNative: [.39, .41] };
@@ -82,4 +83,25 @@ const photoSubject = render(clouds).scene.props.revision.document.entities[1];
 assert.equal(photoSubject.activeModelRepresentationId, 'model-photo4');
 assert.deepEqual(Array.from(photoSubject.representations, r => r.id), ['model-photo4', 'source-points-photo4'], 'Changing model pose must retain source point evidence');
 assert.equal(subject.representations[0].id, 'rep-1', 'Photo selection must not mutate saved representations');
-console.log('PASS: accepted scale, proportional three dimensions, unchanged GT, 52-model metric/native exports, null scale, no bbox fallback, photo-model variants preserve source points');
+const conditional = structuredClone(unsupported);
+conditional.revision.document.entities[0].representations[0].coordinateFrameId = 'workcell-floor';
+conditional.endpointEstimation = { status: 'conditional_unvalidated', photo: 4, method: 'source endpoints', scale: { mPerNative: .5, source: 'button-only conditional scale' }, endpoints: [
+  { objectId: 'fence-0', label: '围栏下沿', pointNative: [5, 7, .3], footNative: [5, 7, 0], heightNative: .3, estimateCm: 15, rangeCm: [14, 16] },
+  { objectId: 'post-box-1', label: '光幕底端', pointNative: [1, 2, .4], footNative: [1, 2, 0], heightNative: .4, estimateCm: 20, rangeCm: [19, 21] },
+], difference: { valueNative: .1, valueCm: 5, rangeCm: [4, 6], description: 'relative height' } };
+endpointLines = true;
+result = render(conditional);
+assert.equal(result.scale, 'unknown', 'conditional endpoint estimates cannot promote the accepted scene scale');
+assert.equal(result.ground, '未知', 'endpoint estimates cannot overwrite the physical groundDistance card');
+assert.equal(result.nodes.find(n => 'data-endpoint-difference' in n.props).props.children[0], '5.0');
+assert.equal(walk(result.scene.props.inspector(null)).find(n => n.props?.['aria-label'] === '当前模型的高低估计').type, 'section', 'the estimate must remain visible inside the fullscreen inspector');
+const annotation = result.scene.props.measurementOverride;
+assert.equal(annotation.method, 'conditional-endpoint-comparison');
+assert.equal(annotation.coordinateFrameId, 'workcell-floor');
+assert.deepEqual(Array.from(annotation.lines[3].points, point => Array.from(point)), [[5, 7, .4], [5, 7, .3]], 'high-low difference must follow floor Z; endpoint array order must not change the meaning');
+assert.equal(render(conditional, 20).scene.props.measurementOverride.displayLabel, annotation.displayLabel, 'independent conditional estimate does not silently track the scale trial');
+selectedPhoto = 'photo-3';
+assert.notEqual(render(conditional).scene.props.measurementOverride?.method, 'conditional-endpoint-comparison', 'photo4 source endpoints must not be projected into another source photo');
+selectedPhoto = 'photo-4'; endpointLines = undefined; reportLocation.href = 'https://example.test/report/?measurement=endpoints';
+assert.equal(render(conditional).scene.props.measurementOverride.method, 'conditional-endpoint-comparison', 'the shared URL enables annotations without another click');
+console.log('PASS: accepted scale, 52-model exports, no bbox fallback, source points preserved, separate conditional endpoint estimates and floor-normal difference');
