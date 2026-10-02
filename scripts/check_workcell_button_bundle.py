@@ -126,7 +126,47 @@ def occluded_support_directions():
         raise AssertionError('Unobserved contour directions were accepted')
 
 
+def fixed_camera_axial_reference():
+    """Perfect 10 cm 3D reference must calibrate despite inflated 2D envelopes."""
+    from workcell_button_bundle import _project_raw, fit_reference_shape
+    from workcell_photo_geometry import _intersect
+
+    frames, _, rows, reference, initial, shape = fixture()
+    before = copy.deepcopy(frames)
+    normal = np.array([0., 1., 0.])
+    offset = -float(shape['base'] @ normal)
+    envelopes = []
+    for row in rows:
+        frame = frames[row['photo']]
+        yellow = np.asarray(row['yellowHullRaw'])
+        low, high = yellow[:, 0].min(), yellow[:, 0].max()
+        bottom = row['housingBottomSupportRaw']
+        boundary = np.vstack([row['redHullRaw'], yellow,
+                              [[low + .15 * (high - low), bottom], [low + .85 * (high - low), bottom]]])
+        raw_k = np.linalg.inv(frame['A']) @ frame['K']
+        cloud = _intersect(boundary, raw_k, frame['pose'], normal, offset)
+        envelopes.append(float(np.ptp(cloud @ shape['axis'])) * shape['mPerNative'])
+        axial, _ = _project_raw([shape['base'], shape['base'] + shape['height'] * shape['axis']], frame)
+        recovered = _intersect(axial, raw_k, frame['pose'], normal, offset)
+        assert abs(float(np.ptp(recovered @ shape['axis'])) * shape['mPerNative'] - .1) < 1e-10
+    assert np.median(envelopes) > .105, envelopes
+    result = fit_reference_shape(frames, rows, reference, initial['axisNative'])
+    assert result['status'] == 'available', result['diagnostics']
+    assert abs(result['mPerNative'] - shape['mPerNative']) < 1e-5
+    assert result['camerasFixed'] and result['cameraFile'] is None and result['tracksFile'] is None
+    assert result['diagnostics']['sceneReprojectionP95RawPx'] is None
+    assert all(row['status'] == 'available' and row['maxErrorRawPx'] < .001 for row in result['heldOutPhotos'])
+    # The fourth held-out view used to hit an artificial +/-45-degree gray
+    # ellipse yaw bound and fail, despite exact generated observations.
+    assert all(row['diagnostics']['checks']['numericalBoundsInactive'] for row in result['heldOutPhotos'])
+    for photo in frames:
+        for key in ('K', 'pose', 'A'):
+            assert np.array_equal(frames[photo][key], before[photo][key])
+    print('PASS: inflated planar envelopes do not shrink exact 10 cm 3D reference scale', envelopes)
+
+
 def main():
+    fixed_camera_axial_reference()
     occluded_support_directions()
     observability_and_seed()
     legacy_missing_coupling()

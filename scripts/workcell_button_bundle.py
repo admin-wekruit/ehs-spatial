@@ -134,7 +134,7 @@ def _support_validity(row):
     return np.r_[np.asarray(masks, bool), True]
 
 
-def _prepare(frames, tracks, observations, max_tracks):
+def _prepare(frames, tracks, observations, max_tracks, *, refine_cameras=True):
     if set(frames) != {1, 2, 3, 4}:
         raise ValueError('Exactly four source cameras are required')
     for frame in frames.values():
@@ -146,7 +146,7 @@ def _prepare(frames, tracks, observations, max_tracks):
         if not np.allclose(pose[:3, :3].T @ pose[:3, :3], np.eye(3), atol=1e-5) or np.linalg.det(pose[:3, :3]) < .99999:
             raise ValueError('Camera rotations must be proper rigid rotations')
         rawK = np.linalg.inv(A) @ K
-        if min(rawK[0, 0], rawK[1, 1]) <= 0 or not np.allclose(rawK[[0, 1], [1, 0]], 0, atol=1e-5) or not np.isclose(rawK[0, 0], rawK[1, 1], rtol=1e-4):
+        if min(rawK[0, 0], rawK[1, 1]) <= 0 or not np.allclose(rawK[[0, 1], [1, 0]], 0, atol=1e-5) or (refine_cameras and not np.isclose(rawK[0, 0], rawK[1, 1], rtol=1e-4)):
             raise ValueError('Joint model requires the raw-square-pixel camera control')
     rows = {int(r['photo']): r for r in observations}
     if len(rows) < 3 or not set(rows).issubset(frames) or len(rows) != len(observations):
@@ -161,6 +161,9 @@ def _prepare(frames, tracks, observations, max_tracks):
         if row.get('grayHousingEdgeContrast', 1.) <= 0:
             raise ValueError('Gray housing lower edge has no observed luminance support')
         _support_validity(row)
+    if not refine_cameras:
+        return [], {'inputTracks': 0, 'selectedTracks': 0, 'tracksByPhoto': {p: 0 for p in frames},
+                    'selection': 'Provided cameras fixed; metric support remains conditional on these cameras'}
     selected, rejected = [], {'buttonRoi': 0, 'invalidOrWeakTrack': 0}
     for track in tracks:
         xyz = np.asarray(track.get('xyz'), float)
@@ -271,11 +274,12 @@ def _observability(reduced, core_columns, scale_column):
             'sigmaScope': 'Local linearized independent-residual perturbation only; correlated silhouette supports and shape bias are not modeled.'}
 
 
-def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max_tracks=180, holdouts=True, workers=1):
+def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max_tracks=180, holdouts=True, workers=1,
+          refine_cameras=True):
     """Small synthetic-friendly core. Observations and tracks are in raw/canonical pixels respectively."""
     reference = _reference(reference)
     known = reference['features']
-    scene, selection = _prepare(frames, tracks, observations, max_tracks)
+    scene, selection = _prepare(frames, tracks, observations, max_tracks, refine_cameras=refine_cameras)
     photos = sorted(frames)
     button_photos = sorted(row['photo'] for row in observations)
     origin = np.asarray(frames[1]['pose'][:3, 3])
@@ -293,6 +297,9 @@ def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max
         raise ValueError('Invalid initial metric scale')
     x0, lower, upper, camera_columns = [], [], [], {}
     for p in photos:
+        if not refine_cameras:
+            camera_columns[p] = []
+            continue
         start = len(x0)
         if p != 1:
             x0.extend([0., 0., 0.]); lower.extend([-np.pi] * 3); upper.extend([np.pi] * 3)
@@ -308,10 +315,13 @@ def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max
     depth = known['mainBodyDiameterM'] * .7
     x0.extend([*((np.asarray(training_seed['baseNative']) - origin) / baseline), 0., 0., np.log(m0),
                *np.log(fractions[:2] / fractions[2]), np.log(width), np.log(depth), 0., .7])
-    lower.extend([-20.] * 3 + [-2.] * 2 + [np.log(m0 / 10)] + [-6.] * 2 + [np.log(known[FEATURES[0]] / 1000)] * 2 + [-np.pi / 4, .02])
-    upper.extend([20.] * 3 + [2.] * 2 + [np.log(m0 * 10)] + [6.] * 2 + [np.log(known[FEATURES[0]] * 10)] * 2 + [np.pi / 4, 1.000001])
+    # Ellipse width/depth exchange can represent a quarter-turn only after a
+    # discontinuous axis swap. Restricting yaw to +/-45 degrees trapped valid
+    # fits at an artificial boundary; allow a continuous physical half-turn.
+    lower.extend([-20.] * 3 + [-2.] * 2 + [np.log(m0 / 10)] + [-6.] * 2 + [np.log(known[FEATURES[0]] / 1000)] * 2 + [-np.pi, .02])
+    upper.extend([20.] * 3 + [2.] * 2 + [np.log(m0 * 10)] + [6.] * 2 + [np.log(known[FEATURES[0]] * 10)] * 2 + [np.pi, 1.000001])
     global_count = len(x0)
-    x0.extend(((np.asarray([t['xyz'] for t in scene]) - origin) / baseline).ravel())
+    x0.extend(((np.asarray([t['xyz'] for t in scene]).reshape(-1, 3) - origin) / baseline).ravel())
     lower.extend([-1000.] * (3 * len(scene))); upper.extend([1000.] * (3 * len(scene)))
     x0, lower, upper = map(np.asarray, (x0, lower, upper))
     if not np.isfinite(x0).all() or np.any(x0 <= lower) or np.any(x0 >= upper):
@@ -322,6 +332,9 @@ def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max
         for p in photos:
             original = frames[p]
             pose = np.asarray(original['pose']).copy()
+            if not refine_cameras:
+                cameras[p] = {'photo': p, 'pose': pose, 'K': np.asarray(original['K']).copy(), 'A': original['A']}
+                continue
             columns = camera_columns[p]
             j = columns[0]
             if p != 1:
@@ -365,6 +378,8 @@ def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max
         cameras, shape, points = unpack(x)
         scene_values = np.empty((len(track_observations), 3))
         for p, group in scene_groups.items():
+            if not group:
+                continue
             rows, indices, uv_raw = zip(*group)
             uv, depth = _project_raw(points[list(indices)], cameras[p])
             scene_values[list(rows), :2] = (uv - np.asarray(uv_raw)) / 2.
@@ -396,13 +411,14 @@ def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max
             pattern[offset:offset + 36, camera_columns[p]] = 1
             pattern[offset:offset + 36, shape_start:global_count] = 1
             offset += 36
-        result = least_squares(residual, seed, args=(fit_photos,), bounds=(fit_lower, fit_upper), jac_sparsity=pattern.tocsr(),
+        result = least_squares(residual, seed, args=(fit_photos,), bounds=(fit_lower, fit_upper),
+                               jac_sparsity=pattern.tocsr() if refine_cameras else None,
                                x_scale='jac', max_nfev=max_nfev, ftol=1e-7, xtol=1e-8, gtol=1e-7,
                                tr_options={'atol': 1e-8, 'btol': 1e-8})
         cameras, shape, points = unpack(result.x)
         # Eliminate independently fitted scene XYZ before testing identifiability
         # of camera, scale, axis and unmeasured shape parameters.
-        J = result.jac.toarray()
+        J = result.jac.toarray() if refine_cameras else result.jac
         reduced = J[:, :global_count].copy()
         for index, rows in enumerate(point_rows):
             local = J[np.ix_(rows, range(global_count + 3 * index, global_count + 3 * index + 3))]
@@ -432,12 +448,12 @@ def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max
                   'optimizerConverged': bool(result.success), 'cameraAndScaleIdentifiable': observability['cameraAndScaleIdentifiable'],
                   'scaleLocallySupported': scale_sigma is not None and scale_sigma < .25,
                   'numericalBoundsInactive': not active_bound,
-                  'sceneReprojectionSupported': float(np.percentile(scene_errors, 95)) <= 4.,
+                  'sceneReprojectionSupported': not refine_cameras or float(np.percentile(scene_errors, 95)) <= 4.,
                   'fittedButtonSupported': max(feature_errors[p]['maxRawPx'] for p in fit_photos) <= 4.}
         diagnostics = {'checks': checks, 'fitPhotos': list(fit_photos), 'nfev': int(result.nfev), 'message': str(result.message),
                        'cost': float(result.cost), 'initialCost': float(.5 * np.sum(residual(seed, fit_photos) ** 2)),
-                       'sceneReprojectionRmsRawPx': float(np.sqrt(np.mean(np.square(scene_errors)))),
-                       'sceneReprojectionP95RawPx': float(np.percentile(scene_errors, 95)),
+                       'sceneReprojectionRmsRawPx': float(np.sqrt(np.mean(np.square(scene_errors)))) if scene_errors else None,
+                       'sceneReprojectionP95RawPx': float(np.percentile(scene_errors, 95)) if scene_errors else None,
                        'globalParameterCount': global_count, **observability, 'featureErrorsByPhoto': feature_errors,
                        'seedButtonPhotos': list(fit_photos), 'seedMPerNative': trained['mPerNative'],
                        'seedBaseNative': trained['baseNative'].tolist()}
@@ -476,7 +492,8 @@ def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max
               'candidateMPerNative': float(shape['mPerNative']), 'rangeMPerNative': [min(scales), max(scales)] if valid else None,
               'observations': observations, 'heldOutPhotos': heldout, 'heldOutRelativeScaleRange': spread,
               'referenceGeometryIdentifiable': full['diagnostics']['allParametersIdentifiable'],
-              'supportScope': 'Conditional on the stated contour/shape model; this is not certified physical calibration.',
+              'supportScope': 'Conditional on the stated contour/shape model and supplied cameras; this is not certified physical calibration.',
+              'cameraMode': 'joint source-track refinement' if refine_cameras else 'fixed supplied cameras',
               'fittedNuisanceParameters': {k: v.tolist() if isinstance(v, np.ndarray) else float(v) for k, v in shape.items()},
               'exactMetricDimensions': {'wholeComponentHeightM': float(shape['height'] * shape['mPerNative']),
                                         'mainBodyDiameterM': float(2 * shape['yellowRadius'] * shape['mPerNative']),
@@ -493,8 +510,47 @@ def solve(frames, tracks, observations, reference, initial, *, max_nfev=100, max
     return output, camera_output, track_output
 
 
+def fit_reference_shape(frames, observations, reference, axis, *, max_nfev=100, holdouts=True):
+    """Fit the existing exact 3D reference model without changing native cameras.
+
+    Axial height and both circular diameters enter the same perspective model;
+    a projected silhouette envelope is never substituted for axial height.
+    """
+    result, _, _ = solve(frames, [], observations, reference, {'axisNative': axis},
+                         max_nfev=max_nfev, holdouts=holdouts, refine_cameras=False)
+    camera_inputs = [{'photo': p, **{key: np.asarray(frames[p][key]).tolist() for key in ('K', 'pose', 'A')}}
+                     for p in sorted(frames)]
+    result.update(camerasFixed=True, cameraFile=None, tracksFile=None,
+                  cameraProvenance={'worldFrame': 'unchanged supplied native world',
+                                    'framesSha256': hashlib.sha256(json.dumps(camera_inputs, sort_keys=True).encode()).hexdigest(),
+                                    'frames': camera_inputs},
+                  sourceContourSha256=hashlib.sha256(json.dumps(observations, sort_keys=True).encode()).hexdigest())
+    result['assumptions'] = [line for line in ASSUMPTIONS if not line.startswith(('Raw JPEG', 'The first camera', 'Whole-button'))] + [
+        'Provided camera intrinsics and poses remain fixed, including their original pixel transform; their physical accuracy is unverified.',
+        'Whole-button leave-one-photo-out fits exclude all button evidence in that photo while retaining the provided cameras.']
+    return result
+
+
+def observe_reference(frame, candidate):
+    """Reuse the accepted raw-image contour extraction for either fit route."""
+    from workcell_photo_metrology import _color_observation
+
+    red_boundary = _color_observation(frame['rgb'], candidate['boxRaw'], 'red')
+    yellow_boundary = _color_observation(frame['rgb'], candidate['boxRaw'], 'yellow')
+    red, yellow = (np.asarray(boundary['hullRaw']) for boundary in (red_boundary, yellow_boundary))
+    h, w = frame['rgb'].shape[:2]
+    if any(np.any(hull[:, 0] <= 1) or np.any(hull[:, 0] >= w - 2) or np.any(hull[:, 1] <= 1) or np.any(hull[:, 1] >= h - 2) for hull in (red, yellow)):
+        raise ValueError(f'Button silhouette reaches source-image border in photo {candidate["photo"]}')
+    return {'photo': candidate['photo'], 'redHullRaw': red.tolist(), 'yellowHullRaw': yellow.tolist(),
+            'redBoundary': red_boundary, 'yellowBoundary': yellow_boundary,
+            'boxRaw': candidate['boxRaw'], 'housingBottomSupportRaw': candidate['boxRaw'][3],
+            'grayHousingEdgeContrast': candidate['grayHousingEdgeContrast'],
+            'endpointMethod': 'automatic strongest downward luminance edge below associated yellow region',
+            'occlusionStatus': 'unconfirmed; complete-color and bottom-face hypothesis tested by withheld projection'}
+
+
 def build(root, out, sources, reference, cameras, tracks, *, max_nfev=100, max_tracks=180, workers=2):
-    from workcell_photo_metrology import _color_observation, _load
+    from workcell_photo_metrology import _load
 
     start = time.monotonic()
     root, out = Path(root), Path(out)
@@ -512,20 +568,7 @@ def build(root, out, sources, reference, cameras, tracks, *, max_nfev=100, max_t
             if not matches:
                 continue
             candidate = min(matches, key=lambda a: np.linalg.norm(a['centerNative'] - center))
-            red_boundary = _color_observation(frames[photo]['rgb'], candidate['boxRaw'], 'red')
-            yellow_boundary = _color_observation(frames[photo]['rgb'], candidate['boxRaw'], 'yellow')
-            red = np.asarray(red_boundary['hullRaw'])
-            yellow = np.asarray(yellow_boundary['hullRaw'])
-            h, w = frames[photo]['rgb'].shape[:2]
-            if any(np.any(hull[:, 0] <= 1) or np.any(hull[:, 0] >= w - 2) or np.any(hull[:, 1] <= 1) or np.any(hull[:, 1] >= h - 2) for hull in (red, yellow)):
-                raise ValueError(f'Button silhouette reaches source-image border in photo {photo}')
-            frames[photo]['rawShape'] = [h, w]
-            evidence.append({'photo': photo, 'redHullRaw': red.tolist(), 'yellowHullRaw': yellow.tolist(),
-                             'redBoundary': red_boundary, 'yellowBoundary': yellow_boundary,
-                             'boxRaw': candidate['boxRaw'], 'housingBottomSupportRaw': candidate['boxRaw'][3],
-                             'grayHousingEdgeContrast': candidate['grayHousingEdgeContrast'],
-                             'endpointMethod': 'automatic strongest downward luminance edge below associated yellow region',
-                             'occlusionStatus': 'unconfirmed; complete-color and bottom-face hypothesis tested by withheld projection'})
+            evidence.append(observe_reference(frames[photo], candidate))
         # Retain only the small camera and source-evidence arrays during fits.
         compact = {p: {**{k: f[k] for k in ('K', 'pose', 'A')}, 'rawShape': list(f['rgb'].shape[:2])} for p, f in frames.items()}
         del frames, anchors

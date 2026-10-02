@@ -2,6 +2,8 @@
 
 更新：2026-10-01。范围为四张 BOR1 原图的对象级重建、模型内空间估计、可交互照片报告，以及护板角度实验。本文按当前代码和保存产物核对；代码、报告资产、原始照片、模型权重分别交接。
 
+**最新主流程修正：** [三维标尺、实体底边与完整 oneshot](ONESHOT-CORRECTION-2026-10-01.md)。四原图重新生成 52 个可点击模型，端到端 366.93 s；A4 已接回主链，底边/显示地面/垂线统一。三尺寸标尺未通过跨照片验证，主报告不再用旧包围高度补回米制尺度；**尚未验证 sub-3 cm**。旧 17.13 / 14.36 / 15.71 cm 已退出当前主卡片。新模型下载为 native 单位；下文旧成绩与实测参考版本为历史记录。
+
 **最新 RGB 深度实验：** [原图轮廓、三尺寸联合约束与518/1036分辨率对照](RGB-DEPTH-EXPERIMENT-2026-10-01.md)。两档深度与100/400次有界对照已完成，未达到3cm；新518档围栏条件估计16.44cm，两侧光幕未知，1036档没有受支持的围栏模型。用户已确认青色修正轮廓；联合候选模型仍未通过留出验证。
 
 **此前测量实验：** [现有四图的按钮标尺 / 3 cm 实验](SUB3-EXPERIMENT-2026-10-01.md)。未要求新增实测相机参数；源观测对照、实现问题修正、原图叠线与支出单独保存。在线入口为 [测量实验页](https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/metrology.html)，页面可返回完整 52 对象 3D。实验页的候选不能自动当作主场景已经更新的准确模型；具体结果、是否达标以实验文档为准。
@@ -27,7 +29,7 @@ git clone https://github.com/admin-wekruit/panoptes-workcell-report.git
 
 源码与 release 已公开，可匿名访问。原图和复现资料位于公开 release 附件；源 Git 不包含大数据、模型权重、凭据、`node_modules` 或推理虚拟环境。下载前用第 6 节命令核对固定 release、目标提交和附件；上方稳定网址不单独证明所看的版本。
 
-## 2. 当前结果与明确限制
+## 2. 历史结果与明确限制（本轮主流程修正前）
 
 - 完整原图运行实测 **334.60 秒**：一个临时 `2 × A100-80GB` 容器，容器内 180.32 秒，含冷启动的远程调用 317.28 秒。保存于 `workcell-three-boards-complete-2026-09-30-a/one-shot.json`、`modal-timing.json`。这是这一版四照片完整链路的历史基线；未对单 A100 测速，也未把本轮 CPU 修改算成新全流程成绩。
 - 当前报告含 52 个对象记录、97 个来源观察、136 个关联网格节点。这些是产物统计，不是经现场核验的物体识别准确率。
@@ -53,7 +55,7 @@ git clone https://github.com/admin-wekruit/panoptes-workcell-report.git
 ## 3. 实际链路与代码边界
 
 ```text
-4 张原始 JPEG + 急停组件高/宽假设
+4 张原始 JPEG + 急停组件 10 / 8.5 / 4 cm 三个命名尺寸
   scripts/workcell_photo_oneshot.py
     └─ modal_apps/workcell_photo_all.py::reconstruct
          GPU0: MapAnything → 相机/内参/点图 → OWLv2 检测框
@@ -61,12 +63,11 @@ git clone https://github.com/admin-wekruit/panoptes-workcell-report.git
          CPU: 地面/围栏/标尺拟合 → floor-reference.json
          GPU0: RecGen 机器人各照片姿态 + 多视图模型
          GPU1: RecGen 车体 + 护板多视图模型
-         CPU: 护板保形对齐、对象目录、场景契约
+         CPU: 护板保形对齐、对象目录 → A4 / RGB 物理端边并行 → 统一报告
     └─ 本地证据图、统一尺度 GLB、静态 page/
          web/src/PhotoReport.tsx → 既有 ReportScene / NativeViewer
 
-A4 是保存输入上的独立实验，再由 workcell_guard_experiment_report.py
-将通过门槛的左右结构模型装入报告；原图 oneshot 不会自动执行 A4。
+本轮原图 oneshot 已直接复用 A4 与结构模型整合；来源和模型角仍按先验记录。
 ```
 
 | 模块 | 输入 → 输出 / 团队接入点 |

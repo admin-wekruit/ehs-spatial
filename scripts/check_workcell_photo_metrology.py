@@ -4,11 +4,14 @@ import hashlib
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import cv2
 import numpy as np
+import trimesh
 
 from ehs_spatial.measurements import measure_observed_points
+import workcell_photo_metrology as metrology
 from workcell_photo_metrology import (TARGETS, _color_observation, _fit_circle, _floor_evidence, _legacy,
                                      _joint_reference, _line_fit, _measure, _pixels, _reference, _route,
                                      _supported_color_hull, _tangencies, _terminal_edges, _validate_results)
@@ -187,6 +190,24 @@ def main():
     occluded, _ = _terminal_edges(rgb, mask, [0., 1.], 1, np.eye(3), obstruction)
     assert not occluded, 'An occlusion termination was accepted as a physical housing end'
 
+    # Labels break each visible side into short collinear pieces. Their actual
+    # observed lengths jointly establish the axis; unseen gaps add no support.
+    fragmented_rgb = np.full((560, 180, 3), 135, np.uint8)
+    fragmented_rgb[25:500, 55:125] = [235, 205, 15]
+    fragmented_rgb[500:507, 55:125] = [75, 75, 75]
+    for start in (125, 245, 365):
+        fragmented_rgb[start:start+15, 45:135] = 135
+    fragmented_mask = np.zeros(fragmented_rgb.shape[:2], np.uint8)
+    fragmented_mask[25:507, 55:125] = 1
+    fragmented, fragmented_detail = _terminal_edges(fragmented_rgb, fragmented_mask, [0., 1.], 1, np.eye(3))
+    assert fragmented, fragmented_detail
+    assert all(abs(np.mean(row['rawEnds'], axis=0)[1] - 507) < 3 for row in fragmented), fragmented
+    assert any(len(row['sourceSegmentIndices']) > 1 for row in fragmented_detail['sideSupportGroups'])
+    assert all(row['visibleLengthRawPx'] <= row['envelopeLengthRawPx'] for row in fragmented_detail['sideSupportGroups'])
+    sparse_rgb = fragmented_rgb.copy(); sparse_rgb[110:450] = 135
+    sparse, _ = _terminal_edges(sparse_rgb, fragmented_mask, [0., 1.], 1, np.eye(3))
+    assert not sparse, 'Long unseen gaps supplied the required observed side support'
+
     split_rgb = np.full((640, 200, 3), 135, np.uint8)
     split_rgb[25:560, 50:150] = [235, 205, 15]
     split_rgb[560:567, 50:150] = [75, 75, 75]
@@ -312,7 +333,49 @@ def main():
         pass
     else:
         raise AssertionError('Foot outside the saved plane was accepted')
-    print('PASS: crop/C2W, RGB contour refinement, fence plane identity, stale-anchor circle signs, noisy-line gauge, face width, split endcap/gaps, occlusion, floor sensitivity, truth exclusion, JSON/metric contract')
+
+    # Integration persists one native plane for inference and the viewer,
+    # preserving the floor model node even when it has a nonidentity transform.
+    # An absent metric scale never prevents native physical-edge geometry.
+    with tempfile.TemporaryDirectory(prefix='physical-clearance-bridge-') as directory:
+        root = Path(directory)
+        floor = trimesh.Scene()
+        vertices = np.array([[-1., -1., .2], [1., -1., .2], [1., 1., .2], [-1., 1., .2]])
+        transform = np.eye(4); transform[:3, 3] = [.3, .4, .1]
+        floor.add_geometry(trimesh.Trimesh(vertices=vertices, faces=[[0, 1, 2], [0, 2, 3]], process=False),
+                           node_name='saved-floor-node', geom_name='saved-floor-geometry', transform=transform)
+        floor_path = root / 'floor-fitted.glb'
+        floor_path.write_bytes(floor.export(file_type='glb'))
+        old_floor = {'normal': [0., 0., 1.], 'offset': -.3}
+        ground = {'status': 'available', 'normal': normal.tolist(), 'offset': 0.,
+                  'supportPoints': 24, 'residualP95Native': .002, 'sourcePhotos': [1, 2], 'method': 'synthetic source support'}
+        physical = {'ground': ground, 'objects': [grounded, {'id': 'post-box-2', **metrology._unavailable('one source view')}],
+                    'coordinateSystem': 'MapAnything native'}
+        synthetic_geometry = {'floor': old_floor, 'anchor': {'mPerNative': None}}
+        with patch.object(metrology, '_load', return_value=(synthetic_geometry, {}, {}, {}, [], [])), \
+             patch.object(metrology, 'source_physical_clearances', return_value=physical), \
+             patch.object(metrology, '_overlays', return_value=[]):
+            metrology.apply_source_clearances(root, [root / f'source-{i}.jpg' for i in range(4)])
+        saved = json.loads((root / 'geometry.json').read_text())
+        assert saved['floor']['normal'] == ground['normal'] and saved['floor']['offset'] == ground['offset']
+        assert saved['physicalClearances'] == json.loads((root / 'physical-clearances.json').read_text())
+        assert saved['physicalClearances']['objects'][1]['heightNative'] is None, 'Single-view evidence became a physical distance'
+        loaded = trimesh.load(floor_path, force='scene', process=False)
+        assert loaded.graph.nodes_geometry == ['saved-floor-node'], 'Floor node identity changed after objects.json was built'
+        matrix, name = loaded.graph['saved-floor-node']
+        actual = trimesh.transform_points(loaded.geometry[name].vertices, matrix)
+        native = trimesh.transform_points(vertices, transform)
+        expected = native - (native @ normal)[:, None] * normal
+        assert np.allclose(actual, expected, atol=1e-6) and np.max(abs(actual @ normal)) < 1e-6
+        before = floor_path.read_bytes()
+        unsupported = {'ground': {'status': 'unsupported', 'normal': None, 'offset': None},
+                       'objects': [{'id': 'post-box-1', **metrology._unavailable('no source edge')}]}
+        with patch.object(metrology, '_load', return_value=(saved, {}, {}, {}, [], [])), \
+             patch.object(metrology, 'source_physical_clearances', return_value=unsupported), \
+             patch.object(metrology, '_overlays', return_value=[]):
+            metrology.apply_source_clearances(root, [root / f'source-{i}.jpg' for i in range(4)])
+        assert floor_path.read_bytes() == before, 'Unsupported ground changed the display plane'
+    print('PASS: crop/C2W, RGB contour refinement, fence plane identity, stale-anchor circle signs, noisy-line gauge, fragmented sides, split endcap/gaps, occlusion, floor sensitivity, source-ground bridge, truth exclusion, JSON/metric contract')
 
 
 if __name__ == '__main__':

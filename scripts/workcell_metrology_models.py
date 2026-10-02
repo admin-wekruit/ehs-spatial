@@ -11,6 +11,33 @@ import trimesh
 DIMENSIONS = ('wholeComponentHeightM', 'mainBodyDiameterM', 'redActuatorDiameterM')
 
 
+
+def reference_meshes(shape):
+    """Construct the saved perspective-fit shape in its original native world."""
+    transform = np.eye(4); transform[:3, :3] = np.c_[shape['u'], shape['v'], shape['axis']]; transform[:3, 3] = np.asarray(shape['base'])
+    scene = trimesh.Scene()
+    gray_top = shape['grayHeight']; yellow_top = gray_top + shape['yellowHeight']
+    profiles = {
+        'gray-housing': [[0., 0.], [1., 0.], [1., gray_top], [0., gray_top]],
+        'yellow-body': [[0., gray_top], [shape['yellowRadius'], gray_top],
+                        [shape['yellowRadius'] * shape['yellowTopRadiusFraction'], yellow_top], [0., yellow_top]],
+        'red-actuator': [[0., yellow_top], [shape['redRadius'], yellow_top],
+                         [shape['redRadius'], shape['height']], [0., shape['height']]],
+    }
+    colors = {'gray-housing': [110, 117, 123, 255], 'yellow-body': [238, 194, 43, 255],
+              'red-actuator': [168, 43, 42, 255]}
+    for name, profile in profiles.items():
+        # ponytail: 64 radial segments preserve exact cardinal diameters;
+        # this is a diagnostic surface, not manufactured CAD tessellation.
+        mesh = trimesh.creation.revolve(profile, sections=64)
+        if name == 'gray-housing':
+            mesh.apply_scale([shape['grayWidth'] / 2, shape['grayDepth'] / 2, 1.])
+        mesh.apply_transform(transform)
+        mesh.visual.face_colors = colors[name]
+        scene.add_geometry(mesh, node_name=name, geom_name=name)
+    return {node: scene.geometry[scene.graph[node][1]] for node in scene.graph.nodes_geometry}
+
+
 def export_reference_candidate(result, out):
     """Write a native-world GLB plus explicit conditional/unsupported metadata.
 
@@ -73,26 +100,8 @@ def export_reference_candidate(result, out):
             manifest.update(metricScaleMPerNative=scale, previewOnly=False, measurementStatus='conditional_fit')
         elif result.get('mPerNative') is not None:
             raise ValueError('Unsupported fit cannot carry a measurement scale')
-        transform = np.eye(4); transform[:3, :3] = basis; transform[:3, 3] = vectors['base']
         scene = trimesh.Scene()
-        gray_top = shape['grayHeight']; yellow_top = gray_top + shape['yellowHeight']
-        profiles = {
-            'gray-housing': [[0., 0.], [1., 0.], [1., gray_top], [0., gray_top]],
-            'yellow-body': [[0., gray_top], [shape['yellowRadius'], gray_top],
-                            [shape['yellowRadius'] * shape['yellowTopRadiusFraction'], yellow_top], [0., yellow_top]],
-            'red-actuator': [[0., yellow_top], [shape['redRadius'], yellow_top],
-                             [shape['redRadius'], shape['height']], [0., shape['height']]],
-        }
-        colors = {'gray-housing': [110, 117, 123, 255], 'yellow-body': [238, 194, 43, 255],
-                  'red-actuator': [168, 43, 42, 255]}
-        for name, profile in profiles.items():
-            # ponytail: 64 radial segments preserve exact cardinal diameters;
-            # this is a diagnostic surface, not manufactured CAD tessellation.
-            mesh = trimesh.creation.revolve(profile, sections=64)
-            if name == 'gray-housing':
-                mesh.apply_scale([shape['grayWidth'] / 2, shape['grayDepth'] / 2, 1.])
-            mesh.apply_transform(transform)
-            mesh.visual.face_colors = colors[name]
+        for name, mesh in reference_meshes(shape).items():
             scene.add_geometry(mesh, node_name=name, geom_name=name)
             manifest['parts'].append({'id': name, 'geometryStatus': 'shape_hypothesis'})
         model = scene.export(file_type='glb')

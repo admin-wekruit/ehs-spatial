@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import shutil
 import tarfile
 import tempfile
 import time
@@ -12,7 +13,7 @@ import time
 import modal
 
 if not modal.is_local():
-    sys.path.insert(0, "/repo")
+    sys.path[:0] = ["/repo", "/repo/scripts"]
 from modal_apps.fast_report_app import build_image
 from fast_report.sam3d import TORCH_HUB
 
@@ -44,9 +45,24 @@ def _finish(proc, label, timeout=1200):
     return stdout
 
 
+
+def _archive_result(root, started, error=None):
+    if error is not None:
+        (root / "failure.json").write_text(json.dumps(error))
+    wanted = [*root.glob("frame_*.json.gz"), *root.glob("photo-*.png"), *root.glob("*.json"),
+              *root.glob("*-input.npz"), *root.glob("*.glb"), *root.glob("geometry-*.jpg"),
+              *root.glob("geometry-*.png"), *root.glob("raw-image-features-*.jpg"), *root.glob("structural-*.jpg")]
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w:gz") as archive:
+        for path in wanted:
+            if path.name.startswith("source-") or path.name == "words.json":
+                continue
+            archive.add(path, arcname=path.name)
+    return {"archive": payload.getvalue(), "containerWallSeconds": time.monotonic() - started, "error": error}
+
 @app.function(image=image, gpu="A100-80GB:2", cpu=16, memory=80 * 1024,
               volumes=volumes, timeout=1800, retries=0, min_containers=0)
-def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height_m: float):
+def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height_m: float, reference: dict | None = None):
     import numpy as np
     from PIL import Image
     import torch
@@ -60,6 +76,7 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
         for i, payload in enumerate(images, 1):
             (root / f"source-{i}.jpg").write_bytes(payload)
         (root / "words.json").write_text(json.dumps(words))
+        (root / "reference-input.json").write_text(json.dumps(reference))
         sources = [str(root / f"source-{i}.jpg") for i in range(1, 5)]
         map_proc = _start(["/opt/mapanything/bin/python", "/repo/scripts/workcell_map_worker.py", str(root), *sources], 0, hf="/v/map/huggingface")
         sam_proc = _start(["python", "/repo/scripts/workcell_sam_worker.py", str(root)], 1)
@@ -90,8 +107,8 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
             cart = json.loads((root / "cart-masks.json").read_text())
             geometry_proc = _start([
                 "python", "-c",
-                "import sys; from pathlib import Path; from scripts.workcell_photo_geometry import build; "
-                "build(Path(sys.argv[1]), [Path(p) for p in sys.argv[2:6]], float(sys.argv[6]), float(sys.argv[7]))",
+                "import sys,json; from pathlib import Path; from scripts.workcell_photo_geometry import build; "
+                "build(Path(sys.argv[1]), [Path(p) for p in sys.argv[2:6]], float(sys.argv[6]), float(sys.argv[7]), reference=json.loads((Path(sys.argv[1])/'reference-input.json').read_text()))",
                 str(root), *sources, str(diameter_m), str(height_m)], "")
             while not (root / "floor-reference.json").exists():
                 if geometry_proc.poll() is not None:
@@ -145,7 +162,39 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
             from scripts.workcell_photo_objects import build as build_objects
             from scripts.workcell_photo_report import build as build_report
             report._posts(root, seg)
-            build_objects(root, [Path(path) for path in sources])
+            catalog = build_objects(root, [Path(path) for path in sources])
+            from scripts.workcell_photo_metrology import apply_source_clearances
+            from scripts.workcell_guard_silhouette import run as fit_shared_guards
+            from scripts.workcell_guard_experiment_report import structural_models
+            from concurrent.futures import ThreadPoolExecutor
+            # Independent native-world fits share fixed cameras; neither consumes evaluation targets.
+            (root / 'a1').mkdir()
+            for side in ('left', 'right'):
+                shutil.copy2(root/f'guard-{side}.glb', root/'a1'/f'guard-{side}.glb')
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                physical = pool.submit(apply_source_clearances, root, [Path(path) for path in sources])
+                structural = pool.submit(fit_shared_guards, root, root/'a4', [Path(path) for path in sources])
+                physical.result(); structural.result()
+            _, structural_result = structural_models(root/'a4', root, catalog)
+            initializers = {}
+            for side in ('left', 'right'):
+                name = f'guard-{side}-initializer.glb'
+                shutil.copy2(root/'a1'/f'guard-{side}.glb', root/name)
+                initializers[side] = name
+            partition = json.loads((root/'guard-partition.json').read_text())
+            if 'initializerProvenance' in partition:
+                partition['initializerProvenance']['models'] = initializers
+                (root/'guard-partition.json').write_text(json.dumps(partition, indent=2))
+            for i, name in enumerate(structural_result.get('overlays', [])):
+                exported = 'structural-' + Path(name).name
+                shutil.copy2(root/'a4'/name, root/exported)
+                structural_result['overlays'][i] = exported
+            structural_result['initializerModels'] = initializers
+            (root/'structural-result.json').write_text(json.dumps(structural_result, indent=2))
+            (root/'objects.json').write_text(json.dumps(catalog, ensure_ascii=False, indent=2))
+            if reference:
+                from scripts.workcell_photo_calibration import apply_measurements
+                apply_measurements(root, {'schemaVersion': 1, 'reference': reference})
             build_report(root)
             complete_end = time.monotonic()
             (root / "models-timing.json").write_text(json.dumps({"models": timing, "containerWallSeconds": model_end - started}))
@@ -154,25 +203,22 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
                 "cartMaskSeconds": sam_end-owl_end, "prepareSeconds": prepare_end-sam_end,
                 "modelSeconds": model_end-prepare_end,
                 "metricTailSeconds": complete_end-model_end}))
-            wanted = [*root.glob("frame_*.json.gz"), *root.glob("photo-*.png"), *root.glob("*.json"),
-                      *root.glob("*-input.npz"), *root.glob("*.glb"), *root.glob("geometry-*.jpg"),
-                      *root.glob("geometry-*.png")]
-            payload = io.BytesIO()
-            with tarfile.open(fileobj=payload, mode="w:gz") as archive:
-                for path in wanted:
-                    if path.name.startswith("source-") or path.name == "words.json":
-                        continue
-                    archive.add(path, arcname=path.name)
-            return {"archive": payload.getvalue(), "containerWallSeconds": time.monotonic() - started}
+            return _archive_result(root, started)
+        except Exception as error:
+            return _archive_result(root, started, {'type': type(error).__name__, 'message': str(error)})
         finally:
             for proc in (map_proc, sam_proc, geometry_proc, *(job[1] for job in active)):
                 if proc is not None and proc.poll() is None:
                     proc.terminate()
-                    proc.wait(timeout=10)
+                    try:
+                        proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
 
 
 @app.local_entrypoint()
-def main(images: str, out: str, words: str, button_diameter_m: float = .2, button_height_m: float = .2):
+def main(images: str, out: str, words: str, button_diameter_m: float = .2, button_height_m: float = .2, reference: str = ""):
     started = time.monotonic()
     paths = [Path(p) for p in images.split(",")]
     if len(paths) != 4 or any(not p.is_file() for p in paths):
@@ -182,7 +228,11 @@ def main(images: str, out: str, words: str, button_diameter_m: float = .2, butto
     import math
     if not all(math.isfinite(v) and v > 0 for v in (button_diameter_m, button_height_m)):
         raise ValueError("Button dimensions must be finite and positive")
-    result = reconstruct.remote([p.read_bytes() for p in paths], words.split(","), button_diameter_m, button_height_m)
+    reference_data = json.loads(Path(reference).read_text()) if reference else None
+    if reference_data is not None:
+        from scripts.workcell_photo_calibration import validate_measurements
+        reference_data = validate_measurements({'schemaVersion': 1, 'reference': reference_data})['reference']
+    result = reconstruct.remote([p.read_bytes() for p in paths], words.split(","), button_diameter_m, button_height_m, reference_data)
     with tarfile.open(fileobj=io.BytesIO(result["archive"]), mode="r:gz") as archive:
         for member in archive.getmembers():
             if Path(member.name).name != member.name:
@@ -190,4 +240,6 @@ def main(images: str, out: str, words: str, button_diameter_m: float = .2, butto
         archive.extractall(destination, filter="data")
     (destination / "modal-timing.json").write_text(json.dumps({"wallSecondsIncludingColdStart": time.monotonic() - started,
                                                              "containerWallSeconds": result["containerWallSeconds"]}))
+    if result.get('error'):
+        raise RuntimeError(f"Cloud stage failed; completed artifacts retained: {result['error']}")
     print(json.dumps({"status": "ok", "wallSecondsIncludingColdStart": time.monotonic() - started}))

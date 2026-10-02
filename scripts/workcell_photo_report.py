@@ -21,46 +21,31 @@ LABELS = {'robot': '工业机器人', 'cart': '载料运输车', 'floor': '地�
 
 
 def _ground_distance(item, geometry, transform):
-    """Distance of saved visible support to the floor, not full-object clearance."""
+    """Use the multiview physical edge; visible point-cloud extrema are not endpoints."""
     result = {'byPhoto': {}, 'rangeNative': None, 'sourcePhotos': [], 'feature': None,
-              'source': '照片可见点包围下界到拟合地面的垂直距离；遮挡下的完整物体最低点仍未知。'}
-    floor = geometry.get('floor') or {}
-    normal = np.asarray(floor.get('normal'), float)
-    if normal.shape != (3,) or not np.isfinite(normal).all() or np.linalg.norm(normal) < 1e-9 or not np.isfinite(floor.get('offset', np.nan)):
-        result['reason'] = '缺少有效地面参考。'; return result
-    length = np.linalg.norm(normal); normal = normal / length; offset = floor['offset'] / length
-    observations = [o for o in item['observations'] if o.get('observedMeasurements', {}).get('status') == 'available']
-    if len({o['photo'] for o in observations}) < 2:
-        result['reason'] = '不足两个来源视角；离地距离保留未知。'; return result
-    for observation in observations:
-        corners = np.asarray((observation['observedMeasurements'].get('basis') or {}).get('corners_native'), float)
-        if corners.shape != (8, 3) or not np.isfinite(corners).all(): continue
-        heights = corners @ normal + offset; height = float(heights.min())
-        point = corners[np.isclose(heights, height, rtol=0, atol=1e-6)].mean(0)
-        point, foot = trimesh.transform_points([point, point - height * normal], transform).tolist()
-        result['byPhoto'][str(observation['photo'])] = {
-            'valueNative': height if height >= 0 else None, 'signedHeightNative': height,
-            'pointNative': point, 'footNative': foot,
-            'reason': None if height >= 0 else '可见点下界穿过拟合地面；当前视角不能给出有效间隙。'}
-    result['sourcePhotos'] = sorted(int(p) for p in result['byPhoto'])
-    if len(result['sourcePhotos']) < 2:
-        result.update(byPhoto={}, sourcePhotos=[], reason='不足两个有效来源视角；离地距离保留未知。')
+              'source': '多视角实体底边到同一拟合地面的垂直距离。'}
+    physical = geometry.get('physicalClearances', {})
+    row = next((r for r in physical.get('objects', []) if r['id'] == item['id']), None)
+    if row is None or row.get('status') != 'conditional':
+        result['reason'] = (row or {}).get('reason', '没有跨照片确认的实体底边；离地距离未知。')
         return result
-    values = [v['valueNative'] for v in result['byPhoto'].values() if v['valueNative'] is not None]
-    if values: result['rangeNative'] = [min(values), max(values)]
-    # A recognized lower rail has its own multi-view feature and endpoints.
-    feature = next((c for c in geometry.get('clearances', []) if item['id'].startswith('fence-') and c['id'] == f"fence-plane-{item['id'][6:]}-lower-rail"), None)
-    if feature and len(set(feature['sourcePhotos'])) >= 2:
-        endpoints = np.asarray([feature.get('pointNative'), feature.get('footNative')], float)
-        height = feature.get('heightNative')
-        if not isinstance(height, (float, int)) or not np.isfinite(height) or height < 0 or endpoints.shape != (2, 3) or not np.isfinite(endpoints).all():
-            result['feature'] = {'valueNative': None, 'pointNative': [], 'footNative': [],
-                                 'reason': '横杆高度或地面投影无效；不能给出有效离地间距。'}
-            return result
-        point, foot = trimesh.transform_points([feature['pointNative'], feature['footNative']], transform).tolist()
-        result['feature'] = {'valueNative': feature['heightNative'], 'pointNative': point, 'footNative': foot,
-                             'sourcePhotos': feature['sourcePhotos'], 'rangeNative': feature['observedViewHeightRangeNative'],
-                             'source': '多视角识别的围栏下横杆到拟合地面；不保证它是整个围栏的最低横杆。'}
+    endpoints = np.asarray([row.get('pointNative'), row.get('footNative')], float)
+    height = row.get('heightNative'); photos = sorted(set(row.get('sourcePhotos', [])))
+    if (not isinstance(height, (float, int)) or not np.isfinite(height) or height < 0
+            or len(photos) < 2 or endpoints.shape != (2, 3) or not np.isfinite(endpoints).all()):
+        result['reason'] = '实体底边或地面投影证据无效；离地距离未知。'
+        return result
+    normal = np.asarray(geometry['floor']['normal'], float)
+    length = np.linalg.norm(normal); normal /= length; offset = geometry['floor']['offset']/length
+    if (not np.isclose(endpoints[1] @ normal + offset, 0, atol=1e-7)
+            or not np.allclose(endpoints[0]-endpoints[1], height*normal, atol=1e-7)):
+        raise ValueError('Physical clearance and displayed floor refer to different planes')
+    point, foot = trimesh.transform_points(endpoints, transform).tolist()
+    result.update(sourcePhotos=photos, rangeNative=row.get('rangeNative'))
+    result['feature'] = {'valueNative': height, 'pointNative': point, 'footNative': foot,
+                         'sourcePhotos': photos, 'rangeNative': row.get('rangeNative'),
+                         'source': result['source'], 'status': row['status'],
+                         'uncertainty': row.get('uncertainty')}
     return result
 
 
@@ -75,16 +60,17 @@ def build(root):
     frame_id = 'workcell-floor'
     transform = trimesh.geometry.align_vectors(geometry['floor']['normal'], [0, 0, 1])
     transform[2, 3] = geometry['floor']['offset'] / np.linalg.norm(geometry['floor']['normal'])
-    scale = geometry['anchor']['mPerNative']
+    from scripts.workcell_photo_calibration import accepted_scale
+    scale = accepted_scale(geometry)
     doc['coordinateFrames'] = [{'id': frame_id, 'convention': 'opencv',
-        'scale': {'status': 'model_estimated', 'nativeToMeters': scale,
+        'scale': {'status': 'model_estimated' if scale is not None else 'uncalibrated', 'nativeToMeters': scale,
                   'sourceRefs': [{'kind': 'user_dimension_hypothesis', 'heightM': geometry['anchor']['assumedHeightM'],
                                   'widthM': geometry['anchor']['assumedWidthM']}]},
         'ground': {'normal': [0, 0, 1], 'offset': 0, 'plane': [0, 0, 1, 0]},
         'source': 'rigid transform of current MapAnything world; original projection preserved'}]
     if geometry.get('calibration'):
         doc['coordinateFrames'][0]['scale']['sourceRefs'] = [{'kind': 'user_measured_reference',
-            'primaryAxis': 'wholeComponentHeight', **geometry['calibration']['reference']}]
+            'primaryAxis': 'joint3DReference', **geometry['calibration']['reference']}]
     urls, scene_cache = {}, {}
     def asset(path, aid, kind, **metadata):
         path = Path(path)

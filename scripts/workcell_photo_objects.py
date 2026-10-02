@@ -33,23 +33,24 @@ def button_basis(geometry):
 def button_meshes(geometry):
     """Shared component construction; known part sizes never alter observed bounds."""
     anchor = geometry['anchor']
+    fit = anchor.get('referenceFit', {})
+    if fit.get('fittedNuisanceParameters') is not None:
+        if not fit.get('camerasFixed'):
+            raise ValueError('Cannot place a refitted-camera button into the original scene')
+        from scripts.workcell_metrology_models import reference_meshes
+        names = {'gray-housing': 'gray-base', 'yellow-body': 'yellow-body', 'red-actuator': 'red-cap'}
+        return {'emergency-button-'+names[name]: mesh for name, mesh in reference_meshes(fit['fittedNuisanceParameters']).items()}
     center = np.asarray(anchor['centerNative'], float)
     basis = button_basis(geometry)
     width, height = float(anchor['nativeWidth']), float(anchor['nativeHeight'])
     if not np.isfinite([width, height]).all() or min(width, height) <= 0:
         raise ValueError('Invalid button envelope')
-    features = geometry.get('calibration', {}).get('reference', {}).get('features')
-    if features:
-        scale = anchor['mPerNative']
-        width, height = features['mainBodyDiameterM']/scale, features['wholeComponentHeightM']/scale
     meshes = {}
     for name, color, fraction, y, radius in [('gray-base', [105,110,115,255], .32, -.34, None),
                                             ('yellow-body', [245,196,23,255], .43, .035, None),
                                             ('red-cap', [207,32,33,255], .25, .375, .43)]:
         # ponytail: retain the existing three-part height partition; measured part heights would replace these fractions.
-        if features and name != 'gray-base':
-            radius = (features['redActuatorDiameterM']/scale if name == 'red-cap' else width)/2
-        elif radius is not None:
+        if radius is not None:
             radius *= width
         spec = {'kind':'box', 'dimensions':[width*(.8 if name=='gray-base' else 1), height*fraction, width*.45]} if radius is None else {
             'kind':'cylinder', 'radius':radius, 'height':height*fraction, 'segments':32}

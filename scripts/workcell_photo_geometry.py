@@ -175,7 +175,7 @@ def _beam(a, b, width, depth, up, normal):
     return box
 
 
-def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2):
+def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2, reference=None):
     start = time.monotonic()
     root = Path(root)
     if not np.isfinite([diameter_m, height_m]).all() or min(diameter_m, height_m) <= 0:
@@ -242,8 +242,10 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2):
     anchor = {'assumedHeightM': float(height_m), 'assumedWidthM': float(diameter_m),
               'scope': 'whole component: red cap, yellow body, gray lower housing; mounting bracket excluded',
               'status': 'unavailable', 'nativeHeight': None, 'nativeWidth': None, 'mPerNative': None,
+              'referenceFit': {'status': 'unsupported', 'mPerNative': None,
+                               'reason': 'Complete named three-dimension reference and source support are required'},
               'views': [], 'assumptions': ['Reference identity and supplied external dimensions require physical confirmation.',
-                'Component is upright; curved cap and housing are represented by a shared vertical front-plane envelope.',
+                'Shared front-plane envelopes are used for association only; axial metric scale requires a validated 3D reference fit.',
                 'Gray housing bottom is an automatic luminance edge; multiview depth and silhouette errors remain.']}
     if len(selected) >= 2:
         ap = np.concatenate([c['support'] for c in selected])
@@ -265,14 +267,41 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2):
                                    {'nativeHeight': nh, 'nativeWidth': nw})
         if dims:
             nh, nw = np.median(dims, axis=0)
-            scale = height_m / nh
-            anchor.update(nativeHeight=float(nh), nativeWidth=float(nw), mPerNative=float(scale),
+            anchor.update(nativeHeight=float(nh), nativeWidth=float(nw),
                           centerNative=np.median(ap, axis=0).tolist(), normal=an.tolist(), offset=ad,
-                          status='provisional whole-component dimension hypothesis',
-                          relativeWidthResidual=float((nw * scale - diameter_m) / diameter_m),
+                          status='native association only; axial reference scale unavailable',
+                          relativeWidthResidual=None,
                           relativeHeightSpread=float(np.ptp(np.asarray(dims)[:, 0]) / nh),
                           relativeWidthSpread=float(np.ptp(np.asarray(dims)[:, 1]) / nw),
                           frontPlaneResidualP95Native=float(np.percentile(abs(ap @ an + ad), 95)))
+            # This envelope remains useful for object association, but curved
+            # silhouettes do not measure the supplied axial height.
+            anchor['planarEnvelope'] = {'nativeHeight': float(nh), 'nativeWidth': float(nw),
+                                       'scope': 'Association extent only; never a metric reference dimension'}
+            anchor['nativeHeightScope'] = 'planar association extent, not axial height'
+            if reference is not None:
+                from workcell_button_bundle import fit_reference_shape, observe_reference
+
+                compact = {i: {**frame, 'rawShape': None} for i, frame in enumerate(frames, 1)}
+                observations = []
+                try:
+                    for candidate in selected:
+                        photo = candidate['photo']
+                        rgb = cv2.cvtColor(cv2.imread(str(sources[photo - 1])), cv2.COLOR_BGR2RGB)
+                        compact[photo]['rawShape'] = list(rgb.shape[:2])
+                        observations.append(observe_reference({'rgb': rgb}, candidate))
+                        del rgb
+                    fit = fit_reference_shape(compact, observations, reference, up)
+                except (ValueError, KeyError, np.linalg.LinAlgError, FloatingPointError) as error:
+                    fit = {'status': 'unsupported', 'mPerNative': None, 'candidateMPerNative': None,
+                           'reason': f'{type(error).__name__}: {error}', 'observations': observations}
+                anchor['referenceFit'] = fit
+                if fit['status'] == 'available':
+                    shape = fit['fittedNuisanceParameters']
+                    anchor.update(mPerNative=fit['mPerNative'], nativeHeight=shape['height'],
+                                  nativeWidth=2 * shape['yellowRadius'],
+                                  nativeHeightScope='axial height of fitted three-dimension reference',
+                                  status='conditional three-dimension 3D reference fit')
     # Fit separate supported fence planes; all later image lines are ray/plane
     # intersections, so lower rails and the real open space remain geometric.
     cloud = np.concatenate(fence_points)

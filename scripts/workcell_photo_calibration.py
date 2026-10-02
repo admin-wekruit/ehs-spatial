@@ -1,5 +1,6 @@
 """Measured button reference and independent evaluation of frozen photo geometry."""
 import copy
+import hashlib
 import json
 from pathlib import Path
 
@@ -61,6 +62,18 @@ def resolve_dimensions(measurements, diameter_m=None, height_m=None):
     return _positive(.2 if diameter_m is None else diameter_m, 'button width'), _positive(.2 if height_m is None else height_m, 'button height')
 
 
+def accepted_scale(geometry):
+    """One metric export contract for every report caller, including cached runs."""
+    anchor = geometry['anchor']; fit = anchor.get('referenceFit', {})
+    scale = anchor.get('mPerNative')
+    if scale is None and fit.get('status') != 'available':
+        return None
+    scale = _positive(scale, 'accepted scene scale')
+    if fit.get('status') != 'available' or not fit.get('camerasFixed') or fit.get('mPerNative') != scale:
+        raise ValueError('Scene scale must equal an accepted fixed-camera 3D reference fit')
+    return scale
+
+
 def _projection_diagnostics(root, anchor, meshes):
     from scripts.workcell_photo_oneshot import _array, _frame
     points = np.concatenate([mesh.vertices for mesh in meshes.values()])
@@ -89,38 +102,49 @@ def _projection_diagnostics(root, anchor, meshes):
 
 
 def apply_measurements(root, measurements):
-    """Update scale metadata and only the known reference mesh; preserve all observations."""
+    """Attach supplied dimensions; only an accepted 3D reference fit authorizes scale."""
     from scripts.workcell_photo_objects import button_meshes
     root = Path(root)
     measurements = validate_measurements(measurements)
     geometry = json.loads((root/'geometry.json').read_text())
     anchor = geometry['anchor']; reference = measurements['reference']; features = reference['features']
-    height = _positive(anchor['nativeHeight'], 'saved native anchor height')
-    width = _positive(anchor['nativeWidth'], 'saved native envelope width')
-    scale = features['wholeComponentHeightM'] / height
+    fit = anchor.get('referenceFit', {})
+    if fit.get('knownDimensions') is not None and fit['knownDimensions'] != features:
+        raise ValueError('Reference dimensions changed: rerun the 3D fit before applying measurements')
+    scale = _positive(fit.get('mPerNative'), 'accepted 3D reference scale') if fit.get('status') == 'available' else None
+    if fit.get('status') == 'available' and not fit.get('camerasFixed'):
+        raise ValueError('Main scene calibration requires the unchanged reconstruction cameras')
+    if fit.get('fittedNuisanceParameters') is not None:
+        from scripts.workcell_photo_oneshot import _array, _frame
+        actual = []
+        for photo in range(1, 5):
+            raw = _frame(root, photo)
+            actual.append({'photo': photo, 'K': _array(raw['intrinsics']).tolist(),
+                           'pose': _array(raw['camera_poses']).tolist(),
+                           'A': np.asarray(raw['input_mask_transform']['input_to_canonical_pixel_centres']).tolist()})
+        signature = hashlib.sha256(json.dumps(actual, sort_keys=True).encode()).hexdigest()
+        if not fit.get('camerasFixed') or fit.get('cameraProvenance', {}).get('framesSha256') != signature:
+            raise ValueError('Button candidate and current scene cameras disagree; rerun calibration')
+    height, width = anchor['nativeHeight'], anchor['nativeWidth']
     geometry['calibration'] = {
-        'schemaVersion': 1, 'primaryAxis': 'wholeComponentHeight', 'reference': reference,
-        'nativeToMeters': scale, 'groundTruthUsedForCalibration': False,
-        'observedEnvelope': {'heightNative': height, 'widthNative': width, 'heightM': height*scale, 'widthM': width*scale},
-        'diagnostics': {'envelopeMinusMainDiameterM': width*scale-features['mainBodyDiameterM'],
-                        'relativeEnvelopeMinusMainDiameter': width*scale/features['mainBodyDiameterM']-1,
-                        'widthComparisonIsSameFeature': False,
-                        'note': 'Observed whole-envelope width and known main-body diameter are different features; their difference is diagnostic, not diameter measurement error.'},
-        'renderingAssumptions': ['Part heights use gray/yellow/red fractions 0.32/0.43/0.25 of the supplied whole height.',
-                                 'Gray-base width and depth use 0.8 and 0.45 of the main-body diameter.',
-                                 'Reference center and orientation are the saved photo-derived values; no pixel refit.']}
-    anchor.update(mPerNative=scale, assumedHeightM=features['wholeComponentHeightM'], assumedWidthM=width*scale,
-                  scope=reference['scope'], status='user measured height; photo geometry remains conditional',
-                  relativeWidthResidual=None,
-                  assumptions=['Supplied whole height is mapped to the saved red/yellow/gray envelope; scope status is recorded in calibration.reference.',
-                               'Source camera, depth, floor, center and orientation remain photo-derived and unrefitted.',
-                               'Observed whole-envelope width is distinct from main-body diameter; inspect the retained projection residuals.'])
+        'schemaVersion': 1, 'primaryAxis': 'joint3DReference', 'reference': reference,
+        'status': fit.get('status', 'unsupported'), 'nativeToMeters': scale,
+        'groundTruthUsedForCalibration': False,
+        'observedEnvelope': {'heightNative': height, 'widthNative': width,
+                             'heightM': height*scale if scale is not None else None,
+                             'widthM': width*scale if scale is not None else None},
+        'diagnostics': {'referenceFit': fit, 'envelopeUsedForCalibration': False},
+        'renderingAssumptions': [
+            'Three supplied dimensions constrain one perspective-fit 3D button; component heights and gray housing shape are fitted nuisance parameters.',
+            'Saved scene cameras stay fixed. Unsupported candidates are visual hypotheses and do not establish a metric scale.']}
+    anchor.update(mPerNative=scale, assumedHeightM=features['wholeComponentHeightM'],
+                  assumedWidthM=features['mainBodyDiameterM'], scope=reference['scope'],
+                  status='three-dimension 3D reference fit' if scale is not None else '3D reference scale unsupported',
+                  relativeWidthResidual=None)
     meshes = button_meshes(geometry)
     scene = trimesh.load(root/'object-extras.glb', force='scene')
     for node, mesh in meshes.items():
-        _, geometry_id = scene.graph.get(node)
-        # Existing source nodes have identity transforms; preserve their graph and every unrelated mesh.
-        matrix, _ = scene.graph.get(node)
+        matrix, geometry_id = scene.graph.get(node)
         local = mesh.copy(); local.apply_transform(np.linalg.inv(matrix))
         scene.geometry[geometry_id] = local
     (root/'object-extras.glb').write_bytes(scene.export(file_type='glb'))
@@ -132,13 +156,12 @@ def apply_measurements(root, measurements):
                                    'observedEnvelope': geometry['calibration']['observedEnvelope'],
                                    'renderingAssumptions': geometry['calibration']['renderingAssumptions']}
     for name, field in (('height', 'wholeComponentHeightM'), ('width', 'mainBodyDiameterM'), ('redActuatorDiameter', 'redActuatorDiameterM')):
-        button['measurements'][name] = {'valueNative': features[field]/scale, 'valueM': features[field],
-                                       'status': 'user-supplied-reference', 'feature': field,
+        button['measurements'][name] = {'valueNative': features[field]/scale if scale is not None else None,
+                                       'valueM': features[field], 'status': 'user-supplied-reference', 'feature': field,
                                        'source': 'Supplied reference dimensions; not reconstructed observed bounds.'}
-    button['notes'] = geometry['calibration']['renderingAssumptions'] + ['Source observations and visible-envelope dimensions remain unchanged.']
-    (root/'objects.json').write_text(json.dumps(catalog, ensure_ascii=False, indent=2)+'\n')
-    (root/'geometry.json').write_text(json.dumps(geometry, ensure_ascii=False, indent=2)+'\n')
-    (root/'measurements.json').write_text(json.dumps(measurements, ensure_ascii=False, indent=2)+'\n')
+    button['notes'] = geometry['calibration']['renderingAssumptions']
+    for name, value in [('objects.json', catalog), ('geometry.json', geometry), ('measurements.json', measurements)]:
+        (root/name).write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False)+'\n')
     return geometry
 
 
@@ -147,9 +170,9 @@ def _summary(by_photo, scale, eligible=True):
     enough = eligible and len(by_photo) >= 2 and len(values) >= 2
     median = float(np.median(values)) if enough else None
     bounds = [min(values), max(values)] if enough else None
-    return {'medianNative': median, 'medianM': median*scale if median is not None else None,
-            'rangeNative': bounds, 'rangeM': [v*scale for v in bounds] if bounds else None,
-            'byPhoto': {str(p): {'valueNative': v, 'valueM': v*scale if v is not None else None} for p, v in by_photo.items()},
+    return {'medianNative': median, 'medianM': median*scale if median is not None and scale is not None else None,
+            'rangeNative': bounds, 'rangeM': [v*scale for v in bounds] if bounds and scale is not None else None,
+            'byPhoto': {str(p): {'valueNative': v, 'valueM': v*scale if v is not None and scale is not None else None} for p, v in by_photo.items()},
             'sourcePhotos': sorted(int(p) for p in by_photo), 'method': 'median of valid saved per-photo visible support; at least two views'}
 
 
@@ -171,27 +194,22 @@ def measurement_evaluation(objects, geometry, measurements):
         item = next((o for o in objects if o['id'] == target['objectId']), None)
         if item is None:
             raise ValueError(f"Evaluation object missing: {target['objectId']}")
-        ground = item['groundDistance']; feature = ground.get('feature')
-        summary = next(e for e in estimates if e['objectId'] == item['id'])['lowerEdge']
-        if feature is not None:
-            value = feature.get('valueNative')
-            bounds = feature.get('rangeNative') if value is not None else None
-            photos = feature.get('sourcePhotos', [])
-            method, source = 'recognized lower rail feature', feature.get('source', feature.get('reason'))
-        else:
-            value, bounds, photos = summary['medianNative'], summary['rangeNative'], summary['sourcePhotos']
-            method, source = summary['method'], ground['source']
-        estimate = value*scale if value is not None else None
+        ground = item['groundDistance']; feature = ground.get('feature') or {}
+        value = feature.get('valueNative')
+        bounds = feature.get('rangeNative') if value is not None else None
+        photos = feature.get('sourcePhotos', [])
+        method, source = 'multiview physical lower edge', feature.get('source', feature.get('reason', ground.get('reason')))
+        estimate = value*scale if value is not None and scale is not None else None
         truth = target['groundTruthM']; error = estimate-truth if estimate is not None else None
-        by_photo = {p: {**v, 'valueM': v['valueNative']*scale if v['valueNative'] is not None else None,
-                           'signedHeightM': v['signedHeightNative']*scale} for p, v in ground['byPhoto'].items()}
+        by_photo = {p: {**v, 'valueM': v['valueNative']*scale if v['valueNative'] is not None and scale is not None else None}
+                    for p, v in ground['byPhoto'].items()}
         comparisons.append({'objectId': item['id'], 'label': item['label'], 'method': method,
             'estimateNative': value, 'estimateM': estimate, 'rangeNative': bounds,
-            'rangeM': [v*scale for v in bounds] if bounds else None, 'byPhoto': by_photo,
-            'byPhotoMethod': 'saved per-photo visible-support lower bounds; separate from any recognized rail feature',
+            'rangeM': [v*scale for v in bounds] if bounds and scale is not None else None, 'byPhoto': by_photo,
+            'byPhotoMethod': 'independently supported physical edge observations',
             'sourcePhotos': photos, 'groundTruthM': truth, 'signedErrorM': error,
             'absoluteErrorM': abs(error) if error is not None else None,
             'relativeError': error/truth if error is not None else None, 'source': source,
-            'target': target, 'limitation': 'Recognized visible feature versus supplied physical bottom; endpoint correspondence is not independently verified.'})
+            'target': target, 'limitation': 'Metric result requires accepted 3D reference scale and independently supported physical lower edge.'})
     return {'schemaVersion': 1, 'scaleMPerNative': scale, 'groundTruthUsedForCalibration': False,
             'comparisons': comparisons, 'objectEstimates': estimates}

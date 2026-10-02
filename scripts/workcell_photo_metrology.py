@@ -472,11 +472,11 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
     lines = [] if detected is None else detected.reshape(-1, 2, 2)
     rough_width = max(3., min(cv2.minAreaRect(pts.astype(np.float32))[1]))
     rough_across = np.array([predicted_down[1], -predicted_down[0]])
-    axis_lines, axis_ids, directions, lengths = [], [], [], []
+    side_fragments = []
     for index, line in enumerate(lines):
         vector = line[1] - line[0]
         length = np.linalg.norm(vector)
-        if length < rough_width * 4:
+        if length < 4:
             continue
         direction = vector / length
         if abs(direction @ predicted_down) < .94:
@@ -486,18 +486,53 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
                     _sample(yellow, samples - rough_across * max(2., rough_width * .06)))
         if adjacent.mean() < .5:
             continue
-        axis_lines.append((line + origin).tolist()); axis_ids.append(index); directions.append(direction); lengths.append(length)
+        side_fragments.append((index, line, length))
+    # Labels and reflections split LSD side edges. Sum the observed collinear
+    # intervals, never the envelope across missing pixels, for the same 4-width
+    # axis support requirement. Face width below still needs a local fragment.
+    groups = []
+    for index, line, length in sorted(side_fragments, key=lambda row: -row[2]):
+        matches = []
+        for group_index, group in enumerate(groups):
+            points = np.concatenate([row[1] for row in group] + [line])
+            vx, vy, x, y = cv2.fitLine(points, cv2.DIST_L2, 0, .01, .01).ravel()
+            residual = np.max(abs((points - [x, y]) @ np.array([-vy, vx])))
+            if residual <= 1.5:
+                matches.append((residual, group_index))
+        if matches:
+            groups[min(matches)[1]].append((index, line, length))
+        else:
+            groups.append([(index, line, length)])
+    axis_lines, axis_ids, directions, lengths, side_support, observed_lengths = [], [], [], [], [], []
+    for group in groups:
+        points = np.concatenate([row[1] for row in group])
+        vx, vy, x, y = cv2.fitLine(points, cv2.DIST_L2, 0, .01, .01).ravel()
+        axis = np.array([vx, vy])
+        intervals = _interval_union(sorted(row[1] @ axis) for row in group)
+        visible = sum(b - a for a, b in intervals)
+        observed_lengths.append(visible)
+        if visible < rough_width * 4:
+            continue
+        ident = min(row[0] for row in group)
+        side_support.append({'id': ident, 'sourceSegmentIndices': [row[0] for row in group],
+                             'rawSegments': [(row[1] + origin).tolist() for row in group],
+                             'visibleLengthRawPx': visible,
+                             'envelopeLengthRawPx': intervals[-1][1] - intervals[0][0]})
+        directions.append(axis); lengths.append(visible)
+        for _, line, _ in group:
+            axis_lines.append((line + origin).tolist()); axis_ids.append(ident)
     if not axis_lines:
         return [], {'reason': 'No long RGB side edge establishes the housing image axis',
-                    'detectedRgbLines': len(lines), 'predictedDownRaw': predicted_down.tolist()}
+                    'detectedRgbLines': len(lines), 'predictedDownRaw': predicted_down.tolist(),
+                    'sideFragmentCount': len(side_fragments),
+                    'requiredObservedSideLengthRawPx': float(rough_width * 4),
+                    'largestObservedSideLengthRawPx': max(observed_lengths, default=0.)}
     covariance = sum(length * np.outer(direction, direction) for length, direction in zip(lengths, directions))
     down = np.linalg.eigh(covariance)[1][:, -1]
     down *= 1 if down @ predicted_down >= 0 else -1
     across = np.array([down[1], -down[0]])
     low, high_side = np.min(pts @ across), np.max(pts @ across)
     width = max(3., high_side - low)
-    if np.ptp(pts @ down) < width * 4:
-        return [], {'reason': 'Color support is not a long housing'}
     # ponytail: connected-component filtering removes isolated color specks.
     # Occluded body pieces remain only when collinear and larger than a cap pixel.
     retained = np.zeros_like(yellow)
@@ -508,6 +543,8 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
             retained |= labels == label
     y, x = np.where(retained)
     body = np.c_[x, y]
+    if len(body) == 0 or np.ptp(body @ down) < width * 4:
+        return [], {'reason': 'Color support is not a long housing'}
     termination = np.max(body @ down)
     # Short endcap sides can continue an otherwise long housing edge. Their
     # endpoint contact distinguishes the outer end from an internal color seam.
@@ -556,7 +593,8 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
             reject('notNearColorEnd', line)
             continue
         # Width belongs to this RGB face, not the connected yellow union of
-        # front and rear flanges. The two long sides bound the visible segment.
+        # front and rear flanges. Locally observed side fragments must bound it;
+        # a long group's unobserved gap cannot supply a virtual local side.
         side_positions = []
         axial = float(center @ down)
         for ident, raw_side in zip(axis_ids, axis_lines):
@@ -615,7 +653,7 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
         candidates.append({'photo': photo, 'rawEnds': raw.tolist(), 'uv': _pixels(raw, A).tolist(),
                            'sourceSegmentIndex': segment_index, 'faceSideIds': face_ids,
                            'faceWidthRawPx': float(face_width), 'faceSideEdgesRaw': [left[2], right[2]],
-                           'faceWidthBasis': 'long RGB side-edge separation at this terminal segment',
+                           'faceWidthBasis': 'locally observed fragments of supported collinear RGB sides at this terminal segment',
                            'aboveColorFraction': above, 'belowColorFraction': below,
                            'belowInstanceFraction': outside,
                            'obstructionFraction': obstruction,
@@ -657,12 +695,15 @@ def _terminal_edges(rgb, mask, down, photo, A, occluders=None):
     candidates.sort(key=lambda row: (-row['score'], -row['position']))
     counts['accepted'] = len(candidates)
     return candidates[:6], {'candidateCount': len(candidates), 'longSideEdgesRaw': axis_lines,
+                            'sideSupportGroups': side_support,
+                            'sideFragmentCount': len(side_fragments),
+                            'requiredObservedSideLengthRawPx': float(rough_width * 4),
                             'detectedRgbLines': len(lines), 'rejectionCounts': counts,
                             'nearEndRejectedEdges': rejected,
                             'obstructedTerminationsRejected': counts['occluded'],
                             'predictedDownRaw': predicted_down.tolist(), 'fittedDownRaw': down.tolist(),
                             'axisDeviationDeg': float(np.degrees(np.arccos(np.clip(down @ predicted_down, -1, 1)))),
-                            'axisSource': 'long RGB side edges adjacent to the same yellow housing',
+                            'axisSource': 'collinear visible RGB side fragments adjacent to the same yellow housing; gaps excluded from support length',
                             'widthRawPx': float(width), 'sourceColorPixels': len(body),
                             'scope': 'visible yellow housing end edge; occluded width remains unknown'}
 
@@ -1054,6 +1095,81 @@ def _measure(objects, ground, frames, up):
     return measured
 
 
+def source_physical_clearances(geometry, catalog, segmentation, frames, *, cameras_refined=False, drawings=None):
+    """Native source-edge distances; mask extrema serve association only.
+
+    Frames use the existing _load contract (raw RGB, raw-to-canonical A,
+    K/C2W pose, pointmaps and masks). No metric reference or evaluation target
+    enters this function. Only conditional objects have physical endpoints.
+    The returned unit ground plane is the exact plane used by every endpoint.
+    """
+    start = time.monotonic()
+    up = _unit(np.asarray(geometry['floor']['normal'], float))
+    if drawings is None:
+        drawings = {photo: {'standard': [], 'selected': [], 'candidates': [], 'floorPixelsRaw': []} for photo in frames}
+    legacy = {ident: _legacy(catalog[ident], geometry) for ident in TARGETS}
+    objects, edge_diagnostics = _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings)
+    stage_errors = []
+    try:
+        ground = _fit_ground(geometry, frames, legacy, objects, cameras_refined, drawings, catalog)
+    except Exception as error:
+        stage_errors.append({'stage': 'localFloor', 'error': f'{type(error).__name__}: {error}'})
+        ground = {'status': 'unsupported', 'reason': stage_errors[-1]['error'], 'normal': None, 'offset': None, 'patches': []}
+    objects = _measure(objects, ground, frames, up)
+    return {'schemaVersion': 1, 'coordinateSystem': 'MapAnything native', 'units': 'native',
+            'ground': ground, 'objects': objects,
+            'associationFloor': geometry['floor'],
+            'observedEnvelopeBaselines': [{'id': ident, **legacy[ident]} for ident in TARGETS],
+            'diagnostics': {'objectEdges': edge_diagnostics, 'stageErrors': stage_errors},
+            'scope': 'Visible rigid source edges in two or more photos to one inferred local floor. Mask-envelope baselines are not physical bottoms. Occluded object portions and hardware remain unknown.',
+            'timingScope': 'Source edge and local-ground analysis after loading; excludes depth, segmentation and model generation.',
+            'wallSeconds': time.monotonic() - start}
+
+
+def apply_source_clearances(root, sources):
+    """Cloud/main-flow bridge after objects.json exists; no scale is required."""
+    import trimesh
+    root = Path(root)
+    sources = [Path(source) for source in sources]
+    if len(sources) != 4:
+        raise ValueError('Exactly four original JPEG sources are required in recorded order')
+    geometry, catalog, segmentation, frames, _, inputs = _load(root, sources, None)
+    drawings = {photo: {'standard': [], 'selected': [], 'candidates': [], 'floorPixelsRaw': []} for photo in frames}
+    result = source_physical_clearances(geometry, catalog, segmentation, frames, drawings=drawings)
+    result['sourceInputs'] = inputs
+    result['evidenceImages'] = _overlays(root, frames, drawings, result['objects'])
+    ground = result['ground']
+    floor_data = None
+    if ground['status'] == 'available':
+        normal, offset = np.asarray(ground['normal'], float), float(ground['offset'])
+        if normal.shape != (3,) or not np.isfinite(normal).all() or not np.isfinite(offset) or not np.isclose(np.linalg.norm(normal), 1.):
+            raise ValueError('Physical clearances require a finite unit ground plane')
+        floor = trimesh.load(root / 'floor-fitted.glb', force='scene', process=False)
+        if len(floor.graph.nodes_geometry) != 1:
+            raise ValueError('Expected the existing single fitted floor surface')
+        node = floor.graph.nodes_geometry[0]
+        transform, name = floor.graph[node]
+        native = trimesh.transform_points(floor.geometry[name].vertices, transform)
+        projected = native - (native @ normal + offset)[:, None] * normal
+        floor.geometry[name].vertices = trimesh.transform_points(projected, np.linalg.inv(transform))
+        floor_data = floor.export(file_type='glb')
+        # Preserve the existing node identity and footprint. The viewer and
+        # measurement now consume this same plane in this same native world.
+        geometry['floor'] = {**geometry['floor'], **{key: ground[key] for key in
+                             ('normal', 'offset', 'supportPoints', 'residualP95Native', 'sourcePhotos', 'method')},
+                             'status': 'conditional local floor fit; concrete-floor semantic identity unverified',
+                             'displayExtent': 'existing fitted footprint projected onto the physical-clearance ground plane'}
+    geometry['physicalClearances'] = result
+    serialized = json.dumps(result, indent=2, allow_nan=False) + '\n'
+    geometry_serialized = json.dumps(geometry, indent=2, allow_nan=False) + '\n'
+    if floor_data is not None:
+        (root / 'floor-fitted.glb').write_bytes(floor_data)
+        (root / 'floor-reference.json').write_text(json.dumps(geometry['floor'], indent=2, allow_nan=False) + '\n')
+    (root / 'physical-clearances.json').write_text(serialized)
+    (root / 'geometry.json').write_text(geometry_serialized)
+    return result
+
+
 def _route(label, objects, scale):
     rows = []
     for obj in objects:
@@ -1150,15 +1266,10 @@ def build(root, out, sources, reference, cameras=None, joint_reference=None):
     geometry, catalog, segmentation, frames, anchors, inputs = _load(root, sources, cameras)
     up = _unit(np.asarray(geometry['floor']['normal'], float))
     drawings = {photo: {'standard': [], 'selected': [], 'candidates': [], 'floorPixelsRaw': []} for photo in frames}
-    legacy = {ident: _legacy(catalog[ident], geometry) for ident in TARGETS}
-    objects, edge_diagnostics = _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings)
-    stage_errors = []
-    try:
-        ground = _fit_ground(geometry, frames, legacy, objects, cameras is not None, drawings, catalog)
-    except Exception as error:
-        stage_errors.append({'stage': 'localFloor', 'error': f'{type(error).__name__}: {error}'})
-        ground = {'status': 'unsupported', 'reason': stage_errors[-1]['error'], 'normal': None, 'offset': None, 'patches': []}
-    objects = _measure(objects, ground, frames, up)
+    physical = source_physical_clearances(geometry, catalog, segmentation, frames,
+                                         cameras_refined=cameras is not None, drawings=drawings)
+    objects, ground = physical['objects'], physical['ground']
+    stage_errors = physical['diagnostics']['stageErrors']
     # B is a scale-only ablation: a newly inferred floor must not silently
     # change the circular-standard upright prior, especially for sparse tracks.
     calibration_up = up
@@ -1173,7 +1284,7 @@ def build(root, out, sources, reference, cameras=None, joint_reference=None):
     calibration['uprightAxisNative'] = up.tolist()
     calibration['newFloorUpDifferenceDeg'] = (float(np.degrees(np.arccos(np.clip(np.asarray(ground['normal']) @ up, -1., 1.))))
                                               if ground['status'] == 'available' else None)
-    original = [{'id': ident, **legacy[ident]} for ident in TARGETS]
+    original = physical['observedEnvelopeBaselines']
     old, new = calibration['baseline']['mPerNative'], calibration['new']['mPerNative']
     result = {'schemaVersion': 1, 'coordinateSystem': 'MapAnything native',
               'cameraRoute': 'replacement cameras; independently retriangulated source geometry' if cameras is not None else 'original MapAnything cameras',
@@ -1183,7 +1294,7 @@ def build(root, out, sources, reference, cameras=None, joint_reference=None):
                          'B': _route('Saved geometry / new named-circle scale', original, new),
                          'C': _route('Source end edges and local floor / saved whole-height scale', objects, old),
                          'D': _route('Source end edges and local floor / new named-circle scale', objects, new)},
-              'diagnostics': {'objectEdges': edge_diagnostics, 'stageErrors': stage_errors},
+              'diagnostics': physical['diagnostics'],
               'limitations': ['Only four supplied photos; no measured camera calibration or camera height.',
                               'Circular standard sections and housing uprightness are image-tested hypotheses.',
                               'A/B intentionally retain old points and are labelled baselines; they are not recalibrated geometry.',

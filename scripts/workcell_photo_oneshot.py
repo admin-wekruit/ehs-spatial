@@ -81,12 +81,14 @@ def _job(name, argv, out):
                             text=True, timeout=1800, check=False)
     elapsed = time.monotonic() - started
     run_ids = re.findall(r"ap-[A-Za-z0-9]+", result.stdout)
+    record = {"stage": name, "wallSeconds": round(elapsed, 2), "runIds": sorted(set(run_ids)),
+              "returncode": result.returncode, "result": str(out)}
+    (out / "modal-call.json").write_text(json.dumps(record, indent=2))
     if result.returncode:
         safe = [line for line in result.stdout.splitlines()
                 if not re.search(r"capabilit|token|secret", line, re.I)]
         raise RuntimeError(f"{name} failed ({result.returncode}): " + "\n".join(safe[-10:])[-1800:])
-    return {"stage": name, "wallSeconds": round(elapsed, 2), "runIds": sorted(set(run_ids)),
-            "result": str(out)}
+    return record
 
 
 def _foreground(root, seg, index, word, minimum=300):
@@ -285,13 +287,16 @@ def _bbox_quality(root, seg, kind):
 
 def _export_metric_scene(root, geometry):
     """Bake one common scale and floor transform into the downloadable scene."""
-    scale = float(geometry["anchor"]["mPerNative"])
-    if not np.isfinite(scale) or scale <= 0:
+    from scripts.workcell_photo_calibration import accepted_scale
+    scale = accepted_scale(geometry)
+    metric = scale is not None
+    if metric and (not np.isfinite(scale) or scale <= 0):
         raise ValueError("No finite positive reference scale for scene export")
+    factor = scale if metric else 1.0
     normal = np.asarray(geometry["floor"]["normal"], float)
     transform = trimesh.geometry.align_vectors(normal, [0, 1, 0])
-    transform[:3, :3] *= scale
-    transform[1, 3] = scale * float(geometry["floor"]["offset"]) / np.linalg.norm(normal)
+    transform[:3, :3] *= factor
+    transform[1, 3] = factor * float(geometry["floor"]["offset"]) / np.linalg.norm(normal)
     scene = trimesh.Scene()
     objects = json.loads((root / "objects.json").read_text())["objects"]
     cached = {}
@@ -310,14 +315,14 @@ def _export_metric_scene(root, geometry):
                 mesh.visual.vertex_attributes['color'] = original.visual.vertex_attributes['color'].copy()
             name = item["id"] + ":" + node
             scene.add_geometry(mesh, node_name=name, geom_name=name, transform=transform @ matrix)
-    scene.metadata.update(units="meters")
+    scene.metadata.update(units="meters" if metric else "native", metricScaleMPerNative=scale)
     if geometry.get('calibration'):
-        scene.metadata.update(scale_status='user_measured_reference', calibration=geometry['calibration'])
+        scene.metadata.update(scale_status='accepted_3d_reference' if metric else 'uncalibrated', calibration=geometry['calibration'])
     else:
         scene.metadata.update(scale_status="user_dimension_hypothesis",
                               button_height_m=geometry["anchor"]["assumedHeightM"],
                               button_width_m=geometry["anchor"]["assumedWidthM"])
-    (root / "workcell-metric.glb").write_bytes(scene.export(file_type="glb"))
+    (root / ("workcell-metric.glb" if metric else "workcell-native.glb")).write_bytes(scene.export(file_type="glb"))
 
 
 def _anchor_sheet(root, sources, anchor):
@@ -363,14 +368,14 @@ def _build_page(root, metrics):
               "cart-single.glb", "guard-multi.glb", "guard-left.glb", "guard-center.glb", "guard-right.glb",
               "guard-partition.json", "cart-observed.glb", "posts.glb", "fence-observed.glb",
               "mask-contact-sheet.jpg", "extra-mask-contact-sheet.jpg", "cart-mask-sheet.jpg",
-              "fence-fitted.glb", "floor-fitted.glb", "workcell-metric.glb", "geometry.json",
+              "fence-fitted.glb", "floor-fitted.glb", "geometry.json",
               "objects.json", "object-extras.glb", "scene-report.json")
     for name in assets:
         shutil.copyfile(root / name, page / name)
-    for name in ('measurements.json', 'measurement-evaluation.json'):
+    for name in ('measurements.json', 'measurement-evaluation.json', 'physical-clearances.json', 'structural-result.json', 'workcell-metric.glb', 'workcell-native.glb'):
         if (root/name).is_file():
             shutil.copyfile(root/name, page/name)
-    for model in root.glob("entity-*.glb"):
+    for model in [*root.glob("entity-*.glb"), *root.glob("guard-*-initializer.glb"), *root.glob("structural-*.jpg"), *root.glob("raw-image-features-*.jpg")]:
         shutil.copyfile(model, page / model.name)
     for evidence in [*root.glob("geometry-*.jpg"), *root.glob("geometry-*.png")]:
         shutil.copyfile(evidence, page / evidence.name)
@@ -424,12 +429,19 @@ def run(images, out, diameter_m, height_m, viewer_assets, measurements=None):
     ledger = {"hardware": "one ephemeral 2 x A100-80GB container", "mode": "ephemeral modal run",
               "actualBilledUsd": None, "runs": []}
     paths = ",".join(str(p) for p in images)
+    reference_args = []
+    if measured:
+        reference_path = out / "reference-input.json"
+        reference_path.write_text(json.dumps(measured['reference']))
+        reference_args = ['--reference', str(reference_path)]
     try:
         record = _job("one-container", ["modal_apps/workcell_photo_all.py", "--images", paths,
                   "--out", str(out), "--words", ",".join(WORDS),
-                  "--button-diameter-m", str(diameter_m), "--button-height-m", str(height_m)], out)
+                  "--button-diameter-m", str(diameter_m), "--button-height-m", str(height_m), *reference_args], out)
     except Exception as error:
         ledger["failure"] = str(error)
+        if (out / "modal-call.json").is_file():
+            ledger["runs"].append(json.loads((out / "modal-call.json").read_text()))
         (out / "spend-ledger.json").write_text(json.dumps(ledger, indent=2) + "\n")
         raise
     ledger["runs"].append(record)
