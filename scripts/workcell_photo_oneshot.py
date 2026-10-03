@@ -434,9 +434,28 @@ def _self_check():
     print("workcell_photo_oneshot self-check passed")
 
 
-def run(images, out, diameter_m, height_m, viewer_assets, measurements=None):
+def _semantic_stage(out, protocol, ledger):
+    """Semantics run on this exact finished revision; the shared tail then binds them."""
+    from scripts.workcell_photo_report import finalize
+    destination = out / "semantic-experiment"
+    destination.mkdir()
+    try:
+        ledger["runs"].append(_job("semantic", ["modal_apps/workcell_semantic_match.py", "--root", str(out),
+                                                "--out", str(destination), "--config", str(protocol)], destination))
+    except Exception as error:  # Spend and failure stay recorded; the report says semantics are not bound.
+        ledger["semanticFailure"] = str(error)
+    if (destination / "spend-ledger.json").is_file():
+        ledger["semanticLedger"] = json.loads((destination / "spend-ledger.json").read_text())
+    (out / "spend-ledger.json").write_text(json.dumps(ledger, indent=2) + "\n")
+    return finalize(out)
+
+
+def run(images, out, diameter_m, height_m, viewer_assets, measurements=None, semantic_protocol=None):
     from scripts.workcell_photo_calibration import load_measurements, resolve_dimensions
     measured = load_measurements(measurements) if measurements else None
+    if semantic_protocol is not None:
+        from scripts.workcell_semantic_match import config_checked, read_json
+        config_checked(read_json(semantic_protocol))
     diameter_m, height_m = resolve_dimensions(measured, diameter_m, height_m)
     if len(images) != 4 or len(set(images)) != 4 or any(not p.is_file() for p in images):
         raise ValueError("Exactly four distinct, readable source photos are required")
@@ -492,10 +511,12 @@ def run(images, out, diameter_m, height_m, viewer_assets, measurements=None):
     _mask_sheet(out, seg, ("industrial robot arm", "safety fence", "work platform"), "mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("yellow safety post", "black bollard", "emergency stop button"), "extra-mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("cart",), "cart-mask-sheet.jpg", cart_seg)
-    if measured:
-        # Evaluation targets join here; the shared tail re-measures and rebuilds.
-        from scripts.workcell_photo_report import finalize
-        finalize(out, measured)
+    # Always re-run the shared tail locally: the cloud built under a temporary directory name, and
+    # evaluation targets (when supplied) join here. It re-measures the current models and rebuilds.
+    from scripts.workcell_photo_report import finalize
+    finalize(out, measured)
+    if semantic_protocol is not None:
+        _semantic_stage(out, semantic_protocol, ledger)
     geometry = json.loads((out / "geometry.json").read_text())
     _anchor_sheet(out, images, geometry["anchor"])
     _export_metric_scene(out, json.loads((out / 'scene-report.json').read_text()))
@@ -526,6 +547,7 @@ def main():
     parser.add_argument("--button-diameter-m", type=float, help="Legacy whole-envelope width; cannot combine with --measurements")
     parser.add_argument("--button-height-m", type=float)
     parser.add_argument("--measurements", type=Path, help="Measured reference and independent evaluation JSON")
+    parser.add_argument("--semantic-protocol", type=Path, help="Frozen semantic protocol; runs the semantic stage on the finished revision")
     parser.add_argument("--self-check", action="store_true")
     args = parser.parse_args()
     if args.self_check:
@@ -534,7 +556,8 @@ def main():
     if not args.images or not args.out or not args.viewer_assets:
         parser.error("--images, --out and --viewer-assets are required")
     run([p.resolve() for p in args.images], args.out.resolve(),
-        args.button_diameter_m, args.button_height_m, args.viewer_assets.resolve(), args.measurements)
+        args.button_diameter_m, args.button_height_m, args.viewer_assets.resolve(), args.measurements,
+        args.semantic_protocol.resolve() if args.semantic_protocol else None)
 
 
 if __name__ == "__main__":

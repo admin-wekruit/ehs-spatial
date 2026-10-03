@@ -280,6 +280,29 @@ def check():
         assert item['modelTerminal']['acceptedForPhysicalUse'] is False and 'physicalBottom' not in item
         assert main_hashes == {path.relative_to(main): sha(path) for path in main.rglob('*') if path.is_file()}, 'main revision untouched'
 
+        # Oneshot semantic stage: the experiment runs on this finished revision, then the tail binds it.
+        from unittest.mock import patch
+        import scripts.workcell_photo_oneshot as oneshot
+        staged = copy(main, directory / 'workcell-staged')
+        shutil.rmtree(staged / 'semantic-experiment')
+        finalize(staged)  # the local tail always rebuilds under the run's own name first
+        ledger = {'runs': []}
+        with patch.object(oneshot, '_job', lambda name, argv, out: (add_semantics(staged), {'stage': name})[1]):
+            bound = oneshot._semantic_stage(staged, Path('protocol.json'), ledger)
+        assert bound['semanticExperiment']['binding']['reuse'] == 'identical semantic inputs verified'
+        assert bound['semanticExperiment']['sourceRevisionId'] == 'workcell-staged' and ledger['semanticLedger']['status'] == 'completed'
+        failed = copy(main, directory / 'workcell-semantic-failed')
+        shutil.rmtree(failed / 'semantic-experiment')
+        def failing(name, argv, out):
+            write_json(out / 'spend-ledger.json', {'status': 'failed', 'functionSeconds': 3., 'callSeconds': 4., 'estimateUsd': .01,
+                                                    'callWindowEstimateUsd': .01, 'actualBilledUsd': None})
+            raise RuntimeError('semantic failed (1)')
+        ledger = {'runs': []}
+        with patch.object(oneshot, '_job', failing):
+            unbound = oneshot._semantic_stage(failed, Path('protocol.json'), ledger)
+        assert 'semanticExperiment' not in unbound and 'failed experiment' in unbound['semanticBinding']['reason']
+        assert ledger['semanticFailure'] == 'semantic failed (1)' and ledger['semanticLedger']['status'] == 'failed', 'failed spend stays recorded'
+
         # (e) Semantic sources changed: never reuse the earlier result.
         for name, edit, message in (
                 ('polygon', lambda root: (root / 'objects.json').write_text((root / 'objects.json').read_text().replace('[[14, 2], [18, 2]', '[[13, 2], [18, 2]', 1)), 'observation input changed'),
@@ -290,6 +313,7 @@ def check():
             result = finalize(stale)
             assert 'semanticExperiment' not in result and message in result['semanticBinding']['reason'], (name, result.get('semanticBinding'))
     print('PASS: same ID/new GLB hash refused then re-measured; floor-only change recomputes heights/feet and unbinds semantics; '
+          'oneshot semantic stage binds on its own revision and records failed spend; '
           'scale-only change and null scale keep native endpoints; candidate revision self-consistent, never accepted, main untouched; '
           'changed polygon/photo/frame never reuses semantics; card/vertex/foot/semantic/export share one revision')
 

@@ -87,11 +87,16 @@ def bind(root, report, experiment=None):
 
     root = Path(root)
     experiment = Path(experiment or root / EXPERIMENT_DIR)
-    result = _core(json.loads((experiment / "semantic-experiment.json").read_text()))
-    manifest = json.loads((experiment / "manifest.json").read_text())
+    if not (experiment / "spend-ledger.json").is_file():
+        raise ValueError("Semantic experiment has no spend ledger")
     ledger = json.loads((experiment / "spend-ledger.json").read_text())
     if ledger["status"] != "completed":
         raise ValueError("Cannot publish a failed experiment as completed")
+    missing = [name for name in ("semantic-experiment.json", "manifest.json") if not (experiment / name).is_file()]
+    if missing:
+        raise ValueError("Semantic experiment is incomplete: missing " + ", ".join(missing))
+    result = _core(json.loads((experiment / "semantic-experiment.json").read_text()))
+    manifest = json.loads((experiment / "manifest.json").read_text())
     if manifest["sourceRevisionId"] != result["sourceRevisionId"]:
         raise ValueError("Semantic manifest and result name different revisions")
     sources = result["protocol"]["sources"]
