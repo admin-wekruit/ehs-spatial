@@ -7,7 +7,7 @@ import shutil
 import sys
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parent)]
-from scripts.workcell_photo_report import build as build_report
+from scripts.workcell_photo_report import finalize
 from scripts.workcell_photo_oneshot import _build_page, _export_metric_scene, _freeze_report_ui
 
 
@@ -112,7 +112,7 @@ def structural_section(path, root, result):
 
 
 def build(baseline, controls, joint, out, viewer_assets, previous=(), extra=(), structural=None, measurements=None):
-    from scripts.workcell_photo_calibration import apply_measurements, load_measurements
+    from scripts.workcell_photo_calibration import load_measurements
     measured = load_measurements(measurements) if measurements else None
     if out.exists(): raise ValueError('Report output must be new')
     out.mkdir(parents=True)
@@ -135,9 +135,7 @@ def build(baseline, controls, joint, out, viewer_assets, previous=(), extra=(), 
         center['notes'] = [note for note in center['notes'] if '左右模型角差' not in note]
         center['notes'].append('A4 仅约束左右板；本中间板保持 A1 生成分片和保形对齐，不参与共享夹角。')
     (out/'objects.json').write_text(json.dumps(catalog,ensure_ascii=False))
-    if measured:
-        apply_measurements(out, measured)
-    data = build_report(out)
+    data = finalize(out, measured)
     _export_metric_scene(out,data)
     _freeze_report_ui(out, viewer_assets)
     metrics = read(baseline/'one-shot.json')

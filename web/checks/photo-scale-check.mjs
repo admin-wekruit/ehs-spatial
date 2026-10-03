@@ -12,7 +12,7 @@ class Group {
   add(child) { this.children.push(child); }
   updateMatrixWorld() {}
 }
-const ReportScene = () => null, module = { exports: {} };
+const ReportScene = () => null, SemanticObject = () => null, module = { exports: {} };
 const source = fs.readFileSync(new URL('../src/PhotoReport.tsx', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 vm.runInNewContext(compiled, {
@@ -22,6 +22,7 @@ vm.runInNewContext(compiled, {
     if (id === 'react/jsx-runtime') return require(id);
     if (id === 'react-dom/client') return { createRoot: () => ({ render() {} }) };
     if (id === './ReportScene') return { ReportScene };
+    if (id === './PhotoSemanticExperiment') return { PhotoSemanticExperiment: () => null, PhotoSemanticObject: SemanticObject };
     if (id === './SceneResources') return { SceneResources: { Provider: 'provider' } };
     if (id === './core') return { activeModel: entity => entity.representations[0] };
     if (id === './viewer/native-math') return { transformMatrix: () => Array.from({ length: 16 }, (_, i) => +(i % 5 === 0)) };
@@ -85,28 +86,42 @@ assert.deepEqual(Array.from(photoSubject.representations, r => r.id), ['model-ph
 assert.equal(subject.representations[0].id, 'rep-1', 'Photo selection must not mutate saved representations');
 const conditional = structuredClone(unsupported);
 conditional.revision.document.entities[0].representations[0].coordinateFrameId = 'workcell-floor';
+conditional.revision.document.entities[1].id = 'post-box-1';
+conditional.revision.document.assets = [{ id: 'asset-0', sha256: 'h0' }, { id: 'asset-1', sha256: 'h1' }];
+conditional.objects.push({ id: 'post-box-1', label: '光幕', measurements: {}, observations: [{ photo: 4 }], notes: [], groundDistance: { byPhoto: {}, feature: null, source: 'fixture' } });
 conditional.modelMeasurementScale = {nativeToMeters:.5,rangeNativeToMeters:[.45,.55],evidence:{conditionalMPerNative:.5},status:'conditional_unvalidated',source:'test'};
-conditional.endpointEstimation = { status: 'conditional_unvalidated', photo: 4, method: 'source endpoints', scale: { mPerNative: .5, source: 'button-only conditional scale' }, endpoints: [
-  { objectId: 'fence-0', label: '围栏下沿', pointNative: [5, 7, .3], footNative: [5, 7, 0], heightNative: .3, estimateCm: 15, rangeCm: [14, 16] },
-  { objectId: 'post-box-1', label: '光幕底端', pointNative: [1, 2, .4], footNative: [1, 2, 0], heightNative: .4, estimateCm: 20, rangeCm: [19, 21] },
-], difference: { valueNative: .1, valueCm: 5, rangeCm: [4, 6], description: 'relative height' } };
+conditional.semanticExperiment = { objects: [{ entityId: 'fence-0', label: '围栏', sourceRefs: [], results: [], policyContext: { applicability: 'unknown', machineResult: null } }] };
+conditional.endpointEstimation = { status: 'conditional_unvalidated', sidePhoto: 4, method: 'model endpoints', endpoints: [
+  { id: 'fence-0:near:post-box-1', objectId: 'fence-0', label: '右侧光幕旁围栏下沿', side: 'right', measurementScope: 'model_lower_rail_near_curtain', pointNative: [5, 7, .3], footNative: [5, 7, 0], heightNative: .3, representationId: 'rep-0', assetId: 'asset-0', assetSha256: 'h0', modelFile: 'fence-fitted.glb', modelSha256: 'm0', provenance: 'fixture' },
+  { id: 'post-box-1:terminal', objectId: 'post-box-1', label: '右侧光幕底端', side: 'right', measurementScope: 'model_bottom_face_center', pointNative: [1, 2, .4], footNative: [1, 2, 0], heightNative: .4, representationId: 'rep-1', assetId: 'asset-1', assetSha256: 'h1', modelFile: 'posts.glb', modelSha256: 'm1', pairedEndpointId: 'fence-0:near:post-box-1', provenance: 'fixture' },
+], differences: [{ id: 'post-box-1:terminal-minus-rail', label: '右侧光幕底端减去旁边围栏下沿', minuendId: 'post-box-1:terminal', subtrahendId: 'fence-0:near:post-box-1', valueNative: .1, description: 'relative height' }] };
 endpointLines = true;
 result = render(conditional);
 assert.equal(result.scale, 'unknown', 'conditional endpoint estimates cannot promote the accepted scene scale');
 assert.equal(result.ground, '未知', 'endpoint estimates cannot overwrite the physical groundDistance card');
-assert.equal(result.nodes.find(n => 'data-endpoint-difference' in n.props).props.children, '5.00 cm');
-assert.equal(walk(result.scene.props.inspector(null)).find(n => n.props?.['aria-label'] === '围栏与光幕底边离地估计').type, 'section', 'the estimate must remain visible inside the fullscreen inspector');
+assert.equal(result.nodes.find(n => n.props['data-endpoint-difference'] === 'post-box-1:terminal-minus-rail').props.children, '5.00 cm');
+assert.equal(result.nodes.find(n => n.props['data-endpoint-estimate'] === 'fence-0:near:post-box-1').props.children, '15.00 cm');
+const inspector = walk(result.scene.props.inspector(null));
+assert.equal(inspector.find(n => n.props?.['aria-label'] === '光幕与围栏底边离地').type, 'section', 'the estimate must remain visible inside the fullscreen inspector');
+const semanticFacts = scale => walk(render(conditional, scale).scene.props.inspector(null)).find(n => n.type === SemanticObject).props.facts;
+assert.equal(semanticFacts(10).find(fact => fact.testId === 'fence-0:near:post-box-1').value, '15.00 cm', 'semantic facts read the revision measurement');
+assert.equal(semanticFacts(20).find(fact => fact.testId === 'fence-0:near:post-box-1').value, '30.00 cm', 'semantic facts follow the scale trial, no snapshot');
+assert.equal(semanticFacts(10).find(fact => fact.testId === 'post-box-1:terminal-minus-rail').value, '5.00 cm');
 const annotation = result.scene.props.measurementOverride;
 assert.equal(annotation.method, 'conditional-endpoint-comparison');
 assert.equal(annotation.coordinateFrameId, 'workcell-floor');
+assert.equal(annotation.documentSha256, 'hash');
 assert.deepEqual(Array.from(annotation.lines[3].points, point => Array.from(point)), [[5, 7, .4], [5, 7, .3]], 'high-low difference must follow floor Z; endpoint array order must not change the meaning');
 assert.match(render(conditional, 20).scene.props.measurementOverride.displayLabel, /10.00 cm/, 'all model measurements track the same explicit scale');
+const nullScale = structuredClone(conditional); nullScale.modelMeasurementScale = { nativeToMeters: null, status: 'uncalibrated', source: 'test' };
+assert.equal(render(nullScale).nodes.find(n => n.props['data-endpoint-estimate'] === 'fence-0:near:post-box-1').props.children, '0.3000 native', 'unknown scale keeps native units');
 result = render(conditional, 20);
 assert.equal(result.scene.props.measurementScale.nativeToMeters, 1);
 await result.nodes.find(n => n.type === 'button' && n.props.children === '下载条件标尺模型 GLB').props.onClick();
 assert.equal(exported.children[0].scaleValue, 1);
 assert.equal(exported.userData.scaleStatus, 'conditional_unvalidated');
 assert.equal(exported.userData.groundTruth, false);
+assert.equal(exported.userData.documentSha256, 'hash'); assert.equal(exported.userData.revisionId, 'r');
 const scaleMetadata = JSON.parse(JSON.stringify(exported.userData.modelMeasurementScale));
 assert.deepEqual(scaleMetadata.rangeNativeToMeters, [.9,1.1]);
 assert.equal(scaleMetadata.uniformReferenceRatio, 2);
@@ -116,8 +131,12 @@ assert.equal(scaleMetadata.baseModelMeasurementScale.evidence.conditionalMPerNat
 assert.equal(scaleMetadata.evidence, undefined, 'baseline evidence must not masquerade as the current trial');
 assert.match(scaleMetadata.source, /同比试算/);
 assert.equal(result.scene.props.revision.document.coordinateFrames[0].scale.nativeToMeters, null, 'conditional scale never becomes accepted physical scale');
+// The measured representation must be the displayed one: another photo's model variant is not read.
+const variant = structuredClone(conditional); variant.revision.document.entities[0].modelVariants = { '3': { ...variant.revision.document.entities[0].representations[0], id: 'rep-0-photo-3' } };
 selectedPhoto = 'photo-3';
-assert.notEqual(render(conditional).scene.props.measurementOverride?.method, 'conditional-endpoint-comparison', 'photo4 source endpoints must not be projected into another source photo');
+result = render(variant);
+assert.notEqual(result.scene.props.measurementOverride?.method, 'conditional-endpoint-comparison', 'an endpoint is never drawn on another representation');
+assert.match(result.nodes.find(n => n.props['data-endpoint-estimate'] === 'fence-0:near:post-box-1').props.children, /未知/);
 selectedPhoto = 'photo-4'; endpointLines = undefined; reportLocation.href = 'https://example.test/report/?measurement=endpoints';
 assert.equal(render(conditional).scene.props.measurementOverride.method, 'conditional-endpoint-comparison', 'the shared URL enables annotations without another click');
-console.log('PASS: accepted scale, 52-model exports, no bbox fallback, source points preserved, unified conditional model scale/export and floor-normal difference');
+console.log('PASS: accepted scale, 52-model exports, no bbox fallback, source points preserved, unified conditional model scale/export, revision-bound endpoints and live semantic facts');

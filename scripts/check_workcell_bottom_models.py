@@ -221,12 +221,15 @@ def check_housing():
         rail.apply_translation([1., 0, .4]); rail.apply_transform(floor)
         fences.add_geometry(rail, node_name='section-0-continued-3'); fences.export(root/'fence-fitted.glb')
         geometry = {'floor': ground, 'anchor': {'referenceFit': {'status': 'unsupported', 'mPerNative': None}},
+                    'fence': {'continuations': [{'id': 'section-0-continued-3', 'plane': 0, 'role': 'lower-rail continuation'}]},
                     'physicalClearances': {'ground': ground, 'objects': [{'id': 'fence-0', 'status': 'unsupported', 'reason': 'fixture'}]}}
         observations = [{'photo': photo, 'source': f'SAM yellow safety post; instance {photo}',
                          'polygons': [[[0, 0], [10, 0], [10, 10]]]} for photo in (1, 2, 3)]
-        catalog = {'objects': [{'id': ident, 'model': {'file': 'posts.glb', 'nodes': ['box-1']},
+        catalog = {'objects': [{'id': ident, 'kind': 'yellow safety post', 'model': {'file': 'posts.glb', 'nodes': ['box-1']},
                                'observations': deepcopy(observations), 'measurements': {}}
-                              for ident in ('post-box-1', 'post-box-2')]}
+                              for ident in ('post-box-1', 'post-box-2')]
+                   + [{'id': 'fence-0', 'kind': 'safety fence', 'model': {'file': 'fence-fitted.glb', 'nodes': ['section-0-continued-3']},
+                       'observations': deepcopy(observations), 'measurements': {}}]}
         (root/'geometry.json').write_text(json.dumps(geometry))
         (root/'objects.json').write_text(json.dumps(catalog))
         files = {path.name: path.read_bytes() for path in root.iterdir()}
@@ -324,7 +327,9 @@ def check_housing():
         endpoints = json.loads((root/'model-endpoint-estimate.json').read_text())
         light = next(row for row in endpoints['objects'] if row['objectId'] == 'post-box-1')
         assert np.isclose(light['heightNative'], measured['heightNative'], atol=1e-9, rtol=0) and light['modelEvidence']['modelSha256'] == supported['model']['sha256']
-        assert 'percentile' not in light['provenance'] and 'posts.glb' not in endpoints['sourceFiles']
+        assert 'percentile' not in light['provenance'] and light['modelFile'] == 'post-box-1-physical.glb' and light['node'] == 'housing-face'
+        rail = next(row for row in endpoints['objects'] if row['id'] == light['pairedEndpointId'])
+        assert rail['objectId'] == 'fence-0' and rail['pairedObjectId'] == 'post-box-1'
         assert light['terminalPartAmbiguity'] == ambiguity and not light['wholeHousingMinimumVerified']
         assert 'whole-housing minimum unverified' in light['provenance']
         assert all(hashlib.sha256((root/name).read_bytes()).hexdigest() == digest for name, digest in endpoints['sourceFiles'].items())

@@ -26,11 +26,38 @@ def _bottom_face(scene, node, normal):
     return mesh.vertices[np.unique(mesh.faces[faces])]
 
 
-def estimate(root):
-    """Measure the displayed light curtain and adjacent lower rail in native units.
+LIGHT_KIND = 'yellow safety post'
+FENCE_KIND = 'safety fence'
 
-    The two GLBs and current floor are the entire measurement input. This is a
-    model estimate, independent of the photo endpoint diagnostic and metric scale.
+
+def terminal_binding(item):
+    """Exact model-vertex terminal of an installed housing: accepted or candidate."""
+    return item.get('physicalBottom') or item.get('modelTerminal')
+
+
+def _centerline(face):
+    """End-edge midpoints of an elongated bottom face; both lie on the mesh surface."""
+    center = face.mean(0)
+    _, _, vectors = np.linalg.svd(face - center, full_matrices=False)
+    order = np.argsort((face - center) @ vectors[0])
+    return np.array([face[order[:2]].mean(0), face[order[-2:]].mean(0)])
+
+
+def _nearest_on(ends, point, normal):
+    direction = ends[1] - ends[0]
+    fraction = float(np.clip((point - ends[0]) @ direction / (direction @ direction), 0, 1))
+    nearest = ends[0] + fraction * direction
+    delta = point - nearest
+    return nearest, fraction, float(np.linalg.norm(delta - (delta @ normal) * normal))
+
+
+def estimate(root):
+    """Measure every displayed light curtain and its adjacent lower fence rail.
+
+    The current catalog models, their GLBs and the current floor are the entire
+    input; nothing is labelled by object ID. Each curtain pairs with the lower
+    rail member horizontally nearest to its terminal. This is a model estimate,
+    independent of the photo endpoint diagnostic and of any metric scale.
     """
     root = Path(root)
     ground = json.loads((root / 'physical-clearances.json').read_text())['ground']
@@ -39,68 +66,50 @@ def estimate(root):
     if not np.isfinite(norm) or norm <= 0:
         raise ValueError('Invalid ground normal')
     normal, offset = normal / norm, float(ground['offset']) / norm
-    catalog_path = root / 'objects.json'
-    catalog = {item['id']: item for item in json.loads(catalog_path.read_text())['objects']} if catalog_path.is_file() else {}
-    source_files = {'fence-fitted.glb', 'physical-clearances.json'}
-    if catalog_path.is_file():
-        source_files.add('objects.json')
+    catalog = {item['id']: item for item in json.loads((root / 'objects.json').read_text())['objects']}
+    geometry = json.loads((root / 'geometry.json').read_text())
+    source_files = {'objects.json', 'geometry.json', 'physical-clearances.json'}
+    scenes = {}
+
+    def scene(name):
+        if name not in scenes:
+            path = (root / name).resolve()
+            if root.resolve() not in path.parents or not path.is_file():
+                raise ValueError('Measured model is missing: ' + name)
+            scenes[name] = trimesh.load(path, force='scene', process=False)
+            source_files.add(name)
+        return scenes[name]
 
     def housing_terminal(ident):
-        evidence = catalog.get(ident, {}).get('physicalBottom')
-        if evidence is None:
-            return None
+        evidence = terminal_binding(catalog[ident])
         model = catalog[ident]['model']; name = model['file']; path = (root / name).resolve()
         if (root.resolve() not in path.parents or evidence['modelFile'] != name or
                 hashlib.sha256(path.read_bytes()).hexdigest() != evidence['modelSha256']):
             raise ValueError('Housing terminal model binding is stale: ' + ident)
-        scene = trimesh.load(path, force='scene', process=False)
         points = []
         for ref in evidence['vertices']:
             node, index = ref['node'], ref['vertexIndex']
             if node not in model['nodes'] or type(index) is not int:
                 raise ValueError('Housing terminal references another object: ' + ident)
-            matrix, mesh_id = scene.graph[node]
-            vertices = scene.geometry[mesh_id].vertices
+            matrix, mesh_id = scene(name).graph[node]
+            vertices = scene(name).geometry[mesh_id].vertices
             if not 0 <= index < len(vertices):
                 raise ValueError('Housing terminal vertex is absent: ' + ident)
             points.append(trimesh.transform_points([vertices[index]], matrix)[0])
         points = np.asarray(points)
         if len(points) < 2 or not np.isfinite(points).all():
             raise ValueError('Housing terminal has no finite exported edge: ' + ident)
-        source_files.add(name)
         return points[np.argmin(points @ normal)], points, evidence
 
-    current_light = housing_terminal('post-box-1')
-    if current_light is None:
-        selected = catalog.get('post-box-1', {}).get('model')
-        if selected is not None and selected != {'file': 'posts.glb', 'nodes': ['box-1']}:
-            raise ValueError('Selected housing geometry needs an explicit physicalBottom terminal binding')
-        posts = trimesh.load(root / 'posts.glb', force='scene')
-        light_face = _bottom_face(posts, 'box-1', normal)
-        light_point = light_face.mean(0)
-        source_files.add('posts.glb')
-    else:
-        light_point, light_face, _ = current_light
-    fences = trimesh.load(root / 'fence-fitted.glb', force='scene')
-    rail_face = _bottom_face(fences, 'section-0-continued-3', normal)
-    center = rail_face.mean(0)
-    _, _, vectors = np.linalg.svd(rail_face - center, full_matrices=False)
-    # The bottom face's longest axis is this rail's length. End-edge midpoints
-    # lie on the actual mesh surface; clamped projection keeps the query on it.
-    along = (rail_face - center) @ vectors[0]
-    order = np.argsort(along)
-    ends = np.array([rail_face[order[:2]].mean(0), rail_face[order[-2:]].mean(0)])
-    direction = ends[1] - ends[0]
-    fraction = float(np.clip((light_point - ends[0]) @ direction / (direction @ direction), 0, 1))
-    rail_point = ends[0] + fraction * direction
     T = trimesh.geometry.align_vectors(normal, [0, 0, 1]); T[2, 3] = offset
 
-    def record(ident, node, point, face, provenance):
+    def record(ident, model, node, point, face, provenance):
         height = float(point @ normal + offset)
         foot = point - height * normal
         heights = face @ normal + offset
         return {'objectId': ident, 'node': node, 'status': 'conditional_model_estimate',
-                'provenance': provenance, 'heightNative': height,
+                'provenance': provenance, 'heightNative': height, 'modelFile': model['file'],
+                'modelSha256': hashlib.sha256((root / model['file']).read_bytes()).hexdigest(),
                 'pointNative': point.tolist(), 'footNative': foot.tolist(),
                 'pointReportNative': trimesh.transform_points([point], T)[0].tolist(),
                 'footReportNative': trimesh.transform_points([foot], T)[0].tolist(),
@@ -108,34 +117,62 @@ def estimate(root):
                 'bottomFaceHeightRangeNative': [float(heights.min()), float(heights.max())],
                 'rangeMeaning': 'Actual mesh bottom-face extent, not physical measurement uncertainty'}
 
-    if current_light is None:
-        light = record('post-box-1', 'box-1', light_point, light_face,
-                       'Displayed upright primitive, bottom-face center; source depth percentile envelope')
-    else:
-        light = record('post-box-1', current_light[2]['vertices'][0]['node'], light_point, light_face,
-                       'Lowest vertex of the selected visible-face terminal read from the actual source-supported GLB; same inferred floor; whole-housing minimum unverified')
-        light['modelEvidence'] = current_light[2]
-        light.update(measurementScope='visible_face_lower_terminal', wholeHousingMinimumVerified=False,
-                     terminalPartAmbiguity=current_light[2]['terminalPartAmbiguity'])
-    fence = record('fence-0', 'section-0-continued-3', rail_point, rail_face,
-                   'Displayed inferred continuation of observed lower rail; nearest point to the selected curtain terminal along bottom-face centerline')
-    fence.update(bottomCenterlineEndsNative=ends.tolist(), closestAlongRailFraction=fraction)
-    objects = [light, fence]
-    current_left = housing_terminal('post-box-2')
-    if current_left is not None:
-        point, vertices, evidence = current_left
-        left = record('post-box-2', evidence['vertices'][0]['node'], point, vertices,
-                      'Lowest vertex of the selected visible-face terminal read from the actual source-supported GLB; same inferred floor; whole-housing minimum unverified')
-        left['modelEvidence'] = evidence
-        left.update(measurementScope='visible_face_lower_terminal', wholeHousingMinimumVerified=False,
-                    terminalPartAmbiguity=evidence['terminalPartAmbiguity'])
-        objects.append(left)
-    difference = light['heightNative'] - fence['heightNative']
-    return {'schemaVersion': 1, 'status': 'conditional_model_estimate', 'mPerNative': None,
+    lights = []
+    for ident in sorted(ident for ident, item in catalog.items() if item.get('kind') == LIGHT_KIND):
+        item = catalog[ident]; model = item['model']
+        if terminal_binding(item) is not None:
+            point, vertices, evidence = housing_terminal(ident)
+            light = record(ident, model, evidence['vertices'][0]['node'], point, vertices,
+                           'Lowest vertex of the selected visible-face terminal read from the actual source-supported GLB; same inferred floor; whole-housing minimum unverified')
+            light['modelEvidence'] = evidence
+            light.update(measurementScope='visible_face_lower_terminal', wholeHousingMinimumVerified=False,
+                         terminalPartAmbiguity=evidence['terminalPartAmbiguity'])
+        else:
+            # Only the untouched display primitive may be read by its bottom face.
+            if model.get('file') != 'posts.glb' or len(model.get('nodes', [])) != 1:
+                raise ValueError('Selected housing geometry needs an explicit terminal binding: ' + ident)
+            face = _bottom_face(scene('posts.glb'), model['nodes'][0], normal)
+            light = record(ident, model, model['nodes'][0], face.mean(0), face,
+                           'Displayed upright primitive, bottom-face center; source depth percentile envelope')
+            light['measurementScope'] = 'model_bottom_face_center'
+        light['id'] = ident + ':terminal'
+        lights.append(light)
+
+    rails = []
+    for ident, item in sorted(catalog.items()):
+        if item.get('kind') != FENCE_KIND or not item.get('model'):
+            continue
+        plane = int(ident.removeprefix('fence-')) if ident.removeprefix('fence-').isdecimal() else None
+        lower = {row['id'] for row in geometry.get('fence', {}).get('continuations', [])
+                 if row.get('plane') == plane and 'lower' in row.get('role', '')}
+        lower |= {row['meshNode'] for row in geometry.get('clearances', [])
+                  if row.get('meshNode') and row['id'] == f'fence-plane-{plane}-lower-rail'}
+        for node in sorted(lower & set(item['model']['nodes'])):
+            face = _bottom_face(scene(item['model']['file']), node, normal)
+            rails.append((ident, item['model'], node, face, _centerline(face)))
+    objects, pairs = list(lights), []
+    for light in lights:
+        point = np.asarray(light['pointNative'])
+        candidates = [(_nearest_on(ends, point, normal), ident, model, node, face, ends)
+                      for ident, model, node, face, ends in rails]
+        if not candidates:
+            continue
+        (rail_point, fraction, horizontal), ident, model, node, face, ends = min(candidates, key=lambda row: row[0][2])
+        # The bottom face's longest axis is this rail's length; the clamped
+        # projection keeps the measured point on the actual mesh surface.
+        fence = record(ident, model, node, rail_point, face,
+                       'Displayed lower rail member; nearest point to the paired curtain terminal along its bottom-face centerline')
+        fence.update(id=f"{ident}:near:{light['objectId']}", bottomCenterlineEndsNative=ends.tolist(),
+                     closestAlongRailFraction=fraction, pairedObjectId=light['objectId'],
+                     horizontalOffsetNative=horizontal, measurementScope='model_lower_rail_near_curtain')
+        light['pairedEndpointId'] = fence['id']
+        objects.append(fence)
+        pairs.append({'minuendId': light['id'], 'subtrahendId': fence['id'],
+                      'valueNative': light['heightNative'] - fence['heightNative']})
+    return {'schemaVersion': 2, 'status': 'conditional_model_estimate', 'mPerNative': None,
             'scope': 'Actual displayed model endpoints against the current saved floor; does not certify physical dimensions',
             'ground': {'normal': normal.tolist(), 'offset': offset}, 'sceneTransformNative': T.tolist(),
-            'objects': objects, 'lightMinusFenceNative': difference,
-            'sign': 'light_higher' if difference > 0 else 'light_lower' if difference < 0 else 'equal',
+            'objects': objects, 'curtainMinusRail': pairs,
             'sourceFiles': {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
                             for name in sorted(source_files)}}
 

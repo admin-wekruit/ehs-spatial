@@ -84,6 +84,69 @@ def _ground_distance(item, geometry, transform):
     return result
 
 
+LINEAGE = 'revision-lineage.json'
+SIDE_PHOTO = 4  # Left/right as seen by the reviewer in photo 4, facing the workcell.
+SCOPE_LABELS = {'model_bottom_face_center': '光幕底端', 'visible_face_lower_terminal': '光幕可见面下沿',
+                'model_lower_rail_near_curtain': '光幕旁围栏下沿'}
+
+
+def _endpoint_estimation(root, measured, transform, doc):
+    """Bind current model endpoints to this document's representations; values stay native."""
+    for name, digest in measured['sourceFiles'].items():
+        if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
+            raise ValueError('Model endpoint inspection is stale: ' + name)
+    if not np.allclose(measured['sceneTransformNative'], transform, atol=1e-7):
+        raise ValueError('Model endpoint inspection uses a different floor')
+    entities = {entity['id']: entity for entity in doc['entities']}
+    assets = {asset['id']: asset for asset in doc['assets']}
+    camera = next(row for row in doc['cameras'] if row['imageId'] == f'photo-{SIDE_PHOTO}')
+    K, pose = np.asarray(camera['K'], float), np.asarray(camera['cameraToWorld'], float)
+    endpoints = []
+    for row in measured['objects']:
+        point, foot = trimesh.transform_points([row['pointNative'], row['footNative']], transform)
+        height = row['heightNative']
+        if not np.isfinite([*point, *foot, height]).all() or not np.allclose(point-foot, [0, 0, height], atol=1e-7) or abs(foot[2]) > 1e-7:
+            raise ValueError('Invalid model endpoint or floor projection')
+        entity = entities.get(row['objectId'])
+        rep = next((r for r in (entity or {}).get('representations', []) if r['id'] == (entity or {}).get('activeModelRepresentationId')), None)
+        source = (rep or {}).get('sourceRefs', [{}])[0]
+        if rep is None or source.get('file') != row['modelFile'] or row['node'] not in source.get('nodes', []):
+            raise ValueError('Model endpoint is not on the displayed representation: ' + row['id'])
+        local = (point - pose[:3, 3]) @ pose[:3, :3]
+        column = float(K[0, 0] * local[0] / local[2] + K[0, 2]) if local[2] > 0 else None
+        endpoints.append({**row, 'pointNative': point.tolist(), 'footNative': foot.tolist(),
+                          'representationId': rep['id'], 'assetId': rep['assetId'],
+                          'assetSha256': assets[rep['assetId']]['sha256'], 'sidePhotoColumn': column})
+    by_id = {row['id']: row for row in endpoints}
+    curtains = [row for row in endpoints if row['measurementScope'] != 'model_lower_rail_near_curtain']
+    sided = sorted((row for row in curtains if row['sidePhotoColumn'] is not None), key=lambda row: row['sidePhotoColumn'])
+    sides = {}
+    if len(sided) == 2:
+        sides = {sided[0]['id']: '左', sided[1]['id']: '右'}
+    for row in endpoints:
+        anchor = row['id'] if row['id'] in sides else next((key for key, value in by_id.items() if value.get('pairedEndpointId') == row['id']), None)
+        row['side'] = {'左': 'left', '右': 'right'}.get(sides.get(anchor))
+        row['label'] = (sides[anchor] + '侧' if anchor in sides else '') + SCOPE_LABELS[row['measurementScope']]
+    differences = []
+    for pair in measured['curtainMinusRail']:
+        light = by_id[pair['minuendId']]
+        differences.append({'id': pair['minuendId'] + '-minus-rail', 'minuendId': pair['minuendId'], 'subtrahendId': pair['subtrahendId'],
+                            'valueNative': pair['valueNative'], 'label': f"{light['label']}减去旁边围栏下沿",
+                            'description': '同一地面法向上的高度差；正值表示光幕测点更高。'})
+    for scope, noun in (('curtain', '光幕'), ('rail', '围栏下沿')):
+        rows = {row['side']: row for row in endpoints if row['side'] and
+                (row['measurementScope'] == 'model_lower_rail_near_curtain') == (scope == 'rail')}
+        if {'left', 'right'} <= rows.keys():
+            differences.append({'id': f'{scope}-left-minus-right', 'minuendId': rows['left']['id'], 'subtrahendId': rows['right']['id'],
+                                'valueNative': rows['left']['heightNative'] - rows['right']['heightNative'],
+                                'label': f'左右{noun}离地差（左 − 右）', 'description': '左右各自测点沿同一地面法向的高度差；不是精度或同高验证。'})
+    return {'status': 'conditional_unvalidated', 'sidePhoto': SIDE_PHOTO,
+            'method': '读取当前显示网格中每个光幕的指定下沿及其旁边围栏下沿，沿同一地面法向测量；部位来源见端点记录。',
+            'endpoints': endpoints, 'differences': differences, 'sourceFiles': measured['sourceFiles'],
+            'units': 'native; display multiplies by modelMeasurementScale of this revision',
+            'groundTruthUsedForEstimation': False}
+
+
 def build(root):
     from scripts.workcell_photo_oneshot import _array, _frame
     root = Path(root)
@@ -274,10 +337,13 @@ def build(root):
         doc['entities'].append(entity)
     validate_document(doc)
     timestamp = datetime.now(timezone.utc).isoformat()
-    revision = {'id': root.name, 'projectId': 'workcell-photo', 'branchId': 'oneshot',
-                'parentRevisionId': None, 'sourceRevisionId': None, 'createdAt': timestamp,
+    # A dedicated run directory may declare its lineage (e.g. a candidate model branch).
+    lineage = json.loads((root / LINEAGE).read_text()) if (root / LINEAGE).is_file() else {}
+    revision = {'id': root.name, 'projectId': 'workcell-photo', 'branchId': lineage.get('branchId', 'oneshot'),
+                'parentRevisionId': lineage.get('parentRevisionId'), 'sourceRevisionId': lineage.get('sourceRevisionId'),
+                'createdAt': timestamp,
                 'documentSha256': hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest(),
-                'label': '四张照片 oneshot', 'document': doc}
+                'label': lineage.get('label', '四张照片 oneshot'), 'document': doc}
     Revision.model_validate(revision)
     from ehs_spatial.platform.scene_measurements import analyze_bends
     guard_revision = {**revision, 'document': {**doc, 'entities': [e for e in doc['entities'] if e['id'].startswith('v-guard-')]}}
@@ -288,45 +354,39 @@ def build(root):
               'coverage': catalog['coverage'], 'geometry': geometry, 'sceneTransformNative': transform.tolist(),
               'nativeToMetersDefault': scale, 'timing': {},
               'bendAnalysis': bend_analysis, 'modelMeasurementScale': measurement_scale}
-    # Explicit inspection artifact: these named endpoints are specific to this capture.
     endpoint_path = root / 'model-endpoint-estimate.json'
     if endpoint_path.is_file():
-        measured = json.loads(endpoint_path.read_text())
-        for name, digest in measured['sourceFiles'].items():
-            if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
-                raise ValueError('Model endpoint inspection is stale: ' + name)
-        if not np.allclose(measured['sceneTransformNative'], transform, atol=1e-7):
-            raise ValueError('Model endpoint inspection uses a different floor')
-        conditional = measurement_scale.get('evidence')
-        factor = measurement_scale['nativeToMeters']
-        limits = measurement_scale['rangeNativeToMeters']
-        endpoints = []
-        for row in measured['objects']:
-            point, foot = trimesh.transform_points([row['pointNative'], row['footNative']], transform)
-            height = row['heightNative']
-            if not np.isfinite([*point, *foot, height]).all() or not np.allclose(point-foot, [0, 0, height], atol=1e-7) or abs(foot[2]) > 1e-7:
-                raise ValueError('Invalid model endpoint or floor projection')
-            endpoints.append({**row, 'pointNative': point.tolist(), 'footNative': foot.tolist(),
-                'label': ({'post-box-1': '右侧光幕可见面下沿', 'post-box-2': '左侧光幕可见面下沿'}[row['objectId']]
-                          if row.get('measurementScope') == 'visible_face_lower_terminal' else
-                          {'post-box-1': '右侧光幕底端', 'post-box-2': '左侧光幕底端', 'fence-0': '邻近围栏下沿'}[row['objectId']]),
-                'estimateCm': height * factor * 100 if factor is not None else None,
-                'rangeCm': [height * limit * 100 for limit in limits] if limits is not None else None})
-        by_id = {row['objectId']: row for row in endpoints}
-        delta = by_id['post-box-1']['heightNative'] - by_id['fence-0']['heightNative']
-        result['endpointEstimation'] = {'status': 'conditional_unvalidated', 'photo': 4,
-            'method': '读取当前显示网格中指定的光幕下沿与邻近围栏下沿，沿同一地面法向测量；部位来源见端点记录。',
-            'scale': {'mPerNative': factor, 'source': measurement_scale['source']},
-            'endpoints': endpoints,
-            'difference': {'valueNative': delta, 'valueCm': delta * factor * 100 if factor is not None else None,
-                'rangeCm': sorted(delta * limit * 100 for limit in limits) if limits is not None else None,
-                'description': '光幕底端高度减去邻近围栏下沿高度。'},
-            'scaleEvidence': conditional, 'sourceFiles': measured['sourceFiles'],
-            'rangeMeaning': '仅为固定模型端点在标尺表面深度第 5/95 百分位下的敏感性；不包含模型、地面或轴心深度系统误差。',
-            'groundTruthUsedForEstimation': False}
+        result['endpointEstimation'] = _endpoint_estimation(root, json.loads(endpoint_path.read_text()), transform, doc)
     if (root/'measurements.json').is_file():
         from scripts.workcell_photo_calibration import load_measurements, measurement_evaluation
         result['measurementEvaluation'] = measurement_evaluation(catalog['objects'], geometry, load_measurements(root/'measurements.json'))
         (root/'measurement-evaluation.json').write_text(json.dumps(result['measurementEvaluation'], ensure_ascii=False, indent=2)+'\n')
+    if lineage:
+        result['lineage'] = lineage
+    from scripts.workcell_semantic_report import EXPERIMENT_DIR, bind
+    if (root / EXPERIMENT_DIR).is_dir():
+        try:
+            result['semanticExperiment'] = bind(root, result)
+        except ValueError as error:
+            # Never reuse semantics whose inputs differ; say so instead of failing the geometry build.
+            result['semanticBinding'] = {'status': 'not_bound', 'reason': str(error),
+                                         'action': 'Rerun the semantic experiment on this revision'}
     (root / 'scene-report.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
     return result
+
+
+def finalize(root, measurements=None):
+    """The one tail of every writer, after models, floor and reference inputs are final.
+
+    Order: supplied reference dimensions -> model endpoints on the current GLBs and
+    floor -> report build (validates those endpoints, binds semantics). Nothing
+    may rewrite models, catalog or floor after this without calling it again.
+    """
+    root = Path(root)
+    if measurements is not None:
+        from scripts.workcell_photo_calibration import apply_measurements
+        apply_measurements(root, measurements)
+    if (root / 'physical-clearances.json').is_file():
+        from scripts.workcell_endpoint_estimate import estimate
+        (root / 'model-endpoint-estimate.json').write_text(json.dumps(estimate(root), indent=2, allow_nan=False) + '\n')
+    return build(root)

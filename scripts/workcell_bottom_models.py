@@ -61,6 +61,128 @@ def _appearance_equal(a, b):
     return True
 
 
+def _shared_ground(root, supplied):
+    geometry = json.loads((root / 'geometry.json').read_text())
+    normal = np.asarray(geometry['floor']['normal'], float)
+    length = np.linalg.norm(normal)
+    if normal.shape != (3,) or not np.isfinite(normal).all() or length <= 0:
+        raise ValueError('Housing integration requires a finite shared floor')
+    normal, offset = normal / length, float(geometry['floor']['offset']) / length
+    other = np.asarray(supplied['normal'], float)
+    other_length = np.linalg.norm(other)
+    if (other.shape != (3,) or not np.isfinite(other).all() or other_length <= 0 or
+            not np.isfinite([offset, supplied['offset']]).all() or
+            not np.allclose(other / other_length, normal, atol=1e-9, rtol=0) or
+            not np.isclose(supplied['offset'] / other_length, offset, atol=1e-9, rtol=0)):
+        raise ValueError('Housing candidate and report must use the same ground')
+    return geometry, normal, offset
+
+
+def _verify_sources(root, source_files):
+    if not {'geometry.json', 'objects.json'} <= source_files.keys():
+        raise ValueError('Housing candidate requires frozen geometry and catalog hashes')
+    for name, digest in source_files.items():
+        path = (root / name).resolve()
+        if root not in path.parents or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise ValueError('Housing source is missing or stale: ' + name)
+
+
+def _exported_terminal(ident, candidate_root, model, references, normal, offset):
+    """Hash-checked exported GLB, its exact nodes, and the referenced terminal vertices."""
+    source = (candidate_root / model['file']).resolve()
+    if candidate_root not in source.parents or source.suffix != '.glb' or not source.is_file():
+        raise ValueError(ident + ': model must be an exported candidate GLB')
+    data = source.read_bytes()
+    if hashlib.sha256(data).hexdigest() != model.get('sha256'):
+        raise ValueError(ident + ': exported model hash differs from the evidence-checked model')
+    scene = trimesh.load(source, force='scene', process=False)
+    nodes = model['nodes']
+    if not nodes or len(set(nodes)) != len(nodes) or set(nodes) != set(scene.graph.nodes_geometry):
+        raise ValueError(ident + ': candidate model must contain exactly its named object nodes')
+    world = {node: _world(scene, node) for node in nodes}
+    if any(not len(points) or not np.isfinite(points).all() for points in world.values()):
+        raise ValueError(ident + ': candidate model contains invalid vertices')
+    if len(references) < 2 or len({(ref['node'], ref['vertexIndex']) for ref in references}) != len(references):
+        raise ValueError(ident + ': distinct exported terminal vertices are required')
+    points = []
+    for ref in references:
+        node, index = ref['node'], ref['vertexIndex']
+        if node not in world or type(index) is not int or not 0 <= index < len(world[node]):
+            raise ValueError(ident + ': terminal vertex does not belong to the exported model')
+        points.append(world[node][index])
+    points = np.asarray(points); heights = points @ normal + offset
+    if np.ptp(points, axis=0).max() <= 1e-8 or np.min(heights) < 0:
+        raise ValueError(ident + ': degenerate terminal or terminal below the shared floor')
+    return data, world, points, heights
+
+
+def install_candidate_models(root, result, candidate_root, catalog):
+    """Make a candidate revision use visual housing hypotheses, never promoting them.
+
+    ``result`` is a volume-candidates record whose source face failed or skipped
+    the strict housing gate. The run directory must be a copy dedicated to the
+    candidate revision: frozen sources, shared floor, exported model hash,
+    nodes, terminal vertices and catalog observations are checked exactly as
+    for accepted models, and the visible lower edge read back from the GLB must
+    equal the recorded height. The binding is ``modelTerminal`` with
+    ``acceptedForPhysicalUse`` false; physical clearances are left untouched.
+    """
+    root, candidate_root = Path(root).resolve(), Path(candidate_root).resolve()
+    geometry, normal, offset = _shared_ground(root, result['ground'])
+    source_files = result.get('sourceFiles', {})
+    _verify_sources(root, source_files)
+    updated = deepcopy(catalog)
+    objects = {row['id']: row for row in updated['objects']}
+    rows = [row for row in result.get('items', []) if row.get('model')]
+    if not rows or len({row['id'] for row in rows}) != len(rows):
+        raise ValueError('Candidate models need distinct object identities')
+    files, records = {}, []
+    for row in rows:
+        ident = row['id']; item = objects.get(ident)
+        if item is None or item.get('kind') != 'yellow safety post':
+            raise ValueError(ident + ': candidate does not name a catalog light curtain')
+        if row.get('physicalValidation') != 'none' or row.get('sourceFaceGateAccepted') is not False:
+            raise ValueError(ident + ': only explicitly unaccepted visual candidates install here')
+        for observation in row['sourceObservations']:
+            if not any(original['photo'] == observation['photo'] and original['source'] == observation['source']
+                       for original in item['observations']):
+                raise ValueError(ident + ': candidate source association differs from the catalog')
+        model = row['model']
+        references = [{'node': model['nodes'][0], 'vertexIndex': index} for index in row['visibleLowerEdgeVertices']]
+        data, world, points, heights = _exported_terminal(ident, candidate_root, model, references, normal, offset)
+        if not np.isclose(np.min(heights), row['visibleLowerEdgeHeightNative'], atol=1e-6, rtol=0):
+            raise ValueError(ident + ': exported lower edge differs from the recorded candidate height')
+        ambiguity = row['sourceFaceFitGate']['terminalPartAmbiguity']
+        evidence = {'partId': 'housing_visible_lower_edge', 'modelFile': model['file'], 'modelSha256': model['sha256'],
+                    'vertices': references, 'pointsNative': points.tolist(), 'measurementScope': 'visible_face_lower_terminal',
+                    'wholeHousingMinimumVerified': False, 'terminalPartAmbiguity': deepcopy(ambiguity),
+                    'candidateStatus': row['status'], 'sourceFaceGateAccepted': False, 'acceptedForPhysicalUse': False,
+                    'physicalValidation': 'none', 'geometryScope': row['geometryScope'],
+                    'thicknessIdentifiable': row.get('thicknessIdentifiable'), 'searchAtBound': row.get('searchAtBound'),
+                    'sourceObservations': deepcopy(row['sourceObservations'])}
+        files[model['file']] = data
+        item['model'] = {'file': model['file'], 'nodes': list(model['nodes'])}
+        item['representation'] = row['geometryScope']
+        item['modelDimensionsNative'] = np.ptp(np.concatenate(list(world.values())), axis=0).tolist()
+        item['modelTerminal'] = evidence
+        item['notes'] = [row['geometryScope'], 'Candidate revision only: the source face did not pass the strict cross-view gate; hidden geometry and metric accuracy remain unvalidated.']
+        records.append({'id': ident, 'status': 'candidate_model', 'modelFile': model['file'], 'modelSha256': model['sha256'],
+                        'heightNative': float(np.min(heights)), 'sourceFaceGateAccepted': False, 'acceptedForPhysicalUse': False})
+    manifest = {'schemaVersion': 1, 'status': 'candidate_models_installed', 'modelUpdates': len(files), 'items': records,
+                'sourceFiles': source_files, 'ground': {'normal': normal.tolist(), 'offset': offset},
+                'physicalValidation': 'none', 'acceptedForPhysicalUse': False, 'mPerNative': None}
+    with tempfile.TemporaryDirectory(prefix='.candidate-write-', dir=root) as temporary:
+        temporary = Path(temporary)
+        for name, data in files.items():
+            (temporary / name).write_bytes(data)
+        (temporary / 'housing-models.json').write_text(json.dumps(manifest, indent=2, allow_nan=False) + '\n')
+        (temporary / 'objects.json').write_text(json.dumps(updated, ensure_ascii=False, indent=2, allow_nan=False))
+        for path in temporary.iterdir():
+            path.replace(root / path.name)
+    catalog.clear(); catalog.update(updated)
+    return manifest
+
+
 def apply_housing_models(root, result, candidate_root, catalog):
     """Install source-supported geometry, retaining the exact catalog observations.
 
@@ -77,26 +199,9 @@ def apply_housing_models(root, result, candidate_root, catalog):
     dimensions; an open visible face never becomes a complete housing claim.
     """
     root, candidate_root = Path(root).resolve(), Path(candidate_root).resolve()
-    geometry = json.loads((root / 'geometry.json').read_text())
-    normal = np.asarray(geometry['floor']['normal'], float)
-    length = np.linalg.norm(normal)
-    if normal.shape != (3,) or not np.isfinite(normal).all() or length <= 0:
-        raise ValueError('Housing integration requires a finite shared floor')
-    normal, offset = normal / length, float(geometry['floor']['offset']) / length
-    supplied = np.asarray(result['ground']['normal'], float)
-    supplied_length = np.linalg.norm(supplied)
-    if (supplied.shape != (3,) or not np.isfinite(supplied).all() or supplied_length <= 0 or
-            not np.isfinite([offset, result['ground']['offset']]).all() or
-            not np.allclose(supplied / supplied_length, normal, atol=1e-9, rtol=0) or
-            not np.isclose(result['ground']['offset'] / supplied_length, offset, atol=1e-9, rtol=0)):
-        raise ValueError('Housing candidate and report must use the same ground')
+    geometry, normal, offset = _shared_ground(root, result['ground'])
     source_files = result.get('sourceFiles', {})
-    if not {'geometry.json', 'objects.json'} <= source_files.keys():
-        raise ValueError('Housing candidate requires frozen geometry and catalog hashes')
-    for name, digest in source_files.items():
-        path = (root / name).resolve()
-        if root not in path.parents or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
-            raise ValueError('Housing source is missing or stale: ' + name)
+    _verify_sources(root, source_files)
     expected = {'post-box-1', 'post-box-2'}
     items = result.get('items', [])
     if len(items) != 2 or {row['id'] for row in items} != expected:
@@ -198,31 +303,9 @@ def apply_housing_models(root, result, candidate_root, catalog):
                     not np.isclose(entry['thresholdRawPx'], threshold, atol=1e-8, rtol=0) or
                     not 0 <= entry['maxRawPx'] <= threshold):
                 raise ValueError(ident + ': held-out housing geometry is unsupported by the fixed gate')
-        model = row['model']; source = (candidate_root / model['file']).resolve()
-        if candidate_root not in source.parents or source.suffix != '.glb' or not source.is_file():
-            raise ValueError(ident + ': model must be an exported candidate GLB')
-        data = source.read_bytes()
-        if hashlib.sha256(data).hexdigest() != model.get('sha256'):
-            raise ValueError(ident + ': exported model hash differs from the evidence-checked model')
-        scene = trimesh.load(source, force='scene', process=False)
+        model, references = row['model'], boundary['vertices']
+        data, world, points, heights = _exported_terminal(ident, candidate_root, model, references, normal, offset)
         nodes = model['nodes']
-        if not nodes or len(set(nodes)) != len(nodes) or set(nodes) != set(scene.graph.nodes_geometry):
-            raise ValueError(ident + ': candidate model must contain exactly its named object nodes')
-        world = {node: _world(scene, node) for node in nodes}
-        if any(not len(points) or not np.isfinite(points).all() for points in world.values()):
-            raise ValueError(ident + ': candidate model contains invalid vertices')
-        references = boundary['vertices']
-        if len(references) < 2 or len({(ref['node'], ref['vertexIndex']) for ref in references}) != len(references):
-            raise ValueError(ident + ': distinct exported terminal vertices are required')
-        points = []
-        for ref in references:
-            node, index = ref['node'], ref['vertexIndex']
-            if node not in world or type(index) is not int or not 0 <= index < len(world[node]):
-                raise ValueError(ident + ': terminal vertex does not belong to the exported model')
-            points.append(world[node][index])
-        points = np.asarray(points); heights = points @ normal + offset
-        if np.ptp(points, axis=0).max() <= 1e-8 or np.min(heights) < 0:
-            raise ValueError(ident + ': degenerate terminal or terminal below the shared floor')
         point = points[np.argmin(heights)]; height = float(np.min(heights)); foot = point - height * normal
         filename = ident + '-physical.glb'
         digest = hashlib.sha256(data).hexdigest()

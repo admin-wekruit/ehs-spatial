@@ -334,7 +334,8 @@ def _export_metric_scene(root, report):
     scene.metadata.update(units='meters' if scale is not None else 'native', upAxis='Y',
                           metricScaleMPerNative=scale, scale_status=measurement_scale['status'],
                           modelMeasurementScale=measurement_scale, ground={'normal': [0, 1, 0], 'offset': 0},
-                          reportRevision=report['revision']['id'], groundTruth=False)
+                          reportRevision=report['revision']['id'], documentSha256=report['revision']['documentSha256'],
+                          groundTruth=False)
     name = ('workcell-conditional.glb' if measurement_scale['status'] == 'conditional_unvalidated'
             else 'workcell-metric.glb' if scale is not None else 'workcell-native.glb')
     (root / name).write_bytes(scene.export(file_type='glb'))
@@ -415,6 +416,9 @@ def _build_page(root, metrics):
     (page / "data.json").write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     shared = json.loads((page / "scene-report.json").read_text())
     shared["timing"] = data["timing"]
+    if shared.get("semanticExperiment"):
+        from scripts.workcell_semantic_report import package
+        package(root, page, shared["semanticExperiment"])
     (page / "scene-report.json").write_text(json.dumps(shared, ensure_ascii=False, indent=2) + "\n")
     return page
 
@@ -429,7 +433,7 @@ def _self_check():
 
 
 def run(images, out, diameter_m, height_m, viewer_assets, measurements=None):
-    from scripts.workcell_photo_calibration import apply_measurements, load_measurements, resolve_dimensions
+    from scripts.workcell_photo_calibration import load_measurements, resolve_dimensions
     measured = load_measurements(measurements) if measurements else None
     diameter_m, height_m = resolve_dimensions(measured, diameter_m, height_m)
     if len(images) != 4 or len(set(images)) != 4 or any(not p.is_file() for p in images):
@@ -486,11 +490,11 @@ def run(images, out, diameter_m, height_m, viewer_assets, measurements=None):
     _mask_sheet(out, seg, ("industrial robot arm", "safety fence", "work platform"), "mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("yellow safety post", "black bollard", "emergency stop button"), "extra-mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("cart",), "cart-mask-sheet.jpg", cart_seg)
-    geometry = json.loads((out / "geometry.json").read_text())
     if measured:
-        geometry = apply_measurements(out, measured)
-        from scripts.workcell_photo_report import build as build_report
-        build_report(out)
+        # Evaluation targets join here; the shared tail re-measures and rebuilds.
+        from scripts.workcell_photo_report import finalize
+        finalize(out, measured)
+    geometry = json.loads((out / "geometry.json").read_text())
     _anchor_sheet(out, images, geometry["anchor"])
     _export_metric_scene(out, json.loads((out / 'scene-report.json').read_text()))
     metrics = {"oneShotWallSeconds": round(time.monotonic() - began, 2),

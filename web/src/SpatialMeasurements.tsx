@@ -11,6 +11,8 @@ export type SceneMeasurement = {
   revisionId: string; kind: string; coordinateFrameId: string; source: string;
   value: number; unit: "deg" | "native" | "native2"; method: string;
   displayLabel?: string;
+  /** Exact scene document the measured models belong to. */
+  documentSha256?: string;
   caliper?: GroundPointMeasurement;
   measurementScale?: MeasurementScale;
   surfacePicks?: SurfacePick[];
@@ -68,7 +70,7 @@ export function SpatialMeasurements({ revision, selectedId, savedBend, savedSurf
           const caliper = measureGroundPoints(kind as GroundMeasurementKind, points.map(p => p.point), ground);
           const lines = points.map((p, i) => ({ points: [p.point, caliper.feetNative[i]], color: "#f04a3a" }));
           if (pointCount > 1) lines.push({ points: [...caliper.pointsNative, ...(pointCount === 3 ? [points[0].point] : [])], color: "#e36b23" });
-          const value: SceneMeasurement = { revisionId: revision.id, kind, coordinateFrameId: points[0].coordinateFrameId, source: "manual_model_points", value: caliper.distanceNative ?? caliper.minHeightNative, unit: "native", method: "model-surface-ground-caliper-v1", references, quality: { groundReference: { ...ground, ...caliper.ground }, ...(kind === "region_ground" ? { classification: "sampled_triangle" } : {}) }, labelPoint: points[0].point, lines, caliper, surfacePicks: points, measurementScale: scale, displayLabel: groundMeasurementLabel(caliper, scale) };
+          const value: SceneMeasurement = { revisionId: revision.id, documentSha256: revision.documentSha256, kind, coordinateFrameId: points[0].coordinateFrameId, source: "manual_model_points", value: caliper.distanceNative ?? caliper.minHeightNative, unit: "native", method: "model-surface-ground-caliper-v1", references, quality: { groundReference: { ...ground, ...caliper.ground }, ...(kind === "region_ground" ? { classification: "sampled_triangle" } : {}) }, labelPoint: points[0].point, lines, caliper, surfacePicks: points, measurementScale: scale, displayLabel: groundMeasurementLabel(caliper, scale) };
           setResult(value); return;
         }
         const vertical=kind === "edge_vertical" ? verticalEdgeAngle(points.map(p=>p.point),ground?.normal || []) : null;

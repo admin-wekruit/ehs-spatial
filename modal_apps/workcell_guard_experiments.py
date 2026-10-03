@@ -125,7 +125,7 @@ def experiment(payload: bytes, mode: str, joint_max_nfev: int = 100):
                 'applied=apply_housing_models(root,result,out/"post-shells",catalog); '
                 '(out/"housing-application.json").write_text(json.dumps(applied,indent=2,allow_nan=False)); '
                 '(root/"objects.json").write_text(json.dumps(catalog,ensure_ascii=False,indent=2)); '
-                'from scripts.workcell_photo_report import build; report=build(root); '
+                'from scripts.workcell_photo_report import finalize; report=finalize(root); '
                 'from scripts.workcell_photo_oneshot import _export_metric_scene; _export_metric_scene(root,report); '
                 'updated=out/"updated"; updated.mkdir(); '
                 'names=("posts.glb","objects.json","geometry.json","physical-clearances.json",'

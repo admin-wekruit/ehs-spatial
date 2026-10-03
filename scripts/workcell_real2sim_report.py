@@ -154,13 +154,21 @@ def build(baseline, run, out, main_report='../index.html', retry_run=None, sourc
         saved_report = _read(baseline_report, ('geometry',))
         endpoint = saved_report.get('endpointEstimation')
         if endpoint:
-            _required(endpoint, ('status', 'endpoints', 'difference', 'method', 'scale'), 'baseline endpoint estimate')
+            _required(endpoint, ('status', 'endpoints', 'method'), 'baseline endpoint estimate')
             if endpoint['status'] != 'conditional_unvalidated':
                 raise ValueError('Height entry requires the recorded conditional model estimate')
             by_id = {row['objectId']: row for row in endpoint['endpoints']}
             labels = {'fence-0': '围栏下横杆底边离地', 'post-box-1': '光幕壳体底边离地'}
-            values = [(labels[ident], _number(by_id[ident]['estimateCm'], 2)) for ident in labels]
-            values.append(('底边离地高差（光幕 − 围栏）', _number(endpoint['difference']['valueCm'], 2)))
+            if 'differences' in endpoint:
+                # Current reports keep native values only; convert with that revision's own model scale.
+                factor = saved_report['modelMeasurementScale']['nativeToMeters']
+                difference = next(row for row in endpoint['differences'] if row['minuendId'] == by_id['post-box-1']['id'])
+                values = [(labels[ident], _number(by_id[ident]['heightNative'] * factor * 100, 2)) for ident in labels]
+                values.append(('底边离地高差（光幕 − 围栏）', _number(difference['valueNative'] * factor * 100, 2)))
+                endpoint = {**endpoint, 'scale': {'source': saved_report['modelMeasurementScale']['source']}}
+            else:
+                values = [(labels[ident], _number(by_id[ident]['estimateCm'], 2)) for ident in labels]
+                values.append(('底边离地高差（光幕 − 围栏）', _number(endpoint['difference']['valueCm'], 2)))
             cards = ''.join(f'<article><h3>{_esc(label)}</h3><strong style="font-size:28px">{value} cm</strong></article>' for label, value in values)
             truth = [f"{labels[row['objectId']]} {_number(100 * row['groundTruthM'], 2)} cm" for row in
                      saved_report.get('measurementEvaluation', {}).get('comparisons', []) if row['objectId'] in labels]

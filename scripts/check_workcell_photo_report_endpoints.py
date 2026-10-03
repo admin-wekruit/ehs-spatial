@@ -24,24 +24,30 @@ def check():
     with tempfile.TemporaryDirectory(prefix='workcell-report-endpoints-') as directory:
         root = Path(directory)
         scene, objects, endpoints = trimesh.Scene(), [], []
+        ids = {'post-box-1': 'post-box-1:terminal', 'fence-0': 'fence-0:near:post-box-1', 'post-box-2': 'post-box-2:terminal'}
         for x, (ident, height) in enumerate((('post-box-1', .31), ('fence-0', .18), ('post-box-2', .44))):
             point, foot = trimesh.transform_points([[x, 0, height], [x, 0, 0]], np.linalg.inv(transform))
             mesh = trimesh.Trimesh(trimesh.transform_points(
                 [[x, 0, height], [x + .1, 0, height], [x, 0, height + 1]], np.linalg.inv(transform)),
                 [[0, 1, 2]], process=False)
             scene.add_geometry(mesh, node_name=ident, geom_name=ident)
-            objects.append({'id': ident, 'kind': 'fence' if ident == 'fence-0' else 'light curtain',
+            objects.append({'id': ident, 'kind': 'safety fence' if ident == 'fence-0' else 'yellow safety post',
                             'label': ident, 'representation': 'synthetic observed face', 'observations': [],
                             'measurements': {}, 'model': {'file': 'terminals.glb', 'nodes': [ident]}})
-            endpoints.append({'objectId': ident, 'heightNative': height,
+            endpoints.append({'id': ids[ident], 'objectId': ident, 'node': ident, 'modelFile': 'terminals.glb', 'heightNative': height,
+                              'measurementScope': 'model_lower_rail_near_curtain' if ident == 'fence-0' else 'model_bottom_face_center',
+                              **({'pairedEndpointId': ids['fence-0']} if ident == 'post-box-1' else {}),
                               'pointNative': point.tolist(), 'footNative': foot.tolist()})
         scene.export(root / 'terminals.glb')
         (root / 'objects.json').write_text(json.dumps({'objects': objects, 'coverage': {}}))
         measured = {'sceneTransformNative': transform.tolist(), 'objects': endpoints,
+                    'curtainMinusRail': [{'minuendId': ids['post-box-1'], 'subtrahendId': ids['fence-0'], 'valueNative': .13}],
                     'sourceFiles': {'terminals.glb': hashlib.sha256((root / 'terminals.glb').read_bytes()).hexdigest()}}
         rgb = np.full((2, 2, 3), 128, np.uint8)
+        # Photo cameras look along -Y of the report floor from y=+5, so report -X is image right.
+        report_camera = np.eye(4); report_camera[:3, :3] = [[-1, 0, 0], [0, 0, -1], [0, -1, 0]]; report_camera[:3, 3] = [1, 5, .5]
         frame = {'image': packed(rgb), 'pts3d': packed([[[0., 0, 3], [.1, 0, 3]], [[0, .1, 3], [.1, .1, 3]]]),
-                 'non_ambiguous_mask': packed(np.ones((2, 2), bool)), 'camera_poses': packed(np.eye(4)),
+                 'non_ambiguous_mask': packed(np.ones((2, 2), bool)), 'camera_poses': packed(np.linalg.inv(transform) @ report_camera),
                  'intrinsics': packed([[2., 0, 1], [0, 2, 1], [0, 0, 1]])}
         for photo in range(1, 5):
             Image.fromarray(rgb).save(root / f'photo-{photo}.png')
@@ -49,37 +55,36 @@ def check():
                 json.dump(frame, stream)
         endpoint_path = root / 'model-endpoint-estimate.json'
         endpoint_path.write_text(json.dumps(measured))
+        estimates = []
         for factor in (None, .5):
             geometry['anchor'].update(mPerNative=factor, referenceFit={
                 'status': 'unsupported' if factor is None else 'available', 'mPerNative': factor, 'camerasFixed': True})
             (root / 'geometry.json').write_text(json.dumps(geometry))
             report = build(root)
             result = report['endpointEstimation']
+            estimates.append(result)
             assert json.loads((root / 'scene-report.json').read_text())['endpointEstimation'] == result
             assert len(report['revision']['document']['cameras']) == 4
-            assert result['scale']['mPerNative'] == factor
             assert result['groundTruthUsedForEstimation'] is False
             rows = {row['objectId']: row for row in result['endpoints']}
-            assert rows['post-box-1']['label'] == '右侧光幕底端'
-            assert rows['post-box-2']['label'] == '左侧光幕底端'
-            assert rows['fence-0']['label'] == '邻近围栏下沿'
+            assert rows['post-box-1']['label'] == '右侧光幕底端' and rows['post-box-1']['side'] == 'right'
+            assert rows['post-box-2']['label'] == '左侧光幕底端' and rows['post-box-2']['side'] == 'left'
+            assert rows['fence-0']['label'] == '右侧光幕旁围栏下沿' and rows['fence-0']['side'] == 'right'
+            assets = {asset['id']: asset['sha256'] for asset in report['revision']['document']['assets']}
             for source in endpoints:
                 row = rows[source['objectId']]
+                assert not {'estimateCm', 'rangeCm'} & row.keys(), 'no centimetre snapshot beside the native value'
+                assert row['representationId'] == 'rep-' + row['objectId'] and assets[row['assetId']] == row['assetSha256']
                 assert np.isclose(row['heightNative'], source['heightNative'])
                 assert np.allclose(np.subtract(row['pointNative'], row['footNative']), [0, 0, source['heightNative']])
                 assert abs(row['footNative'][2]) < 1e-12
-                if factor is None:
-                    assert row['estimateCm'] is None and row['rangeCm'] is None
-                else:
-                    assert np.isclose(row['estimateCm'], source['heightNative'] * factor * 100)
-                    assert np.allclose(row['rangeCm'], [row['estimateCm']] * 2)
-            difference = result['difference']
-            assert np.isclose(difference['valueNative'], .13)
-            if factor is None:
-                assert difference['valueCm'] is None and difference['rangeCm'] is None
-            else:
-                assert np.isclose(difference['valueCm'], 6.5)
-                assert np.allclose(difference['rangeCm'], [6.5, 6.5])
+            differences = {row['id']: row for row in result['differences']}
+            assert np.isclose(differences['post-box-1:terminal-minus-rail']['valueNative'], .13)
+            assert np.isclose(differences['curtain-left-minus-right']['valueNative'], .13)
+            assert 'rail-left-minus-right' not in differences, 'one rail has no left/right counterpart'
+            assert not any('Cm' in key for row in result['differences'] for key in row)
+        # A scale-only change (null or supplied) leaves every native measurement identical.
+        assert estimates[0] == estimates[1]
 
         visible = deepcopy(measured)
         visible['objects'][2]['measurementScope'] = 'visible_face_lower_terminal'
@@ -111,7 +116,7 @@ def check():
             else:
                 raise AssertionError('Invalid endpoint evidence accepted: ' + corruption)
             assert (root / 'scene-report.json').read_bytes() == previous_report
-    print('PASS: actual four-frame report build; unknown scale stays native; supplied scale converts cm; left/right labels; tilted shared floor; stale hash and wrong plane rejected')
+    print('PASS: actual four-frame report build; endpoints bound to displayed representations; scale-only change leaves native endpoints identical; photo-4 left/right labels and differences; tilted shared floor; stale hash and wrong plane rejected')
 
 
 if __name__ == '__main__':

@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory() as tmp:
             'quaternion': [0, 0, 0, 1], 'scale': [1, 1, 1]}
     rep = {'id': 'r', 'kind': 'generated_mesh', 'sourceValidity': 'current',
            'assetId': 'beam', 'coordinateFrameId': 'floor', 'transform': pose}
-    report = {'assetURLs': {'beam': 'beam.glb'}, 'revision': {'id': 'test', 'document': {
+    report = {'assetURLs': {'beam': 'beam.glb'}, 'revision': {'id': 'test', 'documentSha256': 'fixture-document', 'document': {
         'coordinateFrames': [{'id': 'floor', 'ground': {'normal': [0, 0, 1], 'offset': 0}}],
         'entities': [{'id': 'beam', 'activeModelRepresentationId': 'r', 'representations': [rep]}]}}}
     for status, scale, filename in [('accepted_3d_reference', .5, 'workcell-metric.glb'),
@@ -50,6 +50,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert scene.metadata['modelMeasurementScale']['nativeToMeters'] == scale
         assert scene.metadata['ground'] == {'normal': [0, 1, 0], 'offset': 0}
         assert scene.metadata['groundTruth'] is False
+        assert scene.metadata['reportRevision'] == 'test' and scene.metadata['documentSha256'] == 'fixture-document'
     report['modelMeasurementScale']['nativeToMeters'] = float('nan')
     try: _export_metric_scene(root, report)
     except ValueError: pass

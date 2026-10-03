@@ -5,9 +5,14 @@ type SemanticResult = { encoder: string; variant: string; top3?: Candidate[]; vi
 type SourceRef = { photo: number; observationId?: string; experimentObservationId?: string; cropPath?: string };
 type SemanticObject = {
   entityId: string; label: string; sourceRefs?: SourceRef[]; results?: SemanticResult[];
-  policyContext?: { applicability?: string; machineResult?: unknown; candidateTopics?: string[]; facts?: { label: string; value: unknown; status?: string; source?: string }[]; missingEvidence?: string[] };
+  policyContext?: { applicability?: string; machineResult?: unknown; candidateTopics?: string[]; missingEvidence?: string[] };
 };
+/** A spatial fact of the currently loaded revision, formatted by the page with its current scale. */
+export type SpatialFact = { label: string; value: string; status?: string; source?: string; testId?: string };
+type Resolve = (path: string) => string;
 export type SemanticExperiment = {
+  binding?: { revisionId: string; documentSha256: string; experimentRevisionId: string; reuse: string; verified?: string[]; maxCropResampleDifference?: number };
+  sourceRevisionId?: string;
   status?: string; method?: unknown; protocol?: unknown; timing?: { run?: { containerSeconds?: number; callSeconds?: number; estimateUsd?: number; callWindowEstimateUsd?: number; allAttemptsCallWindowEstimateUsd?: number; actualBilledUsd?: number | null }; [key: string]: unknown };
   summary?: { encoder: string; variant: string; objectCount?: number; referenceAgreement?: { correct: number; total: number }; crossView?: { eligible: number; matched: number; referenceCorrect: number; precision: number | null; coverage: number | null } }[];
   objects?: SemanticObject[];
@@ -23,7 +28,6 @@ const evidenceLabels: Record<string, string> = {
   stopping_performance_and_detection_zone: "制停性能、检测区域及验证资料",
 };
 const scoreLabel = (score: number) => Number.isFinite(score) ? score.toFixed(3) : "未知";
-const valueLabel = (value: unknown): string => value == null ? "未知" : typeof value === "object" ? JSON.stringify(value) : String(value);
 
 export function PhotoSemanticExperiment({ data, selectedEntityId, onSelect }: { data: SemanticExperiment; selectedEntityId: string | null; onSelect: SelectObject }) {
   const queries = data.queries ?? [], [queryId, setQueryId] = useState(queries[0]?.id ?? ""), [encoder, setEncoder] = useState("");
@@ -33,7 +37,8 @@ export function PhotoSemanticExperiment({ data, selectedEntityId, onSelect }: { 
   const run = data.timing?.run;
   return <section id="semantics" className="photo-semantic-experiment" aria-label="空间到语义实验">
     <div className="photo-semantic-heading"><div><p className="photo-report-eyebrow">SPATIAL → SEMANTICS → POLICY EVIDENCE</p><h2>用语义找到三维对象</h2></div><span>实验结果 · 共用现有模型</span></div>
-    <p>选择一句预设查询，再点结果，在场景中查看对应物体。这里只展示已计算的查询，不执行在线搜索。</p>
+    <p>选择一句预设查询，再点结果，在场景中查看对应物体及其在当前模型版本中的测量。这里只展示已计算的查询，不执行在线搜索。</p>
+    {data.binding && <p className="photo-semantic-note" data-semantic-binding={data.binding.revisionId}>语义结果在 {data.binding.experimentRevisionId} 上计算；当前版本 {data.binding.revisionId} 的照片、分割多边形、深度点与地面变换已逐项核对一致后复用。空间数值只读取当前版本的测量。</p>}
     <p><a href="https://hovsg.github.io/" target="_blank" rel="noreferrer">HOV-SG</a>：借鉴其特征融合与空间关联，非原版复现。</p>
     {run && <p className="photo-semantic-run"><strong>增量语义实验（复用已有重建）</strong>{Number.isFinite(run.containerSeconds) && <span>容器内计算 {run.containerSeconds!.toFixed(1)} 秒</span>}{Number.isFinite(run.callSeconds) && <span>调用总耗时 {run.callSeconds!.toFixed(1)} 秒</span>}{Number.isFinite(run.estimateUsd) && <span>函数执行费用估算 ${run.estimateUsd!.toFixed(3)}</span>}{Number.isFinite(run.allAttemptsCallWindowEstimateUsd) && <span>含一次失败尝试，调用窗口资源粗估 ${run.allAttemptsCallWindowEstimateUsd!.toFixed(2)}</span>}<small>函数费用不含启动与收尾；调用窗口粗估含等待，均非账单。本次不包含照片重建或模型生成；实际账单{Number.isFinite(run.actualBilledUsd) ? ` $${run.actualBilledUsd!.toFixed(3)}` : "尚未核对"}。</small></p>}
     <div className="photo-semantic-queries" aria-label="预设语义查询">{queries.map(item => <button type="button" key={item.id} aria-pressed={query?.id === item.id} onClick={() => setQueryId(item.id)}>{item.label}</button>)}</div>
@@ -51,7 +56,7 @@ export function PhotoSemanticExperiment({ data, selectedEntityId, onSelect }: { 
   </section>;
 }
 
-export function PhotoSemanticObject({ data, entityId, onSelect }: { data: SemanticExperiment; entityId: string; onSelect: SelectObject }) {
+export function PhotoSemanticObject({ data, entityId, onSelect, facts, resolve = path => path, onMeasure, measureLabel }: { data: SemanticExperiment; entityId: string; onSelect: SelectObject; facts: SpatialFact[]; resolve?: Resolve; onMeasure?: () => void; measureLabel?: string }) {
   const object = data.objects?.find(item => item.entityId === entityId), [encoder, setEncoder] = useState("");
   if (!object) return null;
   const encoders = [...new Set(object.results?.map(item => item.encoder) ?? [])], currentEncoder = encoders.includes(encoder) ? encoder : encoders[0];
@@ -72,16 +77,18 @@ export function PhotoSemanticObject({ data, entityId, onSelect }: { data: Semant
           const support = supportById.get(id);
           if (!support) return <p key={id} data-support-observation={id}>观测 {id}：缺少裁剪来源，无法核对。</p>;
           const { object: sourceObject, source } = support;
-          return <button type="button" key={id} data-support-observation={id} data-support-entity={sourceObject.entityId} onClick={() => onSelect(sourceObject.entityId, source.photo, source.observationId)}>{source.cropPath && <img loading="lazy" src={source.cropPath} alt={`${sourceObject.label}，照片 ${source.photo}，方案支持观测 ${id}`} />}<span>{sourceObject.label} · 照片 {source.photo}</span><small>{id}</small>{sourceObject.entityId !== entityId && <span>来自其他目录对象 · 核对关联</span>}</button>;
+          return <button type="button" key={id} data-support-observation={id} data-support-entity={sourceObject.entityId} onClick={() => onSelect(sourceObject.entityId, source.photo, source.observationId)}>{source.cropPath && <img loading="lazy" src={resolve(source.cropPath)} alt={`${sourceObject.label}，照片 ${source.photo}，方案支持观测 ${id}`} />}<span>{sourceObject.label} · 照片 {source.photo}</span><small>{id}</small>{sourceObject.entityId !== entityId && <span>来自其他目录对象 · 核对关联</span>}</button>;
         })}</div>
         {!result.supportObservationIds?.length && <p>未记录支持观测。</p>}
       </details>}
     </article>)}</div>
     <p className="photo-semantic-note">分数为余弦相似度，不是概率；不同编码器的分数不能直接比较。</p>
-    {!!object.sourceRefs?.length && <details className="photo-semantic-sources"><summary>原目录对象的裁剪（{object.sourceRefs.length}）</summary><div>{object.sourceRefs.map((source, index) => <button type="button" key={`${source.photo}:${source.observationId ?? index}`} onClick={() => onSelect(entityId, source.photo, source.observationId)}>{source.cropPath && <img loading="lazy" src={source.cropPath} alt={`${object.label}，照片 ${source.photo} 的分割裁剪`} />}<span>照片 {source.photo}</span></button>)}</div></details>}
+    {!!object.sourceRefs?.length && <details className="photo-semantic-sources"><summary>原目录对象的裁剪（{object.sourceRefs.length}）</summary><div>{object.sourceRefs.map((source, index) => <button type="button" key={`${source.photo}:${source.observationId ?? index}`} onClick={() => onSelect(entityId, source.photo, source.observationId)}>{source.cropPath && <img loading="lazy" src={resolve(source.cropPath)} alt={`${object.label}，照片 ${source.photo} 的分割裁剪`} />}<span>照片 {source.photo}</span></button>)}</div></details>}
     <section className="photo-semantic-policy"><h4>接到 EHS 检查还需要什么</h4><p>适用性待确认 · 尚无安全判定</p>
       {!!policy?.candidateTopics?.length && <><h5>候选检查主题</h5><ul>{policy.candidateTopics.map(topic => <li key={topic}>{topic}</li>)}</ul></>}
-      {!!policy?.facts?.length && <details><summary>可用的空间证据</summary><p>本次实验的测量快照；标尺试算后的数值见测量卡。</p><dl>{policy.facts.map((fact, index) => <div key={index}><dt>{fact.label}</dt><dd>{valueLabel(fact.value)}</dd>{fact.status && <small>{fact.status}</small>}{fact.source && <small>来源：{fact.source}</small>}</div>)}</dl></details>}
+      <details open data-semantic-facts={entityId}><summary>可用的空间证据（当前模型版本）</summary><p>以下数值实时读取当前版本的模型测量和标尺；切换版本或修改标尺后同步变化。</p>
+        {facts.length ? <dl>{facts.map((fact, index) => <div key={index}><dt>{fact.label}</dt><dd data-semantic-fact={fact.testId}>{fact.value}</dd>{fact.status && <small>{fact.status}</small>}{fact.source && <small>来源：{fact.source}</small>}</div>)}</dl> : <p>本版本没有这个对象的结构化空间测量；缺少的事实不会用文字或语言模型补全。</p>}
+        {onMeasure && <button type="button" onClick={onMeasure}>{measureLabel ?? "在 3D 中查看该对象的测量"}</button>}</details>
       <h5>待补证据</h5><ul>{(policy?.missingEvidence?.length ? policy.missingEvidence : ["applicability_confirmation", "policy_source_and_version"]).map(item => <li key={item}>{evidenceLabels[item] ?? item}</li>)}</ul>
     </section>
   </section>;

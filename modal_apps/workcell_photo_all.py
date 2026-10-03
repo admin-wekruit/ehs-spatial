@@ -160,7 +160,7 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
             model_end = time.monotonic()
             _finish(geometry_proc, "metric geometry")
             from scripts.workcell_photo_objects import build as build_objects
-            from scripts.workcell_photo_report import build as build_report
+            from scripts.workcell_photo_report import finalize
             report._posts(root, seg)
             catalog = build_objects(root, [Path(path) for path in sources])
             from scripts.workcell_photo_metrology import apply_source_clearances
@@ -196,12 +196,8 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
             structural_result['initializerModels'] = initializers
             (root/'structural-result.json').write_text(json.dumps(structural_result, indent=2))
             (root/'objects.json').write_text(json.dumps(catalog, ensure_ascii=False, indent=2))
-            if reference:
-                from scripts.workcell_photo_calibration import apply_measurements
-                apply_measurements(root, {'schemaVersion': 1, 'reference': reference})
-            from scripts.workcell_endpoint_estimate import estimate
-            (root/'model-endpoint-estimate.json').write_text(json.dumps(estimate(root), indent=2, allow_nan=False)+'\n')
-            build_report(root)
+            # Models, catalog and floor are final here; no _posts/build_objects may follow.
+            finalize(root, {'schemaVersion': 1, 'reference': reference} if reference else None)
             complete_end = time.monotonic()
             (root / "models-timing.json").write_text(json.dumps({"models": timing, "containerWallSeconds": model_end - started}))
             (root / "stage-timing.json").write_text(json.dumps({"geometrySeconds": geometry_end-started,

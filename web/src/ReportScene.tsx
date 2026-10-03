@@ -214,10 +214,12 @@ export function Extent({ entity, document }: { entity: Entity; document: SceneDo
 
 export function ReportScene({
   revision, selection, onSelect, imageId, cameraId, onCamera,
-  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false, measurementOverride, measurementScale, initialView,
+  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false, measurementOverride, measurementScale, initialView, viewRequest,
 }: {
   matchedComparison?: boolean;
   initialView?: "photo" | "point_cloud" | "model" | "compare";
+  /** A later explicit request (e.g. from a semantic result) to show one view; nonce makes repeats distinct. */
+  viewRequest?: { view: "photo" | "point_cloud" | "model" | "compare"; nonce: number } | null;
   measurementOverride?: SceneMeasurement | null;
   measurementScale?: MeasurementScale;
   revision: Revision;
@@ -421,6 +423,12 @@ export function ReportScene({
     setWipe(Math.round(Math.max(0, Math.min(100, (event.clientX - bounds.left) / bounds.width * 100))));
   }
   function chooseView(pane: Pane | null) { setComparing(false); setFocused(pane); setMobileSection("views"); }
+  useEffect(() => {
+    if (!viewRequest) return;
+    if (viewRequest.view === "compare") { setComparing(true); setLayer("model"); setMobileSection("views"); }
+    else if (viewRequest.view === "photo") chooseView("photo");
+    else { setLayer(viewRequest.view); chooseView("spatial"); }
+  }, [viewRequest?.nonce]);
   async function fullscreen() {
     setFullscreenError(false);
     try {
