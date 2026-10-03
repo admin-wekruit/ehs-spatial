@@ -31,7 +31,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'modal_apps'), '/root']
 from lingbot_room import app, digest, image, save, volume  # noqa: E402
 
-FULL_WH, CROP_X0, CROP_SCALE = (1280, 720), 160.25, 1.5  # clip pixel -> full pixel: x*1.5+160.25, y*1.5+0.25
+# the uncropped frame and the clip raster's place in it, clip pixel -> full pixel: x*scale + x0, y*scale + y0 (pixel centres).
+# ME340's (1280x720, the raster its centre 960x720) is the default; frame_geometry(clip) reads a clip's own source-full.json.
+ME340_GEOMETRY = {'full_wh': [1280, 720], 'x0': 160.25, 'y0': .25, 'scale': 1.5}
+FULL_WH = tuple(ME340_GEOMETRY['full_wh'])
 SUBTITLE_ROWS = (646, 706)  # burned-in captions of the uncropped frame (fill_scene_holes --overlay-rows 648:704, +2 px)
 MASK_GROW = 7                # clip pixels a moving-entity mask is grown by
 EDGE_JUMP = .03              # relative depth jump to a 4-neighbour that marks a flying pixel (mono_room.unreliable)
@@ -302,18 +305,27 @@ def read_points_glb(path):
     return accessor(prim['attributes']['POSITION'], '<f4', 3), accessor(prim['attributes']['COLOR_0'], np.uint8, 4)[:, :3]
 
 
+def frame_geometry(clip):
+    """The clip's uncropped frame (source-full.json): its size and the clip raster's place in it (one scale for both axes)."""
+    full = json.loads((Path(clip) / 'source-full.json').read_text())
+    x, y, w, h = full['raster_in_video_xywh']
+    scale = w / 640
+    assert abs(scale - h / 480) < 1e-9, f'the raster is scaled unevenly in the video: {w}x{h}'
+    return {'full_wh': [int(full['width']), int(full['height'])], 'x0': x + (scale - 1) / 2, 'y0': y + (scale - 1) / 2, 'scale': scale}
+
+
 # ---------------------------------------------------------------- the frames, on Modal
-def sample_grid(lb_shape, sample):
+def sample_grid(lb_shape, sample, full_wh=FULL_WH):
     """Full-frame pixel (x, y) of every sample of the `sample`x grid over LingBot's raster."""
     h, w = lb_shape
     v2, u2 = np.mgrid[0:sample * h, 0:sample * w].astype(np.float64)
     lb_u, lb_v = (u2 + .5) / sample - .5, (v2 + .5) / sample - .5  # cv2.resize INTER_LINEAR pixel centres
-    fx = (lb_u + .5) * FULL_WH[0] / w - .5  # the official loader's PIL resize, pixel centres
-    fy = (lb_v + .5) * FULL_WH[1] / h - .5
+    fx = (lb_u + .5) * full_wh[0] / w - .5  # the official loader's PIL resize, pixel centres
+    fy = (lb_v + .5) * full_wh[1] / h - .5
     return fx.astype(np.float32), fy.astype(np.float32)
 
 
-def moving_lookup(mask_png_bytes, fx, fy):
+def moving_lookup(mask_png_bytes, fx, fy, geometry=ME340_GEOMETRY):
     """Moving-entity mask on the sample grid: clip masks grown, and where a mask touches the crop's side the whole
     uncropped band beside it in those rows (the masks only cover the 4:3 crop)."""
     import cv2
@@ -323,8 +335,8 @@ def moving_lookup(mask_png_bytes, fx, fy):
     if not clip.any():
         return np.zeros(fx.shape, bool)
     clip = cv2.dilate(clip, disc(MASK_GROW))
-    cx = np.rint((fx - CROP_X0) / CROP_SCALE).astype(int)
-    cy = np.clip(np.rint((fy - .25) / CROP_SCALE).astype(int), 0, 479)
+    cx = np.rint((fx - geometry['x0']) / geometry['scale']).astype(int)
+    cy = np.clip(np.rint((fy - geometry['y0']) / geometry['scale']).astype(int), 0, 479)
     inside = (cx >= 0) & (cx < 640)
     out = np.zeros(fx.shape, bool)
     out[inside] = clip[cy[inside], cx[inside]] > 0
@@ -367,10 +379,11 @@ def align(result_dir, files, poses):
             'outlier_source_frames': [f['sourceFrame'] for f, ok in zip(files, inliers) if not ok]}, (s, r, t), inliers
 
 
-def frame_stream(root, files, sim3, clip_k, conf_floor, sample=3, overlay=SUBTITLE_ROWS, masks_tar='dynamic-masks.tar'):
+def frame_stream(root, files, sim3, clip_k, conf_floor, sample=3, overlay=SUBTITLE_ROWS, masks_tar='dynamic-masks.tar', geometry=ME340_GEOMETRY):
     """Per LingBot frame, in the report world: sample-grid depth, validity, K, camera, full-res colour, conf, facing.
     overlay: rows [y0, y1) of the uncropped frame under burned-in captions, never used (y0 == y1: none).
-    masks_tar: the moving-entity masks upload_masks put on the volume (named by their content)."""
+    masks_tar: the moving-entity masks upload_masks put on the volume (named by their content).
+    geometry: the uncropped frame and the clip raster's place in it (frame_geometry)."""
     import cv2
     s, r, t = sim3
     masks = {}
@@ -394,7 +407,7 @@ def frame_stream(root, files, sim3, clip_k, conf_floor, sample=3, overlay=SUBTIT
                 depth, conf, k, w2c = data['depth'][..., 0].astype(np.float64), data['depth_conf'].astype(np.float64), data['k'].astype(np.float64), data['w2c'].astype(np.float64)
             h, w = depth.shape
             if grid is None:
-                fx, fy = sample_grid((h, w), sample)
+                fx, fy = sample_grid((h, w), sample, geometry['full_wh'])
                 grid = (fx, fy, (fy >= overlay[0]) & (fy < overlay[1]))
             fx, fy, subtitles = grid
             full = np.eye(4)
@@ -404,7 +417,7 @@ def frame_stream(root, files, sim3, clip_k, conf_floor, sample=3, overlay=SUBTIT
             c2w[:3, :3] = r @ lb_c2w[:3, :3]
             c2w[:3, 3] = s * r @ lb_c2w[:3, 3] + t
             depth = s * depth
-            moving = moving_lookup(masks.get(index, []), fx, fy)
+            moving = moving_lookup(masks.get(index, []), fx, fy, geometry)
             blocked = moving | subtitles
             ok_lb = np.isfinite(depth) & (depth > 0) & (conf > conf_floor) & ~edges(depth) & ~blocked[::sample, ::sample]
             k2 = k.copy()
@@ -434,7 +447,7 @@ def load_run(run_id):
 
 
 @app.function(image=dense_image, cpu=(4, 4), memory=(16384, 16384), timeout=1800, retries=0, volumes={'/artifact': volume})
-def diagnose_remote(run_id, poses, clip_k, every=5, lag=5, conf_floor=1., overlay=SUBTITLE_ROWS, masks_tar='dynamic-masks.tar'):
+def diagnose_remote(run_id, poses, clip_k, every=5, lag=5, conf_floor=1., overlay=SUBTITLE_ROWS, masks_tar='dynamic-masks.tar', geometry=ME340_GEOMETRY):
     """Alignment, confidence distribution, and how far neighbouring views' depths disagree (per confidence decile)."""
     volume.reload()
     root, execution = load_run(run_id)
@@ -442,7 +455,7 @@ def diagnose_remote(run_id, poses, clip_k, every=5, lag=5, conf_floor=1., overla
     report, sim3, _ = align(root / 'result', files, np.asarray(poses))
     confs, pairs = [], []
     views = {}
-    for f in frame_stream(root, files, sim3, clip_k, conf_floor, overlay=overlay, masks_tar=masks_tar):
+    for f in frame_stream(root, files, sim3, clip_k, conf_floor, overlay=overlay, masks_tar=masks_tar, geometry=geometry):
         lb = f['lb']
         views[f['source']] = lb
         confs.append(lb['conf'][::4, ::4].ravel())
@@ -486,6 +499,13 @@ def diagnose_remote(run_id, poses, clip_k, every=5, lag=5, conf_floor=1., overla
             'by_conf_decile': by_conf}
 
 
+def flow_frame(geometry, base):
+    """The cross-view check's analysis (build_lingbot_replay.check_temporal_geometry) and the pixel grid its masks are drawn on:
+    the uncropped frame's own size, 4:3 or 16:9, so its masks resize onto LingBot's raster of that frame."""
+    width, height = geometry['full_wh']
+    return {'frames': [], 'height': height, 'width': width, '_base': str(base)}, [g.astype(np.float32) for g in np.meshgrid(np.arange(width), np.arange(height))]
+
+
 def build_map(root, files, poses, clip_k, config, out):
     """Fuse the Sim3-inlier frames into one layer; the outlier frames only vote (dry) against the finished map."""
     import cv2
@@ -498,14 +518,14 @@ def build_map(root, files, poses, clip_k, config, out):
     fusion = Fusion(config['cell'], config['tolerance'], config['tolerance_floor'], config['conf'])
     naive = [np.zeros((0, 3), np.float32)], [np.zeros(0, np.float32)]  # every valid LingBot-resolution sample, no suppression
     flow_masks = Path(tempfile.mkdtemp(prefix='flow-masks-'))
-    analysis = {'frames': [], 'height': FULL_WH[1], 'width': FULL_WH[0], '_base': str(flow_masks)}
-    full_grid = [g.astype(np.float32) for g in np.meshgrid(np.arange(FULL_WH[0]), np.arange(FULL_WH[1]))]
+    geometry = config.get('geometry', ME340_GEOMETRY)
+    analysis, full_grid = flow_frame(geometry, flow_masks)
     votes, held, valid_share, step = {}, [], [], config['sample']
     for f in frame_stream(root, files, sim3, clip_k, config['fill_conf'], step, tuple(config.get('overlay_rows', SUBTITLE_ROWS)),
-                          config.get('masks_tar', 'dynamic-masks.tar')):
+                          config.get('masks_tar', 'dynamic-masks.tar'), geometry):
         objects = []
         if f['masks']:  # the project's cross-view check leaves out the same moving pixels, as source-raster RGBA masks
-            alpha = moving_lookup(f['masks'], *full_grid).astype(np.uint8) * 255
+            alpha = moving_lookup(f['masks'], *full_grid, geometry).astype(np.uint8) * 255
             name = f"{f['source']:05d}.png"
             assert cv2.imwrite(str(flow_masks / name), np.dstack([alpha, alpha, alpha, alpha]))
             objects.append({'maskUrl': name})
@@ -569,9 +589,10 @@ def report_inputs(droid_run, clip):
     return data['poses_c2w'].astype(np.float64), [float(x) for x in k], data
 
 
-def full_k(clip_k):
+def full_k(clip_k, geometry=ME340_GEOMETRY):
     fx, fy, cx, cy = clip_k
-    return np.array([[CROP_SCALE * fx, 0, CROP_SCALE * cx + CROP_X0], [0, CROP_SCALE * fy, CROP_SCALE * cy + .25], [0, 0, 1.]])
+    z = geometry['scale']
+    return np.array([[z * fx, 0, z * cx + geometry['x0']], [0, z * fy, z * cy + geometry['y0']], [0, 0, 1.]])
 
 
 def raster_k(clip_k):
@@ -814,7 +835,9 @@ def evaluate(args):
     published_xyz = read_points_glb(args.points)[0].astype(np.float64)
     published_cell = json.loads((args.depth_run / 'fuse-metrics.json').read_text())['voxel_native']
     surface, parts = surface_scene(args.surface)
-    kr, kf = raster_k(clip_k), full_k(clip_k)
+    geometry = frame_geometry(args.clip)
+    full_wh = tuple(geometry['full_wh'])
+    kr, kf = raster_k(clip_k), full_k(clip_k, geometry)
     bounds = [0] + info['shot_cuts_source_frames']
     segment = lambda i: bisect.bisect_right(bounds, i) - 1
     held = set(info['held_out_frames']['source_frames'])
@@ -842,7 +865,7 @@ def evaluate(args):
                              'and this map holds none of its frames'),
                     'fill_scene_holes_views_640x480_raster_4px': coverage(judged, kr, (640, 480), 4),
                     'droid_keyframes_640x480_raster_4px': coverage(keyframes, kr, (640, 480), 4),
-                    'fill_scene_holes_views_uncropped_1280x720_8px': coverage(judged, kf, FULL_WH, 8)}
+                    f'fill_scene_holes_views_uncropped_{full_wh[0]}x{full_wh[1]}_8px': coverage(judged, kf, full_wh, 8)}
 
     # layering: each map on its own points (this map and the naive LingBot map remotely; the naive DA3 map here)
     radius = info['patch_radius_native']
@@ -864,8 +887,8 @@ def evaluate(args):
     images = []
     for i in shown:
         c2w = camera(i)
-        panels = [frames[i], render_points(xyz, rgb, own, kf, c2w, FULL_WH), render_surface(surface, parts, kf, c2w, FULL_WH)]
-        strip = np.hstack([cv2.resize(p, (640, 360), interpolation=cv2.INTER_AREA) for p in panels])
+        panels = [frames[i], render_points(xyz, rgb, own, kf, c2w, full_wh), render_surface(surface, parts, kf, c2w, full_wh)]
+        strip = np.hstack([cv2.resize(p, (640, round(640 * full_wh[1] / full_wh[0])), interpolation=cv2.INTER_AREA) for p in panels])
         for x, label in zip((10, 650, 1290), (f'frame {i}', 'LingBot dense points (this)', 'published room surface')):
             cv2.putText(strip, label, (x, 26), cv2.FONT_HERSHEY_SIMPLEX, .7, (255, 255, 0), 2)
         name = f'compare-{i:05d}.jpg'
@@ -903,12 +926,13 @@ def shot_cuts(video, factor=8):
 
 def build(args, diagnose_only=False):
     poses, clip_k, _ = report_inputs(args.droid_run, args.clip)
+    geometry = frame_geometry(args.clip)  # this clip's uncropped frame: the LingBot input (source-full.mp4) and the colours
     metres = json.loads((args.depth_run / 'metric-scale.json').read_text())['metres_per_native_unit']
     masks_tar = upload_masks(args.run_id, args.masks)
     started = time.time()
     if diagnose_only:
         with app.run():
-            result = diagnose_remote.remote(args.run_id, poses, clip_k, overlay=args.overlay_rows, masks_tar=masks_tar)
+            result = diagnose_remote.remote(args.run_id, poses, clip_k, overlay=args.overlay_rows, masks_tar=masks_tar, geometry=geometry)
         result['wall_seconds'] = time.time() - started
         save(args.output / 'diagnose.json', result)
         print(json.dumps(result, indent=1))
@@ -916,7 +940,7 @@ def build(args, diagnose_only=False):
     cuts = shot_cuts(args.clip / 'source-full.mp4')
     config = {'exclude': [[int(v) for v in span.split(':')] for span in args.exclude_frames], 'conf': args.conf, 'fill_conf': args.fill_conf, 'sample': args.sample, 'cell': args.cell / metres, 'tolerance': args.tolerance,
               'tolerance_floor': args.tolerance_floor / metres, 'max_points': args.max_points, 'patch_radius': .03 / metres, 'overlay_rows': list(args.overlay_rows),
-              'masks_tar': masks_tar}
+              'masks_tar': masks_tar, 'geometry': geometry}
     with app.run():
         summary = build_remote.remote(args.run_id, poses, clip_k, config)
     wall = time.time() - started
@@ -948,7 +972,8 @@ def build(args, diagnose_only=False):
                           'translation': summary['alignment']['translation']},
             'frames_used': {'lingbot_input_frames': len(plan['frames']), 'stride': plan['stride'], 'first_last': [plan['frames'][0]['sourceFrame'], plan['frames'][-1]['sourceFrame']],
                             'fused_into_map': summary['fused_frames'], 'held_out': len(summary['alignment']['outlier_source_frames']),
-                            'input': f"uncropped source-full.mp4 1280x720, every {plan['stride']} frame(s) -> official crop mode 518x294",
+                            'input': f"uncropped source-full.mp4 {geometry['full_wh'][0]}x{geometry['full_wh'][1]}, every {plan['stride']} frame(s) -> official crop mode "
+                                     f"518x{min(round(geometry['full_wh'][1] * 518 / geometry['full_wh'][0] / 14) * 14, 518)}",
                             'lingbot': {k: plan[k] for k in ('code_revision', 'weights_revision', 'weights_sha256')} | {'configuration': plan['configuration']},
                             'lingbot_run': {k: run[k] for k in ('gpu', 'inference_seconds', 'elapsed_seconds', 'peak_gpu_bytes', 'native_prediction_sha256')}
                                            | {'file': 'lingbot-run.json', 'predictions': f'Modal volume panoptes-lingbot-map:/{args.run_id}/result'}},

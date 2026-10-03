@@ -514,6 +514,7 @@ def test_worst_verdict_orders_by_severity():
     assert worst_verdict({}) == "NO_DATA"
     assert worst_verdict({0: "PASS", 1: "NEEDS_REVIEW"}) == "NEEDS_REVIEW"
     assert worst_verdict({0: "PASS", 1: "FAIL", 2: "NO_DATA"}) == "FAIL"
+    assert worst_verdict({0: "PASS", 1: "NO_DATA"}) == "NO_DATA"  # PASS needs every instant to pass
 
 
 # ---------------------------------------------------------------- SAM stage

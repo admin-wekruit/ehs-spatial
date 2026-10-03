@@ -1139,7 +1139,7 @@ export function WorkcellReport({
     </article>
   );
 }
-function ObjectFacts({
+export function ObjectFacts({
   entity,
   document,
 }: {
@@ -1184,7 +1184,7 @@ function ObjectFacts({
             <Extent entity={entity} document={document} />
           </dd>
         </div>
-        {!referenceSurface && <div>
+        {!referenceSurface && entity.physicalDimensionsUnknown !== true && <div>
           <dt>
             {t("reportCurrentModel")} · {t("width")} × {t("depth")} ×{" "}
             {t("height")}
@@ -1199,7 +1199,7 @@ function ObjectFacts({
         </div>}
         {!referenceSurface && <div>
           <dt>{t("reportOrientation")}</dt>
-          <dd>{tilt === null ? "—" : tilt.toFixed(1) + "°"}</dd>
+          <dd>{entity.modelOrientationUnknown === true || tilt === null ? "—" : tilt.toFixed(1) + "°"}</dd>
         </div>}
       </dl>
       <p className="report-footnote">{t(referenceSurface ? "reportReferenceSurfaceNote" : "reportMeasurementNote")}</p>

@@ -6,6 +6,7 @@ VLM sweep and SAM score do not establish semantic correctness or safety.
 """
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import tempfile
 import json
@@ -137,9 +138,9 @@ def detect_devices(
     manifest_path = out_dir / "detections.json"
     saved = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     by_id = {t.item_id: t for t in TAXONOMY}
-    all_frames, detections, missing, rejected = [], [], [], []
-    sweep_calls = sam_calls = 0
-    for index, image_path in enumerate(inputs, 1):
+    def process_frame(item):
+        index, image_path = item
+        sweep_calls = sam_calls = 0
         frame_id = f"frame_{index:04d}"
         image_sha = hashlib.sha256(image_path.read_bytes()).hexdigest()
         with Image.open(image_path) as image:
@@ -170,8 +171,7 @@ def detect_devices(
             if sweep_cache.is_file() and not fresh:
                 sweep = TaxonomySweep.model_validate(json.loads(sweep_cache.read_text()))
             else:
-                adapter = adapter or GeminiAdapter()
-                sweep = _bulk_sweep(str(image_path), adapter)
+                sweep = _bulk_sweep(str(image_path), adapter or GeminiAdapter())
                 sweep_calls += 1
                 _write_json(sweep_cache, sweep.model_dump(mode="json"))
             result = {**frame, "source_binding": "content_hash",
@@ -227,13 +227,23 @@ def detect_devices(
                                   "reason": "not_visible_in_single_sweep" if t.item_id in sweep.not_visible else "not_reported_in_single_sweep"}
                                  for t in TAXONOMY if t.item_id not in visible and t.expect != "optional"]
             _write_json(cache, result)
-        all_frames.append({**frame, "source_binding": result.get("source_binding"),
-                           "cache_path": cache.relative_to(run).as_posix(),
-                           "detections_count": len(result["detections"]),
-                           "masked_count": sum("rle" in d for d in result["detections"])})
-        detections.extend(result["detections"])
-        missing.extend(result["missing"])
-        rejected.extend(result["rejected"])
+        return frame, result, cache, sweep_calls, sam_calls
+
+    all_frames, detections, missing, rejected = [], [], [], []
+    sweep_calls = sam_calls = 0
+    # ponytail: two independent photos at once; raise only after measuring
+    # provider limits, since each photo can issue several SAM requests.
+    with ThreadPoolExecutor(max_workers=min(2, len(inputs))) as pool:
+        for frame, result, cache, sweeps, sams in pool.map(process_frame, enumerate(inputs, 1)):
+            all_frames.append({**frame, "source_binding": result.get("source_binding"),
+                               "cache_path": cache.relative_to(run).as_posix(),
+                               "detections_count": len(result["detections"]),
+                               "masked_count": sum("rle" in d for d in result["detections"])})
+            detections.extend(result["detections"])
+            missing.extend(result["missing"])
+            rejected.extend(result["rejected"])
+            sweep_calls += sweeps
+            sam_calls += sams
     for number, detection in enumerate(detections, 1):
         detection["number"] = number
     envelope = {"run_id": run_id, "detection_version": DETECTION_VERSION, "frames": all_frames,

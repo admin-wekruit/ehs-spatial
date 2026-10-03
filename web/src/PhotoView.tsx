@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { resolveAsset } from "./api";
+import { useSceneResources } from "./SceneResources";
 import {
   cameraForImage,
   observationsFor,
@@ -27,6 +27,7 @@ export function PhotoView({
   draw?: boolean;
   showBounds?: boolean;
 }) {
+  const { resolveAsset } = useSceneResources();
   const { t } = useI18n(),
     [url, setURL] = useState<string>(),
     [size, setSize] = useState<[number, number]>([1, 1]),

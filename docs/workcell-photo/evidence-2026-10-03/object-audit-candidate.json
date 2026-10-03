@@ -1,0 +1,1435 @@
+{
+  "schemaVersion": 1,
+  "revisionId": "workcell-housing-g-2026-10-03",
+  "documentSha256": "4f9bd0e5b82f91b36e801f26681f5787cec2ea18bce303c9abbc0a3a80ec2ae7",
+  "scope": "Model silhouette through the saved camera versus the saved segmentation polygon, per source view. Occlusion and mask errors lower IoU; not physical accuracy.",
+  "objects": 52,
+  "views": [
+    {
+      "entityId": "robot",
+      "label": "工业机器人",
+      "photo": 1,
+      "observationId": "obs-robot-1-0",
+      "representationId": "rep-robot-photo-1",
+      "status": "measured",
+      "iou": 0.7222005968599974,
+      "modelPixels": 6901,
+      "maskPixels": 6372,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "robot",
+      "label": "工业机器人",
+      "photo": 2,
+      "observationId": "obs-robot-2-1",
+      "representationId": "rep-robot-photo-2",
+      "status": "measured",
+      "iou": 0.6005743000717875,
+      "modelPixels": 5634,
+      "maskPixels": 5514,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "robot",
+      "label": "工业机器人",
+      "photo": 3,
+      "observationId": "obs-robot-3-2",
+      "representationId": "rep-robot-photo-3",
+      "status": "measured",
+      "iou": 0.6629935720844812,
+      "modelPixels": 3326,
+      "maskPixels": 3918,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "robot",
+      "label": "工业机器人",
+      "photo": 4,
+      "observationId": "obs-robot-4-3",
+      "representationId": "rep-robot-photo-4",
+      "status": "measured",
+      "iou": 0.7062298603651987,
+      "modelPixels": 3240,
+      "maskPixels": 3114,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "cart",
+      "label": "载料运输车",
+      "photo": 1,
+      "observationId": "obs-cart-1-0",
+      "representationId": "rep-cart",
+      "status": "measured",
+      "iou": 0.7726029225328618,
+      "modelPixels": 13019,
+      "maskPixels": 13547,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "cart",
+      "label": "载料运输车",
+      "photo": 2,
+      "observationId": "obs-cart-2-1",
+      "representationId": "rep-cart",
+      "status": "measured",
+      "iou": 0.7909166666666667,
+      "modelPixels": 10676,
+      "maskPixels": 10815,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "cart",
+      "label": "载料运输车",
+      "photo": 3,
+      "observationId": "obs-cart-3-2",
+      "representationId": "rep-cart",
+      "status": "measured",
+      "iou": 0.6485933503836318,
+      "modelPixels": 11711,
+      "maskPixels": 10850,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "cart",
+      "label": "载料运输车",
+      "photo": 4,
+      "observationId": "obs-cart-4-3",
+      "representationId": "rep-cart",
+      "status": "measured",
+      "iou": 0.6355826173992827,
+      "modelPixels": 10265,
+      "maskPixels": 9344,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "v-guard-left",
+      "label": "左侧折弯护板 1",
+      "photo": 3,
+      "observationId": "obs-v-guard-left-3-0",
+      "representationId": "rep-v-guard-left",
+      "status": "measured",
+      "iou": 0.7936028968014484,
+      "modelPixels": 1525,
+      "maskPixels": 1447,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "v-guard-left",
+      "label": "左侧折弯护板 1",
+      "photo": 1,
+      "observationId": "obs-v-guard-left-1-1",
+      "representationId": "rep-v-guard-left",
+      "status": "measured",
+      "iou": 0.7084708470847084,
+      "modelPixels": 1696,
+      "maskPixels": 1410,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "v-guard-left",
+      "label": "左侧折弯护板 1",
+      "photo": 2,
+      "observationId": "obs-v-guard-left-2-2",
+      "representationId": "rep-v-guard-left",
+      "status": "measured",
+      "iou": 0.7482311320754716,
+      "modelPixels": 1603,
+      "maskPixels": 1362,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "v-guard-left",
+      "label": "左侧折弯护板 1",
+      "photo": 4,
+      "observationId": "obs-v-guard-left-4-3",
+      "representationId": "rep-v-guard-left",
+      "status": "measured",
+      "iou": 0.7641946697566628,
+      "modelPixels": 1396,
+      "maskPixels": 1649,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "v-guard-center",
+      "label": "中间折弯护板 2",
+      "photo": 3,
+      "observationId": "obs-v-guard-center-3-0",
+      "representationId": "rep-v-guard-center",
+      "status": "measured",
+      "iou": 0.6747072599531616,
+      "modelPixels": 3968,
+      "maskPixels": 3183,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "v-guard-center",
+      "label": "中间折弯护板 2",
+      "photo": 4,
+      "observationId": "obs-v-guard-center-4-1",
+      "representationId": "rep-v-guard-center",
+      "status": "measured",
+      "iou": 0.624016247778624,
+      "modelPixels": 3659,
+      "maskPixels": 2738,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "v-guard-right",
+      "label": "右侧折弯护板 3",
+      "photo": 3,
+      "observationId": "obs-v-guard-right-3-0",
+      "representationId": "rep-v-guard-right",
+      "status": "measured",
+      "iou": 0.6046399226679555,
+      "modelPixels": 1646,
+      "maskPixels": 1674,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "v-guard-right",
+      "label": "右侧折弯护板 3",
+      "photo": 1,
+      "observationId": "obs-v-guard-right-1-1",
+      "representationId": "rep-v-guard-right",
+      "status": "measured",
+      "iou": 0.6477272727272727,
+      "modelPixels": 1881,
+      "maskPixels": 1599,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "v-guard-right",
+      "label": "右侧折弯护板 3",
+      "photo": 4,
+      "observationId": "obs-v-guard-right-4-2",
+      "representationId": "rep-v-guard-right",
+      "status": "measured",
+      "iou": 0.7763558805606338,
+      "modelPixels": 1379,
+      "maskPixels": 1536,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-box-1",
+      "label": "黄色光幕立柱 1",
+      "photo": 1,
+      "observationId": "obs-post-box-1-1-0",
+      "representationId": "rep-post-box-1",
+      "status": "measured",
+      "iou": 0.26768558951965066,
+      "modelPixels": 1364,
+      "maskPixels": 4442,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-box-1",
+      "label": "黄色光幕立柱 1",
+      "photo": 2,
+      "observationId": "obs-post-box-1-2-1",
+      "representationId": "rep-post-box-1",
+      "status": "measured",
+      "iou": 0.24221556886227544,
+      "modelPixels": 1417,
+      "maskPixels": 2732,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-box-1",
+      "label": "黄色光幕立柱 1",
+      "photo": 3,
+      "observationId": "obs-post-box-1-3-2",
+      "representationId": "rep-post-box-1",
+      "status": "measured",
+      "iou": 0.1983232905423107,
+      "modelPixels": 1106,
+      "maskPixels": 3468,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-box-1",
+      "label": "黄色光幕立柱 1",
+      "photo": 4,
+      "observationId": "obs-post-box-1-4-3",
+      "representationId": "rep-post-box-1",
+      "status": "measured",
+      "iou": 0.24808711006474396,
+      "modelPixels": 980,
+      "maskPixels": 3261,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-box-2",
+      "label": "黄色光幕立柱 2",
+      "photo": 1,
+      "observationId": "obs-post-box-2-1-0",
+      "representationId": "rep-post-box-2",
+      "status": "measured",
+      "iou": 0.11666330848277251,
+      "modelPixels": 1291,
+      "maskPixels": 4251,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-box-2",
+      "label": "黄色光幕立柱 2",
+      "photo": 2,
+      "observationId": "obs-post-box-2-2-1",
+      "representationId": "rep-post-box-2",
+      "status": "measured",
+      "iou": 0.12305295950155763,
+      "modelPixels": 666,
+      "maskPixels": 2939,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-box-2",
+      "label": "黄色光幕立柱 2",
+      "photo": 3,
+      "observationId": "obs-post-box-2-3-2",
+      "representationId": "rep-post-box-2",
+      "status": "measured",
+      "iou": 0.16499888814765398,
+      "modelPixels": 1034,
+      "maskPixels": 4205,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-box-2",
+      "label": "黄色光幕立柱 2",
+      "photo": 4,
+      "observationId": "obs-post-box-2-4-3",
+      "representationId": "rep-post-box-2",
+      "status": "measured",
+      "iou": 0.21736472026903086,
+      "modelPixels": 1229,
+      "maskPixels": 2753,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-cylinder-1",
+      "label": "黑色防撞柱 1",
+      "photo": 1,
+      "observationId": "obs-post-cylinder-1-1-0",
+      "representationId": "rep-post-cylinder-1",
+      "status": "measured",
+      "iou": 0.6129137453122452,
+      "modelPixels": 5212,
+      "maskPixels": 4680,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-cylinder-1",
+      "label": "黑色防撞柱 1",
+      "photo": 2,
+      "observationId": "obs-post-cylinder-1-2-1",
+      "representationId": "rep-post-cylinder-1",
+      "status": "measured",
+      "iou": 0.6678454842219804,
+      "modelPixels": 3412,
+      "maskPixels": 2719,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-cylinder-1",
+      "label": "黑色防撞柱 1",
+      "photo": 3,
+      "observationId": "obs-post-cylinder-1-3-2",
+      "representationId": "rep-post-cylinder-1",
+      "status": "measured",
+      "iou": 0.5732169329599737,
+      "modelPixels": 5055,
+      "maskPixels": 4496,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-cylinder-1",
+      "label": "黑色防撞柱 1",
+      "photo": 4,
+      "observationId": "obs-post-cylinder-1-4-3",
+      "representationId": "rep-post-cylinder-1",
+      "status": "measured",
+      "iou": 0.6507059545733579,
+      "modelPixels": 4409,
+      "maskPixels": 3658,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-cylinder-2",
+      "label": "黑色防撞柱 2",
+      "photo": 3,
+      "observationId": "obs-post-cylinder-2-3-0",
+      "representationId": "rep-post-cylinder-2",
+      "status": "measured",
+      "iou": 0.4448826291079812,
+      "modelPixels": 4536,
+      "maskPixels": 3158,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "post-cylinder-2",
+      "label": "黑色防撞柱 2",
+      "photo": 4,
+      "observationId": "obs-post-cylinder-2-4-1",
+      "representationId": "rep-post-cylinder-2",
+      "status": "measured",
+      "iou": 0.5576667300019,
+      "modelPixels": 4636,
+      "maskPixels": 3562,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "fence-0",
+      "label": "安全围栏 1",
+      "photo": 1,
+      "observationId": "obs-fence-0-1-0",
+      "representationId": "rep-fence-0",
+      "status": "measured",
+      "iou": 0.18600342075256557,
+      "modelPixels": 32837,
+      "maskPixels": 8768,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "fence-0",
+      "label": "安全围栏 1",
+      "photo": 2,
+      "observationId": "obs-fence-0-2-1",
+      "representationId": "rep-fence-0",
+      "status": "measured",
+      "iou": 0.0,
+      "modelPixels": 3345,
+      "maskPixels": 14,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "fence-0",
+      "label": "安全围栏 1",
+      "photo": 3,
+      "observationId": "obs-fence-0-3-2",
+      "representationId": "rep-fence-0",
+      "status": "measured",
+      "iou": 0.38185757002501985,
+      "modelPixels": 27279,
+      "maskPixels": 18010,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "fence-0",
+      "label": "安全围栏 1",
+      "photo": 4,
+      "observationId": "obs-fence-0-4-3",
+      "representationId": "rep-fence-0",
+      "status": "measured",
+      "iou": 0.40419137022397894,
+      "modelPixels": 22556,
+      "maskPixels": 11549,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "fence-1",
+      "label": "安全围栏 2",
+      "photo": 2,
+      "observationId": "obs-fence-1-2-0",
+      "representationId": "rep-fence-1",
+      "status": "measured",
+      "iou": 0.4062071948669887,
+      "modelPixels": 15881,
+      "maskPixels": 23130,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "fence-1",
+      "label": "安全围栏 2",
+      "photo": 4,
+      "observationId": "obs-fence-1-4-1",
+      "representationId": "rep-fence-1",
+      "status": "measured",
+      "iou": 0.5243635525861076,
+      "modelPixels": 14483,
+      "maskPixels": 11983,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor",
+      "label": "地面参考面",
+      "photo": 1,
+      "observationId": "obs-floor-1-0",
+      "representationId": "rep-floor",
+      "status": "measured",
+      "iou": 0.6091252955082742,
+      "modelPixels": 63450,
+      "maskPixels": 38649,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor",
+      "label": "地面参考面",
+      "photo": 2,
+      "observationId": "obs-floor-2-1",
+      "representationId": "rep-floor",
+      "status": "measured",
+      "iou": 0.39866078462265636,
+      "modelPixels": 47262,
+      "maskPixels": 41511,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor",
+      "label": "地面参考面",
+      "photo": 3,
+      "observationId": "obs-floor-3-2",
+      "representationId": "rep-floor",
+      "status": "measured",
+      "iou": 0.4712991803866967,
+      "modelPixels": 53639,
+      "maskPixels": 48862,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor",
+      "label": "地面参考面",
+      "photo": 4,
+      "observationId": "obs-floor-4-3",
+      "representationId": "rep-floor",
+      "status": "measured",
+      "iou": 0.5022879905188307,
+      "modelPixels": 49967,
+      "maskPixels": 41300,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "emergency-button",
+      "label": "红黄急停按钮",
+      "photo": 2,
+      "observationId": "obs-emergency-button-2-0",
+      "representationId": "rep-emergency-button",
+      "status": "measured",
+      "iou": 0.395910780669145,
+      "modelPixels": 427,
+      "maskPixels": 324,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "emergency-button",
+      "label": "红黄急停按钮",
+      "photo": 3,
+      "observationId": "obs-emergency-button-3-1",
+      "representationId": "rep-emergency-button",
+      "status": "measured",
+      "iou": 0.49271137026239065,
+      "modelPixels": 302,
+      "maskPixels": 210,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "emergency-button",
+      "label": "红黄急停按钮",
+      "photo": 4,
+      "observationId": "obs-emergency-button-4-2",
+      "representationId": "rep-emergency-button",
+      "status": "measured",
+      "iou": 0.4516971279373368,
+      "modelPixels": 316,
+      "maskPixels": 240,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "work-platform-1",
+      "label": "平台/护板可见表面 1",
+      "photo": 1,
+      "observationId": "obs-work-platform-1-1-0",
+      "representationId": "rep-work-platform-1",
+      "status": "measured",
+      "iou": 0.9195565979784441,
+      "modelPixels": 35363,
+      "maskPixels": 33384,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "work-platform-1",
+      "label": "平台/护板可见表面 1",
+      "photo": 3,
+      "observationId": "obs-work-platform-1-3-1",
+      "representationId": "rep-work-platform-1",
+      "status": "measured",
+      "iou": 0.8899162978219904,
+      "modelPixels": 44744,
+      "maskPixels": 41508,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "signal-light-2",
+      "label": "信号灯 1",
+      "photo": 2,
+      "observationId": "obs-signal-light-2-2-0",
+      "representationId": "rep-signal-light-2",
+      "status": "measured",
+      "iou": 0.48955223880597015,
+      "modelPixels": 288,
+      "maskPixels": 211,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "signal-light-2",
+      "label": "信号灯 1",
+      "photo": 4,
+      "observationId": "obs-signal-light-2-4-1",
+      "representationId": "rep-signal-light-2",
+      "status": "measured",
+      "iou": 0.7288461538461538,
+      "modelPixels": 479,
+      "maskPixels": 420,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "signal-light-3",
+      "label": "信号灯 2",
+      "photo": 2,
+      "observationId": "obs-signal-light-3-2-0",
+      "representationId": "rep-signal-light-3",
+      "status": "measured",
+      "iou": 0.8097087378640777,
+      "modelPixels": 435,
+      "maskPixels": 497,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "signal-light-4",
+      "label": "信号灯 3",
+      "photo": 2,
+      "observationId": "obs-signal-light-4-2-0",
+      "representationId": "rep-signal-light-4",
+      "status": "measured",
+      "iou": 0.86593707250342,
+      "modelPixels": 646,
+      "maskPixels": 718,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "signal-light-5",
+      "label": "信号灯 4",
+      "photo": 3,
+      "observationId": "obs-signal-light-5-3-0",
+      "representationId": "rep-signal-light-5",
+      "status": "measured",
+      "iou": 0.8492462311557789,
+      "modelPixels": 397,
+      "maskPixels": 339,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "signal-light-5",
+      "label": "信号灯 4",
+      "photo": 4,
+      "observationId": "obs-signal-light-5-4-1",
+      "representationId": "rep-signal-light-5",
+      "status": "measured",
+      "iou": 0.7743362831858407,
+      "modelPixels": 442,
+      "maskPixels": 360,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "signal-light-6",
+      "label": "信号灯 5",
+      "photo": 3,
+      "observationId": "obs-signal-light-6-3-0",
+      "representationId": "rep-signal-light-6",
+      "status": "measured",
+      "iou": 0.8170731707317073,
+      "modelPixels": 68,
+      "maskPixels": 81,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-7",
+      "label": "标识牌 1",
+      "photo": 1,
+      "observationId": "obs-sign-7-1-0",
+      "representationId": "rep-sign-7",
+      "status": "measured",
+      "iou": 0.574468085106383,
+      "modelPixels": 347,
+      "maskPixels": 245,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-7",
+      "label": "标识牌 1",
+      "photo": 3,
+      "observationId": "obs-sign-7-3-1",
+      "representationId": "rep-sign-7",
+      "status": "measured",
+      "iou": 0.6142857142857143,
+      "modelPixels": 347,
+      "maskPixels": 218,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-7",
+      "label": "标识牌 1",
+      "photo": 4,
+      "observationId": "obs-sign-7-4-2",
+      "representationId": "rep-sign-7",
+      "status": "measured",
+      "iou": 0.6158940397350994,
+      "modelPixels": 302,
+      "maskPixels": 186,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-8",
+      "label": "标识牌 2",
+      "photo": 2,
+      "observationId": "obs-sign-8-2-0",
+      "representationId": "rep-sign-8",
+      "status": "measured",
+      "iou": 0.8649940262843488,
+      "modelPixels": 1448,
+      "maskPixels": 1674,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-9",
+      "label": "标识牌 3",
+      "photo": 3,
+      "observationId": "obs-sign-9-3-0",
+      "representationId": "rep-sign-9",
+      "status": "measured",
+      "iou": 0.7774725274725275,
+      "modelPixels": 316,
+      "maskPixels": 331,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-10",
+      "label": "标识牌 4",
+      "photo": 4,
+      "observationId": "obs-sign-10-4-0",
+      "representationId": "rep-sign-10",
+      "status": "measured",
+      "iou": 0.8849730788056779,
+      "modelPixels": 2003,
+      "maskPixels": 1848,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-10",
+      "label": "标识牌 4",
+      "photo": 2,
+      "observationId": "obs-sign-10-2-1",
+      "representationId": "rep-sign-10",
+      "status": "measured",
+      "iou": 0.8741522230595328,
+      "modelPixels": 2602,
+      "maskPixels": 2372,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-11",
+      "label": "标识牌 5",
+      "photo": 3,
+      "observationId": "obs-sign-11-3-0",
+      "representationId": "rep-sign-11",
+      "status": "measured",
+      "iou": 0.7892376681614349,
+      "modelPixels": 558,
+      "maskPixels": 639,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "cable-tray-12",
+      "label": "线缆托架 1",
+      "photo": 3,
+      "observationId": "obs-cable-tray-12-3-0",
+      "representationId": "rep-cable-tray-12",
+      "status": "measured",
+      "iou": 0.8906730440724291,
+      "modelPixels": 2667,
+      "maskPixels": 2867,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-13",
+      "label": "标识牌 6",
+      "photo": 2,
+      "observationId": "obs-sign-13-2-0",
+      "representationId": "rep-sign-13",
+      "status": "measured",
+      "iou": 0.7486979166666666,
+      "modelPixels": 2261,
+      "maskPixels": 1768,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-13",
+      "label": "标识牌 6",
+      "photo": 4,
+      "observationId": "obs-sign-13-4-1",
+      "representationId": "rep-sign-13",
+      "status": "measured",
+      "iou": 0.7191304347826087,
+      "modelPixels": 1141,
+      "maskPixels": 836,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-14",
+      "label": "标识牌 7",
+      "photo": 2,
+      "observationId": "obs-sign-14-2-0",
+      "representationId": "rep-sign-14",
+      "status": "measured",
+      "iou": 0.7580645161290323,
+      "modelPixels": 719,
+      "maskPixels": 589,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "sign-14",
+      "label": "标识牌 7",
+      "photo": 4,
+      "observationId": "obs-sign-14-4-1",
+      "representationId": "rep-sign-14",
+      "status": "measured",
+      "iou": 0.7417582417582418,
+      "modelPixels": 518,
+      "maskPixels": 433,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-15",
+      "label": "地面标线 1",
+      "photo": 1,
+      "observationId": "obs-floor-marking-15-1-0",
+      "representationId": "rep-floor-marking-15",
+      "status": "measured",
+      "iou": 0.8229665071770335,
+      "modelPixels": 2617,
+      "maskPixels": 2336,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-15",
+      "label": "地面标线 1",
+      "photo": 2,
+      "observationId": "obs-floor-marking-15-2-1",
+      "representationId": "rep-floor-marking-15",
+      "status": "measured",
+      "iou": 0.8703597944031982,
+      "modelPixels": 1745,
+      "maskPixels": 1530,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-16",
+      "label": "地面标线 2",
+      "photo": 1,
+      "observationId": "obs-floor-marking-16-1-0",
+      "representationId": "rep-floor-marking-16",
+      "status": "measured",
+      "iou": 0.5542857142857143,
+      "modelPixels": 170,
+      "maskPixels": 102,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-16",
+      "label": "地面标线 2",
+      "photo": 2,
+      "observationId": "obs-floor-marking-16-2-1",
+      "representationId": "rep-floor-marking-16",
+      "status": "measured",
+      "iou": 0.8482142857142857,
+      "modelPixels": 112,
+      "maskPixels": 95,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-17",
+      "label": "地面标线 3",
+      "photo": 1,
+      "observationId": "obs-floor-marking-17-1-0",
+      "representationId": "rep-floor-marking-17",
+      "status": "measured",
+      "iou": 0.4744525547445255,
+      "modelPixels": 111,
+      "maskPixels": 91,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-17",
+      "label": "地面标线 3",
+      "photo": 2,
+      "observationId": "obs-floor-marking-17-2-1",
+      "representationId": "rep-floor-marking-17",
+      "status": "measured",
+      "iou": 0.7102803738317757,
+      "modelPixels": 103,
+      "maskPixels": 80,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-18",
+      "label": "地面标线 4",
+      "photo": 1,
+      "observationId": "obs-floor-marking-18-1-0",
+      "representationId": "rep-floor-marking-18",
+      "status": "measured",
+      "iou": 0.6432748538011696,
+      "modelPixels": 160,
+      "maskPixels": 121,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-18",
+      "label": "地面标线 4",
+      "photo": 2,
+      "observationId": "obs-floor-marking-18-2-1",
+      "representationId": "rep-floor-marking-18",
+      "status": "measured",
+      "iou": 0.7126436781609196,
+      "modelPixels": 82,
+      "maskPixels": 67,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-19",
+      "label": "地面标线 5",
+      "photo": 1,
+      "observationId": "obs-floor-marking-19-1-0",
+      "representationId": "rep-floor-marking-19",
+      "status": "measured",
+      "iou": 0.6164383561643836,
+      "modelPixels": 130,
+      "maskPixels": 106,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-19",
+      "label": "地面标线 5",
+      "photo": 2,
+      "observationId": "obs-floor-marking-19-2-1",
+      "representationId": "rep-floor-marking-19",
+      "status": "measured",
+      "iou": 0.6966292134831461,
+      "modelPixels": 79,
+      "maskPixels": 72,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-20",
+      "label": "地面标线 6",
+      "photo": 1,
+      "observationId": "obs-floor-marking-20-1-0",
+      "representationId": "rep-floor-marking-20",
+      "status": "measured",
+      "iou": 0.6234567901234568,
+      "modelPixels": 151,
+      "maskPixels": 112,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-20",
+      "label": "地面标线 6",
+      "photo": 2,
+      "observationId": "obs-floor-marking-20-2-1",
+      "representationId": "rep-floor-marking-20",
+      "status": "measured",
+      "iou": 0.78,
+      "modelPixels": 100,
+      "maskPixels": 78,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-21",
+      "label": "地面标线 7",
+      "photo": 2,
+      "observationId": "obs-floor-marking-21-2-0",
+      "representationId": "rep-floor-marking-21",
+      "status": "measured",
+      "iou": 0.6547619047619048,
+      "modelPixels": 65,
+      "maskPixels": 74,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-22",
+      "label": "地面标线 8",
+      "photo": 2,
+      "observationId": "obs-floor-marking-22-2-0",
+      "representationId": "rep-floor-marking-22",
+      "status": "measured",
+      "iou": 0.9850746268656716,
+      "modelPixels": 66,
+      "maskPixels": 67,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-23",
+      "label": "地面标线 9",
+      "photo": 2,
+      "observationId": "obs-floor-marking-23-2-0",
+      "representationId": "rep-floor-marking-23",
+      "status": "measured",
+      "iou": 0.5445544554455446,
+      "modelPixels": 75,
+      "maskPixels": 81,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-24",
+      "label": "地面标线 10",
+      "photo": 2,
+      "observationId": "obs-floor-marking-24-2-0",
+      "representationId": "rep-floor-marking-24",
+      "status": "measured",
+      "iou": 0.835820895522388,
+      "modelPixels": 63,
+      "maskPixels": 60,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-25",
+      "label": "地面标线 11",
+      "photo": 2,
+      "observationId": "obs-floor-marking-25-2-0",
+      "representationId": "rep-floor-marking-25",
+      "status": "measured",
+      "iou": 0.43333333333333335,
+      "modelPixels": 85,
+      "maskPixels": 87,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-26",
+      "label": "地面标线 12",
+      "photo": 2,
+      "observationId": "obs-floor-marking-26-2-0",
+      "representationId": "rep-floor-marking-26",
+      "status": "measured",
+      "iou": 0.4461538461538462,
+      "modelPixels": 92,
+      "maskPixels": 96,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-27",
+      "label": "地面标线 13",
+      "photo": 3,
+      "observationId": "obs-floor-marking-27-3-0",
+      "representationId": "rep-floor-marking-27",
+      "status": "measured",
+      "iou": 0.8517766497461929,
+      "modelPixels": 1789,
+      "maskPixels": 1859,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-28",
+      "label": "地面标线 14",
+      "photo": 3,
+      "observationId": "obs-floor-marking-28-3-0",
+      "representationId": "rep-floor-marking-28",
+      "status": "measured",
+      "iou": 0.735632183908046,
+      "modelPixels": 75,
+      "maskPixels": 76,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-29",
+      "label": "地面标线 15",
+      "photo": 4,
+      "observationId": "obs-floor-marking-29-4-0",
+      "representationId": "rep-floor-marking-29",
+      "status": "measured",
+      "iou": 0.7470191809227579,
+      "modelPixels": 1632,
+      "maskPixels": 1738,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-30",
+      "label": "地面标线 16",
+      "photo": 4,
+      "observationId": "obs-floor-marking-30-4-0",
+      "representationId": "rep-floor-marking-30",
+      "status": "measured",
+      "iou": 0.9294117647058824,
+      "modelPixels": 81,
+      "maskPixels": 83,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-31",
+      "label": "地面标线 17",
+      "photo": 4,
+      "observationId": "obs-floor-marking-31-4-0",
+      "representationId": "rep-floor-marking-31",
+      "status": "measured",
+      "iou": 0.6698113207547169,
+      "modelPixels": 87,
+      "maskPixels": 90,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-32",
+      "label": "地面标线 18",
+      "photo": 4,
+      "observationId": "obs-floor-marking-32-4-0",
+      "representationId": "rep-floor-marking-32",
+      "status": "measured",
+      "iou": 0.723404255319149,
+      "modelPixels": 79,
+      "maskPixels": 83,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-33",
+      "label": "地面标线 19",
+      "photo": 4,
+      "observationId": "obs-floor-marking-33-4-0",
+      "representationId": "rep-floor-marking-33",
+      "status": "measured",
+      "iou": 0.5714285714285714,
+      "modelPixels": 81,
+      "maskPixels": 84,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-34",
+      "label": "地面标线 20",
+      "photo": 4,
+      "observationId": "obs-floor-marking-34-4-0",
+      "representationId": "rep-floor-marking-34",
+      "status": "measured",
+      "iou": 0.3025210084033613,
+      "modelPixels": 75,
+      "maskPixels": 80,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-35",
+      "label": "地面标线 21",
+      "photo": 4,
+      "observationId": "obs-floor-marking-35-4-0",
+      "representationId": "rep-floor-marking-35",
+      "status": "measured",
+      "iou": 0.3008130081300813,
+      "modelPixels": 74,
+      "maskPixels": 86,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-36",
+      "label": "地面标线 22",
+      "photo": 4,
+      "observationId": "obs-floor-marking-36-4-0",
+      "representationId": "rep-floor-marking-36",
+      "status": "measured",
+      "iou": 0.3851851851851852,
+      "modelPixels": 89,
+      "maskPixels": 98,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-37",
+      "label": "地面标线 23",
+      "photo": 4,
+      "observationId": "obs-floor-marking-37-4-0",
+      "representationId": "rep-floor-marking-37",
+      "status": "measured",
+      "iou": 0.544,
+      "modelPixels": 89,
+      "maskPixels": 104,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-38",
+      "label": "地面标线 24",
+      "photo": 4,
+      "observationId": "obs-floor-marking-38-4-0",
+      "representationId": "rep-floor-marking-38",
+      "status": "measured",
+      "iou": 0.3983739837398374,
+      "modelPixels": 86,
+      "maskPixels": 86,
+      "facesBehindCamera": 0
+    },
+    {
+      "entityId": "floor-marking-39",
+      "label": "地面标线 25",
+      "photo": 4,
+      "observationId": "obs-floor-marking-39-4-0",
+      "representationId": "rep-floor-marking-39",
+      "status": "measured",
+      "iou": 0.638095238095238,
+      "modelPixels": 86,
+      "maskPixels": 86,
+      "facesBehindCamera": 0
+    }
+  ],
+  "summaryByEntity": {
+    "robot": {
+      "views": 4,
+      "minIoU": 0.6005743000717875,
+      "medianIoU": 0.68461171622484
+    },
+    "cart": {
+      "views": 4,
+      "minIoU": 0.6355826173992827,
+      "medianIoU": 0.7105981364582468
+    },
+    "v-guard-left": {
+      "views": 4,
+      "minIoU": 0.7084708470847084,
+      "medianIoU": 0.7562129009160672
+    },
+    "v-guard-center": {
+      "views": 2,
+      "minIoU": 0.624016247778624,
+      "medianIoU": 0.6493617538658928
+    },
+    "v-guard-right": {
+      "views": 3,
+      "minIoU": 0.6046399226679555,
+      "medianIoU": 0.6477272727272727
+    },
+    "post-box-1": {
+      "views": 4,
+      "minIoU": 0.1983232905423107,
+      "medianIoU": 0.2451513394635097
+    },
+    "post-box-2": {
+      "views": 4,
+      "minIoU": 0.11666330848277251,
+      "medianIoU": 0.1440259238246058
+    },
+    "post-cylinder-1": {
+      "views": 4,
+      "minIoU": 0.5732169329599737,
+      "medianIoU": 0.6318098499428015
+    },
+    "post-cylinder-2": {
+      "views": 2,
+      "minIoU": 0.4448826291079812,
+      "medianIoU": 0.5012746795549406
+    },
+    "fence-0": {
+      "views": 4,
+      "minIoU": 0.0,
+      "medianIoU": 0.2839304953887927
+    },
+    "fence-1": {
+      "views": 2,
+      "minIoU": 0.4062071948669887,
+      "medianIoU": 0.4652853737265481
+    },
+    "floor": {
+      "views": 4,
+      "minIoU": 0.39866078462265636,
+      "medianIoU": 0.4867935854527637
+    },
+    "emergency-button": {
+      "views": 3,
+      "minIoU": 0.395910780669145,
+      "medianIoU": 0.4516971279373368
+    },
+    "work-platform-1": {
+      "views": 2,
+      "minIoU": 0.8899162978219904,
+      "medianIoU": 0.9047364479002173
+    },
+    "signal-light-2": {
+      "views": 2,
+      "minIoU": 0.48955223880597015,
+      "medianIoU": 0.609199196326062
+    },
+    "signal-light-3": {
+      "views": 1,
+      "minIoU": 0.8097087378640777,
+      "medianIoU": 0.8097087378640777
+    },
+    "signal-light-4": {
+      "views": 1,
+      "minIoU": 0.86593707250342,
+      "medianIoU": 0.86593707250342
+    },
+    "signal-light-5": {
+      "views": 2,
+      "minIoU": 0.7743362831858407,
+      "medianIoU": 0.8117912571708098
+    },
+    "signal-light-6": {
+      "views": 1,
+      "minIoU": 0.8170731707317073,
+      "medianIoU": 0.8170731707317073
+    },
+    "sign-7": {
+      "views": 3,
+      "minIoU": 0.574468085106383,
+      "medianIoU": 0.6142857142857143
+    },
+    "sign-8": {
+      "views": 1,
+      "minIoU": 0.8649940262843488,
+      "medianIoU": 0.8649940262843488
+    },
+    "sign-9": {
+      "views": 1,
+      "minIoU": 0.7774725274725275,
+      "medianIoU": 0.7774725274725275
+    },
+    "sign-10": {
+      "views": 2,
+      "minIoU": 0.8741522230595328,
+      "medianIoU": 0.8795626509326053
+    },
+    "sign-11": {
+      "views": 1,
+      "minIoU": 0.7892376681614349,
+      "medianIoU": 0.7892376681614349
+    },
+    "cable-tray-12": {
+      "views": 1,
+      "minIoU": 0.8906730440724291,
+      "medianIoU": 0.8906730440724291
+    },
+    "sign-13": {
+      "views": 2,
+      "minIoU": 0.7191304347826087,
+      "medianIoU": 0.7339141757246377
+    },
+    "sign-14": {
+      "views": 2,
+      "minIoU": 0.7417582417582418,
+      "medianIoU": 0.749911378943637
+    },
+    "floor-marking-15": {
+      "views": 2,
+      "minIoU": 0.8229665071770335,
+      "medianIoU": 0.8466631507901159
+    },
+    "floor-marking-16": {
+      "views": 2,
+      "minIoU": 0.5542857142857143,
+      "medianIoU": 0.7012499999999999
+    },
+    "floor-marking-17": {
+      "views": 2,
+      "minIoU": 0.4744525547445255,
+      "medianIoU": 0.5923664642881505
+    },
+    "floor-marking-18": {
+      "views": 2,
+      "minIoU": 0.6432748538011696,
+      "medianIoU": 0.6779592659810445
+    },
+    "floor-marking-19": {
+      "views": 2,
+      "minIoU": 0.6164383561643836,
+      "medianIoU": 0.6565337848237649
+    },
+    "floor-marking-20": {
+      "views": 2,
+      "minIoU": 0.6234567901234568,
+      "medianIoU": 0.7017283950617283
+    },
+    "floor-marking-21": {
+      "views": 1,
+      "minIoU": 0.6547619047619048,
+      "medianIoU": 0.6547619047619048
+    },
+    "floor-marking-22": {
+      "views": 1,
+      "minIoU": 0.9850746268656716,
+      "medianIoU": 0.9850746268656716
+    },
+    "floor-marking-23": {
+      "views": 1,
+      "minIoU": 0.5445544554455446,
+      "medianIoU": 0.5445544554455446
+    },
+    "floor-marking-24": {
+      "views": 1,
+      "minIoU": 0.835820895522388,
+      "medianIoU": 0.835820895522388
+    },
+    "floor-marking-25": {
+      "views": 1,
+      "minIoU": 0.43333333333333335,
+      "medianIoU": 0.43333333333333335
+    },
+    "floor-marking-26": {
+      "views": 1,
+      "minIoU": 0.4461538461538462,
+      "medianIoU": 0.4461538461538462
+    },
+    "floor-marking-27": {
+      "views": 1,
+      "minIoU": 0.8517766497461929,
+      "medianIoU": 0.8517766497461929
+    },
+    "floor-marking-28": {
+      "views": 1,
+      "minIoU": 0.735632183908046,
+      "medianIoU": 0.735632183908046
+    },
+    "floor-marking-29": {
+      "views": 1,
+      "minIoU": 0.7470191809227579,
+      "medianIoU": 0.7470191809227579
+    },
+    "floor-marking-30": {
+      "views": 1,
+      "minIoU": 0.9294117647058824,
+      "medianIoU": 0.9294117647058824
+    },
+    "floor-marking-31": {
+      "views": 1,
+      "minIoU": 0.6698113207547169,
+      "medianIoU": 0.6698113207547169
+    },
+    "floor-marking-32": {
+      "views": 1,
+      "minIoU": 0.723404255319149,
+      "medianIoU": 0.723404255319149
+    },
+    "floor-marking-33": {
+      "views": 1,
+      "minIoU": 0.5714285714285714,
+      "medianIoU": 0.5714285714285714
+    },
+    "floor-marking-34": {
+      "views": 1,
+      "minIoU": 0.3025210084033613,
+      "medianIoU": 0.3025210084033613
+    },
+    "floor-marking-35": {
+      "views": 1,
+      "minIoU": 0.3008130081300813,
+      "medianIoU": 0.3008130081300813
+    },
+    "floor-marking-36": {
+      "views": 1,
+      "minIoU": 0.3851851851851852,
+      "medianIoU": 0.3851851851851852
+    },
+    "floor-marking-37": {
+      "views": 1,
+      "minIoU": 0.544,
+      "medianIoU": 0.544
+    },
+    "floor-marking-38": {
+      "views": 1,
+      "minIoU": 0.3983739837398374,
+      "medianIoU": 0.3983739837398374
+    },
+    "floor-marking-39": {
+      "views": 1,
+      "minIoU": 0.638095238095238,
+      "medianIoU": 0.638095238095238
+    }
+  }
+}

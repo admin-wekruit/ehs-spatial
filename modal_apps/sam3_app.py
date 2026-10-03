@@ -84,7 +84,7 @@ def _response(results) -> tuple[list[str], list[float]]:
 # https://huggingface.co/facebook/sam3 or load() 401s.
 @app.cls(
     image=image,
-    gpu="L4",
+    gpu="A100-80GB:2",
     volumes={"/cache": volume},
     secrets=[modal.Secret.from_name("huggingface")],
     timeout=600,
@@ -145,6 +145,8 @@ class Sam3:
             # absolute pixel xyxy box prompt
             kwargs["input_boxes"] = [[list(prompt["box"])]]
         inputs = self.processor(**kwargs).to("cuda")
+        if "input_boxes" in inputs:
+            inputs["input_boxes"] = inputs["input_boxes"].to(self.model.dtype)
         if vision is not None:
             inputs["vision_embeds"] = vision
         with self.torch.inference_mode():
@@ -177,6 +179,7 @@ class Sam3:
         prompt: {"rle": [...], "scores": [...]}. One warm call serves a
         whole run's vocabulary; the image is encoded once per call."""
         return self._segment(image_bytes, prompts)
+
 
     @modal.method()
     def bench(self, frames: list[bytes], prompt_sets: list[list[str]], batch_sizes: list[int]) -> dict:
@@ -288,6 +291,45 @@ def self_check():
     assert latency_summary([400.0] * 4, images_per_call=8)["cameras_at_1hz"] == 16, "8 images per 400 ms call"
     assert json.loads(_encode_coco_rle([[1, 0], [1, 1]]))["counts"] == [0, 2, 1, 1], "F-order, leading zero run"
     print("sam3_app latency math and RLE self-check passed; no GPU invoked")
+
+
+@app.local_entrypoint()
+def photo_batch(image_paths: str, out: str, words: str = "industrial robot arm,safety fence,light curtain,work platform,cart,control cabinet"):
+    """One ephemeral workcell-photo segmentation call per original image, with a fixed vocabulary."""
+    paths = [Path(p) for p in image_paths.split(",")]
+    prompts = [{"text": w.strip()} for w in words.split(",") if w.strip()]
+    if not paths or any(not p.is_file() for p in paths) or not prompts:
+        raise ValueError("Image paths and words are required")
+    start = time.monotonic()
+    worker = Sam3()
+    results = [worker.segment.remote(p.read_bytes(), prompts) for p in paths]
+    payload = {"sourceImages": [str(p) for p in paths], "prompts": prompts,
+               "results": results, "wallSecondsIncludingColdStart": time.monotonic() - start}
+    Path(out).write_text(json.dumps(payload))
+    print(f"{len(paths)} photos, {len(prompts)} prompts; {payload['wallSecondsIncludingColdStart']:.1f} s")
+
+
+@app.local_entrypoint()
+def photo_box_batch(image_paths: str, boxes: str, out: str):
+    """Use the existing OWLv2 cart/work-platform box as SAM 3's prompt for each photo."""
+    paths = [Path(p) for p in image_paths.split(",")]
+    detections = json.loads(Path(boxes).read_text())["results"]
+    if len(paths) != len(detections):
+        raise ValueError("One detector result is required per photo")
+    picks = []
+    for row in detections:
+        options = [b for b in row if b["word"] in ("cart", "work platform")]
+        if not options:
+            raise ValueError("OWLv2 found no cart/work-platform box in one photo")
+        picks.append(max(options, key=lambda b: b["score"]))
+    started = time.monotonic()
+    worker = Sam3()
+    results = [worker.segment.remote(p.read_bytes(), [{"box": b["box"]}])[0]
+               for p, b in zip(paths, picks)]
+    payload = {"sourceImages": [str(p) for p in paths], "detectorBoxes": picks,
+               "results": results, "wallSecondsIncludingColdStart": time.monotonic() - started}
+    Path(out).write_text(json.dumps(payload))
+    print(f"{len(paths)} box prompts; masks {[len(r['rle']) for r in results]}; {payload['wallSecondsIncludingColdStart']:.1f} s")
 
 
 @app.local_entrypoint()

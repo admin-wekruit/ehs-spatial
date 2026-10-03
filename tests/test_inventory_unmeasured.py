@@ -2,6 +2,7 @@
 import json
 import sys
 from pathlib import Path
+from threading import Barrier
 from types import SimpleNamespace
 
 import numpy as np
@@ -108,3 +109,33 @@ def test_text_sam_keeps_each_rejected_instance_before_refinement(tmp_path, monke
     assert [(u["instance"], u["stage"]) for u in captured] == [(0, "mask"), (1, "footprint")]
     assert all(u["mask_path"] == "inventory/sam/frame_0001__button.json" for u in captured)
     assert all(u["source"] == "text-sam" and u["phrase"] == "button" for u in captured)
+
+
+def test_inventory_segments_two_phrases_together(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    run = tmp_path / "runs/test"
+    run.mkdir(parents=True)
+    (run / "observations.json").write_text("[]")
+    np.save(run / "points.npy", np.ones((8, 8, 3)))
+    np.save(run / "valid.npy", np.ones((8, 8), bool))
+    frame = SimpleNamespace(frame_id="frame_0001", pts3d_path=run / "points.npy",
+                            valid_mask_path=run / "valid.npy")
+    monkeypatch.setattr(scene_inventory, "_frames", lambda _: [frame])
+    monkeypatch.setattr(scene_inventory, "_build_geometry", lambda *a, **k:
+                        SimpleNamespace(transform=SimpleNamespace(apply=lambda p: p)))
+    monkeypatch.setattr(scene_inventory, "_enumerate_objects", lambda *a, **k: ["button", "fence"])
+    monkeypatch.setattr(scene_inventory, "_moge3_maps", lambda *a, **k: None)
+    rendezvous = Barrier(2, timeout=2)
+    def segment(*args, **kwargs):
+        rendezvous.wait()
+        return None
+    monkeypatch.setattr(scene_inventory, "_segment", segment)
+
+    class StopAfterSegments(Exception):
+        pass
+
+    def stop(*args, **kwargs):
+        raise StopAfterSegments
+    monkeypatch.setattr(scene_inventory, "_reconcile_enumeration", stop)
+    with pytest.raises(StopAfterSegments):
+        scene_inventory.main(["--run", "test"])

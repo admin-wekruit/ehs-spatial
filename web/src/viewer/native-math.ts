@@ -70,6 +70,51 @@ export function fitCamera(points:Vec[],back:Vec,up:Vec,aspect:number,orthographi
 }
 
 export type SurfacePick = { point: Vec; entityId: string; representationId: string; coordinateFrameId: string };
+export type MeasurementScale = { nativeToMeters: number | null; status: string; source: string };
+export type GroundMeasurementKind = 'point_ground' | 'point_distance' | 'region_ground';
+export type GroundPointMeasurement = {
+  kind: GroundMeasurementKind; pointsNative: Vec[]; ground: { normal: Vec; offset: number };
+  heightsNative: number[]; feetNative: Vec[]; minHeightNative: number; maxHeightNative: number;
+  distanceNative?: number; heightDifferenceNative?: number; inclinationDeg?: number;
+};
+export function measureGroundPoints(kind: GroundMeasurementKind, points: Vec[], ground?: { normal?: Vec | null; offset?: number | null } | null): GroundPointMeasurement {
+  const count = { point_ground: 1, point_distance: 2, region_ground: 3 }[kind];
+  if (!count || !Array.isArray(points) || points.length !== count || points.some(p => !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite))) throw Error('measurement_points_invalid');
+  const n = ground?.normal, d = ground?.offset;
+  if (!Array.isArray(n) || n.length !== 3 || !n.every(Number.isFinite) || !Number.isFinite(d)) throw Error('measurement_ground_missing');
+  const length = Math.hypot(...n);
+  if (!Number.isFinite(length) || !(length > 0)) throw Error('measurement_ground_missing');
+  const normal = n.map(value => value / length), offset = d! / length;
+  const heightsNative = points.map(p => dot(normal, p) + offset), feetNative = points.map((p, i) => add(p, scale(normal, -heightsNative[i])));
+  // Height is linear on this sampled triangle, so its extrema occur at the vertices.
+  const result: GroundPointMeasurement = { kind, pointsNative: points.map(p => [...p]), ground: { normal, offset }, heightsNative, feetNative, minHeightNative: Math.min(...heightsNative), maxHeightNative: Math.max(...heightsNative) };
+  if (count > 1) {
+    const edge = add(points[1], scale(points[0], -1)), distance = Math.hypot(...edge);
+    if (distance < 1e-8) throw Error('measurement_points_coincident');
+    if (kind === 'point_distance') { result.distanceNative = distance; result.heightDifferenceNative = dot(edge, normal); }
+    else {
+      const other = add(points[2], scale(points[0], -1)), otherLength = Math.hypot(...other), endDistance = Math.hypot(...add(points[2], scale(points[1], -1)));
+      if (Math.min(otherLength, endDistance) < 1e-8) throw Error('measurement_points_coincident');
+      const regionNormal = cross(scale(edge, 1 / distance), scale(other, 1 / otherLength));
+      if (Math.hypot(...regionNormal) < 1e-8) throw Error('measurement_points_collinear');
+      result.inclinationDeg = Math.acos(Math.max(0, Math.min(1, Math.abs(dot(unit(regionNormal), normal))))) * 180 / Math.PI;
+    }
+  }
+  if (![...heightsNative, ...feetNative.flat(), result.distanceNative ?? 0, result.heightDifferenceNative ?? 0, result.inclinationDeg ?? 0].every(Number.isFinite)) throw Error('measurement_points_invalid');
+  return result;
+}
+export function measurementLength(value: number, measurementScale?: MeasurementScale) {
+  if (!Number.isFinite(value)) throw Error('measurement_points_invalid');
+  const factor = measurementScale?.nativeToMeters;
+  if (factor != null && (!Number.isFinite(factor) || factor <= 0)) throw Error('measurement_scale_invalid');
+  const converted = factor == null ? value : value * factor * 100;
+  if (!Number.isFinite(converted)) throw Error('measurement_scale_invalid');
+  return { value: converted, unit: factor == null ? 'native' : 'cm' };
+}
+export function groundMeasurementLabel(result: GroundPointMeasurement, measurementScale?: MeasurementScale) {
+  const length = (value: number) => { const display = measurementLength(value, measurementScale); return `${Number(display.unit === 'cm' ? display.value.toFixed(2) : display.value.toPrecision(4))} ${display.unit}`; };
+  return result.kind === 'point_ground' ? `h ${length(result.heightsNative[0])}` : result.kind === 'point_distance' ? `d ${length(result.distanceNative!)} · Δh ${length(result.heightDifferenceNative!)}` : `h ${length(result.minHeightNative)} … ${length(result.maxHeightNative)} · ${result.inclinationDeg!.toFixed(1)}°`;
+}
 export function threePointAngle(points: Vec[]) {
   if(points.length!==3||points.some(p=>p.length!==3||!p.every(Number.isFinite)))throw Error('measurement_points_invalid');
   const [a,b,c]=points,u=add(a,scale(b,-1)),v=add(c,scale(b,-1)),length=Math.min(Math.hypot(...u),Math.hypot(...v));

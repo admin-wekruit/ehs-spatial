@@ -1,0 +1,456 @@
+{
+  "schemaVersion": 1,
+  "scope": "Diagnostic only; saved cameras, point maps and models are unchanged.",
+  "byHeldOutPhoto": [
+    {
+      "photo": 1,
+      "thresholdRawPx": 7.724137931034482,
+      "curtains": {
+        "post-box-1->post-box-2": {
+          "correctionFrom": "post-box-1",
+          "appliedTo": "post-box-2",
+          "rotationDeg": 14.912925460921757,
+          "translationNative": 1.2150121334803916,
+          "translationRelativeToCurtainExtent": 0.29770566782541413,
+          "fitted": {
+            "before": {
+              "rmsRawPx": 17.95420563992513,
+              "maxRawPx": 33.29254875840348
+            },
+            "after": {
+              "rmsRawPx": 0.6211378210875154,
+              "maxRawPx": 1.525173003169037
+            }
+          },
+          "independent": {
+            "before": {
+              "rmsRawPx": 38.92354871104261,
+              "maxRawPx": 50.622293531395684
+            },
+            "after": {
+              "rmsRawPx": 681.3370043829599,
+              "maxRawPx": 866.8873755726443
+            }
+          },
+          "independentInsideGate": false,
+          "converged": true
+        },
+        "post-box-2->post-box-1": {
+          "correctionFrom": "post-box-2",
+          "appliedTo": "post-box-1",
+          "rotationDeg": 17.578970464588032,
+          "translationNative": 1.192508390589891,
+          "translationRelativeToCurtainExtent": 0.2921917378644044,
+          "fitted": {
+            "before": {
+              "rmsRawPx": 38.92354871104261,
+              "maxRawPx": 50.622293531395684
+            },
+            "after": {
+              "rmsRawPx": 1.4363664055758545,
+              "maxRawPx": 5.188350092166817
+            }
+          },
+          "independent": {
+            "before": {
+              "rmsRawPx": 17.95420563992513,
+              "maxRawPx": 33.29254875840348
+            },
+            "after": {
+              "rmsRawPx": 98.78061433682026,
+              "maxRawPx": 277.3202580975493
+            }
+          },
+          "independentInsideGate": false,
+          "converged": false
+        }
+      },
+      "trainingGates": {
+        "post-box-1": {
+          "accepted": false,
+          "reprojectionByPhoto": [
+            {
+              "photo": 2,
+              "rmsRawPx": 2.7684081994757217,
+              "maxRawPx": 8.911441074869316,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 3,
+              "rmsRawPx": 2.128962701631351,
+              "maxRawPx": 6.90881543685208,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 4,
+              "rmsRawPx": 3.375549155845417,
+              "maxRawPx": 8.447588375759546,
+              "thresholdRawPx": 7.724137931034482
+            }
+          ]
+        },
+        "post-box-2": {
+          "accepted": false,
+          "reprojectionByPhoto": [
+            {
+              "photo": 2,
+              "rmsRawPx": 3.174415765437891,
+              "maxRawPx": 13.640195572434086,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 3,
+              "rmsRawPx": 4.921213019348725,
+              "maxRawPx": 15.104421849359113,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 4,
+              "rmsRawPx": 7.93208687983886,
+              "maxRawPx": 15.433694991188716,
+              "thresholdRawPx": 7.724137931034482
+            }
+          ]
+        }
+      }
+    },
+    {
+      "photo": 2,
+      "thresholdRawPx": 7.724137931034482,
+      "curtains": {
+        "post-box-1->post-box-2": {
+          "correctionFrom": "post-box-1",
+          "appliedTo": "post-box-2",
+          "rotationDeg": 15.064099789546058,
+          "translationNative": 1.3263921477465483,
+          "translationRelativeToCurtainExtent": 0.3249963101291483,
+          "fitted": {
+            "before": {
+              "rmsRawPx": 23.267332079158532,
+              "maxRawPx": 47.78751434671105
+            },
+            "after": {
+              "rmsRawPx": 0.8190159757572223,
+              "maxRawPx": 1.4651746989818977
+            }
+          },
+          "independent": {
+            "before": {
+              "rmsRawPx": 40.54667568053524,
+              "maxRawPx": 46.82101741551013
+            },
+            "after": {
+              "rmsRawPx": 509.52487841047565,
+              "maxRawPx": 642.204247370693
+            }
+          },
+          "independentInsideGate": false,
+          "converged": true
+        },
+        "post-box-2->post-box-1": {
+          "correctionFrom": "post-box-2",
+          "appliedTo": "post-box-1",
+          "rotationDeg": 19.31114878708097,
+          "translationNative": 1.739494275411913,
+          "translationRelativeToCurtainExtent": 0.42621574770335063,
+          "fitted": {
+            "before": {
+              "rmsRawPx": 40.54667568053524,
+              "maxRawPx": 46.82101741551013
+            },
+            "after": {
+              "rmsRawPx": 2.146252812848005,
+              "maxRawPx": 11.606515828781589
+            }
+          },
+          "independent": {
+            "before": {
+              "rmsRawPx": 23.267332079158532,
+              "maxRawPx": 47.78751434671105
+            },
+            "after": {
+              "rmsRawPx": 546.9125052151766,
+              "maxRawPx": 793.1180732981638
+            }
+          },
+          "independentInsideGate": false,
+          "converged": true
+        }
+      },
+      "trainingGates": {
+        "post-box-1": {
+          "accepted": false,
+          "reprojectionByPhoto": [
+            {
+              "photo": 1,
+              "rmsRawPx": 15.282395304987864,
+              "maxRawPx": 31.532744550992025,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 3,
+              "rmsRawPx": 3.2312149686818725,
+              "maxRawPx": 8.553302181256342,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 4,
+              "rmsRawPx": 2.571179130325578,
+              "maxRawPx": 11.401086562439257,
+              "thresholdRawPx": 7.724137931034482
+            }
+          ]
+        },
+        "post-box-2": {
+          "accepted": false,
+          "reprojectionByPhoto": [
+            {
+              "photo": 1,
+              "rmsRawPx": 35.36286692531437,
+              "maxRawPx": 42.766655687320096,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 3,
+              "rmsRawPx": 4.534524326616404,
+              "maxRawPx": 14.776864578951951,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 4,
+              "rmsRawPx": 2.240501888747645,
+              "maxRawPx": 5.141327178648467,
+              "thresholdRawPx": 7.724137931034482
+            }
+          ]
+        }
+      }
+    },
+    {
+      "photo": 3,
+      "thresholdRawPx": 7.724137931034482,
+      "curtains": {
+        "post-box-1->post-box-2": {
+          "correctionFrom": "post-box-1",
+          "appliedTo": "post-box-2",
+          "rotationDeg": 40.536406974592595,
+          "translationNative": 3.089892325509649,
+          "translationRelativeToCurtainExtent": 0.7570940511017681,
+          "fitted": {
+            "before": {
+              "rmsRawPx": 19.461017991550328,
+              "maxRawPx": 31.289233650512582
+            },
+            "after": {
+              "rmsRawPx": 4.420970242728493,
+              "maxRawPx": 17.193833051057855
+            }
+          },
+          "independent": {
+            "before": {
+              "rmsRawPx": 22.934819266726688,
+              "maxRawPx": 35.7733716399605
+            },
+            "after": {
+              "rmsRawPx": 550.2268572237155,
+              "maxRawPx": 741.7114662538158
+            }
+          },
+          "independentInsideGate": false,
+          "converged": true
+        },
+        "post-box-2->post-box-1": {
+          "correctionFrom": "post-box-2",
+          "appliedTo": "post-box-1",
+          "rotationDeg": 7.002670111142516,
+          "translationNative": 0.49912938790866823,
+          "translationRelativeToCurtainExtent": 0.12229807724882141,
+          "fitted": {
+            "before": {
+              "rmsRawPx": 22.934819266726688,
+              "maxRawPx": 35.7733716399605
+            },
+            "after": {
+              "rmsRawPx": 2.3118832217923964,
+              "maxRawPx": 7.132207791408427
+            }
+          },
+          "independent": {
+            "before": {
+              "rmsRawPx": 19.461017991550328,
+              "maxRawPx": 31.289233650512582
+            },
+            "after": {
+              "rmsRawPx": 65.55752674200748,
+              "maxRawPx": 109.48190198837008
+            }
+          },
+          "independentInsideGate": false,
+          "converged": true
+        }
+      },
+      "trainingGates": {
+        "post-box-1": {
+          "accepted": false,
+          "reprojectionByPhoto": [
+            {
+              "photo": 1,
+              "rmsRawPx": 3.394650964383552,
+              "maxRawPx": 11.832861836175248,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 2,
+              "rmsRawPx": 1.823432981071162,
+              "maxRawPx": 4.854077902396106,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 4,
+              "rmsRawPx": 6.12930921196303,
+              "maxRawPx": 9.740690380228076,
+              "thresholdRawPx": 7.724137931034482
+            }
+          ]
+        },
+        "post-box-2": {
+          "accepted": false,
+          "reprojectionByPhoto": [
+            {
+              "photo": 1,
+              "rmsRawPx": 13.105567723447045,
+              "maxRawPx": 18.878365528480796,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 2,
+              "rmsRawPx": 3.7593299216908793,
+              "maxRawPx": 11.476802885711216,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 4,
+              "rmsRawPx": 21.691997028047222,
+              "maxRawPx": 27.69511658715588,
+              "thresholdRawPx": 7.724137931034482
+            }
+          ]
+        }
+      }
+    },
+    {
+      "photo": 4,
+      "thresholdRawPx": 7.724137931034482,
+      "curtains": {
+        "post-box-1->post-box-2": {
+          "correctionFrom": "post-box-1",
+          "appliedTo": "post-box-2",
+          "rotationDeg": 28.898828291184106,
+          "translationNative": 2.178832756620991,
+          "translationRelativeToCurtainExtent": 0.5338636899301453,
+          "fitted": {
+            "before": {
+              "rmsRawPx": 7.887829753403376,
+              "maxRawPx": 15.974214654016684
+            },
+            "after": {
+              "rmsRawPx": 1.1588749370060731,
+              "maxRawPx": 5.75269408463885
+            }
+          },
+          "independent": {
+            "before": {
+              "rmsRawPx": 17.869930327363694,
+              "maxRawPx": 24.9613849758791
+            },
+            "after": {
+              "rmsRawPx": 170.21483703993044,
+              "maxRawPx": 357.140598352296
+            }
+          },
+          "independentInsideGate": false,
+          "converged": true
+        },
+        "post-box-2->post-box-1": {
+          "correctionFrom": "post-box-2",
+          "appliedTo": "post-box-1",
+          "rotationDeg": 12.031654904455685,
+          "translationNative": 1.045532295223326,
+          "translationRelativeToCurtainExtent": 0.25617924431000877,
+          "fitted": {
+            "before": {
+              "rmsRawPx": 17.869930327363694,
+              "maxRawPx": 24.9613849758791
+            },
+            "after": {
+              "rmsRawPx": 0.9901955965190653,
+              "maxRawPx": 1.8288216611319947
+            }
+          },
+          "independent": {
+            "before": {
+              "rmsRawPx": 7.887829753403376,
+              "maxRawPx": 15.974214654016684
+            },
+            "after": {
+              "rmsRawPx": 53.177756614341384,
+              "maxRawPx": 129.2291676884042
+            }
+          },
+          "independentInsideGate": false,
+          "converged": false
+        }
+      },
+      "trainingGates": {
+        "post-box-1": {
+          "accepted": false,
+          "reprojectionByPhoto": [
+            {
+              "photo": 1,
+              "rmsRawPx": 6.2541883778818725,
+              "maxRawPx": 11.254921699638532,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 2,
+              "rmsRawPx": 3.789304002170088,
+              "maxRawPx": 14.067438005024368,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 3,
+              "rmsRawPx": 12.65191885418784,
+              "maxRawPx": 19.870998121842398,
+              "thresholdRawPx": 7.724137931034482
+            }
+          ]
+        },
+        "post-box-2": {
+          "accepted": false,
+          "reprojectionByPhoto": [
+            {
+              "photo": 1,
+              "rmsRawPx": 18.692674289954635,
+              "maxRawPx": 27.584043850970616,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 2,
+              "rmsRawPx": 3.3468429880412214,
+              "maxRawPx": 15.941383152464843,
+              "thresholdRawPx": 7.724137931034482
+            },
+            {
+              "photo": 3,
+              "rmsRawPx": 13.742043621075558,
+              "maxRawPx": 33.924258395100935,
+              "thresholdRawPx": 7.724137931034482
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "wallSeconds": 53.66305276799994,
+  "reading": "A camera offset is supported only where a correction solved from one curtain brings the other, independent curtain inside the gate. Any correction is a diagnostic hypothesis; adopting it would require recomputing every geometry that depends on that camera, never mixing it with the old point map."
+}

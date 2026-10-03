@@ -33,16 +33,25 @@ MODELS = {
     "gemini (panoptes-report-workspace)": (UNPINNED, None, "cloud API terms", None),
 }
 
+# Models reached through a third-party cloud API: their inputs (the named crops) leave our machines. Every other model is
+# on-prem: our own hardware or our own Modal containers. A lock records each model's hosting (store.Store._run).
+CLOUD = {"gemini (panoptes-report-workspace)"}
+
+
+def hosting(hf_id):
+    return "cloud" if hf_id in CLOUD else "on-prem"
+
+
 # The Qwen3-VL naming agreement gate (150 crops, named by Gemini as the reference). It needs a GPU, so this workflow did not run
-# it; until it passes, the commercial profile leaves names blank and therefore every generated model too (the import still runs).
+# it. Until it passes, commercial names with Gemini (U6, 2026-09-27), a cloud dependency; --namer qwen3vl leaves names blank.
 QWEN3VL_NAMING_GATE = {"status": "not-run", "set": "150 named crops over the three delivered object maps",
                        "reason": "needs GPU (Qwen3-VL-Embedding + Reranker on Modal); the M2 build workflow ran CPU only"}
 
 # = decide.VERSIONS (tests keep them equal; not imported: name_video_entities reads this module, and decide.py would join its
 # deps); stages adds each rule's code sha (stages.rule_code) to the key
-M2_RULES = {name: f"{name}@1" for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "lingbot_conf", "dense_gate",
-                                             "inferred_floor", "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter")} | {
-    "floor_frames": "floor_frames@2"}
+M2_RULES = {name: f"{name}@1" for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "dense_gate",
+                                             "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter", "trajectory")} | {
+    "floor_frames": "floor_frames@2", "inferred_floor": "inferred_floor@2", "lingbot_conf": "lingbot_conf@2"}
 
 
 def row(role, hf_id):
@@ -60,6 +69,7 @@ class Profile:
     rules: object  # {decision: 'name@v'} or 'adopted'
     caps: dict = field(default_factory=dict)  # splat_minutes, generator_usd: per stage, never more than the run's budget
     omit: tuple = ()  # M2 stages this profile leaves out of the graph (delivered: the stages the delivered reports never had)
+    cloud: tuple = ()  # roles allowed a CLOUD model whatever its licence row and pin (a decision of the user, not a verified licence)
 
 
 RESEARCH_MODELS = dict([row("camera", "princeton-vl/DROID-SLAM"), row("depth", "depth-anything/DA3-GIANT-1.1"), row("register", "depth-anything/DA3-GIANT-1.1"),
@@ -67,15 +77,16 @@ RESEARCH_MODELS = dict([row("camera", "princeton-vl/DROID-SLAM"), row("depth", "
                         row("tracks", "facebook/sam3.1"), row("sam3d", "facebook/sam-3d-objects"), row("recgen", "TRI-ML/RecGen"),
                         row("dense", "robbyant/lingbot-map"), row("names", "gemini (panoptes-report-workspace)"), row("events", "Qwen/Qwen3-VL-8B-Instruct")])
 COMMERCIAL_MODELS = {k: v for k, v in RESEARCH_MODELS.items() if k not in ("recgen", "dense")} | dict(
-    [row("depth", "depth-anything/DA3-BASE"), row("register", "depth-anything/DA3-BASE#camera"), row("names", "Qwen/Qwen3-VL-Reranker-8B"),
-     row("names-recall", "Qwen/Qwen3-VL-Embedding-8B")])
+    [row("depth", "depth-anything/DA3-BASE"), row("register", "depth-anything/DA3-BASE#camera"), row("names", "gemini (panoptes-report-workspace)")])
 CAPS = {"splat_minutes": 58, "generator_usd": 10.}
 
 PROFILES = {
     "research": Profile("research", RESEARCH_MODELS, ("sam3d", "recgen", "box"), True, "gemini", False, M2_RULES, CAPS),
-    "commercial": Profile("commercial", COMMERCIAL_MODELS, ("sam3d", "box"), False, "qwen3vl", False, M2_RULES, CAPS),
-    # the delivered reports ran all three generators and neither the static filter (D20) nor the lens gate on the import (D4)
-    "delivered": Profile("delivered", {}, ("sam3d", "recgen", "box"), True, "gemini", True, "adopted", {}, ("static_filter", "lens_gate")),
+    # U6 (2026-09-27): commercial names with Gemini, flagged as a cloud dependency (hosting 'cloud' in every lock of the stage)
+    "commercial": Profile("commercial", COMMERCIAL_MODELS, ("sam3d", "box"), False, "gemini", False, M2_RULES, CAPS, cloud=("names",)),
+    # the delivered reports ran all three generators and neither the static filter (D20), the lens gate on the import (D4) nor the
+    # trusted path span (D22)
+    "delivered": Profile("delivered", {}, ("sam3d", "recgen", "box"), True, "gemini", True, "adopted", {}, ("static_filter", "lens_gate", "trajectory")),
 }
 
 
@@ -87,13 +98,16 @@ def _models(spec):
 
 def refuse(profile, spec):
     """Why this profile may not run this stage, or None. Only commercial refuses a stage for its models: a licence that is
-    False or still to verify, an unpinned revision, the RecGen generator, the LingBot dense map. research refuses nothing;
+    False or still to verify, an unpinned revision, the RecGen generator, the LingBot dense map; a CLOUD model only in a role
+    the profile allows it (Profile.cloud: commercial names with Gemini). research refuses nothing;
     delivered refuses nothing here, it only ever serves hits (Profile.cache_only)."""
     profile = PROFILES[profile] if isinstance(profile, str) else profile
     if profile.name != "commercial":
         return None
     for role, hf_id, revision, _ in _models(spec):
         known = MODELS.get(hf_id)
+        if hf_id in CLOUD and role in profile.cloud:
+            continue
         if known is None:
             return f"{role}: {hf_id} is not in the licence table"
         if known[3] is not True:
@@ -110,5 +124,8 @@ if __name__ == "__main__":
     assert "not allowed" in refuse("commercial", {"models": [("depth", "depth-anything/DA3-GIANT-1.1", MODELS["depth-anything/DA3-GIANT-1.1"][0], None)]})
     assert refuse("commercial", {"models": [("depth", "depth-anything/DA3-BASE", MODELS["depth-anything/DA3-BASE"][0], None)]}) is None
     assert "pinned" in refuse("commercial", {"models": [("depth", "depth-anything/DA3-BASE", UNPINNED, None)]})
+    assert refuse("commercial", {"models": [("names", "gemini (panoptes-report-workspace)", UNPINNED, None)]}) is None
+    assert refuse("commercial", {"models": [("events", "gemini (panoptes-report-workspace)", UNPINNED, None)]}), "only the roles the profile allows"
+    assert hosting("gemini (panoptes-report-workspace)") == "cloud" and hosting("depth-anything/DA3-BASE") == "on-prem"
     assert PROFILES["delivered"].cache_only and not PROFILES["commercial"].dense_map and "recgen" not in PROFILES["commercial"].generators
     print("profiles self-check passed")

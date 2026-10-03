@@ -1174,10 +1174,14 @@ def judge(
     }
 
 
+_SUMMARY = {FAIL: 3, REVIEW: 2, NO_DATA: 1, PASS: 0}  # over time: an unobserved stretch outranks a PASS
+
+
 def worst_verdict(timeline: dict[int, str]) -> str:
+    """FAIL > NEEDS_REVIEW > NO_DATA > PASS: PASS only when every instant passed (one PASS and 59 NO_DATA used to sum to PASS)."""
     if not timeline:
         return NO_DATA
-    return max(timeline.values(), key=lambda v: _SEVERITY[v])
+    return max(timeline.values(), key=lambda v: _SUMMARY[v])
 
 
 # ---------------------------------------------------------------- rendering

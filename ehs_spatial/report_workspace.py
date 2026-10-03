@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 import tempfile
+import time
 from uuid import uuid4
 
 from fastapi import HTTPException, Request
@@ -47,15 +48,21 @@ def report_summary(root: Path, row: dict) -> dict:
 
 
 def run_upload(service, capture: CaptureRun) -> None:
+    started = time.monotonic()
+    timing = {}
     run = service.store.paths(capture.run_id).root
     path = run / "workspace.json"
     state = _read_json_dict(path)
     state["state"] = "analyzing"
     write_json(path, state)
     try:
+        stage_started = time.monotonic()
         service.run_assessment(capture)
+        timing['assessmentSeconds'] = time.monotonic() - stage_started
         from .app import _run_deep_report_chain
+        stage_started = time.monotonic()
         _run_deep_report_chain(capture.run_id)
+        timing['reportSeconds'] = time.monotonic() - stage_started
         phase = (run / "deep_report.status").read_text().strip()
         if phase != "done":
             raise RuntimeError("The report pipeline did not complete")
@@ -65,6 +72,7 @@ def run_upload(service, capture: CaptureRun) -> None:
         logging.getLogger(__name__).exception("Report %s failed", capture.run_id)
         state.update(state="failed", error=type(exc).__name__)
     finally:
+        state['timing'] = {**timing, 'totalSeconds': time.monotonic() - started}
         write_json(path, state)
         # Staged upload bytes are copied into the immutable input by prepare_run.
         if state['state'] == 'done':

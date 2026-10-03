@@ -34,6 +34,7 @@ class StageSpec:
     env: dict
     cwd: str | None = None
     paid: bool = False
+    usd_per_s: float = 0.  # list price of the Modal container it keeps busy (GPU + requested CPU and memory); 0: none (a cloud API)
 
 
 class Pending(Exception):

@@ -123,20 +123,23 @@ SITES = {  # clip window, and the decision values the rules give on the delivere
                          "track_windows": {"shot": [[226, 526], [486, 786], [746, 899]], "stitch": True, "others": [[[0, 14]], [[14, 226]]]},
                          "static_filter": {"moved": [], "cleared": ["object-032"]}, "splat_pick": "negligible_1",
                          "other_shot-0-14": {"accepted": False}, "other_shot-14-226": {"accepted": True}, "generator_plan": PLAN,
-                         "generator_plan-box": PLAN, "dense_gate": {"use": "raw", "dir": None}, "inferred_floor": True}),
+                         "generator_plan-box": PLAN, "dense_gate": {"use": "raw", "dir": None}, "inferred_floor": True,
+                         "lens_gate": {"scale_status": "assumed_camera_height"}, "trajectory": {"untrusted": []}}),
     "samsclub-a2": (337, 367, {"shots": {"primary": [0, 420], "others": [[420, 750]], "mapped": True}, "overlay": NONE,
                                "lens": {"keep": False, "fov_deg": 55.3194223319173}, "sam2_frames": list(range(0, 750, 3)),
                                "floor_frames": [0, 66, 135, 201, 270, 336, 405], "lingbot_stride": 1, "voxel": 0.00567, "lingbot_conf": 1.74,
                                "track_windows": {"shot": [[0, 300], [260, 420]], "stitch": True, "others": [[[420, 750]]]},
                                "static_filter": {"moved": ["object-900"], "cleared": []}, "splat_pick": "negligible_1",
                                "other_shot-420-750": {"accepted": False}, "generator_plan": PLAN, "generator_plan-box": PLAN,
-                               "dense_gate": {"use": "icp", "dir": "icp"}, "inferred_floor": False}),
+                               "dense_gate": {"use": "icp", "dir": "icp"}, "inferred_floor": False,
+                               "lens_gate": {"scale_status": "assumed_camera_height"}, "trajectory": {"untrusted": []}}),
     "walmart": (190, 220, {"shots": {"primary": [383, 750], "others": [[0, 383]], "mapped": True}, "overlay": NONE,
                            "lens": {"keep": True, "fov_deg": 55.96}, "sam2_frames": list(range(0, 750, 3)), "floor_frames": [405, 471, 540, 606, 675, 747],
                            "lingbot_stride": 1, "voxel": 0.011858, "lingbot_conf": 1.01,
                            "track_windows": {"shot": [[383, 750]], "stitch": False, "others": [[[0, 383]]]},
                            "static_filter": {"moved": [], "cleared": []}, "splat_pick": "negligible_1", "other_shot-0-383": {"accepted": False},
-                           "generator_plan": PLAN, "generator_plan-box": PLAN, "dense_gate": {"use": "icp", "dir": "icp"}, "inferred_floor": False}),
+                           "generator_plan": PLAN, "generator_plan-box": PLAN, "dense_gate": {"use": "icp", "dir": "icp"}, "inferred_floor": False,
+                           "lens_gate": {"scale_status": "intrinsics_uncertain"}, "trajectory": {"untrusted": []}}),
 }
 # the shape of profiles.Profile (Part C): models {role: (hf_id, revision, weights_sha256, licence, commercial)}
 GIANT = ("depth-anything/DA3-GIANT-1.1", "72ee9f89", None, "CC BY-NC 4.0", False)
@@ -232,7 +235,7 @@ def test_me340_templates():
     assert flag(by["movers-14-226"], "--merge") is None and flag(by["movers-14-226"], "--person-tracks") is None, "no cross-shot join (D3b)"
     assert flag(by["import"], "--dynamic-scene") == ["@movers-14-226:scene"] and flag(by["import"], "--exclude-frames") == ["0:14", "14:226"]
     assert flag(by["import"], "--dense-points") == ["@lingbot_build:out"] and flag(by["import"], "--inferred-floor") == ["@floor_infer:out"]
-    assert flag(by["import"], "--title") == ["me340 02:45–03:15 (imported, not accepted)"]
+    assert flag(by["import"], "--title") == ["ME340 机加工车间 2:45–3:15（普通视频，估计尺度，未验收）"]
     assert flag(by["events"], "--marks") == ["@analysis:analysis"] and flag(by["outlines"], "--mesh") == ["@fill:shell"]
 
 
@@ -260,8 +263,9 @@ def test_walmart_templates():
     assert flag(by["box"], "--exclude") == ["object-003=accepted by SAM 3D"] and flag(by["box"], "--invoke") is None
     assert flag(by["merge"], "--review") == [str(REVIEW / "walmart.json")] and by["merge"].leaves == {"review": REVIEW / "walmart.json"}
     assert by["sam3d"].budget_flags == {"--max-usd": "usd"} and flag(by["sam3d"], "--max-usd") == ["10"] and flag(by["sam3d"], "--workers") == ["4"]
+    assert flag(by["recgen"], "--workers") == ["1"] and flag(by["box"], "--workers") == ["4"], "RecGen journals under a process-wide env var: one call at a time"
     assert by["camera"].models == (("camera", "princeton-vl/DROID-SLAM", "2dfd39f0", None),) and by["splat"].models == () and by["box"].models == ()
-    assert by["splat"].budget_flags == {"--max-minutes": ("minutes", stages.USD_PER_S["H100"])} and flag(by["splat"], "--max-minutes") == ["58"]
+    assert by["splat"].budget_flags == {"--max-minutes": ("minutes", stages.USD_PER_S["splat"])} and flag(by["splat"], "--max-minutes") == ["58"]
 
 
 def test_commercial_profile():
@@ -314,6 +318,31 @@ def test_part_c_profiles_when_present():
         check_structure(specs)
         if name == "research":
             assert all(profiles.refuse(name, s) is None for s in specs)
+        names = next(s for s in specs if s.name == "names")  # U6: both name with Gemini, a cloud call
+        assert names.compute == "cloud" and profiles.refuse(name, names) is None and profiles.hosting(names.models[0][1]) == "cloud"
+
+
+def test_a_failed_optional_decision_leaves_its_layer_blank():
+    """The runner marks a decision {'absent': why} when its stage failed, was blocked or refused (the Lightning splat failed,
+    so splat_pick was blocked): the layers that need it are left out and the import still runs; a decision the report
+    needs stops the graph."""
+    def with_absent(site, *names):
+        c = ctx(site)
+        c.decisions.update({n: {"value": None, "absent": "blocked"} for n in names})
+        return {s.name: s for s in stages.graph(c)}
+    by = with_absent("me340", "splat_pick", "lingbot_conf", "inferred_floor", "other_shot-14-226")
+    assert not {"splat_final", "lingbot_build", "dense_gate", "movers-14-226"} & set(by) and {"splat", "floor_infer"} <= set(by)
+    assert all(flag(by["import"], f) is None for f in ("--splats", "--dense-points", "--inferred-floor")) and flag(by["import"], "--shell-glb")
+    by = with_absent("walmart", "dense_gate", "generator_plan")
+    assert flag(by["import"], "--dense-points") is None and "recgen" not in by and "box" in by and flag(by["box"], "--exclude") is None, \
+        "no SAM 3D plan: the box stage keeps only the review's excludes (none for Walmart)"
+    assert flag(by["merge"], "--sam3d") is None and flag(by["merge"], "--box") == ["@box:out"], "the merge goes on without the failed SAM 3D"
+    by = with_absent("walmart", "generator_plan-box")
+    assert flag(by["box"], "--exclude") == ["object-003=accepted by SAM 3D"], "RecGen made no plan: the SAM 3D plan's box excludes"
+    assert flag(by["merge"], "--recgen") is None and flag(by["merge"], "--sam3d") == ["@sam3d:out"] and flag(by["import"], "--models") == ["@merge:models"], \
+        "the Lightning RecGen failed: the merge (and the models) go on with SAM 3D and box"
+    with pytest.raises(RuntimeError, match="decision voxel could not be made"):
+        with_absent("walmart", "voxel")
 
 
 def test_no_mapped_shot_stops():
@@ -348,7 +377,7 @@ def test_a_republish_keeps_the_published_title(tmp_path):
     or commercial run on a delivered site imports a report of its own, never a new version of the delivered one."""
     c = ctx("walmart")
     first = {s.name: s for s in stages.graph(c)}["import"]
-    assert flag(first, "--title") == ["walmart 03:10–03:40 (imported, not accepted)"] and flag(first, "--republish") is None
+    assert flag(first, "--title") == ["Walmart 货架通道 3:10–3:40（普通视频，原生单位，未验收）"] and flag(first, "--republish") is None
     (tmp_path / "imports.jsonl").write_text(json.dumps({"site": "walmart", "importRecordPath": "/art/.platform/imports/video-import-p.json", "title": "Walmart aisle"}) + "\n")
     fields = [getattr(c, f) for f in ("site", "video", "start", "end", "profile", "review", "art")]
     research = {s.name: s for s in stages.graph(Ctx(*fields, types.SimpleNamespace(state=tmp_path), c.decisions))}["import"]
@@ -357,6 +386,34 @@ def test_a_republish_keeps_the_published_title(tmp_path):
                   Ctx(*fields[:4], types.SimpleNamespace(**{**vars(RESEARCH), "name": "delivered"}), *fields[5:], types.SimpleNamespace(state=tmp_path), c.decisions)):
         again = {s.name: s for s in stages.graph(asked)}["import"]
         assert flag(again, "--title") == ["Walmart aisle"] and flag(again, "--republish") == ["/art/.platform/imports/video-import-p.json"]
+
+
+def test_the_cli_republishes_only_for_delivered_or_when_asked(tmp_path, monkeypatch):
+    """The same gate as the CLI drives it: run_video_report -> store.main -> Ctx with the real profile strings. The graph
+    is fed the section 5 values and stopped at its import stage; nothing is planned, run or written."""
+    import run_video_report
+    from report_runner import store
+    record = "/art/.platform/imports/video-import-p.json"
+    (tmp_path / "runs/report-runner").mkdir(parents=True)
+    (tmp_path / "runs/report-runner/imports.jsonl").write_text(json.dumps({"site": "walmart", "importRecordPath": record, "title": "Walmart aisle"}) + "\n")
+    monkeypatch.setattr(store, "art_root", lambda: tmp_path)
+    real, seen = stages.graph, {}
+
+    class Stop(Exception):
+        pass
+
+    def graph(c):
+        c.decisions.update({k: {"value": v, "evidence": {}, "rule": k} for k, v in SITES["walmart"][2].items() if k not in c.decisions})
+        seen["profile"], seen["import"] = c.profile, real(c)[-1]
+        raise Stop
+    monkeypatch.setattr(stages, "graph", graph)
+    start, end, _ = SITES["walmart"]
+    for profile, extra, republish in (("research", [], None), ("commercial", [], None), ("research", ["--republish"], [record]), ("delivered", [], [record])):
+        with pytest.raises(Stop):
+            run_video_report.main(["--video", str(tmp_path / "v.mp4"), "--start", str(start), "--end", str(end), "--site", "walmart",
+                                   "--review", str(REVIEW), "--profile", profile, "--dry-run", *extra])
+        assert seen["profile"] == profile and flag(seen["import"], "--republish") == republish, (profile, extra)
+        assert flag(seen["import"], "--title") == (["Walmart aisle"] if republish else ["Walmart 货架通道 3:10–3:40（普通视频，原生单位，未验收）"]), (profile, extra)
 
 
 def test_movers_never_take_the_mapped_shots_people():
