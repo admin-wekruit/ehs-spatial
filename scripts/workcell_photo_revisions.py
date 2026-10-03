@@ -23,6 +23,8 @@ from scripts.workcell_photo_oneshot import _build_page, _export_metric_scene, _f
 from scripts.workcell_photo_report import LINEAGE, finalize  # noqa: E402
 
 REVISIONS = 'revisions'
+# A finished run may already carry a packaged page, a frozen UI or interrupted staging; a revision rebuilds its own.
+RUN_ONLY = shutil.ignore_patterns('page', 'report-ui', '.report-build-*', '.candidate-write-*', '.housing-write-*')
 PAGE_FILES = ('scene-report.json', 'measurement-evaluation.json', 'measurements.json', 'model-endpoint-estimate.json',
               'housing-models.json', 'workcell-conditional.glb', 'workcell-metric.glb', 'workcell-native.glb')
 
@@ -86,11 +88,14 @@ def build(root, out, viewer_assets, candidates=(), *, main_id, evidence_url=None
     root, out = Path(root).resolve(), Path(out).resolve()
     if out.exists():
         raise ValueError('Output must be a new directory')
+    lineage = json.loads((root / LINEAGE).read_text()) if (root / LINEAGE).is_file() else {}
+    if lineage.get('role') == 'candidate' or any(item.get('modelTerminal') for item in json.loads((root / 'objects.json').read_text())['objects']):
+        raise ValueError('The root is a candidate revision; build revisions from the main run directory')
     started = time.monotonic()
     out.mkdir(parents=True)
     replay = json.loads((root / 'replay-manifest.json').read_text()) if (root / 'replay-manifest.json').is_file() else None
     main = out / main_id
-    shutil.copytree(root, main)
+    shutil.copytree(root, main, ignore=RUN_ONLY)
     lineage = {'branchId': 'oneshot', 'label': '主模型', 'parentRevisionId': replay['revisionId'] if replay else None,
                'role': 'main'}
     (main / LINEAGE).write_text(json.dumps(lineage, ensure_ascii=False, indent=2) + '\n')
@@ -101,7 +106,7 @@ def build(root, out, viewer_assets, candidates=(), *, main_id, evidence_url=None
     for evidence, ident, label in candidates:
         evidence = Path(evidence).resolve()
         directory = out / ident
-        shutil.copytree(root, directory)
+        shutil.copytree(root, directory, ignore=RUN_ONLY)
         catalog = json.loads((directory / 'objects.json').read_text())
         volumes = json.loads((evidence / 'volume-candidates.json').read_text())
         install_candidate_models(directory, volumes, evidence, catalog)

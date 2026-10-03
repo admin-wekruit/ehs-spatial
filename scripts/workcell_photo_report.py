@@ -3,6 +3,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+import tempfile
 
 import numpy as np
 import trimesh
@@ -90,8 +91,22 @@ SCOPE_LABELS = {'model_bottom_face_center': '光幕底端', 'visible_face_lower_
                 'model_lower_rail_near_curtain': '光幕旁围栏下沿'}
 
 
+ENDPOINT_SCHEMA = 2
+
+
+def _floor_angle(measured, up):
+    """Angle between the floor an objects-stage measurement used and this revision's floor."""
+    axes = (measured.get('basis') or {}).get('axes_native')
+    if not axes:
+        return None
+    used = np.asarray(axes[2], float)
+    return float(np.degrees(np.arccos(np.clip(abs(used @ up) / np.linalg.norm(used), 0, 1))))
+
+
 def _endpoint_estimation(root, measured, transform, doc):
     """Bind current model endpoints to this document's representations; values stay native."""
+    if measured.get('schemaVersion') != ENDPOINT_SCHEMA or 'curtainMinusRail' not in measured:
+        raise ValueError(f"Model endpoint inspection is stale: schema {measured.get('schemaVersion')} instead of {ENDPOINT_SCHEMA}; run finalize")
     for name, digest in measured['sourceFiles'].items():
         if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
             raise ValueError('Model endpoint inspection is stale: ' + name)
@@ -136,7 +151,8 @@ def _endpoint_estimation(root, measured, transform, doc):
     for scope, noun in (('curtain', '光幕'), ('rail', '围栏下沿')):
         rows = {row['side']: row for row in endpoints if row['side'] and
                 (row['measurementScope'] == 'model_lower_rail_near_curtain') == (scope == 'rail')}
-        if {'left', 'right'} <= rows.keys():
+        # Two points of one rail member are not a left/right comparison of two rails.
+        if {'left', 'right'} <= rows.keys() and (rows['left']['objectId'], rows['left']['node']) != (rows['right']['objectId'], rows['right']['node']):
             differences.append({'id': f'{scope}-left-minus-right', 'minuendId': rows['left']['id'], 'subtrahendId': rows['right']['id'],
                                 'valueNative': rows['left']['heightNative'] - rows['right']['heightNative'],
                                 'label': f'左右{noun}离地差（左 − 右）', 'description': '左右各自测点沿同一地面法向的高度差；不是精度或同高验证。'})
@@ -147,9 +163,36 @@ def _endpoint_estimation(root, measured, transform, doc):
             'groundTruthUsedForEstimation': False}
 
 
-def build(root):
-    from scripts.workcell_photo_oneshot import _array, _frame
+BUILD_OUTPUTS = ('scene-report.json', 'measurement-evaluation.json')  # plus entity-*.glb
+
+
+def build(root, endpoints=None):
+    """Build the revision report; its generated files replace earlier ones only after every check passed.
+
+    A refused build (stale endpoints, invalid geometry) leaves the previous
+    report and every asset it hashed byte-identical. Generated files the new
+    revision no longer references are removed, so no stale mesh can be packaged.
+    """
     root = Path(root)
+    with tempfile.TemporaryDirectory(prefix='.report-build-', dir=root) as staging:
+        staging = Path(staging)
+        if endpoints is not None:
+            # A freshly measured endpoint table is a derived output too: it lands only with the report.
+            (staging / 'model-endpoint-estimate.json').write_text(json.dumps(endpoints, indent=2, allow_nan=False) + '\n')
+        result = _build(root, staging)
+        generated = sorted(staging.iterdir())
+        for path in generated:
+            path.replace(root / path.name)
+        names = {path.name for path in generated}
+        for path in [*root.glob('entity-*.glb'), *(root / name for name in BUILD_OUTPUTS)]:
+            if path.name not in names and path.name != 'scene-report.json' and path.is_file():
+                path.unlink()
+        (root / 'scene-report.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
+    return result
+
+
+def _build(root, staging):
+    from scripts.workcell_photo_oneshot import _array, _frame
     geometry = json.loads((root / 'geometry.json').read_text())
     catalog = json.loads((root / 'objects.json').read_text())
     doc = empty_document()
@@ -159,6 +202,7 @@ def build(root):
     normal = np.asarray(geometry['floor']['normal'], float)
     if normal.shape != (3,) or not np.isfinite(normal).all() or np.linalg.norm(normal) < 1e-8 or not np.isfinite(geometry['floor']['offset']):
         raise ValueError('A finite nonzero ground plane is required')
+    up = normal / np.linalg.norm(normal)
     transform = trimesh.geometry.align_vectors(normal / np.linalg.norm(normal), [0, 0, 1])
     transform[2, 3] = geometry['floor']['offset'] / np.linalg.norm(normal)
     from scripts.workcell_photo_calibration import accepted_scale
@@ -174,10 +218,11 @@ def build(root):
     if geometry.get('calibration'):
         doc['coordinateFrames'][0]['scale']['sourceRefs'] = [{'kind': 'user_measured_reference',
             'primaryAxis': 'joint3DReference', **geometry['calibration']['reference']}]
-    urls, scene_cache, source_frames = {}, {}, {}
+    urls, paths, scene_cache, source_frames = {}, {}, {}, {}
     def asset(path, aid, kind, **metadata):
         path = Path(path)
         data = path.read_bytes()
+        paths[aid] = path
         media = 'model/gltf-binary' if path.suffix == '.glb' else 'image/png'
         doc['assets'].append({'id': aid, 'kind': kind, 'mediaType': media,
                             'sizeBytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
@@ -191,8 +236,8 @@ def build(root):
             return None
         payload, point_metadata = points_glb(xyz, rgb, point_size=0)
         filename = f'entity-points-{name}.glb'
-        (root / filename).write_bytes(payload)
-        aid = asset(root / filename, 'asset-points-'+name, 'geometry',
+        (staging / filename).write_bytes(payload)
+        aid = asset(staging / filename, 'asset-points-'+name, 'geometry',
                     **point_metadata, pointCount=len(xyz), **provenance)
         return {'id': 'rep-points-'+name, 'kind': 'point_cloud', 'assetId': aid,
                 'coordinateFrameId': frame_id,
@@ -261,8 +306,8 @@ def build(root):
         center = mesh.bounds.mean(0)
         mesh.apply_translation(-center)
         name = f"entity-{item['id']}{suffix}.glb"
-        (root / name).write_bytes(mesh.export(file_type='glb'))
-        aid = asset(root / name, 'asset-'+item['id']+suffix, 'geometry')
+        (staging / name).write_bytes(mesh.export(file_type='glb'))
+        aid = asset(staging / name, 'asset-'+item['id']+suffix, 'geometry')
         return {'id': 'rep-'+item['id']+suffix, 'kind': 'generated_mesh', 'assetId': aid,
             'coordinateFrameId': frame_id, 'transform': {'coordinateFrameId': frame_id,
                 'position': center.tolist(), 'quaternion': [0, 0, 0, 1], 'scale': [1, 1, 1]},
@@ -306,6 +351,11 @@ def build(root):
         photos = {o['photo'] for o in item['observations']}
         samples = [o for o in item['observations'] if o.get('observedMeasurements', {}).get('status') == 'available']
         item['visibleHeightByPhoto'] = {str(o['photo']): o['observedMeasurements']['dimensions_native']['height'] for o in samples}
+        # Visible extents keep the objects-stage support (segmentation mask, plane filters); outer polygons
+        # would re-admit see-through pixels. Their floor is recorded against this revision's floor.
+        angles = [_floor_angle(o['observedMeasurements'], up) for o in samples]
+        angles = [angle for angle in angles if angle is not None]
+        item['visibleExtentFloor'] = {'support': 'objects-stage segmentation support', 'angleToRevisionFloorDeg': max(angles) if angles else None}
         heights = list(item['visibleHeightByPhoto'].values())
         item['visibleHeightNative'] = float(np.median(heights)) if len(photos) > 1 and heights else None
         item['visibleHeightRangeNative'] = [min(heights), max(heights)] if len(photos) > 1 and heights else None
@@ -324,6 +374,10 @@ def build(root):
             for field in ('axisNative', 'normalNative'):
                 if evidence.get(field) is not None:
                     evidence[field] = (transform[:3, :3] @ np.asarray(evidence[field])).tolist()
+                    # The fitted direction does not depend on the floor; its angle does. Report frame Z is this revision's floor normal.
+                    direction = np.asarray(evidence[field])
+                    evidence.update(objectsStageValueDeg=evidence['valueDeg'], floor="this revision's floor",
+                                    valueDeg=float(np.degrees(np.arccos(np.clip(abs(direction[2]) / np.linalg.norm(direction), 0, 1)))))
         variants = {key: representation(item, spec, '-photo-'+key) for key, spec in item.get('modelsByPhoto', {}).items()}
         rep = variants.get('4') or (representation(item, item['model'], '') if (item.get('model') or {}).get('nodes') else None)
         entity = {'id': item['id'], 'label': label, 'observationRefs': observations,
@@ -348,19 +402,20 @@ def build(root):
     from ehs_spatial.platform.scene_measurements import analyze_bends
     guard_revision = {**revision, 'document': {**doc, 'entities': [e for e in doc['entities'] if e['id'].startswith('v-guard-')]}}
     def load_asset(asset_id):
-        return (root / urls[asset_id]).read_bytes()
+        return paths[asset_id].read_bytes()
     bend_analysis = analyze_bends(guard_revision, load_asset)
     result = {'schemaVersion': 1, 'revision': revision, 'assetURLs': urls, 'objects': catalog['objects'],
               'coverage': catalog['coverage'], 'geometry': geometry, 'sceneTransformNative': transform.tolist(),
               'nativeToMetersDefault': scale, 'timing': {},
               'bendAnalysis': bend_analysis, 'modelMeasurementScale': measurement_scale}
-    endpoint_path = root / 'model-endpoint-estimate.json'
+    endpoint_path = staging / 'model-endpoint-estimate.json'
+    endpoint_path = endpoint_path if endpoint_path.is_file() else root / 'model-endpoint-estimate.json'
     if endpoint_path.is_file():
         result['endpointEstimation'] = _endpoint_estimation(root, json.loads(endpoint_path.read_text()), transform, doc)
     if (root/'measurements.json').is_file():
         from scripts.workcell_photo_calibration import load_measurements, measurement_evaluation
         result['measurementEvaluation'] = measurement_evaluation(catalog['objects'], geometry, load_measurements(root/'measurements.json'))
-        (root/'measurement-evaluation.json').write_text(json.dumps(result['measurementEvaluation'], ensure_ascii=False, indent=2)+'\n')
+        (staging/'measurement-evaluation.json').write_text(json.dumps(result['measurementEvaluation'], ensure_ascii=False, indent=2)+'\n')
     if lineage:
         result['lineage'] = lineage
     from scripts.workcell_semantic_report import EXPERIMENT_DIR, bind
@@ -371,7 +426,6 @@ def build(root):
             # Never reuse semantics whose inputs differ; say so instead of failing the geometry build.
             result['semanticBinding'] = {'status': 'not_bound', 'reason': str(error),
                                          'action': 'Rerun the semantic experiment on this revision'}
-    (root / 'scene-report.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
     return result
 
 
@@ -381,12 +435,15 @@ def finalize(root, measurements=None):
     Order: supplied reference dimensions -> model endpoints on the current GLBs and
     floor -> report build (validates those endpoints, binds semantics). Nothing
     may rewrite models, catalog or floor after this without calling it again.
+    Derived outputs (endpoint table, report, meshes, evaluation) change together
+    or not at all; supplied reference dimensions are an input and are kept.
     """
     root = Path(root)
     if measurements is not None:
         from scripts.workcell_photo_calibration import apply_measurements
         apply_measurements(root, measurements)
+    endpoints = None
     if (root / 'physical-clearances.json').is_file():
         from scripts.workcell_endpoint_estimate import estimate
-        (root / 'model-endpoint-estimate.json').write_text(json.dumps(estimate(root), indent=2, allow_nan=False) + '\n')
-    return build(root)
+        endpoints = estimate(root)
+    return build(root, endpoints)

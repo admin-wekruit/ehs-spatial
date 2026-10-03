@@ -137,6 +137,8 @@ selectedPhoto = 'photo-3';
 result = render(variant);
 assert.notEqual(result.scene.props.measurementOverride?.method, 'conditional-endpoint-comparison', 'an endpoint is never drawn on another representation');
 assert.match(result.nodes.find(n => n.props['data-endpoint-estimate'] === 'fence-0:near:post-box-1').props.children, /未知/);
+assert.match(result.nodes.find(n => n.props['data-endpoint-difference'] === 'post-box-1:terminal-minus-rail').props.children, /未知/, 'a difference with an unbound endpoint is never read');
+assert.match(walk(result.scene.props.inspector(null)).find(n => n.type === SemanticObject).props.facts.find(fact => fact.testId === 'post-box-1:terminal-minus-rail').value, /未知/, 'semantic facts never read an unbound difference');
 selectedPhoto = 'photo-4'; endpointLines = undefined; reportLocation.href = 'https://example.test/report/?measurement=endpoints';
 assert.equal(render(conditional).scene.props.measurementOverride.method, 'conditional-endpoint-comparison', 'the shared URL enables annotations without another click');
 console.log('PASS: accepted scale, 52-model exports, no bbox fallback, source points preserved, unified conditional model scale/export, revision-bound endpoints and live semantic facts');

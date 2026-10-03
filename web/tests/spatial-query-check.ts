@@ -49,4 +49,12 @@ assert.equal(answerSpatialQuery("灭火器在哪", input()).status, "unrecognize
 unbound = new Set(["post-box-2:terminal"]);
 assert.equal(answerSpatialQuery("左右光幕谁更高", input()).status, "missing", "an endpoint off the displayed model is never compared");
 assert.match(answerSpatialQuery("左侧光幕离地多高", input()).text, /未知（显示模型与测量模型不同）/);
+unbound = new Set(["fence-0:near:post-box-1"]);
+answer = answerSpatialQuery("右侧光幕和围栏谁更高", input());
+assert.equal(answer.status, "missing", "a curtain-minus-rail pair with an unbound rail is never read"); assert.doesNotMatch(answer.text, /\d+\.\d+ cm/);
+answer = answerSpatialQuery("光幕和围栏谁更高", input());
+assert.equal(answer.facts.length, 1); assert.match(answer.text, /左侧光幕底端减去旁边围栏下沿：3\.25 cm.*未比较/);
+unbound = new Set();
+const shared = { ...input(), differences: differences.filter(row => row.id !== "rail-left-minus-right") };
+assert.match(answerSpatialQuery("左右围栏下沿相差多少", shared).text, /没有左右两个不同围栏测点/, "one rail is never compared with itself");
 console.log("PASS: structured spatial questions read the loaded revision's endpoints with the current scale; comparisons, missing facts and unknown scale stay explicit");

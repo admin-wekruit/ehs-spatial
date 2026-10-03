@@ -1,5 +1,6 @@
 """Export bottom-fit previews and integrate evidence-checked housing candidates."""
 from copy import deepcopy
+from fnmatch import fnmatch
 import hashlib
 import json
 from pathlib import Path
@@ -78,9 +79,14 @@ def _shared_ground(root, supplied):
     return geometry, normal, offset
 
 
-def _verify_sources(root, source_files):
+GENERATED_NAMES = ('entity-*.glb', 'workcell-*.glb')  # report build meshes and scene exports
+
+
+def _verify_sources(root, source_files, catalog):
     if not {'geometry.json', 'objects.json'} <= source_files.keys():
         raise ValueError('Housing candidate requires frozen geometry and catalog hashes')
+    if json.loads((root / 'objects.json').read_text()) != catalog:
+        raise ValueError("The catalog argument differs from this run's objects.json")
     for name, digest in source_files.items():
         path = (root / name).resolve()
         if root not in path.parents or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
@@ -130,17 +136,27 @@ def install_candidate_models(root, result, candidate_root, catalog):
     root, candidate_root = Path(root).resolve(), Path(candidate_root).resolve()
     geometry, normal, offset = _shared_ground(root, result['ground'])
     source_files = result.get('sourceFiles', {})
-    _verify_sources(root, source_files)
+    _verify_sources(root, source_files, catalog)
     updated = deepcopy(catalog)
     objects = {row['id']: row for row in updated['objects']}
     rows = [row for row in result.get('items', []) if row.get('model')]
     if not rows or len({row['id'] for row in rows}) != len(rows):
         raise ValueError('Candidate models need distinct object identities')
+    names = [row['model']['file'] for row in rows]
+    referenced = {spec['file'] for item in catalog['objects'] for spec in [item.get('model') or {}, *item.get('modelsByPhoto', {}).values()] if spec.get('file')}
+    for name in names:
+        # A candidate file must be new: overwriting a shared or existing model would change other objects or revisions,
+        # and names the report build or export generates would be overwritten by them.
+        if (Path(name).name != name or names.count(name) > 1 or name in referenced or (root / name).exists()
+                or any(fnmatch(name, pattern) for pattern in GENERATED_NAMES)):
+            raise ValueError('Candidate model file would overwrite an existing, shared or generated file: ' + name)
     files, records = {}, []
     for row in rows:
         ident = row['id']; item = objects.get(ident)
         if item is None or item.get('kind') != 'yellow safety post':
             raise ValueError(ident + ': candidate does not name a catalog light curtain')
+        if item.get('physicalBottom') or item.get('modelTerminal'):
+            raise ValueError(ident + ': already bound to an accepted physical bottom or an earlier candidate; use a fresh copy of the unaccepted revision')
         if row.get('physicalValidation') != 'none' or row.get('sourceFaceGateAccepted') is not False:
             raise ValueError(ident + ': only explicitly unaccepted visual candidates install here')
         for observation in row['sourceObservations']:
@@ -177,14 +193,15 @@ def install_candidate_models(root, result, candidate_root, catalog):
             (temporary / name).write_bytes(data)
         (temporary / 'housing-models.json').write_text(json.dumps(manifest, indent=2, allow_nan=False) + '\n')
         (temporary / 'objects.json').write_text(json.dumps(updated, ensure_ascii=False, indent=2, allow_nan=False))
-        for path in temporary.iterdir():
-            path.replace(root / path.name)
+        # Models first, catalog last: an interruption never leaves the catalog naming an absent model.
+        for name in [*files, 'housing-models.json', 'objects.json']:
+            (temporary / name).replace(root / name)
     catalog.clear(); catalog.update(updated)
     return manifest
 
 
 def apply_housing_models(root, result, candidate_root, catalog):
-    """Install source-supported geometry, retaining the exact catalog observations.
+    """Install geometry that passed the strict source-face gate, retaining the exact catalog observations.
 
     Supported rows need model/file/nodes, geometryScope, physicalValidation=none,
     sourceSurfaceObservations and lowerBoundary(partId, scope, vertices,
@@ -201,7 +218,7 @@ def apply_housing_models(root, result, candidate_root, catalog):
     root, candidate_root = Path(root).resolve(), Path(candidate_root).resolve()
     geometry, normal, offset = _shared_ground(root, result['ground'])
     source_files = result.get('sourceFiles', {})
-    _verify_sources(root, source_files)
+    _verify_sources(root, source_files, catalog)
     expected = {'post-box-1', 'post-box-2'}
     items = result.get('items', [])
     if len(items) != 2 or {row['id'] for row in items} != expected:
@@ -213,6 +230,8 @@ def apply_housing_models(root, result, candidate_root, catalog):
     measurements, files, records = {}, {}, []
     for row in items:
         ident, item = row['id'], objects[row['id']]
+        if item.get('modelTerminal'):
+            raise ValueError(ident + ': carries an unaccepted candidate; install accepted models on a main-revision copy')
         if row.get('status') == 'unsupported':
             if not row.get('reason'):
                 raise ValueError(ident + ': unsupported geometry needs an explicit reason')
@@ -330,7 +349,7 @@ def apply_housing_models(root, result, candidate_root, catalog):
         item['physicalBottom'] = evidence
         item['measurements']['groundClearance'] = {'valueNative': height, 'status': 'conditional-model-estimate',
                                                   'source': 'physicalBottom: selected visible-face terminal; whole-housing minimum unverified; inferred common floor'}
-        item['notes'] = [row['geometryScope'], 'Source-supported candidate; hidden geometry and metric accuracy remain unvalidated.']
+        item['notes'] = [row['geometryScope'], 'Passed the strict source-face gate; conditional model, hidden geometry and metric accuracy remain unvalidated.']
         records.append({'id': ident, 'status': 'conditional_model', 'modelUpdated': True,
                         'modelFile': filename, 'modelSha256': digest, 'heightNative': height,
                         'measurementScope': 'visible_face_lower_terminal', 'wholeHousingMinimumVerified': False,
@@ -349,10 +368,12 @@ def apply_housing_models(root, result, candidate_root, catalog):
         temporary = Path(temporary)
         for name, data in files.items():
             (temporary / name).write_bytes(data)
-        for name, value in [('geometry.json', geometry), ('physical-clearances.json', physical), ('housing-models.json', manifest), ('objects.json', updated)]:
+        writes = [('geometry.json', geometry), ('physical-clearances.json', physical), ('housing-models.json', manifest), ('objects.json', updated)]
+        for name, value in writes:
             (temporary / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + ('' if name == 'objects.json' else '\n'))
-        for path in temporary.iterdir():
-            path.replace(root / path.name)
+        # Models first, catalog last: an interruption never leaves the catalog naming an absent model.
+        for name in [*files, *(name for name, _ in writes)]:
+            (temporary / name).replace(root / name)
     catalog.clear(); catalog.update(updated)
     from workcell_endpoint_estimate import estimate
     endpoints = estimate(root)

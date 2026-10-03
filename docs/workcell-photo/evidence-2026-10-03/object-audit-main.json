@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "revisionId": "workcell-main-2026-10-03",
-  "documentSha256": "8ba60ed70fa90672c1848ac59fde9dc6d03940b8bb8bfd5c843798a38aa18f07",
+  "documentSha256": "bd47ece13e689d633b0d6ca18ef6e575a20209d85af9f5cf702f2a27b4765a02",
   "scope": "Model silhouette through the saved camera versus the saved segmentation polygon, per source view. Occlusion and mask errors lower IoU; not physical accuracy.",
   "objects": 52,
   "views": [

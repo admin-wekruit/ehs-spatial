@@ -78,8 +78,33 @@ def _frames_match(root, sources):
     return proofs
 
 
+SOURCE_CATALOG = "source-objects.json"
+CROP_RESAMPLE_LIMIT = 32  # gray levels; identical photo and polygon differ only by resampler implementation
+
+
+def _source_polygons(experiment, manifest, sources):
+    """The exact absolute polygons the experiment consumed, from the catalog bytes it hashed; never from normalized crops."""
+    expected = next(source["sha256"] for source in sources if source["file"] == "objects.json")
+    path = experiment / SOURCE_CATALOG
+    if not path.is_file() or _sha(path) != expected:
+        raise ValueError("Semantic experiment does not carry the catalog it hashed; rerun it or supply the identical catalog")
+    catalog = {item["id"]: item for item in json.loads(path.read_text())["objects"]}
+    polygons = {row["observationId"]: catalog[row["entityId"]]["observations"][row["sourceObservationIndex"]]["polygons"]
+                for row in manifest["observations"]}
+    if any("polygons" in row and row["polygons"] != polygons[row["observationId"]] for row in manifest["observations"]):
+        raise ValueError("Semantic manifest polygons disagree with the catalog the experiment hashed")
+    return polygons
+
+
 def bind(root, report, experiment=None):
-    """The semanticExperiment block for this revision, or ValueError when inputs differ."""
+    """The semanticExperiment block for this revision, or ValueError when inputs differ or are unreadable."""
+    try:
+        return _bind(root, report, experiment)
+    except (KeyError, IndexError, StopIteration, FileNotFoundError, json.JSONDecodeError, TypeError, AttributeError) as error:
+        raise ValueError(f"Semantic experiment inputs are missing or unreadable: {type(error).__name__}: {error}") from error
+
+
+def _bind(root, report, experiment=None):
     import cv2
     from scripts.route_jev import tight_crop
     from scripts.workcell_semantic_match import observed_points, polygon_mask
@@ -116,12 +141,15 @@ def bind(root, report, experiment=None):
     expected = [(item_id, index) for item_id, item in catalog.items() for index in range(len(item["observations"]))]
     if sorted((row["entityId"], row["sourceObservationIndex"]) for row in manifest["observations"]) != sorted(expected):
         raise ValueError("Semantic observations differ from this catalog")
+    recorded = _source_polygons(experiment, manifest, sources)
     rasters, crop_difference, scene_ids = {}, 0, {}
     for row in manifest["observations"]:
         source = catalog[row["entityId"]]["observations"][row["sourceObservationIndex"]]
         photo = row["photo"]
         if source["photo"] != photo:
             raise ValueError("Semantic observation photo changed: " + row["observationId"])
+        if source["polygons"] != recorded[row["observationId"]]:
+            raise ValueError("Semantic observation input changed (polygon): " + row["observationId"])
         if photo not in rasters:
             frame = _frame(root, photo)
             rasters[photo] = (cv2.imread(str(root / f"photo-{photo}.png")), _array(frame["pts3d"]), _array(frame["non_ambiguous_mask"]))
@@ -136,6 +164,8 @@ def bind(root, report, experiment=None):
             raise ValueError("Semantic observation input changed: " + row["observationId"])
         # Same photo bytes and polygon; only the resampler implementation can differ.
         crop_difference = max(crop_difference, int(np.abs(crop.astype(int) - saved_crop.astype(int)).max()))
+        if crop_difference > CROP_RESAMPLE_LIMIT:
+            raise ValueError("Semantic crop differs beyond resampling: " + row["observationId"])
         ids = [oid for oid in entities[row["entityId"]]["observationRefs"] if observations[oid]["imageId"] == f"photo-{photo}"
                and observations[oid]["originalPixelPolygons"] == source["polygons"]]
         if len(ids) != 1:
@@ -166,7 +196,8 @@ def bind(root, report, experiment=None):
         "revisionId": revision["id"], "documentSha256": revision["documentSha256"],
         "experimentRevisionId": result["sourceRevisionId"],
         "reuse": "identical semantic inputs verified" if revision["id"] == result["sourceRevisionId"] else "reused on a revision with identical semantic inputs",
-        "verified": ["photo bytes", "catalog observation set", "observation masks rebuilt pixel-identically from this revision's polygons",
+        "verified": ["photo bytes", "catalog observation set", "absolute observation polygons equal to the experiment's own record",
+                     "observation masks rebuilt pixel-identically from this revision's polygons",
                      "supported and sampled point counts", "rigid floor transform", "scene observation links"],
         "framesProof": frames_proof, "maxCropResampleDifference": crop_difference,
         "notInputs": "Model GLBs, representations, ground clearances and scale are not experiment inputs; spatial facts come from this revision"}

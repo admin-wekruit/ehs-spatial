@@ -2,12 +2,12 @@
   "revisions": {
     "main": {
       "id": "workcell-main-2026-10-03",
-      "documentSha256": "8ba60ed70fa90672c1848ac59fde9dc6d03940b8bb8bfd5c843798a38aa18f07",
+      "documentSha256": "bd47ece13e689d633b0d6ca18ef6e575a20209d85af9f5cf702f2a27b4765a02",
       "glb": {
         "file": "main.glb",
         "extras": {
           "revisionId": "workcell-main-2026-10-03",
-          "documentSha256": "8ba60ed70fa90672c1848ac59fde9dc6d03940b8bb8bfd5c843798a38aa18f07"
+          "documentSha256": "bd47ece13e689d633b0d6ca18ef6e575a20209d85af9f5cf702f2a27b4765a02"
         },
         "readback": [
           {
@@ -25,12 +25,12 @@
     },
     "candidate": {
       "id": "workcell-housing-g-2026-10-03",
-      "documentSha256": "cd1e657ebb140ff9daf5aa0efaf665e53e1dd0300afa78b1a7091277f6b9286d",
+      "documentSha256": "4f9bd0e5b82f91b36e801f26681f5787cec2ea18bce303c9abbc0a3a80ec2ae7",
       "glb": {
         "file": "candidate.glb",
         "extras": {
           "revisionId": "workcell-housing-g-2026-10-03",
-          "documentSha256": "cd1e657ebb140ff9daf5aa0efaf665e53e1dd0300afa78b1a7091277f6b9286d"
+          "documentSha256": "4f9bd0e5b82f91b36e801f26681f5787cec2ea18bce303c9abbc0a3a80ec2ae7"
         },
         "readback": [
           {
@@ -48,6 +48,11 @@
     }
   },
   "checks": [
+    {
+      "step": "every object selectable",
+      "revision": "workcell-main-2026-10-03",
+      "objects": 52
+    },
     {
       "step": "semantic query -> measured object",
       "query": "寻找光幕",
@@ -68,6 +73,11 @@
       "candidate": "24.51 cm"
     },
     {
+      "step": "every object selectable",
+      "revision": "workcell-housing-g-2026-10-03",
+      "objects": 52
+    },
+    {
       "step": "structured spatial question",
       "revision": "workcell-housing-g-2026-10-03",
       "question": "左右光幕谁更高？",
@@ -75,9 +85,9 @@
     },
     {
       "step": "caliper JSON bound to candidate document",
-      "entity": "sign-13",
-      "heightNative": 1.8807203749839783,
-      "label": "h 128.73 cm"
+      "entity": "cart",
+      "heightNative": 1.5230482787524977,
+      "label": "h 104.25 cm"
     }
   ],
   "consoleErrors": 0,

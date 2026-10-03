@@ -136,6 +136,11 @@ def replay(release, pages, out):
         shutil.copytree(semantic, out / 'semantic-experiment')
         record['published']['semantic-experiment'] = {path.relative_to(semantic).as_posix(): _sha(path)
                                                       for path in sorted(semantic.rglob('*')) if path.is_file()}
+        # The experiment hashed its source catalog; the identical published bytes give its exact polygons.
+        hashed = json.loads((semantic / 'input-manifest.json').read_text())['sha256']['objects.json']
+        if _sha(out / 'objects.json') != hashed:
+            raise ValueError('Published semantic experiment used another catalog than the frozen one')
+        shutil.copyfile(out / 'objects.json', out / 'semantic-experiment' / 'source-objects.json')
     # Camera provenance from the run's own packaged page, never from the replayed frames.
     data = json.loads((pages / 'data.json').read_text())
     summaries = []

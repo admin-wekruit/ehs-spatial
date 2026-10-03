@@ -296,6 +296,9 @@ def _bbox_quality(root, seg, kind):
     return rows
 
 
+SCENE_EXPORTS = ('workcell-conditional.glb', 'workcell-metric.glb', 'workcell-native.glb')
+
+
 def _export_metric_scene(root, report):
     """Export the exact report assets/poses and its single model measurement scale."""
     from ehs_spatial.platform.spatial import transform_matrix
@@ -339,6 +342,10 @@ def _export_metric_scene(root, report):
     name = ('workcell-conditional.glb' if measurement_scale['status'] == 'conditional_unvalidated'
             else 'workcell-metric.glb' if scale is not None else 'workcell-native.glb')
     (root / name).write_bytes(scene.export(file_type='glb'))
+    for other in SCENE_EXPORTS:
+        # An export under another scale status belongs to an earlier revision; never package it beside this one.
+        if other != name and (root / other).is_file():
+            (root / other).unlink()
     return name
 
 

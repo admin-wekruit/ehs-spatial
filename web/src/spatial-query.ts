@@ -50,6 +50,9 @@ export function answerSpatialQuery<E extends QueryEndpoint>(question: string, in
   const ofKind = (kind: string) => input.objects.filter(object => object.kind === kind);
   const rowsOf = (kind: string, side?: "left" | "right") => input.endpoints.filter(row => ofKind(kind).some(object => object.id === row.objectId) && (!side || row.side === side));
   const fact = (row: E) => ({ label: `${row.label}离地`, value: input.bound(row) ? input.format(row.heightNative) : "未知（显示模型与测量模型不同）", sourceId: row.id });
+  const endpoint = (id: string) => input.endpoints.find(point => point.id === id);
+  // A difference is read only while both endpoints are on the displayed representations.
+  const pairBound = (row: QueryDifference) => [row.minuendId, row.subtrahendId].every(id => { const point = endpoint(id); return !!point && input.bound(point); });
   if (intent === "bend") {
     const guards = ofKind("folded guard board").filter(object => !sides.length || sides.some(side => object.label.includes(sideName[side])));
     const measured = guards.map(object => ({ object, bend: input.bends?.find(row => row.entityId === object.id) })).filter(row => row.bend?.status === "measured" && row.bend.result);
@@ -68,17 +71,22 @@ export function answerSpatialQuery<E extends QueryEndpoint>(question: string, in
     if (kinds.length >= 2 && kinds.some(row => row.kind === "yellow safety post") && kinds.some(row => row.kind === "safety fence")) {
       const pairs = input.differences.filter(row => row.id.endsWith("-minus-rail") && (!sides.length || sides.some(side => rowsOf("yellow safety post", side).some(point => point.id === row.minuendId))));
       if (!pairs.length) return result("missing", "本版本没有光幕与旁边围栏的成对测点。", []);
-      return result("answered", pairs.map(row => `${row.label}：${input.format(row.valueNative)}（正值表示光幕测点更高）`).join("；"),
-        pairs.flatMap(row => [row.minuendId, row.subtrahendId].map(id => input.endpoints.find(point => point.id === id)?.objectId ?? "")).filter(Boolean),
-        pairs.map(row => ({ label: row.label, value: input.format(row.valueNative), sourceId: row.id })));
+      const objectsOf = (rows: QueryDifference[]) => rows.flatMap(row => [row.minuendId, row.subtrahendId].map(id => endpoint(id)?.objectId ?? "")).filter(Boolean);
+      const readable = pairs.filter(pairBound);
+      if (!readable.length) return result("missing", "光幕与旁边围栏的测点没有绑定到当前显示模型，无法比较。", objectsOf(pairs));
+      return result("answered", readable.map(row => `${row.label}：${input.format(row.valueNative)}（正值表示光幕测点更高）`).join("；")
+        + (readable.length < pairs.length ? "；其余成对测点不在当前显示模型上，未比较。" : ""), objectsOf(readable),
+        readable.map(row => ({ label: row.label, value: input.format(row.valueNative), sourceId: row.id })));
     }
     const left = rowsOf(kind.kind, "left"), right = rowsOf(kind.kind, "right");
     if (!left.length || !right.length) return result("missing", `本版本没有左右两侧的${kind.name}离地测点，无法比较。`, [...left, ...right].map(row => row.objectId));
     const difference = input.differences.find(row => left.some(point => point.id === row.minuendId) && right.some(point => point.id === row.subtrahendId));
-    if (!difference || !input.bound(left[0]) || !input.bound(right[0])) return result("missing", `${kind.name}左右测点没有绑定到当前显示模型，无法比较。`, [left[0].objectId, right[0].objectId]);
+    if (!difference) return result("missing", `本版本没有左右两个不同${kind.name}测点之间的高度差，无法比较。`, [...left, ...right].map(row => row.objectId));
+    const a = left.find(point => point.id === difference.minuendId)!, b = right.find(point => point.id === difference.subtrahendId)!;
+    if (!pairBound(difference)) return result("missing", `${kind.name}左右测点没有绑定到当前显示模型，无法比较。`, [a.objectId, b.objectId]);
     const value = difference.valueNative, higher = value > 0 ? "左侧" : value < 0 ? "右侧" : null;
-    return result("answered", `${higher ? `${higher}${kind.name}测点更高` : "两侧测点一样高"}：左 − 右 = ${input.format(value)}。左 ${input.format(left[0].heightNative)}，右 ${input.format(right[0].heightNative)}（条件模型估计，未验证；不代表同高验证）。`,
-      [left[0].objectId, right[0].objectId], [fact(left[0]), fact(right[0]), { label: difference.label, value: input.format(value), sourceId: difference.id }]);
+    return result("answered", `${higher ? `${higher}${kind.name}测点更高` : "两侧测点一样高"}：左 − 右 = ${input.format(value)}。左 ${input.format(a.heightNative)}，右 ${input.format(b.heightNative)}（条件模型估计，未验证；不代表同高验证）。`,
+      [a.objectId, b.objectId], [fact(a), fact(b), { label: difference.label, value: input.format(value), sourceId: difference.id }]);
   }
   const rows = sides.length ? sides.flatMap(side => rowsOf(kind.kind, side)) : rowsOf(kind.kind);
   if (!rows.length) {

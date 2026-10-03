@@ -290,6 +290,17 @@ def check_housing():
                 raise AssertionError('Invalid housing evidence entered the actual report')
             assert catalog == before
             assert files == {path.name: path.read_bytes() for path in root.iterdir()}
+        # An accepted model is never installed over an unaccepted candidate (its binding and warning would linger).
+        flagged = deepcopy(catalog); flagged['objects'][0]['modelTerminal'] = {'candidateStatus': 'visual_volume_hypothesis', 'acceptedForPhysicalUse': False}
+        (root/'objects.json').write_text(json.dumps(flagged))
+        over = deepcopy(result); over['sourceFiles']['objects.json'] = hashlib.sha256((root/'objects.json').read_bytes()).hexdigest()
+        try:
+            apply_housing_models(root, over, candidates, flagged)
+        except ValueError as error:
+            assert 'unaccepted candidate' in str(error), str(error)
+        else:
+            raise AssertionError('An accepted model was installed over an unaccepted candidate')
+        (root/'objects.json').write_bytes(files['objects.json'])
         # A bottom seen once is still model geometry supported by all surface
         # views; preserve that narrower source count instead of inventing edges.
         single_bottom = deepcopy(result)

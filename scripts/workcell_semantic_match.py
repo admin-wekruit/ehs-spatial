@@ -109,7 +109,8 @@ def prepare(root, out, config):
     from scripts.workcell_photo_oneshot import _array, _frame
 
     started = time.perf_counter()
-    catalog, report = read_json(root / "objects.json"), read_json(root / "scene-report.json")
+    source_catalog = (root / "objects.json").read_bytes()
+    catalog, report = json.loads(source_catalog), read_json(root / "scene-report.json")
     objects = catalog["objects"]
     if not objects or len({o["id"] for o in objects}) != len(objects):
         raise ValueError("Object IDs must be nonempty and unique")
@@ -118,13 +119,15 @@ def prepare(root, out, config):
     photos = sorted({int(obs["photo"]) for obj in objects for obs in obj["observations"]})
     out.mkdir(parents=True, exist_ok=True)
     (out / "crops").mkdir(exist_ok=True)
+    # The exact catalog bytes consumed; its hash is in sources, so later revisions can prove polygon identity.
+    (out / "source-objects.json").write_bytes(source_catalog)
     transform = np.asarray(report["sceneTransformNative"], float)
     document = report["revision"].get("document", {})
     scene_observations = {obs["id"]: obs for obs in document.get("observations", [])}
     scene_entities = {entity["id"]: entity for entity in document.get("entities", [])}
     frames, photo_rows, sources = {}, [], []
-    for name in ("objects.json", "scene-report.json"):
-        sources.append({"file": name, "sha256": sha256(root / name)})
+    sources.append({"file": "objects.json", "sha256": hashlib.sha256(source_catalog).hexdigest()})
+    sources.append({"file": "scene-report.json", "sha256": sha256(root / "scene-report.json")})
     for photo in photos:
         image_name, frame_name = f"photo-{photo}.png", f"frame_{photo:04d}.json.gz"
         bgr = cv2.imread(str(root / image_name))
@@ -157,7 +160,7 @@ def prepare(root, out, config):
             scene_refs = exact_refs or scene_refs
             scene_id = scene_refs[0]["id"] if len(scene_refs) == 1 else None
             observations.append({"observationId": observation_id, "entityId": obj["id"], "sourceObservationIndex": source_index,
-                                 "sceneObservationId": scene_id,
+                                 "sceneObservationId": scene_id, "polygons": obs["polygons"],
                                  "photo": photo, "cropPath": crop_path, "maskPath": mask_path,
                                  "maskPixels": int(mask.sum()), "supportedPixels": supported_count,
                                  "sampledPoints": len(support), "geometryStatus": "available" if len(support) else "unavailable"})

@@ -13,7 +13,9 @@ root = Path(sys.argv[1])
 report = json.loads((root/'scene-report.json').read_text())
 doc = report['revision']['document']; validate_document(doc); Revision.model_validate(report['revision'])
 objects = {o['id']:o for o in report['objects']}
-assert {e['id'] for e in doc['entities']} == set(objects)
+# The capture point cloud is source context, not a catalog object.
+entities = [e for e in doc['entities'] if not e.get('sourceContext')]
+assert {e['id'] for e in entities} == set(objects)
 assert 'emergency-button' in objects
 if '--require-lights' in sys.argv:
     assert sum(o['kind']=='signal light' for o in objects.values()) >= 2, 'Known capture requires both entrance lamps'
@@ -29,7 +31,7 @@ for i,camera in enumerate(doc['cameras'],1):
     after=(trimesh.transform_points(points,T)-new_pose[:3,3])@new_pose[:3,:3]
     assert np.allclose(before,after,atol=3e-5)
     assert np.allclose(camera['K'],_array(f['intrinsics']))
-for entity in doc['entities']:
+for entity in entities:
     item=objects[entity['id']]
     distance=item.get('groundDistance',{})
     if len({o['photo'] for o in item['observations']})<2:
@@ -50,6 +52,8 @@ for entity in doc['entities']:
         assert not entity['measurements']
         assert item['visibleHeightNative'] is None
     for rep in [*entity['representations'],*entity['modelVariants'].values()]:
+        if rep['kind'] != 'generated_mesh':
+            continue  # selectable source-point subsets carry frame references, not model nodes
         path=root/report['assetURLs'][rep['assetId']]
         exported=trimesh.load(path,force='scene')
         mesh=exported.to_geometry()

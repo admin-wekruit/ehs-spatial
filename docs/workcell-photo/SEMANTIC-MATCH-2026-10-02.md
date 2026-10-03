@@ -53,7 +53,7 @@ node node_modules/typescript/bin/tsc --noEmit
 node node_modules/vite/bin/vite.js build --config vite.photo.config.ts
 ```
 
-若需显示前次失败成本，在 attach 命令加 `--previous-run "$FAILED_OUTPUT"`。输出目录必须全新，禁止覆盖旧账本。把 `web/dist-photo/photo.html` 更新为发布目录的 `index.html` 和 `photo.html`，复制生成的 assets；其余模型与网站文件夹保持现状。
+**2026-10-03 起上面的 `workcell_semantic_report.py` attach 命令已移除。** 把实验输出放进运行目录的 `semantic-experiment/`（oneshot 用 `--semantic-protocol` 自动完成），`finalize`/`build()` 按内容绑定到该 revision，`workcell_photo_revisions.py` 打包页面；前次失败的账本放在实验目录的 `previous-attempt-spend-ledger.json`。见 [REVISION-SYNC-2026-10-03.md](REVISION-SYNC-2026-10-03.md)。以下为历史说明：若需显示前次失败成本，在 attach 命令加 `--previous-run "$FAILED_OUTPUT"`。输出目录必须全新，禁止覆盖旧账本。把 `web/dist-photo/photo.html` 更新为发布目录的 `index.html` 和 `photo.html`，复制生成的 assets；其余模型与网站文件夹保持现状。
 
 验证：CPU 数据流及标签置换、不合并远处同类、每照片唯一、无效点拒绝、旧 embedding 拒绝检查；Encoder 移动前后 AST 一致；TypeScript 与照片报告构建；独立审查；浏览器查询定位、支持裁剪切换照片及 52 模型加载。
 

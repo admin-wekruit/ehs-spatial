@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "revisionId": "workcell-housing-g-2026-10-03",
-  "documentSha256": "cd1e657ebb140ff9daf5aa0efaf665e53e1dd0300afa78b1a7091277f6b9286d",
+  "documentSha256": "4f9bd0e5b82f91b36e801f26681f5787cec2ea18bce303c9abbc0a3a80ec2ae7",
   "scope": "Model silhouette through the saved camera versus the saved segmentation polygon, per source view. Occlusion and mask errors lower IoU; not physical accuracy.",
   "objects": 52,
   "views": [

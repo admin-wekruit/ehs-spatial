@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory() as folder:
         scenes = {'posts.glb': trimesh.Scene(), 'fence-fitted.glb': trimesh.Scene()}
         for file, node, extents, center in (
             ('posts.glb', 'box-1', [.2, .2, 1], [0, 0, 2.5]),
-            ('fence-fitted.glb', 'section-0-continued-3', [3, .02, .2], [2.5, 0, 1.1]),
+            ('fence-fitted.glb', 'section-0-continued-3', [3, .02, .2], [1.7, 0, 1.1]),
             # A farther lower rail of the same plane: pairing must take the nearest member.
             ('fence-fitted.glb', 'section-0-continued-4', [3, .02, .2], [9., 0, .7]),
         ):
@@ -37,11 +37,13 @@ with tempfile.TemporaryDirectory() as folder:
         result = estimate(root)
         light, fence = result['objects']
         assert light['objectId'] == 'post-box-1' and fence['objectId'] == 'fence-0' and fence['node'] == 'section-0-continued-3'
+        assert light['pairingStatus'] == 'paired' and np.isclose(fence['horizontalOffsetNative'], .2, atol=1e-6)
+        assert np.isclose(light['modelVerticalExtentNative'], 1., atol=1e-6) and np.isclose(light['adjacencyLimitNative'], .25, atol=1e-6)
         assert np.isclose(light['heightNative'], 2., atol=1e-6)
         assert np.isclose(fence['heightNative'], 1., atol=1e-6)
         assert result['curtainMinusRail'] == [{'minuendId': light['id'], 'subtrahendId': fence['id'], 'valueNative': light['heightNative'] - fence['heightNative']}]
         assert np.isclose(result['curtainMinusRail'][0]['valueNative'], 1., atol=1e-6)
-        expected = trimesh.transform_points([[1, 0, 1]], rotation)[0]
+        expected = trimesh.transform_points([[.2, 0, 1]], rotation)[0]
         assert np.allclose(fence['pointNative'], expected, atol=1e-6), fence
         assert result['mPerNative'] is None
         for item in result['objects']:
@@ -50,6 +52,24 @@ with tempfile.TemporaryDirectory() as folder:
             assert np.allclose(point - foot, item['heightNative'] * normal, atol=1e-6)
             assert abs(item['footReportNative'][2]) < 1e-6
             assert np.isclose(item['pointReportNative'][2], item['heightNative'], atol=1e-6)
+    # Only rails beyond the adjacency limit (0.25 x curtain extent): the curtain stays unpaired, nothing is compared.
+    far = trimesh.Scene()
+    for node, center in (('section-0-continued-3', [2.5, 0, 1.1]), ('section-0-continued-4', [9., 0, .7])):
+        transform = np.eye(4); transform[:3, 3] = center
+        far.add_geometry(trimesh.creation.box(extents=[3, .02, .2]), node_name=node, transform=rotation @ transform)
+    far.export(root / 'fence-fitted.glb')
+    result = estimate(root)
+    (light,) = result['objects']
+    assert light['pairingStatus'] == 'no_adjacent_lower_rail' and light['pairedEndpointId'] is None
+    assert np.isclose(light['nearestRailHorizontalOffsetNative'], 1., atol=1e-6) and result['curtainMinusRail'] == []
+    # Plane identity comes from geometryPlaneIndex, not from the object ID suffix.
+    catalog = json.loads((root / 'objects.json').read_text())
+    catalog['objects'][1]['geometryPlaneIndex'] = 1
+    (root / 'objects.json').write_text(json.dumps(catalog))
+    assert len(estimate(root)['objects']) == 1, 'plane-0 continuations do not belong to a fence on plane 1'
+    (root / 'geometry.json').write_text(json.dumps({'fence': {'continuations': [
+        {'id': f'section-0-continued-{i}', 'plane': 1, 'role': 'lower-rail continuation'} for i in (3, 4)]}}))
+    assert len(estimate(root)['objects']) == 1 and estimate(root)['objects'][0]['nearestRailHorizontalOffsetNative'] > .25
 yy, xx = np.indices((24, 24))
 K = np.array([[100., 0., 12.], [0., 100., 12.], [0., 0., 1.]])
 points = np.stack([(xx - 12.) * .05, (yy - 12.) * .05, np.full(xx.shape, 5.)], -1)
@@ -60,4 +80,4 @@ assert np.isclose(result['directPointmap']['heightNative'], 2.9)
 assert np.isclose(result['localSurface']['heightNative'], 2.9)
 assert np.allclose(result['localSurface']['pixelPerturbationRangeNative'], [2.825, 2.975])
 assert result['localSurface']['planeResidualP95Native'] < 1e-10
-print('PASS: catalog-driven curtain and nearest lower rail, arbitrary floor/units/feet, named RGB edge and local plane intersection')
+print('PASS: catalog-driven curtain and nearest adjacent lower rail (far rails unpaired; plane from geometryPlaneIndex), arbitrary floor/units/feet, named RGB edge and local plane intersection')

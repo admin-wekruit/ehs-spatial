@@ -131,7 +131,6 @@ try {
   await modelsLoaded(candidate);
   assert.equal(new URL(page.url()).searchParams.get('version'), candidate.revision.id);
   await endpointCard(candidate);
-  await everyObject(candidate);
   assert.ok(glbRequests.every(url => url.searchParams.get('revision') === candidate.revision.documentSha256), 'candidate assets carry its document hash');
   assert.ok(glbRequests.some(url => url.pathname.includes(`/revisions/${candidate.revision.id}/entity-post-box-`)), 'candidate curtain models load from the candidate revision');
   const candidateEndpoint = candidate.endpointEstimation.endpoints.find(row => row.objectId === target);
@@ -140,6 +139,8 @@ try {
   assert.notEqual(cm(candidate, candidateEndpoint.heightNative), cm(main, endpoint.heightNative), 'candidate and main measure different models');
   record.checks.push({ step: 'revision switch keeps object, reads candidate model', object: target, main: cm(main, endpoint.heightNative), candidate: cm(candidate, candidateEndpoint.heightNative) });
   await page.screenshot({ path: path.join(out, 'candidate-semantic-measurement.png'), fullPage: false });
+  // Only after the switch kept the selection: every candidate object stays selectable.
+  await everyObject(candidate);
   await ask(candidate);
   record.revisions.candidate = { id: candidate.revision.id, documentSha256: candidate.revision.documentSha256, glb: await downloadGLB(candidate, 'candidate') };
   // 5. Generic caliper on the candidate: one surface point, JSON bound to this document.

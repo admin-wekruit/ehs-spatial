@@ -14,6 +14,7 @@ import numpy as np
 import trimesh
 
 from workcell_photo_geometry import _intersect
+from workcell_photo_metrology import _fence_plane_index
 from workcell_photo_oneshot import _array, _frame
 
 
@@ -28,11 +29,20 @@ def _bottom_face(scene, node, normal):
 
 LIGHT_KIND = 'yellow safety post'
 FENCE_KIND = 'safety fence'
+# A rail is "beside" a curtain only within this fraction of the curtain model's own
+# vertical extent (scale-free); a farther rail is not paired, never silently compared.
+ADJACENT_FRACTION = .25
+PROVENANCE = {'physicalBottom': 'Lowest vertex of the selected visible-face terminal read from the accepted conditional GLB; same inferred floor; whole-housing minimum unverified',
+              'modelTerminal': 'Lowest vertex of the visible lower edge read from an unaccepted visual candidate GLB (strict source-face gate failed); same inferred floor; not a physical measurement'}
 
 
 def terminal_binding(item):
     """Exact model-vertex terminal of an installed housing: accepted or candidate."""
     return item.get('physicalBottom') or item.get('modelTerminal')
+
+
+def _binding_kind(item):
+    return 'physicalBottom' if item.get('physicalBottom') else 'modelTerminal'
 
 
 def _centerline(face):
@@ -117,14 +127,19 @@ def estimate(root):
                 'bottomFaceHeightRangeNative': [float(heights.min()), float(heights.max())],
                 'rangeMeaning': 'Actual mesh bottom-face extent, not physical measurement uncertainty'}
 
+    def vertical_extent(model):
+        heights = [trimesh.transform_points(scene(model['file']).geometry[mesh_id].vertices, matrix) @ normal
+                   for matrix, mesh_id in (scene(model['file']).graph[node] for node in model['nodes'])]
+        return float(np.ptp(np.concatenate(heights)))
+
     lights = []
     for ident in sorted(ident for ident, item in catalog.items() if item.get('kind') == LIGHT_KIND):
         item = catalog[ident]; model = item['model']
         if terminal_binding(item) is not None:
             point, vertices, evidence = housing_terminal(ident)
-            light = record(ident, model, evidence['vertices'][0]['node'], point, vertices,
-                           'Lowest vertex of the selected visible-face terminal read from the actual source-supported GLB; same inferred floor; whole-housing minimum unverified')
+            light = record(ident, model, evidence['vertices'][0]['node'], point, vertices, PROVENANCE[_binding_kind(item)])
             light['modelEvidence'] = evidence
+            light['terminalBinding'] = _binding_kind(item)
             light.update(measurementScope='visible_face_lower_terminal', wholeHousingMinimumVerified=False,
                          terminalPartAmbiguity=evidence['terminalPartAmbiguity'])
         else:
@@ -136,13 +151,14 @@ def estimate(root):
                            'Displayed upright primitive, bottom-face center; source depth percentile envelope')
             light['measurementScope'] = 'model_bottom_face_center'
         light['id'] = ident + ':terminal'
+        light['modelVerticalExtentNative'] = vertical_extent(model)
         lights.append(light)
 
     rails = []
     for ident, item in sorted(catalog.items()):
         if item.get('kind') != FENCE_KIND or not item.get('model'):
             continue
-        plane = int(ident.removeprefix('fence-')) if ident.removeprefix('fence-').isdecimal() else None
+        plane = _fence_plane_index(item)
         lower = {row['id'] for row in geometry.get('fence', {}).get('continuations', [])
                  if row.get('plane') == plane and 'lower' in row.get('role', '')}
         lower |= {row['meshNode'] for row in geometry.get('clearances', [])
@@ -155,9 +171,16 @@ def estimate(root):
         point = np.asarray(light['pointNative'])
         candidates = [(_nearest_on(ends, point, normal), ident, model, node, face, ends)
                       for ident, model, node, face, ends in rails]
+        limit = ADJACENT_FRACTION * light['modelVerticalExtentNative']
+        light['adjacencyLimitNative'] = limit
         if not candidates:
+            light.update(pairedEndpointId=None, pairingStatus='no_lower_rail_model')
             continue
         (rail_point, fraction, horizontal), ident, model, node, face, ends = min(candidates, key=lambda row: row[0][2])
+        if horizontal > limit:
+            light.update(pairedEndpointId=None, pairingStatus='no_adjacent_lower_rail', nearestRailHorizontalOffsetNative=horizontal)
+            continue
+        light['pairingStatus'] = 'paired'
         # The bottom face's longest axis is this rail's length; the clamped
         # projection keeps the measured point on the actual mesh surface.
         fence = record(ident, model, node, rail_point, face,
@@ -173,6 +196,9 @@ def estimate(root):
             'scope': 'Actual displayed model endpoints against the current saved floor; does not certify physical dimensions',
             'ground': {'normal': normal.tolist(), 'offset': offset}, 'sceneTransformNative': T.tolist(),
             'objects': objects, 'curtainMinusRail': pairs,
+            'pairingRule': {'adjacentFraction': ADJACENT_FRACTION,
+                            'rule': 'Each curtain pairs with the lower-rail member horizontally nearest its terminal, only within '
+                                    'adjacentFraction x the curtain model vertical extent; otherwise it stays unpaired'},
             'sourceFiles': {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
                             for name in sorted(source_files)}}
 

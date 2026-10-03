@@ -40,7 +40,7 @@ def check():
                               'pointNative': point.tolist(), 'footNative': foot.tolist()})
         scene.export(root / 'terminals.glb')
         (root / 'objects.json').write_text(json.dumps({'objects': objects, 'coverage': {}}))
-        measured = {'sceneTransformNative': transform.tolist(), 'objects': endpoints,
+        measured = {'schemaVersion': 2, 'sceneTransformNative': transform.tolist(), 'objects': endpoints,
                     'curtainMinusRail': [{'minuendId': ids['post-box-1'], 'subtrahendId': ids['fence-0'], 'valueNative': .13}],
                     'sourceFiles': {'terminals.glb': hashlib.sha256((root / 'terminals.glb').read_bytes()).hexdigest()}}
         rgb = np.full((2, 2, 3), 128, np.uint8)
@@ -99,24 +99,29 @@ def check():
         edge['surfaceSupportPhotos'] = [2]
         assert _ground_distance(item, geometry, transform)['feature'] is None
 
-        for corruption, message in (('transform', 'different floor'), ('foot', 'Invalid model endpoint'), ('hash', 'is stale')):
+        for corruption, message in (('transform', 'different floor'), ('foot', 'Invalid model endpoint'), ('hash', 'is stale'),
+                                    ('schema', 'schema 1 instead of 2')):
             invalid = deepcopy(measured)
-            if corruption == 'transform':
+            if corruption == 'schema':
+                invalid['schemaVersion'] = 1; invalid.pop('curtainMinusRail')
+            elif corruption == 'transform':
                 invalid['sceneTransformNative'][2][3] += .1
             elif corruption == 'foot':
                 invalid['objects'][0]['footNative'] = (np.asarray(endpoints[0]['footNative']) + .1 * normal).tolist()
             else:
                 invalid['sourceFiles']['terminals.glb'] = '0' * 64
             endpoint_path.write_text(json.dumps(invalid))
-            previous_report = (root / 'scene-report.json').read_bytes()
+            previous = {path.name: path.read_bytes() for path in root.iterdir() if path.is_file()}
             try:
                 build(root)
             except ValueError as error:
                 assert message in str(error), str(error)
             else:
                 raise AssertionError('Invalid endpoint evidence accepted: ' + corruption)
-            assert (root / 'scene-report.json').read_bytes() == previous_report
-    print('PASS: actual four-frame report build; endpoints bound to displayed representations; scale-only change leaves native endpoints identical; photo-4 left/right labels and differences; tilted shared floor; stale hash and wrong plane rejected')
+            # A refused build leaves the report and every asset it hashed byte-identical, with no staging left behind.
+            assert previous == {path.name: path.read_bytes() for path in root.iterdir() if path.is_file()}
+            assert not any(path.is_dir() for path in root.iterdir())
+    print('PASS: actual four-frame report build; endpoints bound to displayed representations; scale-only change leaves native endpoints identical; photo-4 left/right labels and differences; tilted shared floor; stale hash, stale schema and wrong plane rejected without touching any file')
 
 
 if __name__ == '__main__':

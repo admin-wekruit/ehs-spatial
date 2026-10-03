@@ -157,24 +157,36 @@ def build(baseline, run, out, main_report='../index.html', retry_run=None, sourc
             _required(endpoint, ('status', 'endpoints', 'method'), 'baseline endpoint estimate')
             if endpoint['status'] != 'conditional_unvalidated':
                 raise ValueError('Height entry requires the recorded conditional model estimate')
-            by_id = {row['objectId']: row for row in endpoint['endpoints']}
-            labels = {'fence-0': '围栏下横杆底边离地', 'post-box-1': '光幕壳体底边离地'}
+            focus = 'post-box-1'
             if 'differences' in endpoint:
-                # Current reports keep native values only; convert with that revision's own model scale.
+                # Current reports keep native values only: follow the report's own curtain/rail pairs and
+                # convert with that revision's model scale, or say the scale is unknown.
                 factor = saved_report['modelMeasurementScale']['nativeToMeters']
-                difference = next(row for row in endpoint['differences'] if row['minuendId'] == by_id['post-box-1']['id'])
-                values = [(labels[ident], _number(by_id[ident]['heightNative'] * factor * 100, 2)) for ident in labels]
-                values.append(('底边离地高差（光幕 − 围栏）', _number(difference['valueNative'] * factor * 100, 2)))
+                rows = {row['id']: row for row in endpoint['endpoints']}
+                show = (lambda native: f'{_number(native * factor * 100, 2)} cm') if factor else (lambda native: f'{_number(native, 3)} 原生单位（尺度未知）')
+                pairs = [row for row in endpoint['differences'] if row['id'].endswith('-minus-rail')]
+                values, labels = [], {}
+                for pair in pairs:
+                    _required(pair, ('minuendId', 'subtrahendId', 'valueNative', 'label'), 'endpoint difference')
+                    light, rail = rows.get(pair['minuendId']), rows.get(pair['subtrahendId'])
+                    for row in (light, rail):
+                        _required(row or {}, ('objectId', 'label', 'heightNative'), 'paired endpoint')
+                    values += [(light['label'], show(light['heightNative'])), (rail['label'], show(rail['heightNative'])),
+                               (pair['label'], show(pair['valueNative']))]
+                    labels.setdefault(light['objectId'], light['label']); labels.setdefault(rail['objectId'], rail['label'])
+                focus = rows[pairs[0]['minuendId']]['objectId'] if pairs else focus
                 endpoint = {**endpoint, 'scale': {'source': saved_report['modelMeasurementScale']['source']}}
             else:
-                values = [(labels[ident], _number(by_id[ident]['estimateCm'], 2)) for ident in labels]
-                values.append(('底边离地高差（光幕 − 围栏）', _number(endpoint['difference']['valueCm'], 2)))
-            cards = ''.join(f'<article><h3>{_esc(label)}</h3><strong style="font-size:28px">{value} cm</strong></article>' for label, value in values)
+                by_id = {row['objectId']: row for row in endpoint['endpoints']}
+                labels = {'fence-0': '围栏下横杆底边离地', 'post-box-1': '光幕壳体底边离地'}
+                values = [(labels[ident], f"{_number(by_id[ident]['estimateCm'], 2)} cm") for ident in labels]
+                values.append(('底边离地高差（光幕 − 围栏）', f"{_number(endpoint['difference']['valueCm'], 2)} cm"))
+            cards = ''.join(f'<article><h3>{_esc(label)}</h3><strong style="font-size:28px">{_esc(value)}</strong></article>' for label, value in values)
             truth = [f"{labels[row['objectId']]} {_number(100 * row['groundTruthM'], 2)} cm" for row in
                      saved_report.get('measurementEvaluation', {}).get('comparisons', []) if row['objectId'] in labels]
             truth_text = '<p>现场提供的对照值：' + '；'.join(truth) + '。数值在开发中已知，未输入本组估计；不是盲测精度验证，实物端点对应仍待确认。</p>' if truth else ''
             source = asset(baseline, 'page/scene-report.json', 'baseline-height-report.json')
-            scene_link = main_report.split('?', 1)[0].split('#', 1)[0] + '?photo=4&object=post-box-1&view=model&measurement=endpoints#scene'
+            scene_link = main_report.split('?', 1)[0].split('#', 1)[0] + f'?photo=4&object={focus}&view=model&measurement=endpoints#scene'
             height_entry = f'''<section id="models" style="background:#eef2e9;border:2px solid #8ca38b" aria-label="围栏与光幕底边离地入口"><h1>围栏与光幕：底边离地</h1><p>以下为已有 GLB 模型底边到同一推断地面的条件估计，尚未通过物理精度验证。</p><div class="cards">{cards}</div>{truth_text}
 <p><a style="display:inline-block;background:#315a45;color:white;padding:12px 18px;border-radius:6px;text-decoration:none" href="{_esc(scene_link)}">查看照片 4 · 围栏与光幕底边离地模型</a></p><details><summary>估计来源与限制</summary><p>{_esc(endpoint['method'])}</p><p>{_esc(endpoint['scale']['source'])}</p><a href="{_esc(source)}">已有端点估计原始 JSON</a></details></section>'''
 
@@ -441,6 +453,19 @@ def check():
         assert body.count('id="models"') == 1 and '现场提供的对照值' in body and '不是盲测精度验证' in body
         assert '../index.html?photo=4&amp;object=post-box-1&amp;view=model&amp;measurement=endpoints#scene' in body
         assert '已有端点估计原始 JSON' in body
+        # Current schema: native values, labels and pairs from the report itself; an unknown scale never crashes.
+        endpoints = [{'id': 'post-box-2:terminal', 'objectId': 'post-box-2', 'label': '右侧光幕底端', 'heightNative': .36, 'pairedEndpointId': 'fence-3:near:post-box-2'},
+                     {'id': 'fence-3:near:post-box-2', 'objectId': 'fence-3', 'label': '右侧光幕旁围栏下沿', 'heightNative': .27}]
+        current = {'geometry': {}, 'endpointEstimation': {'status': 'conditional_unvalidated', 'method': 'm', 'endpoints': endpoints,
+                   'differences': [{'id': 'post-box-2:terminal-minus-rail', 'minuendId': 'post-box-2:terminal', 'subtrahendId': 'fence-3:near:post-box-2',
+                                    'valueNative': .09, 'label': '右侧光幕底端减去旁边围栏下沿'}]},
+                   'measurementEvaluation': {'comparisons': [{'objectId': 'fence-3', 'groundTruthM': .2}]}}
+        for factor, expected in ((None, ('0.360 原生单位（尺度未知）', '0.090 原生单位（尺度未知）')), (.5, ('18.00 cm', '13.50 cm', '4.50 cm'))):
+            current['modelMeasurementScale'] = {'nativeToMeters': factor, 'status': 'x', 'source': 'scale source'}
+            (root / 'baseline/page/scene-report.json').write_text(json.dumps(current))
+            body = build(root / 'baseline', run, root / f'current-{factor}', retry_run=retry).read_text()
+            assert all(value in body for value in expected) and '右侧光幕旁围栏下沿 20.00 cm' in body and 'object=post-box-2&amp;' in body, body[:400]
+            assert 'post-box-1' not in body.split('id="models"')[1].split('</section>')[0]
         record['records']['textures'] = {'status': 'completed', 'seconds': .2}
         path.write_text(json.dumps(record))
         try:

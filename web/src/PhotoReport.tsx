@@ -19,7 +19,7 @@ type CatalogObject = { id: string; label: string; kind?: string; representation:
 type Calibration = { primaryAxis: string; nativeToMeters: number | null; reference: { scope: string; scopeStatus: string; features: { wholeComponentHeightM: number; mainBodyDiameterM: number; redActuatorDiameterM: number } }; observedEnvelope?: { widthM: number | null }; renderingAssumptions?: string[] };
 type Comparison = { objectId: string; label: string; method: string; estimateNative: number | null; rangeNative: number[] | null; byPhoto: Record<string, { valueNative: number | null }>; sourcePhotos: number[]; byPhotoMethod?: string; groundTruthM: number; source: string; limitation: string };
 /** One model terminal measured on this revision's displayed representation, in native units. */
-export type Endpoint = { id: string; objectId: string; label: string; side: "left" | "right" | null; measurementScope: string; pointNative: number[]; footNative: number[]; heightNative: number; representationId: string; assetId: string; assetSha256: string; modelFile: string; modelSha256: string; pairedEndpointId?: string; provenance: string };
+export type Endpoint = { id: string; objectId: string; label: string; side: "left" | "right" | null; measurementScope: string; pointNative: number[]; footNative: number[]; heightNative: number; representationId: string; assetId: string; assetSha256: string; modelFile: string; modelSha256: string; pairedEndpointId?: string | null; pairingStatus?: string; provenance: string };
 type EndpointDifference = { id: string; label: string; minuendId: string; subtrahendId: string; valueNative: number; description: string };
 type EndpointEstimation = { status: "conditional_unvalidated"; sidePhoto: number; method: string; endpoints: Endpoint[]; differences: EndpointDifference[] };
 export type RevisionChoice = { id: string; label: string; branchId: string; status: string; documentSha256: string; parentRevisionId: string | null; url: string };
@@ -140,27 +140,38 @@ export function PhotoReport({ data, base = typeof window === "undefined" ? "" : 
     labelPoint: pairDifference && curtain && rail ? [rail.pointNative[0], rail.pointNative[1], (curtain.pointNative[2] + rail.pointNative[2]) / 2] : selectedEndpoint.pointNative.map((v, i) => (v + selectedEndpoint.footNative[i]) / 2), quality: {},
   } : null;
   const endpointValue = (row: Endpoint) => bound(row) ? modelCentimeters(row.heightNative) : "未知（显示模型与测量模型不同）";
+  // A difference is read only while both of its endpoints are on the displayed representations.
+  const differenceBound = (row: EndpointDifference) => [row.minuendId, row.subtrahendId].every(id => { const point = endpointRows.find(item => item.id === id); return !!point && bound(point); });
+  const differenceValue = (row: EndpointDifference) => differenceBound(row) ? modelCentimeters(row.valueNative) : "未知（显示模型与测量模型不同）";
   const endpointTruth = data.measurementEvaluation?.comparisons.filter(row => endpointRows.some(point => point.objectId === row.objectId));
   const candidate = data.lineage?.role === "candidate", choices = data.revisionChoices ?? [];
   const endpointCard = endpointEstimate && endpointRows.length > 0 && <section className="photo-report-object-evidence" aria-label="光幕与围栏底边离地" data-endpoint-revision={revision.id}>
     <h3>光幕与围栏：底边离地</h3><p>{data.revision.label ?? "当前版本"} · 条件模型估计，未验证 · 当前显示模型的测点到同一估计地面</p>
     {sideOrder.map(side => { const rows = endpointRows.filter(row => row.side === side); if (!rows.length) return null; const pairs = differences.filter(row => rows.some(point => point.id === row.minuendId) && rows.some(point => point.id === row.subtrahendId));
-      return <div key={side ?? "unsided"} className="photo-report-endpoint-side"><h4>{side ? sideTitle[side] : "未定左右"}</h4><dl>{rows.map(point => <div key={point.id}><dt>{point.label}离地</dt><dd data-endpoint-estimate={point.id} data-endpoint-object={point.objectId}>{endpointValue(point)}</dd><small>{scopeText[point.measurementScope] ?? point.measurementScope}</small></div>)}{pairs.map(row => <div key={row.id}><dt>{row.label}</dt><dd data-endpoint-difference={row.id}>{modelCentimeters(row.valueNative)}</dd></div>)}</dl></div>; })}
-    {differences.filter(row => row.id.endsWith("-left-minus-right")).map(row => <p key={row.id} className="photo-report-endpoint-lr"><strong>{row.label}</strong> <span data-endpoint-difference={row.id}>{modelCentimeters(row.valueNative)}</span><small>{row.description}</small></p>)}
+      return <div key={side ?? "unsided"} className="photo-report-endpoint-side"><h4>{side ? sideTitle[side] : "未定左右"}</h4><dl>{rows.map(point => <div key={point.id}><dt>{point.label}离地</dt><dd data-endpoint-estimate={point.id} data-endpoint-object={point.objectId}>{endpointValue(point)}</dd><small>{scopeText[point.measurementScope] ?? point.measurementScope}{point.pairingStatus === "no_adjacent_lower_rail" ? " · 最近的围栏下沿超出相邻范围，未配对比较" : ""}</small></div>)}{pairs.map(row => <div key={row.id}><dt>{row.label}</dt><dd data-endpoint-difference={row.id}>{differenceValue(row)}</dd></div>)}</dl></div>; })}
+    {differences.filter(row => row.id.endsWith("-left-minus-right")).map(row => <p key={row.id} className="photo-report-endpoint-lr"><strong>{row.label}</strong> <span data-endpoint-difference={row.id}>{differenceValue(row)}</span><small>{row.description}</small></p>)}
     <button type="button" aria-pressed={showEndpointComparison} onClick={() => { const target = selectedEndpoint ?? firstEndpoint; setShowEndpointComparison(value => !value); if (target && !selectedEndpoint) { setEntityId(target.objectId); setObservationId(null); } setViewRequest(request => ({ view: "model", nonce: (request?.nonce ?? 0) + 1 })); }}>{showEndpointComparison ? "隐藏底边离地测量线" : "显示底边离地测量线"}</button>
   </section>;
   const spatialFacts = (id: string): SpatialFact[] => {
     const facts: SpatialFact[] = [];
+    const versionLabel = data.revision.label ?? revision.id;
+    const photosOf = [...new Set(data.objects.find(row => row.id === id)?.observations.map(row => row.photo) ?? [])];
+    const observed = revision.document.entities.find(entity => entity.id === id)?.observationRefs?.length ?? 0;
+    // Context facts are read from the loaded revision too; nothing is carried over from the experiment's run.
+    const context: SpatialFact[] = [
+      { label: "照片支持", value: `${observed} 个观察（照片 ${photosOf.join(" / ") || "无"}）`, status: "source_linked", source: versionLabel },
+      { label: "测量地面", value: "共用 workcell-floor 坐标系，Z=0", status: data.geometry.floor.status, source: versionLabel },
+      { label: "真实尺度验证", value: acceptedScale != null ? "已通过三维参考验证" : "尚未通过；模型测量使用条件比例", status: modelScale.status, source: "modelMeasurementScale" }];
     for (const row of endpointsOf(id)) facts.push({ label: `${row.label}离地`, value: endpointValue(row), testId: row.id,
       status: `条件模型估计，未验证 · ${scopeText[row.measurementScope] ?? row.measurementScope}`, source: `${data.revision.label ?? revision.id} · ${row.modelFile} ${row.modelSha256.slice(0, 8)}` });
     for (const row of differences.filter(row => [row.minuendId, row.subtrahendId].some(point => endpointRows.find(item => item.id === point)?.objectId === id)))
-      facts.push({ label: row.label, value: modelCentimeters(row.valueNative), testId: row.id, status: row.description });
+      facts.push({ label: row.label, value: differenceValue(row), testId: row.id, status: row.description });
     const feature = physicalFeature(id), item = data.objects.find(row => row.id === id);
     if (feature?.valueNative != null) facts.push({ label: "多视角源边缘到地面", value: item?.physicalBottom ? modelCentimeters(feature.valueNative) : displayValue(feature.valueNative), status: "条件估计", source: `照片 ${(feature.sourcePhotos ?? []).join(" / ")}` });
     const angle = data.bendAnalysis?.revisionId === revision.id ? data.bendAnalysis.items.find(row => row.entityId === id) : undefined;
     if (angle?.status === "measured" && angle.result) facts.push({ label: "两板面折弯内角", value: `${angle.result.value.toFixed(1)}°`, status: "模型估计，实物角度未唯一确定" });
     if (facts.length) facts.push({ label: "模型比例", value: modelScale.nativeToMeters == null ? "未知（原生单位）" : `1 native = ${modelScale.nativeToMeters.toFixed(5)} m`, status: modelScale.status === "conditional_unvalidated" ? "条件估计，未验证" : modelScale.status, source: modelScale.source });
-    return facts;
+    return [...facts, ...context];
   };
   async function downloadModel() {
     setExporting(true); setExportError("");
@@ -209,7 +220,11 @@ export function PhotoReport({ data, base = typeof window === "undefined" ? "" : 
     </section>}
     {endpointCard && <section className="photo-report-evaluation photo-report-endpoints" aria-label="底边离地条件模型估计（未验证）">
       {endpointCard}<p><a className="photo-report-endpoint-link" href={`?${choices.length ? `version=${revision.id}&` : ""}photo=${endpointEstimate!.sidePhoto}&object=${firstEndpoint!.objectId}&view=model&measurement=endpoints#scene`}>查看照片 {endpointEstimate!.sidePhoto} · 光幕与围栏底边离地模型</a></p>
-      {endpointTruth?.length ? <p>现场提供的对照值：{endpointTruth.map(row => `${row.label} ${(row.groundTruthM * 100).toFixed(2)} cm`).join("；")}。数值在开发中已知，未输入本组估计；不是盲测精度验证，实物端点对应仍待确认。</p> : null}
+      {endpointTruth?.length ? <div className="photo-report-table-scroll"><table data-endpoint-check><caption>开发检查值对照（开发中已知，非盲测；只在结果冻结后相减，不参与拟合或候选选择）</caption><thead><tr><th scope="col">测点（本版本）</th><th scope="col">测量部位</th><th scope="col">模型条件估计</th><th scope="col">检查值</th><th scope="col">差（估计 − 检查值）</th></tr></thead><tbody>{endpointTruth.flatMap(truth => { const points = endpointRows.filter(point => point.objectId === truth.objectId); return points.map(point => {
+        // One check value names one place on the object; with several measured points it cannot be assigned to any one of them.
+        const estimate = points.length === 1 && bound(point) && modelScale.nativeToMeters != null ? point.heightNative * modelScale.nativeToMeters : null, error = estimate == null ? null : estimate - truth.groundTruthM;
+        return <tr key={point.id} data-endpoint-check-row={point.id}><th scope="row">{point.label}</th><td>{scopeText[point.measurementScope] ?? point.measurementScope}</td><td>{bound(point) ? modelCentimeters(point.heightNative) : "未知"}</td><td>{(truth.groundTruthM * 100).toFixed(2)} cm</td><td data-endpoint-check-error>{points.length > 1 ? "未相减（该对象有多个测点，检查值部位不唯一）" : error == null ? "未知" : `${error > 0 ? "+" : ""}${(error * 100).toFixed(2)} cm`}</td></tr>;
+      }); })}</tbody></table><p>只列出有检查值的测点{(() => { const missing = endpointRows.filter(point => !endpointTruth.some(truth => truth.objectId === point.objectId)); return missing.length ? `；没有检查值：${missing.map(point => point.label).join("、")}` : ""; })()}。检查值只在结果冻结后相减，不作为拟合目标，也不约束左右同高。差值不是精度保证：测量部位与现场量尺端点的对应仍未确认。</p></div> : null}
       <details><summary>查看条件估计的来源与范围</summary><p>当前 GLB 模型的指定测点到同一估计地面；数值使用本次按钮条件比例，不代表源图物理底端已验证。修改标尺会同步更新这里、卡尺、语义空间证据和下载模型；原生几何不变。</p>
       <p>{endpointRows.map(point => `${point.label}比例敏感范围 ${bound(point) ? modelRange(point.heightNative) : "未知"}`).join("；")}。范围只反映标尺表面深度第 5/95 百分位，不是精度保证。</p>
       <p>比例：1 native = {modelScale.nativeToMeters?.toFixed(5) ?? "未知"} m。{modelScale.source}</p><p>方法：{endpointEstimate!.method}</p>
@@ -233,7 +248,7 @@ export function PhotoReport({ data, base = typeof window === "undefined" ? "" : 
       {!valid && <p role="alert">请输入大于零的有效尺寸。</p>}{exportError && <p role="alert">模型导出失败：{exportError}</p>}
     </section>
     {data.measurementEvaluation && <section className="photo-report-evaluation" aria-label="离地距离实测对照">
-      <h2>离地距离：流程估计与现场实测</h2><p>估计只采用多视角支持的同一物理下缘到地面的距离；缺少支持时保留未知。现场实测离地值未参与拟合；负误差表示估计偏低，图像几何敏感范围不是精度保证。</p>
+      <h2>离地距离：多视角源图边缘方法与现场实测</h2><p>本表是另一种方法：只采用多视角支持的同一物理下缘（源图边缘）到地面的距离；缺少支持时保留未知。{endpointCard ? "光幕与围栏的模型测点估计见上方卡片。" : ""}现场实测离地值未参与拟合；负误差表示估计偏低，图像几何敏感范围不是精度保证。</p>
       <div className="photo-report-table-scroll"><table><thead><tr><th scope="col">对象 / 测量部位</th><th scope="col">流程估计</th><th scope="col">现场实测</th><th scope="col">误差（估计－实测）</th><th scope="col">来源范围</th></tr></thead><tbody>{data.measurementEvaluation.comparisons.map(row => {
         const estimate = row.estimateNative == null || nativeToMeters == null ? null : row.estimateNative * nativeToMeters;
         const error = estimate == null ? null : estimate - row.groundTruthM;
