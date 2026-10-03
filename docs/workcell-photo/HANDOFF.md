@@ -1,5 +1,7 @@
 # 四照片工作单元：公开源码接手说明
 
+**当前接手首读：[NEXT-SESSION-2026-10-02.md](NEXT-SESSION-2026-10-02.md)。** 包含模型高度未同步到语义的已定位根因、完整 P0–P3 待办、验收、最新源码/网站版本、数据获取边界、失败与支出、第一步行动。最新算法基线为 `e8586bb`，网站产物为 `5731635`；本文下方旧 tag 和“剩余三项”仅描述历史范围。下一会话先修同一 revision 的模型→地面/尺度→测量→语义→导出链路，不再手工复制高度。
+
 **2026-10-02 光幕主体与下沿新结果：** [原图、可旋转实体候选和共同地面卡尺](https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/housing-boundaries/)，[实现及A–G记录](PHYSICAL-BOTTOMS-2026-10-02.md)。已修宽面被侧翼挤掉、局部端边拉歪参考长边后错误通过关联，以及候选提取重复运行旧三维求解。右/左所选可见下沿条件估计24.512/24.108cm，差0.404cm，没有同高或24cm目标。G导出两个封闭挤出候选，71.415s/$0.127仅为缓存推理后的重算；完整oneshot尚未复测。左厚度碰搜索下限，仍未通过跨图严格验证；旧52对象主模型未替换，完整外壳与物理尺度验收未完成。下一步先核对第1视角的面对应/相机偏差及侧面厚度，不要把未知侧面补成已测量实体或把低残差当物理验证。
 
 **2026-10-02 物理下沿修正进行中：** [根因、修改与实验记录](PHYSICAL-BOTTOMS-2026-10-02.md)。此前统一的是模型卡尺与地面，尚未完成真实下沿写回主模型：光幕仍用照片 4 点云的 2% 高度分位数；左围栏曾漏入物理底边链；围栏仍沿用旧地面方向。正在用原图同部位证据替换这些来源。有限线段重合和低像素误差不能单独确认前后表面身份，候选模型不得据此自动提升为物理测量。
@@ -26,7 +28,7 @@
 
 **此前测量实验：** [现有四图的按钮标尺 / 3 cm 实验](SUB3-EXPERIMENT-2026-10-01.md)。未要求新增实测相机参数；源观测对照、实现问题修正、原图叠线与支出单独保存。在线入口为 [测量实验页](https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/metrology.html)，页面可返回完整 52 对象 3D。实验页的候选不能自动当作主场景已经更新的准确模型；具体结果、是否达标以实验文档为准。
 
-## 照片 workcell 核心 TODO：已完成 1 项，剩余 3 项（2026-10-02）
+## 照片测量子集：已完成 1 项，剩余 3 项（历史范围；完整待办见首读）
 
 这四项是当前照片测量主线（第 1 项已完成模型卡尺实现），原先三视频物体层验收没有因此完成。已有端到端入口和并行执行继续复用。
 
@@ -35,7 +37,7 @@
 3. [ ] **绝对尺度与地面标定。** 继续验证按钮整体高度 10 cm、主体直径 8.5 cm、红帽直径 4 cm 对相机/尺度/地面的联合约束。当前三尺寸拟合仍未通过，accepted scale 为 null；8.5 cm 条件比例与4 cm交叉检查不等于完成联合标定。
 4. [ ] **修正后的完整 oneshot 重复验证。** 将修正接回现有 oneshot，临时 Modal 2×A100 并行跑完整照片→模型→测量→报告；固定物理测量部位对比前后，分别报告已知样本、未参与调参的检验、左右一致性、精度、完整延迟和支出。保留新的模型、原图对照与可复现证据。当前尚未证明换一组照片稳定小于 3 cm。
 
-### 最新左右检查：已经计算，尚未修正模型
+### 原主模型左右检查：已经计算，G 候选尚未替换这些主模型
 
 [完整原始结果及文件哈希](LEFT-RIGHT-HEIGHT-2026-10-02.json)。以照片 4 面向工作单元的左右为准，全部读取当前 GLB 底面、同一保存地面、同一 0.6844702474894 m/native 条件比例；没有新 GPU 调用，也没有使用同高或20/24 cm目标进行拟合。
 
@@ -51,7 +53,7 @@
 |---|---|
 | 源代码 | https://github.com/admin-wekruit/ehs-spatial ，公开仓库，分支 `codex/workcell-photo-speed` |
 | 当前工作目录 | `/Users/adam/.codex/worktrees/panoptes-workcell-photo-speed` |
-| 固定交付版本 | 当前源码 release/tag `workcell-measured-reference-2026-10-01`；原始复现数据仍取 `workcell-photo-handoff-2026-09-30` |
+| 当前算法与历史交付版本 | 本次算法基线 `e8586bb`，继续检出 `codex/workcell-photo-speed`；`workcell-measured-reference-2026-10-01` 仅为旧源码 tag。历史原图/复现数据取 `workcell-photo-handoff-2026-09-30`，不包含完整最新 F/G 冻结输入 |
 | 静态报告资产仓库 | https://github.com/admin-wekruit/panoptes-workcell-report ，分支 `main` |
 | 报告网址 | https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/ |
 | 已保存的 A4 报告 | `/Users/adam/Desktop/panoptes-public/research-notes/workcell-guard-shared-report-2026-09-30/` |
@@ -302,7 +304,7 @@ tar -xzf workcell-photo-reproduction-2026-09-30.tar.gz -C /company/workcell
   current-report/validation.json
 ```
 
-固定源码后重放上述 CPU 报告命令：
+仅复现旧 measured-reference 交付时，固定旧源码后重放上述 CPU 报告命令；继续当前工作应保持 `codex/workcell-photo-speed`，不要退回此旧 tag：
 
 ```bash
 cd /company/ehs-spatial
