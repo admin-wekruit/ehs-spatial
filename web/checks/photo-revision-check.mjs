@@ -143,7 +143,10 @@ try {
   await everyObject(candidate);
   await ask(candidate);
   record.revisions.candidate = { id: candidate.revision.id, documentSha256: candidate.revision.documentSha256, glb: await downloadGLB(candidate, 'candidate') };
-  // 5. Generic caliper on the candidate: one surface point, JSON bound to this document.
+  // 5. Generic caliper on the candidate: one surface point, JSON bound to this document. The caliper needs a selected
+  // object with a model; photo-only objects (outside the modelled workcell) keep it disabled.
+  const modelled = candidate.revision.document.entities.find(entity => !entity.sourceContext && entity.activeModelRepresentationId);
+  await page.locator(`[data-entity-id="${modelled.id}"] > button`).first().click();
   const panel = page.locator('.report-scene-inspector .spatial-measurements').first();
   if (process.env.DEBUG_CALIPER) { fs.writeFileSync(path.join(out, 'caliper-panel.html'), await panel.innerHTML()); await page.screenshot({ path: path.join(out, 'caliper-panel.png'), fullPage: true }); }
   await panel.locator('select').first().selectOption('point_ground');

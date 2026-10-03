@@ -1,0 +1,4794 @@
+{
+  "schemaVersion": 1,
+  "task": "P1-1 light-curtain face identity evidence audit",
+  "scope": "Image evidence and evaluation of the saved fit only. No fitting, no optimisation, cameras unchanged; not physical validation. Units native (mPerNative not applied).",
+  "inputs": {
+    "root": "/Users/adam/Desktop/panoptes-public/research-notes/workcell-oneshot-2026-10-03-a-catalog-review",
+    "postShells": "/Users/adam/Desktop/panoptes-public/research-notes/workcell-housing-2026-10-02-g/post-shells",
+    "postShellsSha256": "347e3765a4d1193b985848fe4ef27ebf304efe25d9ee458427c8be489f960563",
+    "photos": [
+      {
+        "photo": 1,
+        "path": "/Users/adam/Desktop/panoptes-public/panoptes-serving/runs/user-bor1-02/input/image_01.jpg",
+        "sha256": "879ec826854e9f53c8b6e222b2d16d3e12b179ec60f4bf9c072eb5a4eccf38ac"
+      },
+      {
+        "photo": 2,
+        "path": "/Users/adam/Desktop/panoptes-public/panoptes-serving/runs/user-bor1-02/input/image_02.jpg",
+        "sha256": "6cd81ae4ae783c37d0a1129e39acb0d7064c46d9b51524130406642f8c7a3bea"
+      },
+      {
+        "photo": 3,
+        "path": "/Users/adam/Desktop/panoptes-public/panoptes-serving/runs/user-bor1-02/input/image_03.jpg",
+        "sha256": "0a8d4b8884867bf9f1836193db2fae0350a99e9e6b242eb9e01e20fda7c59438"
+      },
+      {
+        "photo": 4,
+        "path": "/Users/adam/Desktop/panoptes-public/panoptes-serving/runs/user-bor1-02/input/image_04.jpg",
+        "sha256": "e73931b6cdf68775ddafbc949c392c0ea2908f4dec671a4935e4c09361ae66ec"
+      }
+    ],
+    "runFiles": {
+      "sam3.json": "b098f3585bb8aba684bca3b072c75bcebc2a92b8fc4bdb0f4819ee3bba545f72",
+      "objects.json": "d01e6c7f58018762474b9ac7685e2b9727b80c0af7c8942ae45d1ef43ab195e2",
+      "geometry.json": "67d0d814e7139d8f02c334dc001446b367cf20fa5a86142c3c5e1fe6050b6060"
+    },
+    "fitSourceFiles": {
+      "geometry.json": "a0c901c0a823a8d0004707d75763b888573222e65d953d935974406a4db0a200",
+      "objects.json": "31b2ff11721d933b094abda7adb83b20bff412d9238450ba7ca6601595c904f9",
+      "posts.glb": "6a690909125ca06754b0263f2a5e9c1c25d047815b596110afdabc73a3c48926",
+      "sam3.json": "b098f3585bb8aba684bca3b072c75bcebc2a92b8fc4bdb0f4819ee3bba545f72"
+    },
+    "code": {
+      "workcell_curtain_face_identity.py": "2730d4d7eaeb425b153120a3f8945d9b8c1b0e6ab0deffb86bf0e609c79118a6",
+      "workcell_post_faces.py": "84f8ee1af6d9ca9cf71ba2393627873211290658a204d654572bcb3deb43ff68",
+      "workcell_photo_metrology.py": "d84d4112693cd92ca4d63c686a0c3dd379711567d13d85dab42532578c524145",
+      "workcell_photo_objects.py": "3cb2f3f3983940a9c072a8ea437a393b70a37c249f2093a1b6292ec11adfe9db",
+      "workcell_photo_geometry.py": "6c56be36e567662c47ad9e140400b583ff1c4b13fcc87ab51c9ee24ef33ab4ce",
+      "workcell_photo_oneshot.py": "fabbb822671d4e99a7ef4a832e529a47dd9e6974891cb9120e3a655961932ebc"
+    }
+  },
+  "cameraCheck": {
+    "bitIdentical": true,
+    "maxAbsDiff": 0.0,
+    "byPhoto": [
+      {
+        "photo": 1,
+        "bitIdentical": true,
+        "maxAbsDiffK": 0.0,
+        "maxAbsDiffPose": 0.0,
+        "maxAbsDiffRawToCanonical": 0.0
+      },
+      {
+        "photo": 2,
+        "bitIdentical": true,
+        "maxAbsDiffK": 0.0,
+        "maxAbsDiffPose": 0.0,
+        "maxAbsDiffRawToCanonical": 0.0
+      },
+      {
+        "photo": 3,
+        "bitIdentical": true,
+        "maxAbsDiffK": 0.0,
+        "maxAbsDiffPose": 0.0,
+        "maxAbsDiffRawToCanonical": 0.0
+      },
+      {
+        "photo": 4,
+        "bitIdentical": true,
+        "maxAbsDiffK": 0.0,
+        "maxAbsDiffPose": 0.0,
+        "maxAbsDiffRawToCanonical": 0.0
+      }
+    ],
+    "projectionCameras": "current run frames (equal to the saved fit cameras when bitIdentical)"
+  },
+  "groundUsed": {
+    "source": "post-shells.json ground (the fit's own)",
+    "up": [
+      0.007714318910697278,
+      -0.9941897817991617,
+      -0.10736464525102953
+    ]
+  },
+  "items": [
+    {
+      "id": "post-box-1",
+      "reviewerSideInPhoto4": "right",
+      "multiviewFace": {
+        "cornersNative": [
+          [
+            1.5332756042480469,
+            1.6970924139022827,
+            3.818737268447876
+          ],
+          [
+            1.6418225765228271,
+            1.698927879333496,
+            3.804563283920288
+          ],
+          [
+            1.6535122394561768,
+            -0.9349423050880432,
+            3.5530176162719727
+          ],
+          [
+            1.5449652671813965,
+            -0.9367777705192566,
+            3.5671916007995605
+          ]
+        ],
+        "normal": [
+          -0.1304680305023753,
+          0.09368515930488307,
+          -0.9870163037877591
+        ],
+        "widthNative": 0.1094838616452644,
+        "heightNative": 2.6458805754449473,
+        "normalAngleFromHorizontalDeg": 0.6774441385638672,
+        "orientationMode": "free",
+        "gateAccepted": false,
+        "modelFile": "post-box-1-housing-candidate.glb",
+        "glbVerticesEqualCornersNative": true
+      },
+      "consistency": {
+        "initializationCornersMaxRawPx": 0.00010217549970548134,
+        "initializationsChecked": 56,
+        "note": "post-shells.json records no raw pixels for the final fitted rectangle; its projection is proven aligned by reproducing the recorded per-photo residuals (below) from the same projected array that every overlay draws."
+      },
+      "photos": [
+        {
+          "photo": 1,
+          "figure": "post-box-1-photo-1.jpg",
+          "samInstance": "SAM: yellow safety post; instance 1",
+          "samInstanceMatchesRunCatalog": true,
+          "association": {
+            "observationIds": [
+              "photo-1-face-31"
+            ],
+            "complete": false,
+            "sideGroupIds": {
+              "side_0": 67,
+              "side_1": 823
+            },
+            "sideGroupScope": {
+              "side_0": "full-height RGB side group",
+              "side_1": "full-height RGB side group"
+            },
+            "imageLeftSide": "side_1",
+            "imageSideOrderFlipped": true,
+            "observedBoundaries": [
+              "side_1",
+              "upper_terminal",
+              "side_0"
+            ],
+            "terminalLocalSideIds": {
+              "top": [
+                137,
+                340
+              ],
+              "bottom": null
+            }
+          },
+          "residualsOfSavedFit": {
+            "rmsRawPx": 13.506761486615,
+            "maxRawPx": 25.652449288213816,
+            "recordedRmsRawPx": 13.506761486615,
+            "recordedMaxRawPx": 25.652449288213816,
+            "gateRawPx": 7.724137931034482,
+            "byBoundary": {
+              "lower_terminal": null,
+              "side_0": {
+                "modelEdgeCorners": [
+                  1,
+                  2
+                ],
+                "points": 10,
+                "maxRawPx": 25.652449288213816,
+                "rmsRawPx": 20.541188661108556,
+                "meanSignedOutwardRawPx": 20.15887697864924
+              },
+              "upper_terminal": {
+                "modelEdgeCorners": [
+                  2,
+                  3
+                ],
+                "points": 2,
+                "maxRawPx": 7.374749898449793,
+                "rmsRawPx": 6.371440929806714,
+                "meanSignedOutwardRawPx": -6.275983792761675
+              },
+              "side_1": {
+                "modelEdgeCorners": [
+                  3,
+                  0
+                ],
+                "points": 14,
+                "maxRawPx": 8.953423979472781,
+                "rmsRawPx": 5.62299435422714,
+                "meanSignedOutwardRawPx": 3.5381851008231107
+              }
+            },
+            "meaning": "distance of every observed boundary endpoint to the saved rectangle edge it was paired with; signed outward > 0 means the observed line lies outside the projected rectangle"
+          },
+          "projectedFitCornersRaw": [
+            [
+              2720.8086104533027,
+              3355.1326583836785
+            ],
+            [
+              2811.1223331362507,
+              3361.5675332489814
+            ],
+            [
+              2913.1367785244947,
+              1225.1000240619069
+            ],
+            [
+              2816.0451453414667,
+              1226.6931386269698
+            ]
+          ],
+          "pixelWidths": [
+            {
+              "axialFraction": 0.2,
+              "observedWidthRawPx": 123.59202992633634,
+              "modelWidthRawPx": 91.80145189281691,
+              "outwardOffsetRawPx": {
+                "side_0": 15.902217229812571,
+                "side_1": 15.888360803706846
+              }
+            },
+            {
+              "axialFraction": 0.5,
+              "observedWidthRawPx": 121.66344225498793,
+              "modelWidthRawPx": 93.71272210415536,
+              "outwardOffsetRawPx": {
+                "side_0": 19.915963359731457,
+                "side_1": 8.034756791101103
+              }
+            },
+            {
+              "axialFraction": 0.8,
+              "observedWidthRawPx": 119.73485458363947,
+              "modelWidthRawPx": 95.62399231549384,
+              "outwardOffsetRawPx": {
+                "side_0": 23.929709489650314,
+                "side_1": 0.18115277849532418
+              }
+            }
+          ],
+          "viewAngleToMultiviewNormalDeg": 19.16951295091717,
+          "singleViewFace": {
+            "supportPoints": 3671,
+            "support": "one-pixel-eroded observed face polygon x SAM instance x valid pointmap (as fit_face)",
+            "free": {
+              "normal": [
+                -0.8853519460613192,
+                0.021360128710164215,
+                -0.46443048619456495
+              ],
+              "singularValues": [
+                45.483329487792886,
+                2.594748369892048,
+                1.1496133600315643
+              ],
+              "minorToNextSingularRatio": 0.44305389045466204,
+              "planeSupported": false,
+              "edgeOnToCamera": false,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.03379291954703212,
+              "angleToMultiviewNormalDeg": 54.83649491232793,
+              "angleToCameraRayDeg": 39.434837679282545,
+              "widthOnOwnPlane": {
+                "medianNative": 0.17586718596102427,
+                "minNative": 0.16819586271549405,
+                "maxNative": 0.1839079467715774,
+                "sideLineAngleDeg": 0.4238463064285176
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.043194781386095116
+            },
+            "upright": {
+              "normal": [
+                -0.9106840197603231,
+                0.03736272667402835,
+                -0.41141055262190496
+              ],
+              "singularValues": [
+                2.610159001070952,
+                1.5187430242250484
+              ],
+              "minorToNextSingularRatio": 0.5818584322265065,
+              "planeSupported": false,
+              "edgeOnToCamera": false,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.04821269137796591,
+              "angleToMultiviewNormalDeg": 58.103639462867406,
+              "angleToCameraRayDeg": 42.91118276652122,
+              "widthOnOwnPlane": {
+                "medianNative": 0.18442734788165963,
+                "minNative": 0.17512036524719501,
+                "maxNative": 0.19432780394612337,
+                "sideLineAngleDeg": 0.5157869752675075
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.041118482113663646
+            },
+            "summary": {
+              "usableModes": [],
+              "normalAngleToMultiviewDeg": null,
+              "widthOnOwnPlaneNative": null,
+              "reason": "pointmap does not support a plane on this strip (minor/next singular ratio > 0.35 or normal > 60 deg from the camera ray); single-view normal and width are not evidence here"
+            },
+            "widthOnMultiviewPlane": {
+              "medianNative": 0.14209560608385233,
+              "minNative": 0.13536406056329908,
+              "maxNative": 0.14920821363141243,
+              "sideLineAngleDeg": 0.3764633464609806
+            },
+            "observedFacePolygonRaw": [
+              [
+                2699.8163669043283,
+                3351.741107196376
+              ],
+              [
+                2824.5016932736653,
+                3358.6709767582183
+              ],
+              [
+                2939.2987363784623,
+                1235.2237738875706
+              ],
+              [
+                2820.871931882046,
+                1231.5432596125643
+              ]
+            ]
+          },
+          "sideLinesOnMultiviewPlane": {
+            "side_0": {
+              "id": 67,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 1.3523557996656368,
+                "+0.00": 1.2099464436898386,
+                "+0.05": 1.0675370877140402
+              }
+            },
+            "side_1": {
+              "id": 823,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 0.0857764941468221,
+                "+0.00": -0.040221976924926336,
+                "+0.05": -0.16622044799667426
+              }
+            }
+          },
+          "lensStrip": {
+            "yellowSilhouetteT": [
+              -0.012499999999999956,
+              1.0
+            ],
+            "interiorDarkBandsT": [
+              [
+                0.36250000000000004,
+                0.42500000000000004
+              ]
+            ],
+            "edgeDarkBandsT": [
+              [
+                -0.4625,
+                -0.0625
+              ],
+              [
+                1.0125000000000002,
+                1.0625
+              ],
+              [
+                1.0875,
+                1.1125000000000003
+              ]
+            ],
+            "lensStripCandidateT": [
+              0.36250000000000004,
+              0.42500000000000004
+            ],
+            "lensStripCandidateRelativeToFace": "inside",
+            "strongestInteriorShadeStepT": 0.41875000000000007,
+            "strongestInteriorShadeStepValue": 63.000000000000014,
+            "rowsUsed": 946,
+            "rowsSampled": 946,
+            "housingYellowValueMedian": 202.0,
+            "profileT": [
+              -1.0,
+              -0.95,
+              -0.9,
+              -0.85,
+              -0.8,
+              -0.75,
+              -0.7,
+              -0.65,
+              -0.6,
+              -0.55,
+              -0.5,
+              -0.45,
+              -0.4,
+              -0.35,
+              -0.3,
+              -0.25,
+              -0.2,
+              -0.15,
+              -0.1,
+              -0.05,
+              0.0,
+              0.05,
+              0.1,
+              0.15,
+              0.2,
+              0.25,
+              0.3,
+              0.35,
+              0.4,
+              0.45,
+              0.5,
+              0.55,
+              0.6,
+              0.65,
+              0.7,
+              0.75,
+              0.8,
+              0.85,
+              0.9,
+              0.95,
+              1.0,
+              1.05,
+              1.1,
+              1.15,
+              1.2,
+              1.25,
+              1.3,
+              1.35,
+              1.4,
+              1.45,
+              1.5,
+              1.55,
+              1.6,
+              1.65,
+              1.7,
+              1.75,
+              1.8,
+              1.85,
+              1.9,
+              1.95,
+              2.0
+            ],
+            "yellowFraction": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.005,
+              0.007,
+              0.008,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.003,
+              0.007,
+              0.034,
+              0.096,
+              0.541,
+              0.938,
+              0.987,
+              0.987,
+              0.987,
+              0.987,
+              0.981,
+              0.844,
+              0.137,
+              0.878,
+              0.979,
+              0.973,
+              0.965,
+              0.953,
+              0.906,
+              0.884,
+              0.863,
+              0.854,
+              0.845,
+              0.823,
+              0.732,
+              0.457,
+              0.275,
+              0.011,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.004,
+              0.003,
+              0.0,
+              0.0,
+              0.017,
+              0.024,
+              0.024,
+              0.026,
+              0.026,
+              0.027,
+              0.029,
+              0.029
+            ],
+            "darkFraction": [
+              0.348,
+              0.488,
+              0.461,
+              0.432,
+              0.455,
+              0.481,
+              0.425,
+              0.459,
+              0.154,
+              0.023,
+              0.031,
+              0.524,
+              0.483,
+              0.459,
+              0.471,
+              0.481,
+              0.485,
+              0.478,
+              0.469,
+              0.296,
+              0.015,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.007,
+              0.03,
+              0.879,
+              0.107,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.008,
+              0.005,
+              0.003,
+              0.004,
+              0.0,
+              0.0,
+              0.052,
+              0.492,
+              0.453,
+              0.15,
+              0.184,
+              0.053,
+              0.078,
+              0.08,
+              0.073,
+              0.074,
+              0.079,
+              0.092,
+              0.094,
+              0.086,
+              0.132,
+              0.179,
+              0.193,
+              0.247,
+              0.451,
+              0.48,
+              0.621
+            ],
+            "valueMedian": [
+              143.5,
+              102.0,
+              105.0,
+              107.0,
+              104.0,
+              102.0,
+              106.0,
+              102.5,
+              155.0,
+              176.0,
+              170.0,
+              96.0,
+              103.0,
+              105.0,
+              103.0,
+              103.0,
+              102.0,
+              102.0,
+              103.0,
+              113.0,
+              189.0,
+              181.0,
+              176.0,
+              171.0,
+              163.0,
+              153.0,
+              143.0,
+              162.0,
+              40.0,
+              228.0,
+              219.0,
+              217.0,
+              216.5,
+              216.5,
+              216.0,
+              216.0,
+              215.0,
+              213.0,
+              213.0,
+              213.0,
+              202.0,
+              101.0,
+              107.0,
+              179.0,
+              192.0,
+              206.0,
+              204.0,
+              205.0,
+              209.0,
+              208.0,
+              209.0,
+              208.0,
+              208.0,
+              210.5,
+              208.0,
+              206.0,
+              205.0,
+              203.0,
+              129.5,
+              109.0,
+              33.5
+            ],
+            "saturationMedian": [
+              14.0,
+              15.5,
+              16.0,
+              16.0,
+              17.0,
+              21.0,
+              19.0,
+              20.0,
+              15.0,
+              15.0,
+              13.0,
+              15.5,
+              14.0,
+              13.0,
+              14.0,
+              14.0,
+              15.0,
+              17.0,
+              20.0,
+              36.0,
+              117.0,
+              175.0,
+              190.0,
+              191.0,
+              192.0,
+              192.5,
+              195.0,
+              124.5,
+              228.0,
+              141.0,
+              169.0,
+              173.5,
+              173.0,
+              172.0,
+              172.0,
+              173.0,
+              171.5,
+              172.0,
+              172.0,
+              166.0,
+              129.0,
+              97.0,
+              95.0,
+              36.0,
+              28.0,
+              22.0,
+              23.0,
+              19.0,
+              17.0,
+              16.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              14.0,
+              14.0,
+              14.0,
+              15.0,
+              15.0,
+              13.0
+            ],
+            "rule": "yellow: OpenCV H 15-40, S>=90, V>=80; dark: V < 0.5 x housing yellow median; rows with >=10% yellow; interior band: dark>=0.2 and yellow<0.8 strictly inside the yellow silhouette; t=0/1 are the image-left/right associated side lines"
+          }
+        },
+        {
+          "photo": 2,
+          "figure": "post-box-1-photo-2.jpg",
+          "samInstance": "SAM: yellow safety post; instance 0",
+          "samInstanceMatchesRunCatalog": true,
+          "association": {
+            "observationIds": [
+              "photo-2-face-10"
+            ],
+            "complete": false,
+            "sideGroupIds": {
+              "side_0": 202,
+              "side_1": 44
+            },
+            "sideGroupScope": {
+              "side_0": "full-height RGB side group",
+              "side_1": "full-height RGB side group"
+            },
+            "imageLeftSide": "side_1",
+            "imageSideOrderFlipped": true,
+            "observedBoundaries": [
+              "side_1",
+              "upper_terminal",
+              "side_0"
+            ],
+            "terminalLocalSideIds": {
+              "top": [
+                147,
+                50
+              ],
+              "bottom": null
+            }
+          },
+          "residualsOfSavedFit": {
+            "rmsRawPx": 3.2186294818946886,
+            "maxRawPx": 11.04831092461283,
+            "recordedRmsRawPx": 3.2186294818946886,
+            "recordedMaxRawPx": 11.04831092461283,
+            "gateRawPx": 7.724137931034482,
+            "byBoundary": {
+              "lower_terminal": null,
+              "side_0": {
+                "modelEdgeCorners": [
+                  1,
+                  2
+                ],
+                "points": 10,
+                "maxRawPx": 1.4813581283661537,
+                "rmsRawPx": 0.8590458911151786,
+                "meanSignedOutwardRawPx": 0.0747785074831008
+              },
+              "upper_terminal": {
+                "modelEdgeCorners": [
+                  2,
+                  3
+                ],
+                "points": 2,
+                "maxRawPx": 11.04831092461283,
+                "rmsRawPx": 10.617322844805987,
+                "meanSignedOutwardRawPx": 10.608197026228737
+              },
+              "side_1": {
+                "modelEdgeCorners": [
+                  3,
+                  0
+                ],
+                "points": 14,
+                "maxRawPx": 3.125871966766305,
+                "rmsRawPx": 1.6149808064464641,
+                "meanSignedOutwardRawPx": -1.176646251145435
+              }
+            },
+            "meaning": "distance of every observed boundary endpoint to the saved rectangle edge it was paired with; signed outward > 0 means the observed line lies outside the projected rectangle"
+          },
+          "projectedFitCornersRaw": [
+            [
+              2545.376564045197,
+              3598.6594889587795
+            ],
+            [
+              2635.512604284949,
+              3632.4332300809037
+            ],
+            [
+              2603.568403501882,
+              1352.042055457432
+            ],
+            [
+              2511.5288120357327,
+              1365.672216203132
+            ]
+          ],
+          "pixelWidths": [
+            {
+              "axialFraction": 0.2,
+              "observedWidthRawPx": 89.37602213261871,
+              "modelWidthRawPx": 90.91979154581942,
+              "outwardOffsetRawPx": {
+                "side_0": 0.059287275450436994,
+                "side_1": -1.6030566886511366
+              }
+            },
+            {
+              "axialFraction": 0.5,
+              "observedWidthRawPx": 90.56852324290082,
+              "modelWidthRawPx": 91.41736842528854,
+              "outwardOffsetRawPx": {
+                "side_0": 0.0716556125689678,
+                "side_1": -0.9205007949566806
+              }
+            },
+            {
+              "axialFraction": 0.8,
+              "observedWidthRawPx": 91.76102435318293,
+              "modelWidthRawPx": 91.91494530475771,
+              "outwardOffsetRawPx": {
+                "side_0": 0.08402394968746307,
+                "side_1": -0.23794490126223877
+              }
+            }
+          ],
+          "viewAngleToMultiviewNormalDeg": 26.167123067593323,
+          "singleViewFace": {
+            "supportPoints": 1687,
+            "support": "one-pixel-eroded observed face polygon x SAM instance x valid pointmap (as fit_face)",
+            "free": {
+              "normal": [
+                -0.9233930327128254,
+                0.04129840145751508,
+                -0.3816277625834695
+              ],
+              "singularValues": [
+                19.697001522129376,
+                1.6896106134150237,
+                0.9996578689781717
+              ],
+              "minorToNextSingularRatio": 0.5916498517712749,
+              "planeSupported": false,
+              "edgeOnToCamera": true,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.0425299081094876,
+              "angleToMultiviewNormalDeg": 59.932816033703205,
+              "angleToCameraRayDeg": 83.97637117278504,
+              "widthOnOwnPlane": {
+                "medianNative": 0.934656116760915,
+                "minNative": 0.9316867426974383,
+                "maxNative": 0.9377520007765499,
+                "sideLineAngleDeg": 0.2543090933799317
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.04795709464141451
+            },
+            "upright": {
+              "normal": [
+                0.9798298014275971,
+                -0.013925122761603397,
+                0.19934806542936404
+              ],
+              "singularValues": [
+                1.967167487217895,
+                1.0882851580204993
+              ],
+              "minorToNextSingularRatio": 0.5532244534803835,
+              "planeSupported": false,
+              "edgeOnToCamera": true,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.05205955351557047,
+              "angleToMultiviewNormalDeg": 70.97983942166057,
+              "angleToCameraRayDeg": 85.2923180233208,
+              "widthOnOwnPlane": {
+                "medianNative": 1.1895768435286638,
+                "minNative": 1.1810234464878668,
+                "maxNative": 1.1979563338807417,
+                "sideLineAngleDeg": 0.7400486745164867
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": -0.08210361834184843
+            },
+            "summary": {
+              "usableModes": [],
+              "normalAngleToMultiviewDeg": null,
+              "widthOnOwnPlaneNative": null,
+              "reason": "pointmap does not support a plane on this strip (minor/next singular ratio > 0.35 or normal > 60 deg from the camera ray); single-view normal and width are not evidence here"
+            },
+            "widthOnMultiviewPlane": {
+              "medianNative": 0.10844516252693696,
+              "minNative": 0.10730845633028151,
+              "maxNative": 0.10956572111708253,
+              "sideLineAngleDeg": 0.0966016636435164
+            },
+            "observedFacePolygonRaw": [
+              [
+                2535.122486119885,
+                2786.3913377419613
+              ],
+              [
+                2623.6930633113197,
+                2785.031114634414
+              ],
+              [
+                2603.519039705995,
+                1341.929676445055
+              ],
+              [
+                2511.127591532869,
+                1352.613938005746
+              ]
+            ]
+          },
+          "sideLinesOnMultiviewPlane": {
+            "side_0": {
+              "id": 202,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 0.8023578348232959,
+                "+0.00": 0.9967274798714773,
+                "+0.05": 1.1910971249196598
+              }
+            },
+            "side_1": {
+              "id": 44,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": -0.19764514047617068,
+                "+0.00": 0.011232977447317298,
+                "+0.05": 0.22011109537080298
+              }
+            }
+          },
+          "lensStrip": {
+            "yellowSilhouetteT": [
+              -0.012499999999999956,
+              1.025
+            ],
+            "interiorDarkBandsT": [],
+            "edgeDarkBandsT": [],
+            "lensStripCandidateT": null,
+            "lensStripCandidateRelativeToFace": "not_detected",
+            "strongestInteriorShadeStepT": 0.9062500000000001,
+            "strongestInteriorShadeStepValue": 1.0,
+            "rowsUsed": 922,
+            "rowsSampled": 922,
+            "housingYellowValueMedian": 215.0,
+            "profileT": [
+              -1.0,
+              -0.95,
+              -0.9,
+              -0.85,
+              -0.8,
+              -0.75,
+              -0.7,
+              -0.65,
+              -0.6,
+              -0.55,
+              -0.5,
+              -0.45,
+              -0.4,
+              -0.35,
+              -0.3,
+              -0.25,
+              -0.2,
+              -0.15,
+              -0.1,
+              -0.05,
+              0.0,
+              0.05,
+              0.1,
+              0.15,
+              0.2,
+              0.25,
+              0.3,
+              0.35,
+              0.4,
+              0.45,
+              0.5,
+              0.55,
+              0.6,
+              0.65,
+              0.7,
+              0.75,
+              0.8,
+              0.85,
+              0.9,
+              0.95,
+              1.0,
+              1.05,
+              1.1,
+              1.15,
+              1.2,
+              1.25,
+              1.3,
+              1.35,
+              1.4,
+              1.45,
+              1.5,
+              1.55,
+              1.6,
+              1.65,
+              1.7,
+              1.75,
+              1.8,
+              1.85,
+              1.9,
+              1.95,
+              2.0
+            ],
+            "yellowFraction": [
+              0.027,
+              0.027,
+              0.023,
+              0.018,
+              0.01,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.053,
+              0.084,
+              0.095,
+              0.097,
+              0.097,
+              0.11,
+              0.099,
+              0.092,
+              0.085,
+              0.842,
+              0.996,
+              0.998,
+              0.998,
+              0.998,
+              0.998,
+              0.999,
+              0.999,
+              0.992,
+              0.959,
+              0.948,
+              0.936,
+              0.92,
+              0.911,
+              0.905,
+              0.894,
+              0.888,
+              0.754,
+              0.739,
+              0.711,
+              0.651,
+              0.047,
+              0.011,
+              0.017,
+              0.039,
+              0.035,
+              0.03,
+              0.046,
+              0.056,
+              0.061,
+              0.06,
+              0.061,
+              0.061,
+              0.063,
+              0.082,
+              0.085,
+              0.084,
+              0.085,
+              0.084,
+              0.086,
+              0.086
+            ],
+            "darkFraction": [
+              0.689,
+              0.778,
+              0.772,
+              0.707,
+              0.749,
+              0.657,
+              0.624,
+              0.616,
+              0.605,
+              0.633,
+              0.632,
+              0.679,
+              0.753,
+              0.71,
+              0.728,
+              0.726,
+              0.676,
+              0.703,
+              0.749,
+              0.755,
+              0.137,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.005,
+              0.557,
+              0.399,
+              0.592,
+              0.627,
+              0.564,
+              0.579,
+              0.822,
+              0.132,
+              0.059,
+              0.066,
+              0.059,
+              0.056,
+              0.057,
+              0.061,
+              0.064,
+              0.066,
+              0.074,
+              0.085,
+              0.1,
+              0.11
+            ],
+            "valueMedian": [
+              79.0,
+              72.0,
+              74.0,
+              75.0,
+              77.0,
+              85.0,
+              89.0,
+              83.0,
+              87.0,
+              94.0,
+              95.0,
+              92.0,
+              76.0,
+              77.0,
+              72.5,
+              77.0,
+              82.0,
+              81.0,
+              76.0,
+              75.0,
+              173.0,
+              224.0,
+              217.0,
+              216.0,
+              216.0,
+              216.0,
+              216.0,
+              216.0,
+              216.0,
+              215.0,
+              215.0,
+              215.0,
+              215.0,
+              214.0,
+              213.0,
+              213.0,
+              213.0,
+              214.0,
+              215.0,
+              216.0,
+              174.0,
+              105.0,
+              118.0,
+              100.0,
+              96.0,
+              103.0,
+              96.0,
+              46.0,
+              219.0,
+              213.0,
+              210.0,
+              210.0,
+              209.0,
+              209.0,
+              209.0,
+              209.0,
+              209.0,
+              209.0,
+              209.0,
+              209.0,
+              208.0
+            ],
+            "saturationMedian": [
+              45.0,
+              48.0,
+              42.0,
+              44.0,
+              42.5,
+              38.0,
+              36.0,
+              36.0,
+              25.0,
+              28.0,
+              26.0,
+              28.0,
+              38.5,
+              41.0,
+              40.0,
+              39.0,
+              39.0,
+              40.0,
+              44.0,
+              100.0,
+              124.0,
+              168.0,
+              182.0,
+              184.0,
+              185.0,
+              184.0,
+              184.0,
+              183.0,
+              182.0,
+              182.0,
+              182.0,
+              182.0,
+              182.0,
+              182.0,
+              181.0,
+              179.0,
+              176.0,
+              175.0,
+              172.0,
+              157.0,
+              120.5,
+              66.0,
+              38.0,
+              83.0,
+              78.0,
+              62.0,
+              59.0,
+              75.5,
+              14.0,
+              16.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0
+            ],
+            "rule": "yellow: OpenCV H 15-40, S>=90, V>=80; dark: V < 0.5 x housing yellow median; rows with >=10% yellow; interior band: dark>=0.2 and yellow<0.8 strictly inside the yellow silhouette; t=0/1 are the image-left/right associated side lines"
+          }
+        },
+        {
+          "photo": 3,
+          "figure": "post-box-1-photo-3.jpg",
+          "samInstance": "SAM: yellow safety post; instance 0",
+          "samInstanceMatchesRunCatalog": true,
+          "association": {
+            "observationIds": [
+              "photo-3-face-3"
+            ],
+            "complete": true,
+            "sideGroupIds": {
+              "side_0": 84,
+              "side_1": 228
+            },
+            "sideGroupScope": {
+              "side_0": "full-height RGB side group",
+              "side_1": "full-height RGB side group"
+            },
+            "imageLeftSide": "side_0",
+            "imageSideOrderFlipped": false,
+            "observedBoundaries": [
+              "lower_terminal",
+              "side_1",
+              "upper_terminal",
+              "side_0"
+            ],
+            "terminalLocalSideIds": {
+              "top": [
+                1069,
+                481
+              ],
+              "bottom": [
+                250,
+                228
+              ]
+            }
+          },
+          "residualsOfSavedFit": {
+            "rmsRawPx": 4.978745322911949,
+            "maxRawPx": 8.157406072212595,
+            "recordedRmsRawPx": 4.978745322911949,
+            "recordedMaxRawPx": 8.157406072212595,
+            "gateRawPx": 7.724137931034482,
+            "byBoundary": {
+              "lower_terminal": {
+                "modelEdgeCorners": [
+                  0,
+                  1
+                ],
+                "points": 4,
+                "maxRawPx": 4.190896498732257,
+                "rmsRawPx": 3.248097335812342,
+                "meanSignedOutwardRawPx": 0.3546099485180686
+              },
+              "side_1": {
+                "modelEdgeCorners": [
+                  1,
+                  2
+                ],
+                "points": 12,
+                "maxRawPx": 8.157406072212595,
+                "rmsRawPx": 6.970043166236771,
+                "meanSignedOutwardRawPx": -6.933056475830054
+              },
+              "upper_terminal": {
+                "modelEdgeCorners": [
+                  2,
+                  3
+                ],
+                "points": 2,
+                "maxRawPx": 4.931339604940117,
+                "rmsRawPx": 4.656541755875308,
+                "meanSignedOutwardRawPx": -4.647907870897152
+              },
+              "side_0": {
+                "modelEdgeCorners": [
+                  3,
+                  0
+                ],
+                "points": 10,
+                "maxRawPx": 2.3297282433096322,
+                "rmsRawPx": 1.5973732000124614,
+                "meanSignedOutwardRawPx": -1.4811842848246581
+              }
+            },
+            "meaning": "distance of every observed boundary endpoint to the saved rectangle edge it was paired with; signed outward > 0 means the observed line lies outside the projected rectangle"
+          },
+          "projectedFitCornersRaw": [
+            [
+              2435.7215558892344,
+              3169.9551857183737
+            ],
+            [
+              2513.932233119207,
+              3174.8175036991993
+            ],
+            [
+              2649.5070157556247,
+              1279.5322416257081
+            ],
+            [
+              2563.963653391359,
+              1278.3725883718896
+            ]
+          ],
+          "pixelWidths": [
+            {
+              "axialFraction": 0.2,
+              "observedWidthRawPx": 71.52718817135968,
+              "modelWidthRawPx": 79.75575877602921,
+              "outwardOffsetRawPx": {
+                "side_0": -1.6034392718343824,
+                "side_1": -6.62513133283516
+              }
+            },
+            {
+              "axialFraction": 0.5,
+              "observedWidthRawPx": 73.714564571958,
+              "modelWidthRawPx": 81.87396283757641,
+              "outwardOffsetRawPx": {
+                "side_0": -1.3562132776514275,
+                "side_1": -6.8031849879669934
+              }
+            },
+            {
+              "axialFraction": 0.8,
+              "observedWidthRawPx": 75.90194097255628,
+              "modelWidthRawPx": 83.99216689912363,
+              "outwardOffsetRawPx": {
+                "side_0": -1.1089872834685082,
+                "side_1": -6.981238643098841
+              }
+            }
+          ],
+          "viewAngleToMultiviewNormalDeg": 18.496803972930238,
+          "singleViewFace": {
+            "supportPoints": 1844,
+            "support": "one-pixel-eroded observed face polygon x SAM instance x valid pointmap (as fit_face)",
+            "free": {
+              "normal": [
+                -0.07054160319284342,
+                0.09571002938575641,
+                -0.9929065779286392
+              ],
+              "singularValues": [
+                32.69559713028214,
+                1.0487654030676052,
+                0.7802316299773816
+              ],
+              "minorToNextSingularRatio": 0.7439524870816954,
+              "planeSupported": false,
+              "edgeOnToCamera": false,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.036199690115197254,
+              "angleToMultiviewNormalDeg": 3.452550068932914,
+              "angleToCameraRayDeg": 21.346894284755592,
+              "widthOnOwnPlane": {
+                "medianNative": 0.1013911403850668,
+                "minNative": 0.10089066847510197,
+                "maxNative": 0.10185792077902596,
+                "sideLineAngleDeg": 0.025879745968767544
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.04523029335360196
+            },
+            "upright": {
+              "normal": [
+                0.11671833843379617,
+                0.10752916734854637,
+                -0.987326849448845
+              ],
+              "singularValues": [
+                1.0596625086576026,
+                0.9100197931433457
+              ],
+              "minorToNextSingularRatio": 0.8587826649601611,
+              "planeSupported": false,
+              "edgeOnToCamera": false,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.0418415214809616,
+              "angleToMultiviewNormalDeg": 14.22142025501931,
+              "angleToCameraRayDeg": 31.1630066085236,
+              "widthOnOwnPlane": {
+                "medianNative": 0.10987936780307335,
+                "minNative": 0.10971114673164553,
+                "maxNative": 0.11003523348676689,
+                "sideLineAngleDeg": 0.008658875013607374
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.038986174827849496
+            },
+            "summary": {
+              "usableModes": [],
+              "normalAngleToMultiviewDeg": null,
+              "widthOnOwnPlaneNative": null,
+              "reason": "pointmap does not support a plane on this strip (minor/next singular ratio > 0.35 or normal > 60 deg from the camera ray); single-view normal and width are not evidence here"
+            },
+            "widthOnMultiviewPlane": {
+              "medianNative": 0.09858479704158711,
+              "minNative": 0.09806626838333198,
+              "maxNative": 0.09906872283885071,
+              "sideLineAngleDeg": 0.027107624037680758
+            },
+            "observedFacePolygonRaw": [
+              [
+                2437.1351939798597,
+                3175.253356889002
+              ],
+              [
+                2507.8602929791537,
+                3168.465482949529
+              ],
+              [
+                2642.027344247993,
+                1284.5861801873975
+              ],
+              [
+                2564.692732891949,
+                1281.5905331974102
+              ]
+            ]
+          },
+          "sideLinesOnMultiviewPlane": {
+            "side_0": {
+              "id": 84,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 0.13170046914498448,
+                "+0.00": 0.017622937041248288,
+                "+0.05": -0.09645459506248467
+              }
+            },
+            "side_1": {
+              "id": 228,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 1.042590299760908,
+                "+0.00": 0.9176298942259961,
+                "+0.05": 0.7926694886910863
+              }
+            }
+          },
+          "lensStrip": {
+            "yellowSilhouetteT": [
+              -0.575,
+              0.9625000000000001
+            ],
+            "interiorDarkBandsT": [],
+            "edgeDarkBandsT": [
+              [
+                -1.0,
+                -0.6
+              ],
+              [
+                1.0,
+                1.0625
+              ]
+            ],
+            "lensStripCandidateT": null,
+            "lensStripCandidateRelativeToFace": "not_detected",
+            "strongestInteriorShadeStepT": 0.8437500000000001,
+            "strongestInteriorShadeStepValue": 37.0,
+            "rowsUsed": 939,
+            "rowsSampled": 940,
+            "housingYellowValueMedian": 223.0,
+            "profileT": [
+              -1.0,
+              -0.95,
+              -0.9,
+              -0.85,
+              -0.8,
+              -0.75,
+              -0.7,
+              -0.65,
+              -0.6,
+              -0.55,
+              -0.5,
+              -0.45,
+              -0.4,
+              -0.35,
+              -0.3,
+              -0.25,
+              -0.2,
+              -0.15,
+              -0.1,
+              -0.05,
+              0.0,
+              0.05,
+              0.1,
+              0.15,
+              0.2,
+              0.25,
+              0.3,
+              0.35,
+              0.4,
+              0.45,
+              0.5,
+              0.55,
+              0.6,
+              0.65,
+              0.7,
+              0.75,
+              0.8,
+              0.85,
+              0.9,
+              0.95,
+              1.0,
+              1.05,
+              1.1,
+              1.15,
+              1.2,
+              1.25,
+              1.3,
+              1.35,
+              1.4,
+              1.45,
+              1.5,
+              1.55,
+              1.6,
+              1.65,
+              1.7,
+              1.75,
+              1.8,
+              1.85,
+              1.9,
+              1.95,
+              2.0
+            ],
+            "yellowFraction": [
+              0.011,
+              0.007,
+              0.013,
+              0.016,
+              0.006,
+              0.004,
+              0.031,
+              0.033,
+              0.405,
+              0.701,
+              0.834,
+              0.957,
+              0.978,
+              0.98,
+              0.979,
+              0.979,
+              0.979,
+              0.979,
+              0.98,
+              0.976,
+              0.993,
+              0.997,
+              0.994,
+              0.999,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              0.994,
+              0.993,
+              0.997,
+              1.0,
+              0.998,
+              0.998,
+              0.998,
+              0.993,
+              0.957,
+              0.916,
+              0.88,
+              0.805,
+              0.37,
+              0.069,
+              0.01,
+              0.002,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.001,
+              0.0,
+              0.0,
+              0.0,
+              0.014,
+              0.022,
+              0.024,
+              0.026,
+              0.027,
+              0.028,
+              0.028,
+              0.029
+            ],
+            "darkFraction": [
+              0.35,
+              0.388,
+              0.373,
+              0.439,
+              0.471,
+              0.471,
+              0.472,
+              0.472,
+              0.441,
+              0.212,
+              0.084,
+              0.014,
+              0.004,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.001,
+              0.009,
+              0.005,
+              0.001,
+              0.007,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.001,
+              0.0,
+              0.001,
+              0.002,
+              0.001,
+              0.002,
+              0.002,
+              0.023,
+              0.108,
+              0.104,
+              0.469,
+              0.689,
+              0.292,
+              0.124,
+              0.084,
+              0.056,
+              0.055,
+              0.054,
+              0.051,
+              0.077,
+              0.117,
+              0.278,
+              0.421,
+              0.447,
+              0.442,
+              0.449,
+              0.445,
+              0.446,
+              0.441,
+              0.437,
+              0.454
+            ],
+            "valueMedian": [
+              127.0,
+              129.0,
+              126.0,
+              117.0,
+              114.0,
+              116.0,
+              115.0,
+              114.0,
+              121.0,
+              185.0,
+              186.0,
+              190.0,
+              190.0,
+              185.0,
+              181.0,
+              176.0,
+              168.0,
+              163.0,
+              156.0,
+              181.0,
+              174.0,
+              233.0,
+              239.0,
+              239.0,
+              235.0,
+              234.0,
+              234.0,
+              234.0,
+              233.0,
+              234.0,
+              234.0,
+              235.0,
+              235.0,
+              236.0,
+              237.0,
+              238.0,
+              242.0,
+              184.0,
+              134.0,
+              136.0,
+              114.0,
+              82.0,
+              198.0,
+              214.0,
+              220.0,
+              216.0,
+              218.0,
+              224.0,
+              224.0,
+              227.0,
+              224.0,
+              221.0,
+              206.0,
+              198.0,
+              200.0,
+              201.0,
+              200.0,
+              202.0,
+              205.0,
+              202.0,
+              190.0
+            ],
+            "saturationMedian": [
+              32.0,
+              27.0,
+              25.0,
+              26.0,
+              28.0,
+              30.0,
+              32.0,
+              41.0,
+              84.0,
+              138.0,
+              184.0,
+              188.0,
+              188.0,
+              191.0,
+              191.0,
+              190.0,
+              192.0,
+              194.0,
+              199.0,
+              175.0,
+              183.0,
+              165.0,
+              175.0,
+              177.0,
+              178.0,
+              179.0,
+              179.0,
+              179.0,
+              179.0,
+              179.0,
+              179.0,
+              178.0,
+              178.0,
+              177.0,
+              176.0,
+              173.0,
+              154.0,
+              162.0,
+              129.0,
+              103.0,
+              95.0,
+              88.0,
+              43.0,
+              39.0,
+              33.0,
+              29.0,
+              24.0,
+              18.0,
+              17.0,
+              16.0,
+              16.0,
+              16.0,
+              20.0,
+              22.0,
+              22.0,
+              23.0,
+              24.0,
+              25.0,
+              23.0,
+              20.0,
+              20.0
+            ],
+            "rule": "yellow: OpenCV H 15-40, S>=90, V>=80; dark: V < 0.5 x housing yellow median; rows with >=10% yellow; interior band: dark>=0.2 and yellow<0.8 strictly inside the yellow silhouette; t=0/1 are the image-left/right associated side lines"
+          }
+        },
+        {
+          "photo": 4,
+          "figure": "post-box-1-photo-4.jpg",
+          "samInstance": "SAM: yellow safety post; instance 0",
+          "samInstanceMatchesRunCatalog": true,
+          "association": {
+            "observationIds": [
+              "photo-4-face-16",
+              "photo-4-face-19",
+              "photo-4-face-23",
+              "photo-4-face-30",
+              "photo-4-face-33"
+            ],
+            "complete": true,
+            "sideGroupIds": {
+              "side_0": 41,
+              "side_1": 462
+            },
+            "sideGroupScope": {
+              "side_0": "full-height RGB side group",
+              "side_1": "full-height RGB side group"
+            },
+            "imageLeftSide": "side_0",
+            "imageSideOrderFlipped": false,
+            "observedBoundaries": [
+              "lower_terminal",
+              "side_1",
+              "upper_terminal",
+              "side_0"
+            ],
+            "terminalLocalSideIds": {
+              "top": [
+                306,
+                481
+              ],
+              "bottom": [
+                79,
+                130
+              ]
+            }
+          },
+          "residualsOfSavedFit": {
+            "rmsRawPx": 2.3490301316920177,
+            "maxRawPx": 11.259837327282124,
+            "recordedRmsRawPx": 2.3490301316920177,
+            "recordedMaxRawPx": 11.259837327282124,
+            "gateRawPx": 7.724137931034482,
+            "byBoundary": {
+              "lower_terminal": {
+                "modelEdgeCorners": [
+                  0,
+                  1
+                ],
+                "points": 2,
+                "maxRawPx": 1.725397098660923,
+                "rmsRawPx": 1.32544204483392,
+                "meanSignedOutwardRawPx": 0.4964342730354906
+              },
+              "side_1": {
+                "modelEdgeCorners": [
+                  1,
+                  2
+                ],
+                "points": 40,
+                "maxRawPx": 4.437075979919441,
+                "rmsRawPx": 2.1811300030335574,
+                "meanSignedOutwardRawPx": -0.19222348438408793
+              },
+              "upper_terminal": {
+                "modelEdgeCorners": [
+                  2,
+                  3
+                ],
+                "points": 2,
+                "maxRawPx": 2.773987894277253,
+                "rmsRawPx": 2.345759263762772,
+                "meanSignedOutwardRawPx": 2.296686781212439
+              },
+              "side_0": {
+                "modelEdgeCorners": [
+                  3,
+                  0
+                ],
+                "points": 22,
+                "maxRawPx": 11.259837327282124,
+                "rmsRawPx": 2.6915044715869128,
+                "meanSignedOutwardRawPx": 1.004685975464463
+              }
+            },
+            "meaning": "distance of every observed boundary endpoint to the saved rectangle edge it was paired with; signed outward > 0 means the observed line lies outside the projected rectangle"
+          },
+          "projectedFitCornersRaw": [
+            [
+              2612.040604360959,
+              3315.4478706760556
+            ],
+            [
+              2695.3668492666957,
+              3324.8934236383066
+            ],
+            [
+              2707.950419261846,
+              1403.9943653677026
+            ],
+            [
+              2620.2414523561138,
+              1408.6343762793717
+            ]
+          ],
+          "pixelWidths": [
+            {
+              "axialFraction": 0.2,
+              "observedWidthRawPx": 85.83514466835146,
+              "modelWidthRawPx": 84.24475419406876,
+              "outwardOffsetRawPx": {
+                "side_0": 1.467755986605198,
+                "side_1": 0.12263448767750162
+              }
+            },
+            {
+              "axialFraction": 0.5,
+              "observedWidthRawPx": 92.89335585687408,
+              "modelWidthRawPx": 85.54155492777032,
+              "outwardOffsetRawPx": {
+                "side_0": 1.0774443164152174,
+                "side_1": 6.274356612688532
+              }
+            },
+            {
+              "axialFraction": 0.8,
+              "observedWidthRawPx": 99.9515670453967,
+              "modelWidthRawPx": 86.8383556614719,
+              "outwardOffsetRawPx": {
+                "side_0": 0.6871326462252227,
+                "side_1": 12.426078737699576
+              }
+            }
+          ],
+          "viewAngleToMultiviewNormalDeg": 11.745856820271479,
+          "singleViewFace": {
+            "supportPoints": 2553,
+            "support": "one-pixel-eroded observed face polygon x SAM instance x valid pointmap (as fit_face)",
+            "free": {
+              "normal": [
+                -0.9861179795374011,
+                -0.004212429004065137,
+                -0.16599272837976797
+              ],
+              "singularValues": [
+                38.31886116109579,
+                3.581682114435335,
+                0.9247013180208029
+              ],
+              "minorToNextSingularRatio": 0.2581751502440594,
+              "planeSupported": true,
+              "edgeOnToCamera": true,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.035663595288698245,
+              "angleToMultiviewNormalDeg": 73.01629264663497,
+              "angleToCameraRayDeg": 69.78355377842374,
+              "widthOnOwnPlane": {
+                "medianNative": 0.34379111481377805,
+                "minNative": 0.3132282280992785,
+                "maxNative": 0.37355472112326565,
+                "sideLineAngleDeg": 1.614192577150146
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.07333285400617218
+            },
+            "upright": {
+              "normal": [
+                -0.9938582447008641,
+                0.00423000089427288,
+                -0.11057981973467051
+              ],
+              "singularValues": [
+                3.7958902609254865,
+                1.1204744887721427
+              ],
+              "minorToNextSingularRatio": 0.2951809488030238,
+              "planeSupported": true,
+              "edgeOnToCamera": true,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.04764990228138615,
+              "angleToMultiviewNormalDeg": 76.16025243902946,
+              "angleToCameraRayDeg": 73.02334151079593,
+              "widthOnOwnPlane": {
+                "medianNative": 0.40214229011432834,
+                "minNative": 0.37000760293635465,
+                "maxNative": 0.43284094142201873,
+                "sideLineAngleDeg": 1.675690125613974
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.053148791000595885
+            },
+            "summary": {
+              "usableModes": [],
+              "normalAngleToMultiviewDeg": null,
+              "widthOnOwnPlaneNative": null,
+              "reason": "pointmap does not support a plane on this strip (minor/next singular ratio > 0.35 or normal > 60 deg from the camera ray); single-view normal and width are not evidence here"
+            },
+            "widthOnMultiviewPlane": {
+              "medianNative": 0.11878816717800976,
+              "minNative": 0.10901692415552204,
+              "maxNative": 0.12816606353743126,
+              "sideLineAngleDeg": 0.5178031619495499
+            },
+            "observedFacePolygonRaw": [
+              [
+                2610.2956794795123,
+                3319.2790111134786
+              ],
+              [
+                2691.4807212997907,
+                3316.1416286796307
+              ],
+              [
+                2724.422581173243,
+                1403.8280454906776
+              ],
+              [
+                2619.8213737708465,
+                1405.7304175668085
+              ]
+            ]
+          },
+          "sideLinesOnMultiviewPlane": {
+            "side_0": {
+              "id": 41,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 0.011697419310849043,
+                "+0.00": -0.010164079615557016,
+                "+0.05": -0.03202557854195953
+              }
+            },
+            "side_1": {
+              "id": 462,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 1.036901013084573,
+                "+0.00": 1.0036736018856716,
+                "+0.05": 0.9704461906867685
+              }
+            }
+          },
+          "lensStrip": {
+            "yellowSilhouetteT": [
+              -0.03749999999999998,
+              1.0750000000000002
+            ],
+            "interiorDarkBandsT": [],
+            "edgeDarkBandsT": [
+              [
+                -0.25,
+                -0.04999999999999993
+              ]
+            ],
+            "lensStripCandidateT": null,
+            "lensStripCandidateRelativeToFace": "not_detected",
+            "strongestInteriorShadeStepT": 0.30625,
+            "strongestInteriorShadeStepValue": 22.333333333333343,
+            "rowsUsed": 940,
+            "rowsSampled": 940,
+            "housingYellowValueMedian": 227.0,
+            "profileT": [
+              -1.0,
+              -0.95,
+              -0.9,
+              -0.85,
+              -0.8,
+              -0.75,
+              -0.7,
+              -0.65,
+              -0.6,
+              -0.55,
+              -0.5,
+              -0.45,
+              -0.4,
+              -0.35,
+              -0.3,
+              -0.25,
+              -0.2,
+              -0.15,
+              -0.1,
+              -0.05,
+              0.0,
+              0.05,
+              0.1,
+              0.15,
+              0.2,
+              0.25,
+              0.3,
+              0.35,
+              0.4,
+              0.45,
+              0.5,
+              0.55,
+              0.6,
+              0.65,
+              0.7,
+              0.75,
+              0.8,
+              0.85,
+              0.9,
+              0.95,
+              1.0,
+              1.05,
+              1.1,
+              1.15,
+              1.2,
+              1.25,
+              1.3,
+              1.35,
+              1.4,
+              1.45,
+              1.5,
+              1.55,
+              1.6,
+              1.65,
+              1.7,
+              1.75,
+              1.8,
+              1.85,
+              1.9,
+              1.95,
+              2.0
+            ],
+            "yellowFraction": [
+              0.007,
+              0.013,
+              0.014,
+              0.018,
+              0.0,
+              0.0,
+              0.0,
+              0.001,
+              0.0,
+              0.0,
+              0.002,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.004,
+              0.019,
+              0.057,
+              0.076,
+              0.371,
+              0.912,
+              0.996,
+              0.997,
+              0.997,
+              0.997,
+              0.997,
+              0.998,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              0.93,
+              0.652,
+              0.394,
+              0.226,
+              0.183,
+              0.011,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.022,
+              0.024,
+              0.027,
+              0.028,
+              0.028,
+              0.029,
+              0.031
+            ],
+            "darkFraction": [
+              0.595,
+              0.638,
+              0.689,
+              0.397,
+              0.25,
+              0.094,
+              0.004,
+              0.448,
+              0.519,
+              0.491,
+              0.578,
+              0.623,
+              0.2,
+              0.004,
+              0.009,
+              0.523,
+              0.579,
+              0.522,
+              0.531,
+              0.484,
+              0.011,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.002,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.618,
+              0.702,
+              0.661,
+              0.75,
+              0.569,
+              0.56,
+              0.403,
+              0.412,
+              0.41,
+              0.41,
+              0.406,
+              0.404,
+              0.404,
+              0.428,
+              0.432,
+              0.439,
+              0.441,
+              0.439,
+              0.444,
+              0.445
+            ],
+            "valueMedian": [
+              94.0,
+              79.5,
+              76.0,
+              132.0,
+              168.0,
+              169.0,
+              148.0,
+              118.5,
+              111.0,
+              114.0,
+              99.5,
+              91.0,
+              171.0,
+              166.0,
+              169.0,
+              111.0,
+              101.0,
+              111.0,
+              110.0,
+              115.0,
+              197.0,
+              185.0,
+              184.0,
+              185.0,
+              181.0,
+              173.0,
+              187.0,
+              239.0,
+              235.0,
+              234.0,
+              234.0,
+              234.0,
+              234.0,
+              234.0,
+              233.0,
+              233.0,
+              233.0,
+              233.0,
+              233.0,
+              235.0,
+              244.0,
+              93.0,
+              98.0,
+              93.0,
+              56.0,
+              94.0,
+              60.5,
+              202.0,
+              213.0,
+              215.0,
+              217.0,
+              214.0,
+              209.0,
+              206.0,
+              204.0,
+              205.0,
+              202.0,
+              202.0,
+              197.5,
+              196.0,
+              184.0
+            ],
+            "saturationMedian": [
+              29.0,
+              27.0,
+              29.0,
+              27.0,
+              29.0,
+              27.0,
+              29.0,
+              35.0,
+              35.0,
+              32.0,
+              34.0,
+              36.0,
+              27.0,
+              28.0,
+              27.0,
+              35.0,
+              32.0,
+              30.0,
+              35.0,
+              93.0,
+              139.0,
+              190.0,
+              193.0,
+              192.0,
+              195.0,
+              204.0,
+              196.0,
+              177.0,
+              181.0,
+              182.0,
+              183.0,
+              183.0,
+              182.5,
+              182.0,
+              182.0,
+              182.0,
+              181.0,
+              181.0,
+              179.0,
+              175.0,
+              149.0,
+              161.0,
+              93.0,
+              68.0,
+              74.0,
+              42.0,
+              39.0,
+              34.0,
+              32.0,
+              27.0,
+              25.0,
+              22.0,
+              22.0,
+              22.0,
+              22.0,
+              22.0,
+              23.0,
+              22.0,
+              22.0,
+              22.0,
+              23.0
+            ],
+            "rule": "yellow: OpenCV H 15-40, S>=90, V>=80; dark: V < 0.5 x housing yellow median; rows with >=10% yellow; interior band: dark>=0.2 and yellow<0.8 strictly inside the yellow silhouette; t=0/1 are the image-left/right associated side lines"
+          }
+        }
+      ]
+    },
+    {
+      "id": "post-box-2",
+      "reviewerSideInPhoto4": "left",
+      "multiviewFace": {
+        "cornersNative": [
+          [
+            -1.288538932800293,
+            1.745809555053711,
+            3.2167017459869385
+          ],
+          [
+            -1.2163102626800537,
+            1.7325599193572998,
+            3.34771466255188
+          ],
+          [
+            -1.169630527496338,
+            -0.9300102591514587,
+            3.0527074337005615
+          ],
+          [
+            -1.2418591976165771,
+            -0.9167605638504028,
+            2.92169451713562
+          ]
+        ],
+        "normal": [
+          0.876593239209029,
+          0.0681504211478473,
+          -0.47638200330238467
+        ],
+        "widthNative": 0.15018960926115976,
+        "heightNative": 2.6792700609557762,
+        "normalAngleFromHorizontalDeg": 0.5641174465018511,
+        "orientationMode": "free",
+        "gateAccepted": false,
+        "modelFile": "post-box-2-housing-candidate.glb",
+        "glbVerticesEqualCornersNative": true
+      },
+      "consistency": {
+        "initializationCornersMaxRawPx": 0.00011552591877261875,
+        "initializationsChecked": 29,
+        "note": "post-shells.json records no raw pixels for the final fitted rectangle; its projection is proven aligned by reproducing the recorded per-photo residuals (below) from the same projected array that every overlay draws."
+      },
+      "photos": [
+        {
+          "photo": 1,
+          "figure": "post-box-2-photo-1.jpg",
+          "samInstance": "SAM: yellow safety post; instance 0",
+          "samInstanceMatchesRunCatalog": true,
+          "association": {
+            "observationIds": [
+              "photo-1-face-0"
+            ],
+            "complete": false,
+            "sideGroupIds": {
+              "side_0": 209,
+              "side_1": 15
+            },
+            "sideGroupScope": {
+              "side_0": "full-height RGB side group",
+              "side_1": "full-height RGB side group"
+            },
+            "imageLeftSide": "side_1",
+            "imageSideOrderFlipped": true,
+            "observedBoundaries": [
+              "side_1",
+              "upper_terminal",
+              "side_0"
+            ],
+            "terminalLocalSideIds": {
+              "top": [
+                785,
+                15
+              ],
+              "bottom": null
+            }
+          },
+          "residualsOfSavedFit": {
+            "rmsRawPx": 33.69077733213727,
+            "maxRawPx": 43.08370348252135,
+            "recordedRmsRawPx": 33.69077733213727,
+            "recordedMaxRawPx": 43.08370348252135,
+            "gateRawPx": 7.724137931034482,
+            "byBoundary": {
+              "lower_terminal": null,
+              "side_0": {
+                "modelEdgeCorners": [
+                  1,
+                  2
+                ],
+                "points": 4,
+                "maxRawPx": 23.791221955096034,
+                "rmsRawPx": 21.960773937993142,
+                "meanSignedOutwardRawPx": 21.884542220562462
+              },
+              "upper_terminal": {
+                "modelEdgeCorners": [
+                  2,
+                  3
+                ],
+                "points": 2,
+                "maxRawPx": 21.280803727344296,
+                "rmsRawPx": 15.3795804437727,
+                "meanSignedOutwardRawPx": 2.7528408895215253
+              },
+              "side_1": {
+                "modelEdgeCorners": [
+                  3,
+                  0
+                ],
+                "points": 10,
+                "maxRawPx": 43.08370348252135,
+                "rmsRawPx": 39.697519165336985,
+                "meanSignedOutwardRawPx": -39.58290529435117
+              }
+            },
+            "meaning": "distance of every observed boundary endpoint to the saved rectangle edge it was paired with; signed outward > 0 means the observed line lies outside the projected rectangle"
+          },
+          "projectedFitCornersRaw": [
+            [
+              308.11813226442666,
+              3651.2042986464494
+            ],
+            [
+              420.1844921704339,
+              3575.3302968154117
+            ],
+            [
+              360.68286484509537,
+              1099.7326349402827
+            ],
+            [
+              234.62172071645045,
+              1072.192816851155
+            ]
+          ],
+          "pixelWidths": [
+            {
+              "axialFraction": 0.2,
+              "observedWidthRawPx": 101.77642779095173,
+              "modelWidthRawPx": 119.25139736127765,
+              "outwardOffsetRawPx": {
+                "side_0": 19.92361239261571,
+                "side_1": -37.398581962941634
+              }
+            },
+            {
+              "axialFraction": 0.5,
+              "observedWidthRawPx": 103.86455554029303,
+              "modelWidthRawPx": 121.51638039043249,
+              "outwardOffsetRawPx": {
+                "side_0": 21.74024012497013,
+                "side_1": -39.39206497510959
+              }
+            },
+            {
+              "axialFraction": 0.8,
+              "observedWidthRawPx": 105.95268328963431,
+              "modelWidthRawPx": 123.78136341958731,
+              "outwardOffsetRawPx": {
+                "side_0": 23.556867857324555,
+                "side_1": -41.38554798727755
+              }
+            }
+          ],
+          "viewAngleToMultiviewNormalDeg": 41.433870637887,
+          "singleViewFace": {
+            "supportPoints": 2673,
+            "support": "one-pixel-eroded observed face polygon x SAM instance x valid pointmap (as fit_face)",
+            "free": {
+              "normal": [
+                0.3728753697063467,
+                0.09697348327536534,
+                -0.9228001420718344
+              ],
+              "singularValues": [
+                26.1724229625917,
+                1.408818795326313,
+                1.1915691297885023
+              ],
+              "minorToNextSingularRatio": 0.8457930386373849,
+              "planeSupported": false,
+              "edgeOnToCamera": false,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.037775140838298076,
+              "angleToMultiviewNormalDeg": 39.3692430187233,
+              "angleToCameraRayDeg": 12.479389519522057,
+              "widthOnOwnPlane": {
+                "medianNative": 0.10155824564751972,
+                "minNative": 0.10107684701343084,
+                "maxNative": 0.10201875557901015,
+                "sideLineAngleDeg": 0.037955564417450405
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.04355153070743922
+            },
+            "upright": {
+              "normal": [
+                0.43494040423668356,
+                0.10001566522899,
+                -0.8948875412426037
+              ],
+              "singularValues": [
+                1.4440454751072944,
+                1.201914427008454
+              ],
+              "minorToNextSingularRatio": 0.8323244992815412,
+              "planeSupported": false,
+              "edgeOnToCamera": false,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.038866050198448666,
+              "angleToMultiviewNormalDeg": 35.47288454585271,
+              "angleToCameraRayDeg": 13.419801207457748,
+              "widthOnOwnPlane": {
+                "medianNative": 0.101839069380324,
+                "minNative": 0.10146196220548882,
+                "maxNative": 0.10219907919675039,
+                "sideLineAngleDeg": 0.029706042064777508
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.04187270083282968
+            },
+            "summary": {
+              "usableModes": [],
+              "normalAngleToMultiviewDeg": null,
+              "widthOnOwnPlaneNative": null,
+              "reason": "pointmap does not support a plane on this strip (minor/next singular ratio > 0.35 or normal > 60 deg from the camera ray); single-view normal and width are not evidence here"
+            },
+            "widthOnMultiviewPlane": {
+              "medianNative": 0.13118558799990815,
+              "minNative": 0.130837657967,
+              "maxNative": 0.13151706063987648,
+              "sideLineAngleDeg": 0.02771186634880318
+            },
+            "observedFacePolygonRaw": [
+              [
+                319.36774772434416,
+                2779.7725075954363
+              ],
+              [
+                419.72666018414554,
+                2777.513097476856
+              ],
+              [
+                385.2928458448618,
+                1094.255063259718
+              ],
+              [
+                277.77385800675626,
+                1086.9091713623443
+              ]
+            ]
+          },
+          "sideLinesOnMultiviewPlane": {
+            "side_0": {
+              "id": 209,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 1.4843537805491671,
+                "+0.00": 1.1947404221088649,
+                "+0.05": 0.9051270636685613
+              }
+            },
+            "side_1": {
+              "id": 15,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 0.5918469340384563,
+                "+0.00": 0.3194534302221517,
+                "+0.05": 0.04705992640585035
+              }
+            }
+          },
+          "lensStrip": {
+            "yellowSilhouetteT": [
+              -0.012499999999999956,
+              1.1375000000000002
+            ],
+            "interiorDarkBandsT": [],
+            "edgeDarkBandsT": [
+              [
+                -0.35,
+                -0.1875
+              ]
+            ],
+            "lensStripCandidateT": null,
+            "lensStripCandidateRelativeToFace": "not_detected",
+            "strongestInteriorShadeStepT": 1.00625,
+            "strongestInteriorShadeStepValue": 21.333333333333343,
+            "rowsUsed": 932,
+            "rowsSampled": 932,
+            "housingYellowValueMedian": 240.0,
+            "profileT": [
+              -1.0,
+              -0.95,
+              -0.9,
+              -0.85,
+              -0.8,
+              -0.75,
+              -0.7,
+              -0.65,
+              -0.6,
+              -0.55,
+              -0.5,
+              -0.45,
+              -0.4,
+              -0.35,
+              -0.3,
+              -0.25,
+              -0.2,
+              -0.15,
+              -0.1,
+              -0.05,
+              0.0,
+              0.05,
+              0.1,
+              0.15,
+              0.2,
+              0.25,
+              0.3,
+              0.35,
+              0.4,
+              0.45,
+              0.5,
+              0.55,
+              0.6,
+              0.65,
+              0.7,
+              0.75,
+              0.8,
+              0.85,
+              0.9,
+              0.95,
+              1.0,
+              1.05,
+              1.1,
+              1.15,
+              1.2,
+              1.25,
+              1.3,
+              1.35,
+              1.4,
+              1.45,
+              1.5,
+              1.55,
+              1.6,
+              1.65,
+              1.7,
+              1.75,
+              1.8,
+              1.85,
+              1.9,
+              1.95,
+              2.0
+            ],
+            "yellowFraction": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.006,
+              0.114,
+              0.086,
+              0.006,
+              0.0,
+              0.139,
+              0.99,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              0.999,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              0.999,
+              0.998,
+              0.997,
+              0.994,
+              0.992,
+              0.991,
+              0.989,
+              0.984,
+              0.979,
+              0.973,
+              0.19,
+              0.05,
+              0.036,
+              0.0,
+              0.012,
+              0.016,
+              0.014,
+              0.024,
+              0.064,
+              0.071,
+              0.065,
+              0.061,
+              0.058,
+              0.055,
+              0.047,
+              0.041,
+              0.028,
+              0.082
+            ],
+            "darkFraction": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.033,
+              0.72,
+              0.936,
+              0.409,
+              0.501,
+              0.307,
+              0.057,
+              0.073,
+              0.015,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.001,
+              0.003,
+              0.005,
+              0.006,
+              0.008,
+              0.009,
+              0.01,
+              0.011,
+              0.012,
+              0.013,
+              0.088,
+              0.118,
+              0.039,
+              0.168,
+              0.266,
+              0.198,
+              0.261,
+              0.237,
+              0.214,
+              0.261,
+              0.279,
+              0.317,
+              0.364,
+              0.408,
+              0.755,
+              0.483,
+              0.465
+            ],
+            "valueMedian": [
+              233.0,
+              233.0,
+              233.0,
+              233.0,
+              233.0,
+              233.0,
+              233.0,
+              233.0,
+              233.0,
+              232.0,
+              222.0,
+              222.0,
+              220.0,
+              67.0,
+              53.0,
+              128.0,
+              119.0,
+              137.0,
+              158.0,
+              150.5,
+              200.0,
+              246.0,
+              241.0,
+              240.0,
+              240.0,
+              240.0,
+              241.0,
+              240.0,
+              240.0,
+              240.0,
+              240.0,
+              240.0,
+              240.0,
+              240.0,
+              240.0,
+              239.5,
+              239.0,
+              239.0,
+              239.0,
+              243.0,
+              215.0,
+              184.0,
+              184.0,
+              188.0,
+              171.0,
+              162.0,
+              154.0,
+              151.0,
+              141.0,
+              146.0,
+              139.0,
+              140.0,
+              146.0,
+              143.0,
+              141.0,
+              139.0,
+              133.0,
+              132.0,
+              98.0,
+              121.5,
+              124.0
+            ],
+            "saturationMedian": [
+              9.0,
+              9.0,
+              9.0,
+              9.0,
+              9.0,
+              9.0,
+              11.0,
+              11.0,
+              11.0,
+              12.0,
+              19.0,
+              31.0,
+              40.0,
+              68.0,
+              81.0,
+              65.5,
+              52.0,
+              34.0,
+              26.0,
+              37.0,
+              117.0,
+              171.0,
+              190.0,
+              190.0,
+              190.0,
+              191.0,
+              191.0,
+              191.0,
+              192.0,
+              192.0,
+              192.0,
+              192.0,
+              192.0,
+              193.0,
+              193.0,
+              193.0,
+              193.0,
+              193.0,
+              193.0,
+              184.5,
+              188.0,
+              205.0,
+              182.0,
+              77.0,
+              21.0,
+              18.0,
+              18.0,
+              19.0,
+              21.0,
+              19.0,
+              19.0,
+              19.0,
+              18.0,
+              18.0,
+              19.0,
+              19.0,
+              19.0,
+              20.0,
+              28.0,
+              25.0,
+              24.0
+            ],
+            "rule": "yellow: OpenCV H 15-40, S>=90, V>=80; dark: V < 0.5 x housing yellow median; rows with >=10% yellow; interior band: dark>=0.2 and yellow<0.8 strictly inside the yellow silhouette; t=0/1 are the image-left/right associated side lines"
+          }
+        },
+        {
+          "photo": 2,
+          "figure": "post-box-2-photo-2.jpg",
+          "samInstance": "SAM: yellow safety post; instance 1",
+          "samInstanceMatchesRunCatalog": true,
+          "association": {
+            "observationIds": [
+              "photo-2-face-9"
+            ],
+            "complete": true,
+            "sideGroupIds": {
+              "side_0": 367,
+              "side_1": 161
+            },
+            "sideGroupScope": {
+              "side_0": "full-height RGB side group",
+              "side_1": "full-height RGB side group"
+            },
+            "imageLeftSide": "side_0",
+            "imageSideOrderFlipped": false,
+            "observedBoundaries": [
+              "lower_terminal",
+              "side_1",
+              "upper_terminal",
+              "side_0"
+            ],
+            "terminalLocalSideIds": {
+              "top": [
+                85,
+                483
+              ],
+              "bottom": [
+                33,
+                161
+              ]
+            }
+          },
+          "residualsOfSavedFit": {
+            "rmsRawPx": 3.422592552006882,
+            "maxRawPx": 14.767494812554915,
+            "recordedRmsRawPx": 3.422592552006882,
+            "recordedMaxRawPx": 14.767494812554915,
+            "gateRawPx": 7.724137931034482,
+            "byBoundary": {
+              "lower_terminal": {
+                "modelEdgeCorners": [
+                  0,
+                  1
+                ],
+                "points": 2,
+                "maxRawPx": 12.038363206575045,
+                "rmsRawPx": 8.547224827814846,
+                "meanSignedOutwardRawPx": -5.474223847812565
+              },
+              "side_1": {
+                "modelEdgeCorners": [
+                  1,
+                  2
+                ],
+                "points": 42,
+                "maxRawPx": 3.311314577847986,
+                "rmsRawPx": 1.5299676946531278,
+                "meanSignedOutwardRawPx": 0.9216627693448426
+              },
+              "upper_terminal": {
+                "modelEdgeCorners": [
+                  2,
+                  3
+                ],
+                "points": 2,
+                "maxRawPx": 14.767494812554915,
+                "rmsRawPx": 12.800707189039244,
+                "meanSignedOutwardRawPx": -12.619139130881395
+              },
+              "side_0": {
+                "modelEdgeCorners": [
+                  3,
+                  0
+                ],
+                "points": 6,
+                "maxRawPx": 3.631481045201031,
+                "rmsRawPx": 2.4831199008717273,
+                "meanSignedOutwardRawPx": -2.1879397719151896
+              }
+            },
+            "meaning": "distance of every observed boundary endpoint to the saved rectangle edge it was paired with; signed outward > 0 means the observed line lies outside the projected rectangle"
+          },
+          "projectedFitCornersRaw": [
+            [
+              615.3037640584289,
+              3240.1089257835033
+            ],
+            [
+              712.093481867843,
+              3219.071940232095
+            ],
+            [
+              640.3501948768662,
+              1524.6855553780892
+            ],
+            [
+              539.2895214933696,
+              1522.501269774412
+            ]
+          ],
+          "pixelWidths": [
+            {
+              "axialFraction": 0.2,
+              "observedWidthRawPx": 96.48789490161727,
+              "modelWidthRawPx": 98.2688742808125,
+              "outwardOffsetRawPx": {
+                "side_0": -1.8144833190692822,
+                "side_1": 0.03350393987405198
+              }
+            },
+            {
+              "axialFraction": 0.5,
+              "observedWidthRawPx": 98.3155074181432,
+              "modelWidthRawPx": 99.23756521456926,
+              "outwardOffsetRawPx": {
+                "side_0": -2.0973647902956714,
+                "side_1": 1.1753069938696186
+              }
+            },
+            {
+              "axialFraction": 0.8,
+              "observedWidthRawPx": 100.14311993466917,
+              "modelWidthRawPx": 100.20625614832605,
+              "outwardOffsetRawPx": {
+                "side_0": -2.3802462615220605,
+                "side_1": 2.317110047865187
+              }
+            }
+          ],
+          "viewAngleToMultiviewNormalDeg": 13.124079836879826,
+          "singleViewFace": {
+            "supportPoints": 2417,
+            "support": "one-pixel-eroded observed face polygon x SAM instance x valid pointmap (as fit_face)",
+            "free": {
+              "normal": [
+                0.970009931944251,
+                0.055868493007445355,
+                -0.23655748438505736
+              ],
+              "singularValues": [
+                37.276990441505866,
+                2.0285610096640054,
+                1.2150702874620103
+              ],
+              "minorToNextSingularRatio": 0.5989813871377054,
+              "planeSupported": false,
+              "edgeOnToCamera": false,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.04264310328879412,
+              "angleToMultiviewNormalDeg": 14.804496640312497,
+              "angleToCameraRayDeg": 25.907976083103406,
+              "widthOnOwnPlane": {
+                "medianNative": 0.16349017631619983,
+                "minNative": 0.16199637004489784,
+                "maxNative": 0.16493749783706943,
+                "sideLineAngleDeg": 0.07791552518440732
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.0814847188282588
+            },
+            "upright": {
+              "normal": [
+                0.9949912987403104,
+                0.018332505529811853,
+                -0.09826614204327921
+              ],
+              "singularValues": [
+                2.086977185820718,
+                1.4692396574662163
+              ],
+              "minorToNextSingularRatio": 0.7040036984824191,
+              "planeSupported": false,
+              "edgeOnToCamera": false,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.056045243324202854,
+              "angleToMultiviewNormalDeg": 23.035258080570745,
+              "angleToCameraRayDeg": 33.22032698796914,
+              "widthOnOwnPlane": {
+                "medianNative": 0.17648069851173415,
+                "minNative": 0.1738801722273035,
+                "maxNative": 0.1790286539703055,
+                "sideLineAngleDeg": 0.13705420372141033
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.0789365329775471
+            },
+            "summary": {
+              "usableModes": [],
+              "normalAngleToMultiviewDeg": null,
+              "widthOnOwnPlaneNative": null,
+              "reason": "pointmap does not support a plane on this strip (minor/next singular ratio > 0.35 or normal > 60 deg from the camera ray); single-view normal and width are not evidence here"
+            },
+            "widthOnMultiviewPlane": {
+              "medianNative": 0.14887470641613107,
+              "minNative": 0.14707892554995894,
+              "maxNative": 0.15062477652315095,
+              "sideLineAngleDeg": 0.09570633018102327
+            },
+            "observedFacePolygonRaw": [
+              [
+                615.1756601515376,
+                3200.1343642049656
+              ],
+              [
+                711.4189855557208,
+                3220.3441438648942
+              ],
+              [
+                643.6882933937841,
+                1530.7072124423858
+              ],
+              [
+                542.5410104880938,
+                1537.8954679367312
+              ]
+            ]
+          },
+          "sideLinesOnMultiviewPlane": {
+            "side_0": {
+              "id": 367,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 0.07100305406019028,
+                "+0.00": 0.02239214062386344,
+                "+0.05": -0.026218772812462477
+              }
+            },
+            "side_1": {
+              "id": 161,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 1.070246944768514,
+                "+0.00": 1.0113853038661076,
+                "+0.05": 0.9525236629637036
+              }
+            }
+          },
+          "lensStrip": {
+            "yellowSilhouetteT": [
+              -0.02499999999999991,
+              1.025
+            ],
+            "interiorDarkBandsT": [
+              [
+                0.5750000000000002,
+                0.6500000000000001
+              ]
+            ],
+            "edgeDarkBandsT": [
+              [
+                -0.08749999999999991,
+                -0.04999999999999993
+              ],
+              [
+                1.0375,
+                1.0500000000000003
+              ],
+              [
+                1.2000000000000002,
+                1.375
+              ]
+            ],
+            "lensStripCandidateT": [
+              0.5750000000000002,
+              0.6500000000000001
+            ],
+            "lensStripCandidateRelativeToFace": "inside",
+            "strongestInteriorShadeStepT": 0.5812500000000002,
+            "strongestInteriorShadeStepValue": 70.66666666666664,
+            "rowsUsed": 932,
+            "rowsSampled": 932,
+            "housingYellowValueMedian": 220.0,
+            "profileT": [
+              -1.0,
+              -0.95,
+              -0.9,
+              -0.85,
+              -0.8,
+              -0.75,
+              -0.7,
+              -0.65,
+              -0.6,
+              -0.55,
+              -0.5,
+              -0.45,
+              -0.4,
+              -0.35,
+              -0.3,
+              -0.25,
+              -0.2,
+              -0.15,
+              -0.1,
+              -0.05,
+              0.0,
+              0.05,
+              0.1,
+              0.15,
+              0.2,
+              0.25,
+              0.3,
+              0.35,
+              0.4,
+              0.45,
+              0.5,
+              0.55,
+              0.6,
+              0.65,
+              0.7,
+              0.75,
+              0.8,
+              0.85,
+              0.9,
+              0.95,
+              1.0,
+              1.05,
+              1.1,
+              1.15,
+              1.2,
+              1.25,
+              1.3,
+              1.35,
+              1.4,
+              1.45,
+              1.5,
+              1.55,
+              1.6,
+              1.65,
+              1.7,
+              1.75,
+              1.8,
+              1.85,
+              1.9,
+              1.95,
+              2.0
+            ],
+            "yellowFraction": [
+              0.01,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.001,
+              0.153,
+              0.937,
+              0.996,
+              1.0,
+              1.0,
+              0.996,
+              0.996,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              0.999,
+              0.998,
+              0.055,
+              0.618,
+              0.961,
+              0.995,
+              0.995,
+              0.995,
+              0.994,
+              0.996,
+              0.958,
+              0.178,
+              0.028,
+              0.0,
+              0.038,
+              0.002,
+              0.0,
+              0.002,
+              0.001,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.001,
+              0.015,
+              0.012
+            ],
+            "darkFraction": [
+              0.528,
+              0.373,
+              0.592,
+              0.862,
+              0.368,
+              0.369,
+              0.367,
+              0.367,
+              0.367,
+              0.366,
+              0.365,
+              0.363,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.023,
+              0.041,
+              0.114,
+              0.503,
+              0.063,
+              0.017,
+              0.0,
+              0.001,
+              0.002,
+              0.003,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.941,
+              0.473,
+              0.832,
+              0.011,
+              0.006,
+              0.005,
+              0.005,
+              0.004,
+              0.049,
+              0.396,
+              0.077,
+              0.108,
+              0.466,
+              0.582,
+              0.526,
+              0.499,
+              0.339,
+              0.438,
+              0.58,
+              0.62,
+              0.499,
+              0.216,
+              0.151,
+              0.367,
+              0.626,
+              0.71,
+              0.48,
+              0.378,
+              0.45
+            ],
+            "valueMedian": [
+              83.0,
+              123.0,
+              100.0,
+              25.0,
+              165.0,
+              216.0,
+              214.0,
+              213.0,
+              213.5,
+              214.0,
+              214.0,
+              215.0,
+              222.0,
+              220.0,
+              221.0,
+              204.0,
+              202.0,
+              207.0,
+              193.0,
+              109.0,
+              148.0,
+              141.0,
+              231.0,
+              227.0,
+              226.0,
+              227.0,
+              228.0,
+              228.0,
+              228.0,
+              228.0,
+              231.0,
+              242.0,
+              24.0,
+              114.0,
+              93.0,
+              139.0,
+              149.0,
+              160.0,
+              163.0,
+              167.0,
+              170.0,
+              119.0,
+              163.0,
+              162.0,
+              111.0,
+              103.0,
+              106.0,
+              110.0,
+              118.0,
+              112.5,
+              106.0,
+              93.0,
+              110.0,
+              132.0,
+              175.0,
+              151.0,
+              80.0,
+              93.0,
+              111.0,
+              120.0,
+              112.0
+            ],
+            "saturationMedian": [
+              13.0,
+              10.0,
+              11.0,
+              16.0,
+              9.0,
+              11.0,
+              11.0,
+              12.0,
+              12.0,
+              12.0,
+              12.0,
+              12.0,
+              11.0,
+              11.0,
+              12.0,
+              22.0,
+              39.0,
+              45.0,
+              41.0,
+              92.0,
+              121.0,
+              189.0,
+              174.0,
+              187.0,
+              188.0,
+              189.0,
+              188.0,
+              188.0,
+              187.0,
+              187.0,
+              182.0,
+              139.0,
+              240.0,
+              151.0,
+              250.0,
+              206.0,
+              215.0,
+              214.0,
+              214.0,
+              204.0,
+              147.0,
+              76.0,
+              22.0,
+              19.0,
+              16.0,
+              18.0,
+              17.0,
+              17.0,
+              16.0,
+              16.0,
+              18.0,
+              21.0,
+              18.0,
+              15.0,
+              11.0,
+              12.0,
+              14.0,
+              21.0,
+              20.5,
+              19.0,
+              23.0
+            ],
+            "rule": "yellow: OpenCV H 15-40, S>=90, V>=80; dark: V < 0.5 x housing yellow median; rows with >=10% yellow; interior band: dark>=0.2 and yellow<0.8 strictly inside the yellow silhouette; t=0/1 are the image-left/right associated side lines"
+          }
+        },
+        {
+          "photo": 3,
+          "figure": "post-box-2-photo-3.jpg",
+          "samInstance": "SAM: yellow safety post; instance 1",
+          "samInstanceMatchesRunCatalog": true,
+          "association": {
+            "observationIds": [
+              "photo-3-face-3",
+              "photo-3-face-4",
+              "photo-3-face-6",
+              "photo-3-face-7",
+              "photo-3-face-9",
+              "photo-3-face-10"
+            ],
+            "complete": true,
+            "sideGroupIds": {
+              "side_0": 110,
+              "side_1": 62
+            },
+            "sideGroupScope": {
+              "side_0": "full-height RGB side group",
+              "side_1": "full-height RGB side group"
+            },
+            "imageLeftSide": "side_0",
+            "imageSideOrderFlipped": false,
+            "observedBoundaries": [
+              "lower_terminal",
+              "side_1",
+              "upper_terminal",
+              "side_0"
+            ],
+            "terminalLocalSideIds": {
+              "top": [
+                145,
+                53
+              ],
+              "bottom": [
+                52,
+                25
+              ]
+            }
+          },
+          "residualsOfSavedFit": {
+            "rmsRawPx": 4.168157765412302,
+            "maxRawPx": 11.64594575229267,
+            "recordedRmsRawPx": 4.168157765412302,
+            "recordedMaxRawPx": 11.64594575229267,
+            "gateRawPx": 7.724137931034482,
+            "byBoundary": {
+              "lower_terminal": {
+                "modelEdgeCorners": [
+                  0,
+                  1
+                ],
+                "points": 2,
+                "maxRawPx": 9.671604540764157,
+                "rmsRawPx": 6.992066775758191,
+                "meanSignedOutwardRawPx": 3.806474674279502
+              },
+              "side_1": {
+                "modelEdgeCorners": [
+                  1,
+                  2
+                ],
+                "points": 12,
+                "maxRawPx": 4.14179934790766,
+                "rmsRawPx": 2.5467793833193095,
+                "meanSignedOutwardRawPx": -2.130965617542362
+              },
+              "upper_terminal": {
+                "modelEdgeCorners": [
+                  2,
+                  3
+                ],
+                "points": 2,
+                "maxRawPx": 11.64594575229267,
+                "rmsRawPx": 11.072759732206816,
+                "meanSignedOutwardRawPx": 6.380417423900473
+              },
+              "side_0": {
+                "modelEdgeCorners": [
+                  3,
+                  0
+                ],
+                "points": 10,
+                "maxRawPx": 4.14626632016144,
+                "rmsRawPx": 1.7575262045343958,
+                "meanSignedOutwardRawPx": 1.3135951150832335
+              }
+            },
+            "meaning": "distance of every observed boundary endpoint to the saved rectangle edge it was paired with; signed outward > 0 means the observed line lies outside the projected rectangle"
+          },
+          "projectedFitCornersRaw": [
+            [
+              273.45944348733343,
+              3444.2724155567985
+            ],
+            [
+              372.0101534054466,
+              3378.1496254866797
+            ],
+            [
+              322.59544833639006,
+              1129.0548197262144
+            ],
+            [
+              209.54892061371413,
+              1108.1561726964521
+            ]
+          ],
+          "pixelWidths": [
+            {
+              "axialFraction": 0.2,
+              "observedWidthRawPx": 99.274095238612,
+              "modelWidthRawPx": 102.50910796459041,
+              "outwardOffsetRawPx": {
+                "side_0": -0.2669793891031986,
+                "side_1": -2.9680333368752088
+              }
+            },
+            {
+              "axialFraction": 0.5,
+              "observedWidthRawPx": 105.92733623024901,
+              "modelWidthRawPx": 106.28493026219887,
+              "outwardOffsetRawPx": {
+                "side_0": 1.058797892539097,
+                "side_1": -1.4163919244889627
+              }
+            },
+            {
+              "axialFraction": 0.8,
+              "observedWidthRawPx": 112.58057722188602,
+              "modelWidthRawPx": 110.06075255980733,
+              "outwardOffsetRawPx": {
+                "side_0": 2.3845751741814283,
+                "side_1": 0.1352494878972692
+              }
+            }
+          ],
+          "viewAngleToMultiviewNormalDeg": 43.777253740643964,
+          "singleViewFace": {
+            "supportPoints": 3516,
+            "support": "one-pixel-eroded observed face polygon x SAM instance x valid pointmap (as fit_face)",
+            "free": {
+              "normal": [
+                -0.8553529636100126,
+                0.03840776101867145,
+                -0.5166199294811432
+              ],
+              "singularValues": [
+                45.840294491572045,
+                2.51447155070468,
+                1.618945543241508
+              ],
+              "minorToNextSingularRatio": 0.6438512071404423,
+              "planeSupported": false,
+              "edgeOnToCamera": true,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.048097010619445324,
+              "angleToMultiviewNormalDeg": 59.929138866072115,
+              "angleToCameraRayDeg": 78.52580983096013,
+              "widthOnOwnPlane": {
+                "medianNative": 0.5536731905787894,
+                "minNative": 0.5295507888138952,
+                "maxNative": 0.5758607553629723,
+                "sideLineAngleDeg": 1.2124194527530325
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.0265439731118029
+            },
+            "upright": {
+              "normal": [
+                -0.8503313566811278,
+                0.04997568099560839,
+                -0.5238692729621177
+              ],
+              "singularValues": [
+                2.5276942471529082,
+                1.6913622306950555
+              ],
+              "minorToNextSingularRatio": 0.6691324445589639,
+              "planeSupported": false,
+              "edgeOnToCamera": true,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.05230567843747841,
+              "angleToMultiviewNormalDeg": 60.49977612264854,
+              "angleToCameraRayDeg": 78.12649730702827,
+              "widthOnOwnPlane": {
+                "medianNative": 0.5278538277909642,
+                "minNative": 0.5130789745544166,
+                "maxNative": 0.5410293809560216,
+                "sideLineAngleDeg": 0.7219624821320636
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.02558052120657095
+            },
+            "summary": {
+              "usableModes": [],
+              "normalAngleToMultiviewDeg": null,
+              "widthOnOwnPlaneNative": null,
+              "reason": "pointmap does not support a plane on this strip (minor/next singular ratio > 0.35 or normal > 60 deg from the camera ray); single-view normal and width are not evidence here"
+            },
+            "widthOnMultiviewPlane": {
+              "medianNative": 0.14955113220331576,
+              "minNative": 0.14382997638572972,
+              "maxNative": 0.15475594812570745,
+              "sideLineAngleDeg": 0.2868435203641501
+            },
+            "observedFacePolygonRaw": [
+              [
+                274.5459767449582,
+                3441.9111094531927
+              ],
+              [
+                369.2698727383708,
+                3435.1912538821402
+              ],
+              [
+                323.4365458428365,
+                1115.4254561187126
+              ],
+              [
+                206.2140525050594,
+                1105.7221090916603
+              ]
+            ]
+          },
+          "sideLinesOnMultiviewPlane": {
+            "side_0": {
+              "id": 110,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 0.28275058215004256,
+                "+0.00": -0.006052935938596708,
+                "+0.05": -0.294856454027234
+              }
+            },
+            "side_1": {
+              "id": 62,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 1.2848642958400964,
+                "+0.00": 0.9777052452639619,
+                "+0.05": 0.6705461946878241
+              }
+            }
+          },
+          "lensStrip": {
+            "yellowSilhouetteT": [
+              -0.02499999999999991,
+              1.0125000000000002
+            ],
+            "interiorDarkBandsT": [],
+            "edgeDarkBandsT": [
+              [
+                -0.3374999999999999,
+                -0.17499999999999993
+              ],
+              [
+                1.025,
+                2.0
+              ]
+            ],
+            "lensStripCandidateT": null,
+            "lensStripCandidateRelativeToFace": "not_detected",
+            "strongestInteriorShadeStepT": 0.8937500000000002,
+            "strongestInteriorShadeStepValue": 9.666666666666657,
+            "rowsUsed": 949,
+            "rowsSampled": 950,
+            "housingYellowValueMedian": 236.0,
+            "profileT": [
+              -1.0,
+              -0.95,
+              -0.9,
+              -0.85,
+              -0.8,
+              -0.75,
+              -0.7,
+              -0.65,
+              -0.6,
+              -0.55,
+              -0.5,
+              -0.45,
+              -0.4,
+              -0.35,
+              -0.3,
+              -0.25,
+              -0.2,
+              -0.15,
+              -0.1,
+              -0.05,
+              0.0,
+              0.05,
+              0.1,
+              0.15,
+              0.2,
+              0.25,
+              0.3,
+              0.35,
+              0.4,
+              0.45,
+              0.5,
+              0.55,
+              0.6,
+              0.65,
+              0.7,
+              0.75,
+              0.8,
+              0.85,
+              0.9,
+              0.95,
+              1.0,
+              1.05,
+              1.1,
+              1.15,
+              1.2,
+              1.25,
+              1.3,
+              1.35,
+              1.4,
+              1.45,
+              1.5,
+              1.55,
+              1.6,
+              1.65,
+              1.7,
+              1.75,
+              1.8,
+              1.85,
+              1.9,
+              1.95,
+              2.0
+            ],
+            "yellowFraction": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.023,
+              0.075,
+              0.035,
+              0.026,
+              0.247,
+              0.993,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              0.995,
+              0.991,
+              0.992,
+              0.996,
+              0.997,
+              0.996,
+              0.996,
+              0.996,
+              0.996,
+              0.994,
+              0.992,
+              0.973,
+              0.943,
+              0.69,
+              0.11,
+              0.078,
+              0.051,
+              0.038,
+              0.035,
+              0.025,
+              0.058,
+              0.056,
+              0.095,
+              0.106,
+              0.109,
+              0.092,
+              0.099,
+              0.104,
+              0.105,
+              0.093,
+              0.094,
+              0.103,
+              0.101,
+              0.103
+            ],
+            "darkFraction": [
+              0.025,
+              0.028,
+              0.02,
+              0.027,
+              0.005,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.038,
+              0.317,
+              0.928,
+              0.714,
+              0.566,
+              0.227,
+              0.227,
+              0.195,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.002,
+              0.002,
+              0.002,
+              0.001,
+              0.001,
+              0.006,
+              0.004,
+              0.004,
+              0.003,
+              0.001,
+              0.0,
+              0.001,
+              0.021,
+              0.027,
+              0.056,
+              0.427,
+              0.513,
+              0.551,
+              0.548,
+              0.641,
+              0.622,
+              0.721,
+              0.717,
+              0.606,
+              0.586,
+              0.551,
+              0.57,
+              0.566,
+              0.543,
+              0.528,
+              0.567,
+              0.564,
+              0.529,
+              0.556,
+              0.553
+            ],
+            "valueMedian": [
+              222.0,
+              222.0,
+              222.0,
+              222.0,
+              222.0,
+              223.0,
+              223.0,
+              223.0,
+              223.0,
+              224.0,
+              228.0,
+              233.0,
+              238.0,
+              201.0,
+              62.0,
+              99.0,
+              113.0,
+              136.0,
+              134.0,
+              138.0,
+              191.0,
+              241.0,
+              238.0,
+              238.0,
+              238.0,
+              238.0,
+              238.0,
+              238.0,
+              238.0,
+              239.0,
+              239.0,
+              239.0,
+              239.0,
+              239.0,
+              239.0,
+              239.0,
+              239.0,
+              240.0,
+              211.0,
+              206.0,
+              167.0,
+              130.0,
+              112.0,
+              105.0,
+              103.0,
+              104.0,
+              102.0,
+              80.0,
+              83.0,
+              93.0,
+              92.0,
+              92.0,
+              88.0,
+              95.0,
+              96.0,
+              99.0,
+              89.0,
+              89.0,
+              101.0,
+              95.0,
+              93.0
+            ],
+            "saturationMedian": [
+              16.0,
+              16.0,
+              16.0,
+              16.0,
+              16.0,
+              16.0,
+              16.0,
+              16.0,
+              16.0,
+              16.0,
+              16.0,
+              17.0,
+              19.0,
+              28.0,
+              58.0,
+              44.0,
+              41.0,
+              33.0,
+              34.0,
+              52.0,
+              129.0,
+              174.0,
+              186.0,
+              188.0,
+              188.0,
+              189.0,
+              188.0,
+              189.0,
+              188.0,
+              188.0,
+              188.0,
+              188.0,
+              189.0,
+              190.0,
+              190.0,
+              189.0,
+              189.0,
+              184.0,
+              193.0,
+              183.0,
+              116.0,
+              52.0,
+              42.0,
+              39.0,
+              33.0,
+              33.0,
+              31.0,
+              33.0,
+              34.0,
+              34.0,
+              36.0,
+              35.0,
+              34.0,
+              33.0,
+              32.0,
+              32.0,
+              32.0,
+              32.0,
+              32.0,
+              32.0,
+              32.0
+            ],
+            "rule": "yellow: OpenCV H 15-40, S>=90, V>=80; dark: V < 0.5 x housing yellow median; rows with >=10% yellow; interior band: dark>=0.2 and yellow<0.8 strictly inside the yellow silhouette; t=0/1 are the image-left/right associated side lines"
+          }
+        },
+        {
+          "photo": 4,
+          "figure": "post-box-2-photo-4.jpg",
+          "samInstance": "SAM: yellow safety post; instance 1",
+          "samInstanceMatchesRunCatalog": true,
+          "association": {
+            "observationIds": [
+              "photo-4-face-13"
+            ],
+            "complete": false,
+            "sideGroupIds": {
+              "side_0": 188,
+              "side_1": 31
+            },
+            "sideGroupScope": {
+              "side_0": "local observed side only",
+              "side_1": "full-height RGB side group"
+            },
+            "imageLeftSide": "side_1",
+            "imageSideOrderFlipped": true,
+            "observedBoundaries": [
+              "side_1",
+              "upper_terminal",
+              "side_0"
+            ],
+            "terminalLocalSideIds": {
+              "top": [
+                188,
+                101
+              ],
+              "bottom": null
+            }
+          },
+          "residualsOfSavedFit": {
+            "rmsRawPx": 9.062309707026248,
+            "maxRawPx": 12.998739687722816,
+            "recordedRmsRawPx": 9.062309707026248,
+            "recordedMaxRawPx": 12.998739687722816,
+            "gateRawPx": 7.724137931034482,
+            "byBoundary": {
+              "lower_terminal": null,
+              "side_0": {
+                "modelEdgeCorners": [
+                  1,
+                  2
+                ],
+                "points": 2,
+                "maxRawPx": 10.809555534933056,
+                "rmsRawPx": 9.562736888581215,
+                "meanSignedOutwardRawPx": -9.46819328700369
+              },
+              "upper_terminal": {
+                "modelEdgeCorners": [
+                  2,
+                  3
+                ],
+                "points": 4,
+                "maxRawPx": 7.708487431571426,
+                "rmsRawPx": 4.548471165913491,
+                "meanSignedOutwardRawPx": -3.159398711551802
+              },
+              "side_1": {
+                "modelEdgeCorners": [
+                  3,
+                  0
+                ],
+                "points": 8,
+                "maxRawPx": 12.998739687722816,
+                "rmsRawPx": 10.51255301874752,
+                "meanSignedOutwardRawPx": 10.421457554162007
+              }
+            },
+            "meaning": "distance of every observed boundary endpoint to the saved rectangle edge it was paired with; signed outward > 0 means the observed line lies outside the projected rectangle"
+          },
+          "projectedFitCornersRaw": [
+            [
+              525.0830278299579,
+              3420.9088265584764
+            ],
+            [
+              617.9972443035409,
+              3373.655533687158
+            ],
+            [
+              532.1437888760187,
+              1430.9442753976923
+            ],
+            [
+              430.55102234598303,
+              1423.6951888841859
+            ]
+          ],
+          "pixelWidths": [
+            {
+              "axialFraction": 0.2,
+              "observedWidthRawPx": 117.29666873571541,
+              "modelWidthRawPx": 96.66211347190546,
+              "outwardOffsetRawPx": {
+                "side_0": 9.377900371075029,
+                "side_1": 11.256654892734925
+              }
+            },
+            {
+              "axialFraction": 0.5,
+              "observedWidthRawPx": 110.22426925475833,
+              "modelWidthRawPx": 98.3496203948434,
+              "outwardOffsetRawPx": {
+                "side_0": 1.7412056014718331,
+                "side_1": 10.133443258443096
+              }
+            },
+            {
+              "axialFraction": 0.8,
+              "observedWidthRawPx": 103.15186977380122,
+              "modelWidthRawPx": 100.03712731778134,
+              "outwardOffsetRawPx": {
+                "side_0": -5.895489168131377,
+                "side_1": 9.010231624151256
+              }
+            }
+          ],
+          "viewAngleToMultiviewNormalDeg": 36.06579480285197,
+          "singleViewFace": {
+            "supportPoints": 2005,
+            "support": "one-pixel-eroded observed face polygon x SAM instance x valid pointmap (as fit_face)",
+            "free": {
+              "normal": [
+                0.9531070311804734,
+                0.018777592218730155,
+                -0.3020503089632775
+              ],
+              "singularValues": [
+                24.47148929166498,
+                1.762271598476606,
+                1.3419457343497654
+              ],
+              "minorToNextSingularRatio": 0.7614863313406453,
+              "planeSupported": false,
+              "edgeOnToCamera": false,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.052944058515186486,
+              "angleToMultiviewNormalDeg": 11.287257665115831,
+              "angleToCameraRayDeg": 46.06855964983903,
+              "widthOnOwnPlane": {
+                "medianNative": 0.1991945203959307,
+                "minNative": 0.17952808648918528,
+                "maxNative": 0.219446385309446,
+                "sideLineAngleDeg": 1.176072583579488
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.045648625174187885
+            },
+            "upright": {
+              "normal": [
+                0.997661835051572,
+                0.014943258027848738,
+                -0.06669004364253286
+              ],
+              "singularValues": [
+                2.124744432317059,
+                1.3919847552703626
+              ],
+              "minorToNextSingularRatio": 0.6551304402065837,
+              "planeSupported": false,
+              "edgeOnToCamera": false,
+              "usableForFaceIdentity": false,
+              "residualP95Native": 0.056650469828051796,
+              "angleToMultiviewNormalDeg": 24.86078856835618,
+              "angleToCameraRayDeg": 59.62428916318301,
+              "widthOnOwnPlane": {
+                "medianNative": 0.27220016703330197,
+                "minNative": 0.2437833170822439,
+                "maxNative": 0.3018453920647364,
+                "sideLineAngleDeg": 1.6989704715022773
+              },
+              "faceCentreRayDistanceOwnMinusMultiviewNative": 0.05437237859649269
+            },
+            "summary": {
+              "usableModes": [],
+              "normalAngleToMultiviewDeg": null,
+              "widthOnOwnPlaneNative": null,
+              "reason": "pointmap does not support a plane on this strip (minor/next singular ratio > 0.35 or normal > 60 deg from the camera ray); single-view normal and width are not evidence here"
+            },
+            "widthOnMultiviewPlane": {
+              "medianNative": 0.1677729563728522,
+              "minNative": 0.1498055035135687,
+              "maxNative": 0.1866297633329624,
+              "sideLineAngleDeg": 1.0881493786146121
+            },
+            "observedFacePolygonRaw": [
+              [
+                503.66869669011857,
+                3222.4054971020964
+              ],
+              [
+                625.516790906988,
+                3216.0909986474453
+              ],
+              [
+                521.115136664084,
+                1428.625
+              ],
+              [
+                422.5139981745191,
+                1428.625
+              ]
+            ]
+          },
+          "sideLinesOnMultiviewPlane": {
+            "side_0": {
+              "id": 188,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 1.134617583063864,
+                "+0.00": 0.9036537121020592,
+                "+0.05": 0.6726898411402534
+              }
+            },
+            "side_1": {
+              "id": 31,
+              "medianUFractionOfFitWidthByPlaneShiftNative": {
+                "-0.05": 0.1137572026930102,
+                "+0.00": -0.10305813762755114,
+                "+0.05": -0.31987347794811416
+              }
+            }
+          },
+          "lensStrip": {
+            "yellowSilhouetteT": [
+              -0.13749999999999996,
+              0.9375
+            ],
+            "interiorDarkBandsT": [],
+            "edgeDarkBandsT": [
+              [
+                0.9875,
+                1.0500000000000003
+              ],
+              [
+                1.125,
+                1.125
+              ],
+              [
+                1.1750000000000003,
+                1.225
+              ],
+              [
+                1.3000000000000003,
+                1.4125
+              ]
+            ],
+            "lensStripCandidateT": null,
+            "lensStripCandidateRelativeToFace": "not_detected",
+            "strongestInteriorShadeStepT": 0.006249999999999978,
+            "strongestInteriorShadeStepValue": 46.33333333333334,
+            "rowsUsed": 725,
+            "rowsSampled": 936,
+            "housingYellowValueMedian": 236.0,
+            "profileT": [
+              -1.0,
+              -0.95,
+              -0.9,
+              -0.85,
+              -0.8,
+              -0.75,
+              -0.7,
+              -0.65,
+              -0.6,
+              -0.55,
+              -0.5,
+              -0.45,
+              -0.4,
+              -0.35,
+              -0.3,
+              -0.25,
+              -0.2,
+              -0.15,
+              -0.1,
+              -0.05,
+              0.0,
+              0.05,
+              0.1,
+              0.15,
+              0.2,
+              0.25,
+              0.3,
+              0.35,
+              0.4,
+              0.45,
+              0.5,
+              0.55,
+              0.6,
+              0.65,
+              0.7,
+              0.75,
+              0.8,
+              0.85,
+              0.9,
+              0.95,
+              1.0,
+              1.05,
+              1.1,
+              1.15,
+              1.2,
+              1.25,
+              1.3,
+              1.35,
+              1.4,
+              1.45,
+              1.5,
+              1.55,
+              1.6,
+              1.65,
+              1.7,
+              1.75,
+              1.8,
+              1.85,
+              1.9,
+              1.95,
+              2.0
+            ],
+            "yellowFraction": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.011,
+              0.299,
+              0.572,
+              0.43,
+              0.807,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              0.952,
+              0.932,
+              0.927,
+              0.926,
+              0.923,
+              0.921,
+              0.921,
+              0.921,
+              0.92,
+              0.919,
+              0.917,
+              0.914,
+              0.913,
+              0.76,
+              0.458,
+              0.145,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.001,
+              0.003,
+              0.001,
+              0.0,
+              0.0,
+              0.04,
+              0.026,
+              0.025,
+              0.069,
+              0.062
+            ],
+            "darkFraction": [
+              0.032,
+              0.032,
+              0.036,
+              0.032,
+              0.058,
+              0.048,
+              0.036,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.044,
+              0.305,
+              0.979,
+              0.723,
+              0.899,
+              0.923,
+              0.363,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.058,
+              0.07,
+              0.073,
+              0.076,
+              0.077,
+              0.079,
+              0.08,
+              0.081,
+              0.081,
+              0.083,
+              0.084,
+              0.09,
+              0.092,
+              0.086,
+              0.302,
+              0.404,
+              0.352,
+              0.303,
+              0.274,
+              0.41,
+              0.236,
+              0.366,
+              0.499,
+              0.415,
+              0.233,
+              0.251,
+              0.579,
+              0.419,
+              0.25,
+              0.189,
+              0.463,
+              0.372,
+              0.159,
+              0.266,
+              0.377,
+              0.154
+            ],
+            "valueMedian": [
+              225.0,
+              224.0,
+              224.0,
+              225.0,
+              225.0,
+              226.0,
+              226.0,
+              226.0,
+              226.0,
+              226.0,
+              226.0,
+              225.0,
+              228.0,
+              234.0,
+              236.0,
+              179.0,
+              42.0,
+              106.0,
+              98.0,
+              100.0,
+              143.0,
+              243.0,
+              238.0,
+              237.0,
+              238.0,
+              238.0,
+              238.0,
+              238.0,
+              238.0,
+              238.0,
+              239.0,
+              238.0,
+              239.0,
+              239.0,
+              238.0,
+              204.0,
+              201.0,
+              207.0,
+              205.0,
+              202.0,
+              140.0,
+              139.0,
+              143.0,
+              152.0,
+              148.0,
+              144.0,
+              140.0,
+              118.0,
+              151.0,
+              148.0,
+              137.0,
+              109.0,
+              131.0,
+              147.0,
+              146.0,
+              121.0,
+              144.0,
+              154.0,
+              142.0,
+              127.0,
+              149.0
+            ],
+            "saturationMedian": [
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              15.0,
+              16.0,
+              16.0,
+              16.0,
+              19.0,
+              37.0,
+              118.0,
+              80.0,
+              93.0,
+              88.0,
+              141.0,
+              172.0,
+              186.0,
+              188.0,
+              187.0,
+              188.0,
+              188.0,
+              187.0,
+              187.0,
+              187.0,
+              188.0,
+              188.0,
+              188.0,
+              185.0,
+              179.0,
+              192.0,
+              195.0,
+              187.0,
+              167.0,
+              71.0,
+              28.0,
+              18.0,
+              17.0,
+              17.0,
+              17.0,
+              17.0,
+              18.0,
+              18.0,
+              17.0,
+              17.0,
+              18.0,
+              19.0,
+              18.0,
+              16.0,
+              18.0,
+              16.0,
+              19.0,
+              14.0,
+              15.0,
+              16.0,
+              16.0
+            ],
+            "rule": "yellow: OpenCV H 15-40, S>=90, V>=80; dark: V < 0.5 x housing yellow median; rows with >=10% yellow; interior band: dark>=0.2 and yellow<0.8 strictly inside the yellow silhouette; t=0/1 are the image-left/right associated side lines"
+          }
+        }
+      ]
+    }
+  ]
+}

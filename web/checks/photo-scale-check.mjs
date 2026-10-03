@@ -80,9 +80,15 @@ const clouds = structuredClone(data), subject = clouds.revision.document.entitie
 subject.representations[0].kind = 'generated_mesh';
 subject.representations.push({ id: 'source-points-photo4', kind: 'point_cloud', assetId: 'cloud', sourceRefs: [{ imageId: 'photo-4', observationId: 'obs4' }] });
 subject.modelVariants = { '4': { ...subject.representations[0], id: 'model-photo4' } };
-const photoSubject = render(clouds).scene.props.revision.document.entities[1];
-assert.equal(photoSubject.activeModelRepresentationId, 'model-photo4');
-assert.deepEqual(Array.from(photoSubject.representations, r => r.id), ['model-photo4', 'source-points-photo4'], 'Changing model pose must retain source point evidence');
+// One scene: a per-photo pose variant never replaces the scene model, whichever photo is selected.
+for (const photo of ['photo-4', 'photo-3']) {
+  selectedPhoto = photo;
+  const photoSubject = render(clouds).scene.props.revision.document.entities[1];
+  assert.equal(photoSubject.activeModelRepresentationId, subject.activeModelRepresentationId, 'the scene keeps its single model under photo ' + photo);
+  assert.ok(!photoSubject.representations.some(r => r.id === 'model-photo4'), 'a per-photo variant never enters the scene');
+  assert.deepEqual(Array.from(photoSubject.representations, r => r.id), ['rep-1', 'source-points-photo4'], 'source point evidence stays beside the one model');
+}
+selectedPhoto = 'photo-4';
 assert.equal(subject.representations[0].id, 'rep-1', 'Photo selection must not mutate saved representations');
 const conditional = structuredClone(unsupported);
 conditional.revision.document.entities[0].representations[0].coordinateFrameId = 'workcell-floor';
@@ -131,14 +137,31 @@ assert.equal(scaleMetadata.baseModelMeasurementScale.evidence.conditionalMPerNat
 assert.equal(scaleMetadata.evidence, undefined, 'baseline evidence must not masquerade as the current trial');
 assert.match(scaleMetadata.source, /同比试算/);
 assert.equal(result.scene.props.revision.document.coordinateFrames[0].scale.nativeToMeters, null, 'conditional scale never becomes accepted physical scale');
-// The measured representation must be the displayed one: another photo's model variant is not read.
+// Selecting another photo keeps the scene model, so its endpoint stays readable.
 const variant = structuredClone(conditional); variant.revision.document.entities[0].modelVariants = { '3': { ...variant.revision.document.entities[0].representations[0], id: 'rep-0-photo-3' } };
 selectedPhoto = 'photo-3';
-result = render(variant);
+assert.equal(render(variant).nodes.find(n => n.props['data-endpoint-estimate'] === 'fence-0:near:post-box-1').props.children, '15.00 cm', 'photo selection never swaps the measured model');
+selectedPhoto = 'photo-4';
+// The measured representation must be the displayed one: a different active model is not read.
+const swapped = structuredClone(conditional); const other = { ...swapped.revision.document.entities[0].representations[0], id: 'rep-0-other' };
+swapped.revision.document.entities[0].representations.unshift(other); swapped.revision.document.entities[0].activeModelRepresentationId = 'rep-0-other';
+result = render(swapped);
 assert.notEqual(result.scene.props.measurementOverride?.method, 'conditional-endpoint-comparison', 'an endpoint is never drawn on another representation');
 assert.match(result.nodes.find(n => n.props['data-endpoint-estimate'] === 'fence-0:near:post-box-1').props.children, /未知/);
 assert.match(result.nodes.find(n => n.props['data-endpoint-difference'] === 'post-box-1:terminal-minus-rail').props.children, /未知/, 'a difference with an unbound endpoint is never read');
 assert.match(walk(result.scene.props.inspector(null)).find(n => n.type === SemanticObject).props.facts.find(fact => fact.testId === 'post-box-1:terminal-minus-rail').value, /未知/, 'semantic facts never read an unbound difference');
+// A lower-envelope hypothesis is shown as such, never differenced, never subtracted from a check value.
+const hypothesis = structuredClone(conditional);
+hypothesis.endpointEstimation.endpoints.push({ id: 'fence-1:near:post-box-2', objectId: 'fence-1', label: '左侧光幕旁围栏下包络假设', side: 'left', measurementScope: 'model_lower_rail_near_curtain', railPart: 'lower_envelope_hypothesis', pointNative: [9, 7, .35], footNative: [9, 7, 0], heightNative: .35, representationId: 'rep-9', assetId: 'asset-9', assetSha256: 'h9', modelFile: 'fence-fitted.glb', modelSha256: 'm9', provenance: 'fixture' });
+hypothesis.endpointEstimation.excludedComparisons = [{ id: 'rail-left-minus-right', minuendId: 'fence-1:near:post-box-2', subtrahendId: 'fence-0:near:post-box-1', reason: '一侧围栏点是下包络假设，另一侧是下横梁下沿：测的不是同一部位，不做左右差。' }];
+hypothesis.measurementEvaluation = { groundTruthUsedForCalibration: false, comparisons: [{ objectId: 'fence-1', label: '左侧围栏', method: 'fixture', estimateNative: null, estimateM: null, rangeNative: null, rangeM: null, byPhoto: {}, sourcePhotos: [], groundTruthM: .24 }] };
+result = render(hypothesis);
+const text = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : node?.props ? text(node.props.children) : '';
+assert.ok(result.nodes.some(n => n.type === 'small' && /下包络假设.*不是下横梁下沿/.test(text(n))), 'the hypothesis scope is stated on the card');
+assert.ok(result.nodes.some(n => n.props['data-endpoint-excluded'] === 'rail-left-minus-right' && /测的不是同一部位/.test(text(n))), 'the refused comparison is shown with its reason');
+assert.ok(!result.nodes.some(n => n.props['data-endpoint-difference'] === 'rail-left-minus-right'), 'no number for a refused comparison');
+assert.equal(text(result.nodes.find(n => 'data-endpoint-check-error' in n.props)), '未相减（下包络假设，不是下横梁下沿）', 'a hypothesis is never subtracted from a check value');
+assert.match(walk(result.scene.props.inspector(null)).find(n => n.type === SemanticObject).props.facts.find(fact => fact.testId === 'fence-1:near:post-box-2')?.status ?? '下包络假设', /下包络假设/);
 selectedPhoto = 'photo-4'; endpointLines = undefined; reportLocation.href = 'https://example.test/report/?measurement=endpoints';
 assert.equal(render(conditional).scene.props.measurementOverride.method, 'conditional-endpoint-comparison', 'the shared URL enables annotations without another click');
 console.log('PASS: accepted scale, 52-model exports, no bbox fallback, source points preserved, unified conditional model scale/export, revision-bound endpoints and live semantic facts');

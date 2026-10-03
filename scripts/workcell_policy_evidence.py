@@ -55,9 +55,12 @@ def policy_evidence(report, catalog):
                   {'id': 'operator_anchored_metric_scale', 'status': 'available' if scale['status'] == 'accepted_3d_reference' else 'missing',
                    'detail': f"Model scale status {scale['status']}; the engine requires operator-anchored metres."}]
         if spec['predicate'] in ('min_height', 'max_height'):
-            measured = {row['objectId'] for row in endpoints}
+            measured = {row['objectId'] for row in endpoints if row.get('railPart', 'lower_edge') == 'lower_edge'}
+            hypotheses = {row['objectId'] for row in endpoints if row.get('railPart', 'lower_edge') != 'lower_edge'}
             needed.append({'id': 'subject_full_height', 'status': 'missing',
-                           'detail': 'This revision measures lower edges only' + (f" ({', '.join(sorted(measured))})" if measured else '') + '; no top-of-object height fact exists.'})
+                           'detail': 'This revision measures lower edges only' + (f" ({', '.join(sorted(measured))})" if measured else '')
+                                     + (f"; {', '.join(sorted(hypotheses))}: lower-envelope hypothesis, not an edge" if hypotheses else '')
+                                     + '; no top-of-object height fact exists.'})
         if spec['predicate'] in ('max_separation', 'min_separation'):
             needed.append({'id': 'reference_region', 'status': 'missing' if 'industrial robot arm' in spec['object_labels'] else 'unknown',
                            'detail': 'A robot work-area envelope is not modelled; robot poses differ per photo and are not a hazard zone.'

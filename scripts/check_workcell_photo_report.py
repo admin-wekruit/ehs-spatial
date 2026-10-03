@@ -71,6 +71,43 @@ for entity in entities:
     for obs in item['observations']:
         c=doc['cameras'][obs['photo']-1];x0,y0,x1,y1=obs['box']
         assert 0<=x0<x1<=c['width'] and 0<=y0<y1<=c['height']
+# Visible extents: this revision's frames and floor, each observation's objects-stage support (never its outline).
+import shutil, tempfile
+from scripts.workcell_photo_objects import BUILD_OUTPUTS, build as build_catalog, fence_panel_supported, review_fence_observations, support_inputs_missing
+missing=support_inputs_missing(root,list(objects.values()))
+if missing:
+    # Without the objects-stage inputs the report must say its extents are objects-stage values, and which inputs are absent.
+    for item in objects.values():
+        extent=item['visibleExtentFloor']
+        assert extent['status']=='objects_stage' and extent['missingSupportInputs']==missing, (item['id'],extent)
+    print('NOTE: support inputs missing',missing,'- visible extents are labelled objects-stage values; re-measure not checked')
+else:
+    # Independent of the report's own re-measure: rebuild the catalog with the objects stage itself on this revision's
+    # frames and floor, then every report observation must equal the rebuilt one exactly.
+    with tempfile.TemporaryDirectory() as directory:
+        rebuilt_root=Path(directory)
+        for path in root.iterdir():
+            if path.is_file() and path.name not in BUILD_OUTPUTS:
+                (rebuilt_root/path.name).symlink_to(path)
+        rebuilt={item['id']:item for item in build_catalog(rebuilt_root,[root/f'photo-{i}.png' for i in range(1,5)],proxy_textures=False)['objects']}
+    for item in objects.values():
+        assert item['visibleExtentFloor']['status']=='remeasured' and item['visibleExtentFloor']['floor']=="this revision's floor", item['id']
+        if item['visibleExtentFloor']['angleToRevisionFloorDeg'] is not None:
+            assert abs(item['visibleExtentFloor']['angleToRevisionFloorDeg'])<1e-6
+        twin=rebuilt[item['id']]['observations']
+        assert [(o['photo'],o['source']) for o in item['observations']]==[(o['photo'],o['source']) for o in twin], ('observation identity',item['id'])
+        for got,want in zip(item['observations'],twin):
+            assert (got['supportedPixels'],got['maskPixels'])==(want['supportedPixels'],want['maskPixels']), (item['id'],got['photo'])
+            assert json.dumps(got['observedMeasurements'],sort_keys=True)==json.dumps(want['observedMeasurements'],sort_keys=True), (item['id'],got['photo'])
+            if item['kind']=='safety fence':
+                assert want['supportedPixels']>0
+    # The catalog review is settled: rerunning it on a copy removes nothing and rewrites nothing.
+    with tempfile.TemporaryDirectory() as directory:
+        copy=Path(directory)
+        for name in ['objects.json','geometry.json','sam3.json',*(p.name for p in root.glob('frame_*.json.gz'))]:
+            shutil.copyfile(root/name,copy/name)
+        before=(copy/'objects.json').read_bytes()
+        assert review_fence_observations(copy)==[] and (copy/'objects.json').read_bytes()==before, 'catalog still holds an unsupported fence observation'
 structural=report.get('experiment',{}).get('structuralModel')
 if structural and structural['promotionAllowed']:
     from ehs_spatial.platform.scene_measurements import fitted_bend
@@ -89,4 +126,4 @@ if structural and structural['promotionAllowed']:
             part=scene.geometry[geometry].copy(); part.apply_transform(matrix)
             triangles.append(part.triangles)
         assert abs(fitted_bend(np.concatenate(triangles))['value']-structural['sharedAngleDeg'])<.002, 'download and displayed angle must use the same geometry'
-print('PASS: shared schema, object coverage, source-camera transform, model bounds and unknown dimensions;',len(objects),'objects')
+print('PASS: shared schema, object coverage, source-camera transform, model bounds, unknown dimensions, visible extents equal to an objects-stage rebuild on this revision (or labelled objects-stage when inputs are absent), catalog review settled;',len(objects),'objects')

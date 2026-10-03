@@ -57,4 +57,16 @@ assert.equal(answer.facts.length, 1); assert.match(answer.text, /左侧光幕底
 unbound = new Set();
 const shared = { ...input(), differences: differences.filter(row => row.id !== "rail-left-minus-right") };
 assert.match(answerSpatialQuery("左右围栏下沿相差多少", shared).text, /没有左右两个不同围栏测点/, "one rail is never compared with itself");
-console.log("PASS: structured spatial questions read the loaded revision's endpoints with the current scale; comparisons, missing facts and unknown scale stay explicit");
+// A lower-envelope rail hypothesis is a point of its own: described as such and never differenced.
+const hypothesis = { ...input(), endpoints: endpoints.map(row => row.objectId === "fence-1" ? { ...row, label: "左侧光幕旁围栏下包络假设", railPart: "lower_envelope_hypothesis" } : row),
+  differences: differences.filter(row => !["post-box-2:terminal-minus-rail", "rail-left-minus-right"].includes(row.id)),
+  excluded: [{ id: "post-box-2:terminal-minus-rail", minuendId: "post-box-2:terminal", subtrahendId: "fence-1:near:post-box-2", reason: "旁边的围栏点是下包络假设" },
+             { id: "rail-left-minus-right", minuendId: "fence-1:near:post-box-2", subtrahendId: "fence-0:near:post-box-1", reason: "测的不是同一部位" }] };
+answer = answerSpatialQuery("左右围栏下沿相差多少", hypothesis);
+assert.equal(answer.status, "missing"); assert.match(answer.text, /不比较左右围栏：测的不是同一部位/); assert.doesNotMatch(answer.text, /\d+\.\d+ cm/);
+answer = answerSpatialQuery("左侧光幕和围栏谁更高", hypothesis);
+assert.equal(answer.status, "missing"); assert.match(answer.text, /不比较：旁边的围栏点是下包络假设/);
+answer = answerSpatialQuery("光幕和围栏谁更高", hypothesis);
+assert.equal(answer.facts.length, 1); assert.match(answer.text, /右侧光幕底端减去旁边围栏下沿：4\.50 cm.*另一侧不比较：旁边的围栏点是下包络假设/);
+assert.match(answerSpatialQuery("左侧围栏离地多高", hypothesis).text, /围栏下包络假设，不是下横梁下沿/);
+console.log("PASS: structured spatial questions read the loaded revision's endpoints with the current scale; comparisons, missing facts, unknown scale and refused unlike comparisons stay explicit");

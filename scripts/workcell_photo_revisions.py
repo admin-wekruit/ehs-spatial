@@ -134,7 +134,7 @@ def build(root, out, viewer_assets, candidates=(), *, main_id, evidence_url=None
     main_report.update(measurementUpdate=update, revisionChoices=choices)
     if evidence_url and built:
         main_report['experiment'] = {'title': '光幕候选模型可切换核对',
-                                     'summary': '页面上方可在主模型与候选模型之间切换；模型、离地测点、卡尺、语义空间证据和下载都只读取所选版本。候选未通过跨图严格门槛，不替换主模型。',
+                                     'summary': '页面上方可在主模型与候选模型之间切换；模型、离地测点、卡尺、语义空间证据和下载都只读取所选版本。候选未通过跨图严格门槛，不替换主模型；拟合用到的是哪块板面、哪条下沿，原图逐图核对见证据页。',
                                      'reportURL': evidence_url, 'timingLabel': '原始完整流程'}
     (page / 'scene-report.json').write_text(json.dumps(main_report, ensure_ascii=False, indent=2, allow_nan=False) + '\n')
     return {'page': str(page), 'revisions': choices, 'seconds': seconds}

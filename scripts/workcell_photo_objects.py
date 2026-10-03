@@ -94,6 +94,211 @@ def _observation(mask, photo, source):
             'supportedPixels': int(mask.sum())}
 
 
+SCALE_WARNING = 'Absolute scale is conditional on the provisional button dimension hypothesis.'
+
+
+def decode_mask(frame, encoded):
+    """One SAM RLE mask on the frame's canonical grid by exact nearest sampling.
+
+    An OpenCV nearest warp rounds through fixed point and differs between OpenCV
+    builds by a few boundary pixels (the 7.7x pixel-centre map hits half-pixel ties
+    every seventh column); visible extents are min/max over the support, so one
+    boundary pixel on background depth can move them far. floor(x + 0.5) of the
+    inverse map in elementwise IEEE float64 (no LAPACK solve) is deterministic in every
+    environment; at an exact tie float rounding picks one of the two equally near pixels.
+    """
+    item = json.loads(encoded)
+    counts = np.asarray(item['counts'], np.int64)
+    if counts.sum() != np.prod(item['size']):
+        raise ValueError('SAM 3 mask RLE length mismatch')
+    raw = np.repeat(np.arange(len(counts), dtype=np.uint8) % 2, counts).reshape(item['size'], order='F').astype(bool)
+    shape = tuple(frame['image']['shape'][:2])
+    if raw.shape == shape:
+        return raw
+    affine = np.asarray(frame['input_mask_transform']['input_to_canonical_pixel_centres'], float)
+    if not np.array_equal(affine[2], [0, 0, 1]):
+        raise ValueError('Raw-to-canonical map must be affine')
+    (a, b, c), (d, e, f) = affine[:2]
+    yy, xx = np.indices(shape)
+    x, y, det = xx - c, yy - f, a * e - b * d
+    column = np.floor((e * x - b * y) / det + .5).astype(np.int64)
+    row = np.floor((a * y - d * x) / det + .5).astype(np.int64)
+    inside = (column >= 0) & (column < raw.shape[1]) & (row >= 0) & (row < raw.shape[0])
+    mask = np.zeros(shape, bool)
+    mask[inside] = raw[row[inside], column[inside]]
+    return mask
+
+
+def measure_support(frame, mask, floor, photo, source):
+    """Visible extents of one support mask: its valid frame points against ``floor``."""
+    supported = mask & frame['valid']
+    measured = measure_observed_points(
+        frame['points'][supported],
+        {'floor_plane': [*floor['normal'], floor['offset']], 'warnings': [SCALE_WARNING]},
+        mask_pixels=int(mask.sum()), source={'photo': photo, 'evidence': source})
+    return measured, int(supported.sum())
+
+
+def support_mask(observation, frame, geometry, segmentation, inputs, plane=None):
+    """Rebuild one saved observation's support with the rule build() used, on ``frame``.
+
+    The observation's source names the rule: a SAM instance mask (guard-board
+    instances also inside guard-input.npz), the union of robot instances, the
+    selected cart mask, the safety-fence union inside its fitted plane, the
+    floor band, or the anchor envelope. Saved outline polygons are never used:
+    they fill see-through holes with background points. ``plane`` is the fence
+    item's geometryPlaneIndex: a refreshed catalog keeps the source string when
+    planes are renumbered, so the item, not the string, names the plane.
+    """
+    import re
+    from scripts.workcell_photo_oneshot import GUARD_WORD
+    photo, source = observation['photo'], observation['source']
+    words = [prompt['text'] for prompt in segmentation['prompts']]
+    def rles(word):
+        return segmentation['results'][photo - 1][words.index(word)].get('rle', [])
+    def union(word):
+        mask = np.zeros(frame['valid'].shape, bool)
+        for encoded in rles(word):
+            mask |= decode_mask(frame['raw'], encoded)
+        return mask
+    if match := re.fullmatch(r'SAM: (.+); instance (\d+)', source):
+        mask = decode_mask(frame['raw'], rles(match[1])[int(match[2])])
+        return mask & (inputs('guard-input.npz')[f'v{photo}_mask'] > 0) if match[1] == GUARD_WORD else mask
+    if source == 'SAM industrial robot arm':
+        return union('industrial robot arm')
+    if source == 'Selected cart mask; cart-mask-selection.json':
+        return inputs('cart-input.npz')[f'v{photo}_mask'] > 0
+    floor = geometry['floor']
+    if match := re.fullmatch(r'SAM safety fence intersected with fitted plane (\d+)', source):
+        fitted = geometry['fence']['planes'][int(match[1]) if plane is None else plane]
+        return union('safety fence') & (np.abs(frame['points'] @ np.asarray(fitted['normal']) + fitted['offset'])
+                                         < max(floor['residualP95Native'] * 5, 1e-6))
+    if source == 'Pointmap support near inferred floor plane':
+        return frame['valid'] & (np.abs(frame['points'] @ np.asarray(floor['normal'], float) + float(floor['offset']))
+                                 < floor['residualP95Native'])
+    if source == 'geometry.anchor component envelope transformed from original photo':
+        view = next(v for v in geometry['anchor']['views'] if v['photo'] == photo)
+        x0, y0, x1, y1 = view['boxRaw']
+        corners = np.asarray([[x0, y0, 1], [x1, y1, 1]]) @ np.asarray(frame['raw']['input_mask_transform']['input_to_canonical_pixel_centres']).T
+        lo, hi = np.floor(corners[0, :2]).astype(int), np.ceil(corners[1, :2]).astype(int)
+        mask = np.zeros(frame['valid'].shape, bool)
+        lo, hi = np.maximum(lo, 0), np.minimum(hi, mask.shape[::-1])
+        mask[lo[1]:hi[1], lo[0]:hi[0]] = True
+        return mask
+    raise ValueError('No objects-stage support rule for observation source: ' + source)
+
+
+PANEL_CELLS = 100  # workcell_photo_geometry builds an observed fence panel only from >= 100 supported two-pixel cells
+FENCE_REASON = ('Plane-filtered safety-fence support forms fewer than 100 supported two-pixel cells '
+                '(the observed-panel minimum of workcell_photo_geometry); stray coplanar pixels are not evidence of the section')
+
+
+def fence_panel_supported(supported):
+    """True when a fence section's plane-filtered support could form an observed panel (geometry-stage rule)."""
+    keep = supported[::2, ::2]
+    return int((keep[:-1, :-1] & keep[1:, :-1] & keep[:-1, 1:] & keep[1:, 1:]).sum()) >= PANEL_CELLS
+
+
+def _unsupported(ident, photo, source, supported):
+    ys, xs = np.nonzero(supported)
+    return {'objectId': ident, 'photo': photo, 'source': source, 'supportedPixels': int(supported.sum()),
+            'box': [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1] if len(xs) else None,
+            'reason': FENCE_REASON}
+
+
+def review_fence_observations(root):
+    """Apply build()'s fence-panel rule to a catalog written before it existed; rewrites objects.json.
+
+    Only observations whose rebuilt support fails the rule are removed and listed in
+    coverage.unsupportedObservations; every other observation stays byte-identical.
+    Everything bound to the catalog (report, semantics, candidate fits) must be rebuilt after.
+    """
+    from scripts.workcell_photo_metrology import _fence_plane_index  # lazy: metrology imports this module
+    from scripts.workcell_photo_oneshot import _array, _frame
+    root = Path(root)
+    text = (root / 'objects.json').read_text()
+    catalog = json.loads(text)
+    geometry = json.loads((root / 'geometry.json').read_text())
+    segmentation = json.loads((root / 'sam3.json').read_text())
+    dropped = []
+    for item in catalog['objects']:
+        if item['kind'] != 'safety fence':
+            continue
+        kept = []
+        for observation in item['observations']:
+            raw = _frame(root, observation['photo'])
+            points = _array(raw['pts3d'])
+            frame = {'raw': raw, 'points': points,
+                     'valid': _array(raw['non_ambiguous_mask']).astype(bool) & np.isfinite(points).all(2)}
+            supported = support_mask(observation, frame, geometry, segmentation, None, _fence_plane_index(item)) & frame['valid']
+            if fence_panel_supported(supported):
+                kept.append(observation)
+            else:
+                dropped.append(_unsupported(item['id'], observation['photo'], observation['source'], supported))
+        item['observations'] = kept
+        if len(kept) <= 1 and item['measurements'].get('groundClearance', {}).get('status') == 'conditional-model-estimate':
+            item['measurements']['groundClearance'] = _unknown('Visible geometry does not establish complete physical dimensions.')['groundClearance']
+    if not dropped:
+        return dropped  # nothing to remove: the catalog bytes, and every hash bound to them, stay as they are
+    coverage = catalog['coverage']
+    coverage['observations'] = sum(len(item['observations']) for item in catalog['objects'])
+    coverage['unsupportedObservations'] = coverage.get('unsupportedObservations', []) + dropped
+    ending = '\n' if text.endswith('\n') else ''
+    (root / 'objects.json').write_text(json.dumps(catalog, ensure_ascii=False, indent=2, allow_nan=False) + ending)
+    return dropped
+
+
+def support_inputs_missing(root, objects):
+    """Run files the support rules of these observations need but the directory lacks."""
+    from scripts.workcell_photo_oneshot import GUARD_WORD
+    needed = {'sam3.json'}
+    for item in objects:
+        for observation in item['observations']:
+            needed.add(f"frame_{observation['photo']:04d}.json.gz")
+            if observation['source'] == 'Selected cart mask; cart-mask-selection.json':
+                needed.add('cart-input.npz')
+            elif observation['source'].startswith(f'SAM: {GUARD_WORD};'):
+                needed.add('guard-input.npz')
+    return sorted(name for name in needed if not (Path(root) / name).is_file())
+
+
+def remeasure(root, objects, geometry):
+    """Re-measure every saved observation on this run's frames and floor, with its objects-stage support.
+
+    Returns ({objectId: [(observedMeasurements, supportedPixels, maskPixels)]}, []) aligned with each
+    object's observations, or (None, missing files) when the directory cannot rebuild the supports
+    (synthetic runs, experiment uploads); the report then labels its extents as objects-stage values.
+    """
+    from scripts.workcell_photo_metrology import _fence_plane_index  # lazy: metrology imports this module
+    from scripts.workcell_photo_oneshot import _array, _frame
+    root = Path(root)
+    missing = support_inputs_missing(root, objects)
+    if missing:
+        return None, missing
+    segmentation = json.loads((root / 'sam3.json').read_text())
+    frames, loaded = {}, {}
+    def inputs(name):
+        if name not in loaded:
+            loaded[name] = np.load(root / name)
+        return loaded[name]
+    result = {}
+    for item in objects:
+        rows = []
+        for observation in item['observations']:
+            photo = observation['photo']
+            if photo not in frames:
+                raw = _frame(root, photo)
+                points = _array(raw['pts3d'])
+                frames[photo] = {'raw': raw, 'points': points,
+                                 'valid': _array(raw['non_ambiguous_mask']).astype(bool) & np.isfinite(points).all(2)}
+            plane = _fence_plane_index(item) if item.get('kind') == 'safety fence' else None
+            mask = support_mask(observation, frames[photo], geometry, segmentation, inputs, plane)
+            measured, supported = measure_support(frames[photo], mask, geometry['floor'], photo, observation['source'])
+            rows.append((measured, supported, int(mask.sum())))
+        result[item['id']] = rows
+    return result, []
+
+
 def _unknown(reason):
     return {key: {'valueNative': None, 'status': 'unknown', 'source': reason}
             for key in ('height', 'width', 'depth', 'groundClearance')}
@@ -183,8 +388,13 @@ def _guard_parts(root, detections, frames, masks):
     return parts
 
 
-def build(root, sources):
-    from workcell_photo_oneshot import _array, _frame, _mask
+# Files build() writes into its root; everything else there is an input.
+BUILD_OUTPUTS = ('guard-left.glb', 'guard-center.glb', 'guard-right.glb', 'guard-partition.json', 'object-extras.glb',
+                 'object-proxies.glb', 'objects.json')
+
+
+def build(root, sources, proxy_textures=True):
+    from workcell_photo_oneshot import _array, _frame
     root = Path(root)
     sources = [Path(p) for p in sources]
     if len(sources) != 4 or len(set(p.resolve() for p in sources)) != 4 or not all(p.is_file() for p in sources):
@@ -225,23 +435,18 @@ def build(root, sources):
             if len(response.get('rle', [])) != len(response.get('scores', [])):
                 raise ValueError('SAM mask/score counts disagree')
             for k, (encoded, score) in enumerate(zip(response.get('rle', []), response.get('scores', []))):
-                mask = _mask(frame['raw'], {'rle': [encoded]})
+                mask = decode_mask(frame['raw'], encoded)
                 if mask.any():
                     detections[word].append({'photo': i, 'instance': k, 'word': word, 'score': float(score),
                                             'mask': mask, 'points': frame['points'][mask & frame['valid']]})
-    catalog, scene, rejected, represented_posts = [], trimesh.Scene(), [], []
+    catalog, scene, rejected, represented_posts, unsupported = [], trimesh.Scene(), [], [], []
     def observe(mask, photo, source):
         observation = _observation(mask, photo, source)
         if observation:
-            frame = frames[photo]
-            supported = mask & frame['valid']
+            # The report re-applies this support (support_mask) on its own frame and floor.
             observation['maskPixels'] = int(mask.sum())
-            observation['supportedPixels'] = int(supported.sum())
-            observation['observedMeasurements'] = measure_observed_points(
-                frame['points'][supported],
-                {'floor_plane': [*geometry['floor']['normal'], geometry['floor']['offset']],
-                 'warnings': ['Absolute scale is conditional on the provisional button dimension hypothesis.']},
-                mask_pixels=int(mask.sum()), source={'photo': photo, 'evidence': source})
+            observation['observedMeasurements'], observation['supportedPixels'] = measure_support(
+                frames[photo], mask, geometry['floor'], photo, source)
         return observation
     def add(ident, label, kind, file, nodes, observations, representation, notes=()):
         item = {'id': ident, 'label': label, 'kind': kind, 'model': {'file': file, 'nodes': nodes} if nodes else None,
@@ -302,7 +507,12 @@ def build(root, sources):
             masks = [r['mask'] for r in detections.get('safety fence', []) if r['photo'] == i]
             if masks:
                 mask = np.logical_or.reduce(masks) & (np.abs(frame['points'] @ np.asarray(plane['normal']) + plane['offset']) < max(geometry['floor']['residualP95Native'] * 5, 1e-6))
-                obs = observe(mask, i, f'SAM safety fence intersected with fitted plane {pi}')
+                source = f'SAM safety fence intersected with fitted plane {pi}'
+                if not fence_panel_supported(mask & frame['valid']):
+                    if mask.any():
+                        unsupported.append(_unsupported(f'fence-{pi}', i, source, mask & frame['valid']))
+                    continue
+                obs = observe(mask, i, source)
                 if obs: rows.append(obs)
         item = add(f'fence-{pi}', f'Safety fence section {pi+1}', 'safety fence', 'fence-fitted.glb', nodes, rows,
                    'fitted structural members; inferred continuations', geometry['fence']['assumptions'])
@@ -393,16 +603,26 @@ def build(root, sources):
                           'categoriesNotSegmented':[w for w in EXTRA_WORDS if w not in words],
                           'detectedExtraInstances':sum(len(detections.get(w,[])) for w in EXTRA_WORDS),
                           'unmeshedDetections':rejected, 'detectionsLinkedToExistingObjects':aliases,
+                          'unsupportedObservations':unsupported,
                           'projectionMedianPixels':{str(i):f['projectionMedianPixels'] for i,f in frames.items()},
                           'status':'detected evidence coverage; semantic completeness requires visual review'}}
     (root/'object-extras.glb').write_bytes(scene.export(file_type='glb'))
     (root/'objects.json').write_text(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n')
-    return result
+    # One placed model per extra object: merge repeats, alias floor/robot/cart/guard hits, replace raw fragments.
+    from scripts.workcell_extra_models import consolidate
+    consolidate(root, sources, textures=proxy_textures)
+    return json.loads((root/'objects.json').read_text())
 
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root',type=Path,required=True)
-    parser.add_argument('--sources',type=Path,nargs=4,required=True)
+    parser.add_argument('--sources',type=Path,nargs=4)
+    parser.add_argument('--review-fence-support',action='store_true',help='Apply the fence-panel support rule to an existing catalog')
     args=parser.parse_args()
-    print(json.dumps(build(args.root,args.sources)['coverage'],indent=2))
+    if args.review_fence_support:
+        print(json.dumps(review_fence_observations(args.root),indent=2))
+    elif args.sources:
+        print(json.dumps(build(args.root,args.sources)['coverage'],indent=2))
+    else:
+        parser.error('--sources is required to build a catalog')

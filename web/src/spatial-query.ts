@@ -5,12 +5,14 @@
  * page's current model scale; nothing is estimated from the text, and a
  * missing fact is answered as missing. Open-vocabulary object search needs
  * the semantic text encoder and is not part of this resolver. */
-export type QueryEndpoint = { id: string; objectId: string; label: string; side: "left" | "right" | null; measurementScope: string; heightNative: number };
+export type QueryEndpoint = { id: string; objectId: string; label: string; side: "left" | "right" | null; measurementScope: string; heightNative: number; railPart?: string };
 export type QueryDifference = { id: string; label: string; minuendId: string; subtrahendId: string; valueNative: number };
+/** A comparison the revision refuses to make (the two points measure different parts), with its reason. */
+export type QueryExclusion = { id: string; minuendId: string; subtrahendId: string; reason: string };
 export type QueryObject = { id: string; label: string; kind?: string };
 export type QueryBend = { entityId: string; status: string; result?: { value: number } };
 export type QueryInput<E extends QueryEndpoint = QueryEndpoint> = {
-  objects: QueryObject[]; endpoints: E[]; differences: QueryDifference[]; bends?: QueryBend[];
+  objects: QueryObject[]; endpoints: E[]; differences: QueryDifference[]; excluded?: QueryExclusion[]; bends?: QueryBend[];
   bound: (row: E) => boolean; format: (native: number) => string; revisionLabel: string;
 };
 export type QueryAnswer = {
@@ -37,6 +39,7 @@ const BEND = /折弯|角度|夹角|angle|bend/i;
 const CLEARANCE = /离地|多高|高度|底边|下沿|底端|clearance|height|high/i;
 const sideName = { left: "左侧", right: "右侧" } as const;
 const scopeName: Record<string, string> = { model_bottom_face_center: "模型底面中心", visible_face_lower_terminal: "可见面下沿", model_lower_rail_near_curtain: "光幕旁围栏下横梁底面" };
+const scopeOf = (row: QueryEndpoint) => row.railPart === "lower_envelope_hypothesis" ? "围栏下包络假设，不是下横梁下沿" : scopeName[row.measurementScope] ?? row.measurementScope;
 
 export function answerSpatialQuery<E extends QueryEndpoint>(question: string, input: QueryInput<E>): QueryAnswer {
   const text = question.trim();
@@ -70,18 +73,21 @@ export function answerSpatialQuery<E extends QueryEndpoint>(question: string, in
   if (intent === "compare") {
     if (kinds.length >= 2 && kinds.some(row => row.kind === "yellow safety post") && kinds.some(row => row.kind === "safety fence")) {
       const pairs = input.differences.filter(row => row.id.endsWith("-minus-rail") && (!sides.length || sides.some(side => rowsOf("yellow safety post", side).some(point => point.id === row.minuendId))));
-      if (!pairs.length) return result("missing", "本版本没有光幕与旁边围栏的成对测点。", []);
+      const refused = (input.excluded ?? []).filter(row => row.id.endsWith("-minus-rail") && (!sides.length || sides.some(side => rowsOf("yellow safety post", side).some(point => point.id === row.minuendId))));
+      if (!pairs.length) return result("missing", refused.length ? `本版本不比较：${refused.map(row => row.reason).join("；")}` : "本版本没有光幕与旁边围栏的成对测点。", []);
       const objectsOf = (rows: QueryDifference[]) => rows.flatMap(row => [row.minuendId, row.subtrahendId].map(id => endpoint(id)?.objectId ?? "")).filter(Boolean);
       const readable = pairs.filter(pairBound);
       if (!readable.length) return result("missing", "光幕与旁边围栏的测点没有绑定到当前显示模型，无法比较。", objectsOf(pairs));
       return result("answered", readable.map(row => `${row.label}：${input.format(row.valueNative)}（正值表示光幕测点更高）`).join("；")
-        + (readable.length < pairs.length ? "；其余成对测点不在当前显示模型上，未比较。" : ""), objectsOf(readable),
+        + (readable.length < pairs.length ? "；其余成对测点不在当前显示模型上，未比较。" : "")
+        + (refused.length ? `；另一侧不比较：${refused.map(row => row.reason).join("；")}` : ""), objectsOf(readable),
         readable.map(row => ({ label: row.label, value: input.format(row.valueNative), sourceId: row.id })));
     }
     const left = rowsOf(kind.kind, "left"), right = rowsOf(kind.kind, "right");
     if (!left.length || !right.length) return result("missing", `本版本没有左右两侧的${kind.name}离地测点，无法比较。`, [...left, ...right].map(row => row.objectId));
     const difference = input.differences.find(row => left.some(point => point.id === row.minuendId) && right.some(point => point.id === row.subtrahendId));
-    if (!difference) return result("missing", `本版本没有左右两个不同${kind.name}测点之间的高度差，无法比较。`, [...left, ...right].map(row => row.objectId));
+    const refused = (input.excluded ?? []).find(row => left.some(point => point.id === row.minuendId) && right.some(point => point.id === row.subtrahendId));
+    if (!difference) return result("missing", refused ? `本版本不比较左右${kind.name}：${refused.reason}` : `本版本没有左右两个不同${kind.name}测点之间的高度差，无法比较。`, [...left, ...right].map(row => row.objectId));
     const a = left.find(point => point.id === difference.minuendId)!, b = right.find(point => point.id === difference.subtrahendId)!;
     if (!pairBound(difference)) return result("missing", `${kind.name}左右测点没有绑定到当前显示模型，无法比较。`, [a.objectId, b.objectId]);
     const value = difference.valueNative, higher = value > 0 ? "左侧" : value < 0 ? "右侧" : null;
@@ -93,5 +99,5 @@ export function answerSpatialQuery<E extends QueryEndpoint>(question: string, in
     const objects = ofKind(kind.kind);
     return result("missing", `本版本没有${sides.map(side => sideName[side]).join("、")}${kind.name}的离地测量事实${objects.length ? "；可点击对象核对原图和模型，但不会估算离地值" : ""}。`, objects.map(object => object.id));
   }
-  return result("answered", rows.map(row => `${row.label}离地 ${fact(row).value}（${scopeName[row.measurementScope] ?? row.measurementScope}；条件模型估计，未验证）`).join("；"), rows.map(row => row.objectId), rows.map(fact));
+  return result("answered", rows.map(row => `${row.label}离地 ${fact(row).value}（${scopeOf(row)}；条件模型估计，未验证）`).join("；"), rows.map(row => row.objectId), rows.map(fact));
 }

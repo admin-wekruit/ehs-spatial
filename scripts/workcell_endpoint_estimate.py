@@ -18,6 +18,14 @@ from workcell_photo_metrology import _fence_plane_index
 from workcell_photo_oneshot import _array, _frame
 
 
+MEASURED_RAIL = 'measured lower rail member'
+# A lower-envelope member is placed at the 1% height of all detected member endpoints of its plane: not a rail edge.
+# Image evidence (docs/workcell-photo/evidence-2026-10-03/rail-identity) puts it on the left tube face, 48 px above its lower edge.
+RAIL_PART = {'observed lower-envelope hypothesis': 'lower_envelope_hypothesis', 'lower-rail continuation': 'lower_edge', MEASURED_RAIL: 'lower_edge'}
+HYPOTHESIS_REASON = ('The rail point is the observed lower-envelope hypothesis (1% height of detected member endpoints), '
+                     'not a measured lower-rail edge; it is not compared with measured points')
+
+
 def _bottom_face(scene, node, normal):
     transform, name = scene.graph[node]
     mesh = scene.geometry[name].copy()
@@ -159,24 +167,27 @@ def estimate(root):
         if item.get('kind') != FENCE_KIND or not item.get('model'):
             continue
         plane = _fence_plane_index(item)
-        lower = {row['id'] for row in geometry.get('fence', {}).get('continuations', [])
+        roles = {row['id']: row['role'] for row in geometry.get('fence', {}).get('continuations', [])
                  if row.get('plane') == plane and 'lower' in row.get('role', '')}
-        lower |= {row['meshNode'] for row in geometry.get('clearances', [])
-                  if row.get('meshNode') and row['id'] == f'fence-plane-{plane}-lower-rail'}
-        for node in sorted(lower & set(item['model']['nodes'])):
+        roles.update({row['meshNode']: MEASURED_RAIL for row in geometry.get('clearances', [])
+                      if row.get('meshNode') and row['id'] == f'fence-plane-{plane}-lower-rail'})
+        unknown = sorted({role for role in roles.values()} - set(RAIL_PART))
+        if unknown:
+            raise ValueError('Unknown lower-member role (add it to RAIL_PART before measuring): ' + ', '.join(unknown))
+        for node in sorted(set(roles) & set(item['model']['nodes'])):
             face = _bottom_face(scene(item['model']['file']), node, normal)
-            rails.append((ident, item['model'], node, face, _centerline(face)))
-    objects, pairs = list(lights), []
+            rails.append((ident, item['model'], node, face, _centerline(face), roles[node]))
+    objects, pairs, excluded = list(lights), [], []
     for light in lights:
         point = np.asarray(light['pointNative'])
-        candidates = [(_nearest_on(ends, point, normal), ident, model, node, face, ends)
-                      for ident, model, node, face, ends in rails]
+        candidates = [(_nearest_on(ends, point, normal), ident, model, node, face, ends, role)
+                      for ident, model, node, face, ends, role in rails]
         limit = ADJACENT_FRACTION * light['modelVerticalExtentNative']
         light['adjacencyLimitNative'] = limit
         if not candidates:
             light.update(pairedEndpointId=None, pairingStatus='no_lower_rail_model')
             continue
-        (rail_point, fraction, horizontal), ident, model, node, face, ends = min(candidates, key=lambda row: row[0][2])
+        (rail_point, fraction, horizontal), ident, model, node, face, ends, role = min(candidates, key=lambda row: row[0][2])
         if horizontal > limit:
             light.update(pairedEndpointId=None, pairingStatus='no_adjacent_lower_rail', nearestRailHorizontalOffsetNative=horizontal)
             continue
@@ -187,17 +198,24 @@ def estimate(root):
                        'Displayed lower rail member; nearest point to the paired curtain terminal along its bottom-face centerline')
         fence.update(id=f"{ident}:near:{light['objectId']}", bottomCenterlineEndsNative=ends.tolist(),
                      closestAlongRailFraction=fraction, pairedObjectId=light['objectId'],
-                     horizontalOffsetNative=horizontal, measurementScope='model_lower_rail_near_curtain')
+                     horizontalOffsetNative=horizontal, measurementScope='model_lower_rail_near_curtain',
+                     memberRole=role, railPart=RAIL_PART[role])
+        if fence['railPart'] != 'lower_edge':
+            fence['provenance'] = ('Displayed lower-envelope hypothesis member (1% height of detected member ends); nearest point to the '
+                                   'paired curtain terminal along its bottom-face centerline; not a lower-rail edge')
         light['pairedEndpointId'] = fence['id']
         objects.append(fence)
-        pairs.append({'minuendId': light['id'], 'subtrahendId': fence['id'],
-                      'valueNative': light['heightNative'] - fence['heightNative']})
-    return {'schemaVersion': 2, 'status': 'conditional_model_estimate', 'mPerNative': None,
+        pair = {'minuendId': light['id'], 'subtrahendId': fence['id'], 'valueNative': light['heightNative'] - fence['heightNative']}
+        if fence['railPart'] == 'lower_edge':
+            pairs.append(pair)
+        else:  # shown as its own hypothesis point; never differenced against a measured terminal, no value kept
+            excluded.append({'minuendId': pair['minuendId'], 'subtrahendId': pair['subtrahendId'], 'reason': HYPOTHESIS_REASON})
+    return {'schemaVersion': 3, 'status': 'conditional_model_estimate', 'mPerNative': None,
             'scope': 'Actual displayed model endpoints against the current saved floor; does not certify physical dimensions',
             'ground': {'normal': normal.tolist(), 'offset': offset}, 'sceneTransformNative': T.tolist(),
-            'objects': objects, 'curtainMinusRail': pairs,
+            'objects': objects, 'curtainMinusRail': pairs, 'excludedCurtainMinusRail': excluded,
             'pairingRule': {'adjacentFraction': ADJACENT_FRACTION,
-                            'rule': 'Each curtain pairs with the lower-rail member horizontally nearest its terminal, only within '
+                            'rule': 'Each curtain pairs with the lower member (rail edge or lower-envelope hypothesis) horizontally nearest its terminal, only within '
                                     'adjacentFraction x the curtain model vertical extent; otherwise it stays unpaired'},
             'sourceFiles': {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
                             for name in sorted(source_files)}}

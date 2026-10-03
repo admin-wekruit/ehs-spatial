@@ -22,7 +22,8 @@ import trimesh
 
 from ehs_spatial.measurements import measure_observed_points
 from scripts.workcell_bottom_models import install_candidate_models
-from scripts.workcell_photo_oneshot import _export_metric_scene
+from scripts.workcell_photo_objects import decode_mask, fence_panel_supported, review_fence_observations
+from scripts.workcell_photo_oneshot import _array, _export_metric_scene, _frame
 from scripts.workcell_photo_report import build, finalize
 from scripts.workcell_semantic_match import ENCODERS, analyze, prepare, sha256, write_json
 
@@ -38,7 +39,12 @@ BOXES = {'box-1': ([-1., 0, .36], [.1, .05, 1.6]), 'box-2': ([1., 0, .42], [.1, 
 RAILS = {'section-0-continued-3': ([-1.8, .05, .27], [1.4, .02, .05]),
          'section-1-continued-45': ([1.8, .05, .355], [1.4, .02, .05])}
 POLYGONS = {'post-box-1': [[14, 2], [18, 2], [18, 10], [14, 10]], 'post-box-2': [[5, 2], [9, 2], [9, 10], [5, 10]],
-            'fence-0': [[17, 14], [21, 14], [21, 20], [17, 20]], 'fence-1': [[2, 14], [6, 14], [6, 20], [2, 20]]}
+            'fence-0': [[17, 14], [21, 14], [21, 20], [17, 20]], 'fence-1': [[2, 14], [7, 14], [7, 20], [2, 20]]}
+# post-box-2's SAM mask has a see-through hole onto far background; its outline polygon (as saved) does not.
+HOLE = (slice(5, 8), 7)
+DEPTH = {'wall': 5., 'fence-1': 5.5, 'hole': 9.}  # fence-1 lies on its own plane, separated by the plane filter
+SOURCES = {'post-box-1': 'SAM: yellow safety post; instance 0', 'post-box-2': 'SAM: yellow safety post; instance 1',
+           'fence-0': 'SAM safety fence intersected with fitted plane 0', 'fence-1': 'SAM safety fence intersected with fitted plane 1'}
 
 
 def encoded(array):
@@ -48,6 +54,30 @@ def encoded(array):
 
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def rle(mask):
+    """SAM 3 column-major run lengths, starting with background."""
+    counts, current, run = [], 0, 0
+    for value in np.asarray(mask, np.uint8).ravel(order='F'):
+        if value == current:
+            run += 1
+        else:
+            counts.append(run); current, run = value, 1
+    counts.append(run)
+    return json.dumps({'size': list(np.shape(mask)), 'counts': counts})
+
+
+def fill(polygon):
+    mask = np.zeros(SHAPE, np.uint8); cv2.fillPoly(mask, [np.asarray(polygon, np.int32)], 1)
+    return mask.astype(bool)
+
+
+def supports():
+    """Objects-stage supports computed independently of support_mask: the SAM masks, the hole excluded."""
+    result = {ident: fill(polygon) for ident, polygon in POLYGONS.items()}
+    result['post-box-2'][HOLE] = False
+    return result
 
 
 def native_box(bottom_center, extents):
@@ -77,8 +107,16 @@ def base_run(root):
     root.mkdir(parents=True)
     pose = NATIVE @ CAMERA
     yy, xx = np.indices(SHAPE)
-    local = np.stack([(xx - K[0, 2]) / K[0, 0] * 5, (yy - K[1, 2]) / K[1, 1] * 5, np.full(SHAPE, 5.)], -1)
+    depth = np.full(SHAPE, DEPTH['wall'])
+    depth[fill(POLYGONS['fence-1'])] = DEPTH['fence-1']
+    depth[HOLE] = DEPTH['hole']
+    local = np.stack([(xx - K[0, 2]) / K[0, 0] * depth, (yy - K[1, 2]) / K[1, 1] * depth, depth], -1)
     points = (local @ pose[:3, :3].T + pose[:3, 3]).astype(np.float32)
+    masks = supports()
+    segmentation = {'prompts': [{'text': 'yellow safety post'}, {'text': 'safety fence'}],
+                    'results': [[{'rle': [rle(masks['post-box-1']), rle(masks['post-box-2'])], 'scores': [.9, .9]},
+                                 {'rle': [rle(masks['fence-0'] | masks['fence-1'])], 'scores': [.9]}] for _ in range(4)]}
+    (root / 'sam3.json').write_text(json.dumps(segmentation))
     for photo in range(1, 5):
         rgb = np.full((*SHAPE, 3), 120 + 10 * photo, np.uint8)
         for color, polygon in zip(((240, 200, 30), (230, 190, 40), (90, 90, 90), (70, 80, 90)), POLYGONS.values()):
@@ -92,9 +130,12 @@ def base_run(root):
     write_scene(root / 'posts.glb', BOXES)
     write_scene(root / 'fence-fitted.glb', RAILS)
     ground = {'normal': NORMAL.tolist(), 'offset': OFFSET}
-    geometry = {'floor': {**ground, 'status': 'fixture floor'},
+    axis = pose[:3, 2].astype(float)  # camera optical axis: every fixture wall is a constant camera depth
+    planes = [{'normal': axis.tolist(), 'offset': float(-axis @ pose[:3, 3] - DEPTH[key])} for key in ('wall', 'fence-1')]
+    geometry = {'floor': {**ground, 'status': 'fixture floor', 'residualP95Native': .01},
                 'anchor': {'assumedHeightM': .1, 'assumedWidthM': .085, 'mPerNative': None, 'referenceFit': {'status': 'unsupported', 'mPerNative': None}},
-                'fence': {'continuations': [{'id': 'section-0-continued-3', 'plane': 0, 'role': 'lower-rail continuation'},
+                'fence': {'planes': planes,
+                          'continuations': [{'id': 'section-0-continued-3', 'plane': 0, 'role': 'lower-rail continuation'},
                                             {'id': 'section-1-continued-45', 'plane': 1, 'role': 'observed lower-envelope hypothesis'}]},
                 'physicalClearances': {'ground': ground, 'objects': []}}
     (root / 'geometry.json').write_text(json.dumps(geometry))
@@ -104,13 +145,13 @@ def base_run(root):
     objects = []
     for ident, (kind, file, nodes) in models.items():
         polygon = POLYGONS[ident]
-        support = np.zeros(SHAPE, np.uint8); cv2.fillPoly(support, [np.asarray(polygon, np.int32)], 1)
-        # Objects-stage visible measurement on the objects-stage floor, as workcell_photo_objects records it.
-        measured = measure_observed_points(points[support.astype(bool)].astype(float), {'floor_plane': [*NORMAL, OFFSET]}, mask_pixels=int(support.sum()))
+        # Objects-stage visible measurement on the objects-stage floor, from the SAM support (not the outline).
+        measured = measure_observed_points(points[masks[ident]].astype(float), {'floor_plane': [*NORMAL, OFFSET]}, mask_pixels=int(masks[ident].sum()))
         objects.append({'id': ident, 'kind': kind, 'label': kind, 'model': {'file': file, 'nodes': nodes}, 'representation': 'fixture model',
                         'notes': [], 'measurements': {},
-                        'observations': [{'photo': photo, 'source': f'SAM: {kind}; instance {ident}', 'polygons': [polygon],
+                        'observations': [{'photo': photo, 'source': SOURCES[ident], 'polygons': [polygon],
                                           'box': [polygon[0][0], polygon[0][1], polygon[2][0] + 1, polygon[2][1] + 1],
+                                          'supportedPixels': int(masks[ident].sum()), 'maskPixels': int(masks[ident].sum()),
                                           'observedMeasurements': {**measured, 'source': {'photo': photo}}} for photo in range(1, 5)]})
     (root / 'objects.json').write_text(json.dumps({'objects': objects, 'coverage': {}}))
 
@@ -210,11 +251,90 @@ def check():
         main = copy(base, directory / 'workcell-main')
         report = finalize(main)
         rows = consistent(main, report)
+        # Visible extents: each observation's objects-stage support, re-applied on this revision's frame and floor.
+        # On the floor the objects stage used they reproduce the catalog exactly.
+        catalog = {row['id']: row for row in json.loads((main / 'objects.json').read_text())['objects']}
+        for item in report['objects']:
+            extent = item['visibleExtentFloor']
+            assert extent['status'] == 'remeasured' and extent['floor'] == "this revision's floor" and extent['observationsWithChangedSupport'] == 0
+            for got, saved in zip(item['observations'], catalog[item['id']]['observations']):
+                assert got['observedMeasurements']['dimensions_native'] == saved['observedMeasurements']['dimensions_native'], item['id']
+                assert got['supportedPixels'] == saved['supportedPixels'] and got['maskPixels'] == saved['maskPixels']
+        points = _array(_frame(main, 1)['pts3d']).astype(float)
+        outline = measure_observed_points(points[fill(POLYGONS['post-box-2'])], {'floor_plane': [*NORMAL, OFFSET]}, mask_pixels=1)
+        kept = next(item for item in report['objects'] if item['id'] == 'post-box-2')['observations'][0]['observedMeasurements']
+        assert outline['dimensions_native']['depth'] > kept['dimensions_native']['depth'] + 1, 'the saved outline would admit see-through background'
+        fences = {item['id']: item['observations'][0]['supportedPixels'] for item in report['objects'] if item['kind'] == 'safety fence'}
+        assert fences == {'fence-0': int(fill(POLYGONS['fence-0']).sum()), 'fence-1': int(fill(POLYGONS['fence-1']).sum())}, 'the plane filter separates sections'
+        # Exact nearest decode at a 2x pixel-centre map: every source position is a half-pixel tie, resolved upward.
+        raw = np.zeros((40, 30), bool); raw[5:23, 4:17] = True; raw[9:12, 8] = False
+        warp = {'image': {'shape': [20, 15, 3]}, 'input_mask_transform': {'input_to_canonical_pixel_centres': [[.5, 0, -.25], [0, .5, -.25], [0, 0, 1]]}}
+        assert np.array_equal(decode_mask(warp, rle(raw)), raw[1::2, 1::2]), 'decode is floor(x + 0.5) of the inverse pixel-centre map'
+        must_fail(lambda: decode_mask(warp, json.dumps({'size': [40, 30], 'counts': [5]})), 'RLE length mismatch')
+        # Anisotropic map with shear and unequal translations: decode equals floor(x + 0.5) of the float64 inverse.
+        sheared = [[.31, .02, -1.7], [-.015, .27, .9], [0, 0, 1]]
+        canvas = np.zeros((60, 50), bool); canvas[8:47, 6:33] = True; canvas[20:24, 12:30] = False
+        shaped = {'image': {'shape': [17, 15, 3]}, 'input_mask_transform': {'input_to_canonical_pixel_centres': sheared}}
+        inverse, want = np.linalg.inv(np.asarray(sheared)), np.zeros((17, 15), bool)
+        for y in range(17):
+            for x in range(15):
+                column, row = np.floor(inverse[:2] @ [x, y, 1] + .5).astype(int)
+                want[y, x] = 0 <= row < 60 and 0 <= column < 50 and canvas[row, column]
+        assert np.array_equal(decode_mask(shaped, rle(canvas)), want) and want.any() and not want.all(), 'decode follows the inverse pixel-centre map'
+        cells = np.zeros((40, 40), bool); cells[:21, :21] = True  # 11 x 11 two-pixel samples: 10 x 10 cells
+        corner = cells.copy(); corner[0, 0] = False  # the corner sample belongs to one cell only: 99 cells
+        assert fence_panel_supported(cells) and not fence_panel_supported(corner), 'observed-panel minimum is exactly 100 cells'
+        # Catalog review: the fence-panel rule removes a stray coplanar fragment and nothing else
+        # (the threshold is patched to fit the 24-pixel fixture; its value is checked just above).
+        from unittest.mock import patch
+        import scripts.workcell_photo_objects as objects_stage
+        reviewed = copy(main, directory / 'catalog-review')
+        segmentation = json.loads((reviewed / 'sam3.json').read_text())
+        fragment = np.zeros(SHAPE, bool); fragment[0, :2] = True  # two wall pixels on fence-0's plane in photo 2
+        segmentation['results'][1][1]['rle'] = [rle(fill(POLYGONS['fence-1']) | fragment)]
+        (reviewed / 'sam3.json').write_text(json.dumps(segmentation))
+        before = json.loads((reviewed / 'objects.json').read_text())
+        with patch.object(objects_stage, 'PANEL_CELLS', 2):
+            dropped = review_fence_observations(reviewed)
+            assert [(row['objectId'], row['photo'], row['supportedPixels']) for row in dropped] == [('fence-0', 2, 2)], dropped
+            settled = (reviewed / 'objects.json').read_bytes()
+            assert review_fence_observations(reviewed) == [] and (reviewed / 'objects.json').read_bytes() == settled, 'review is idempotent'
+        after = json.loads((reviewed / 'objects.json').read_text())
+        for old_item, new_item in zip(before['objects'], after['objects']):
+            assert new_item['observations'] == [o for o in old_item['observations'] if (old_item['id'], o['photo']) != ('fence-0', 2)], new_item['id']
+        assert after['coverage']['unsupportedObservations'] == dropped and after['coverage']['observations'] == 15
+        unbound = finalize(reviewed)
+        assert 'semanticExperiment' not in unbound and 'differ from this catalog' in unbound['semanticBinding']['reason'], 'a reviewed catalog needs a semantic rerun'
+        untouched = copy(main, directory / 'catalog-review-untouched')
+        compact = (untouched / 'objects.json').read_bytes()
+        with patch.object(objects_stage, 'PANEL_CELLS', 1):
+            assert review_fence_observations(untouched) == [] and (untouched / 'objects.json').read_bytes() == compact, 'nothing dropped, nothing rewritten'
+        terminated = copy(main, directory / 'catalog-review-newline')
+        (terminated / 'objects.json').write_text((terminated / 'objects.json').read_text() + '\n')
+        with patch.object(objects_stage, 'PANEL_CELLS', 10 ** 6):
+            assert review_fence_observations(terminated)
+        assert (terminated / 'objects.json').read_text().endswith('}\n') and not (reviewed / 'objects.json').read_text().endswith('\n'), 'the file keeps its own ending'
+        # A section left with at most one supported view loses its rail clearance, as build() never grants it one.
+        emptied = copy(main, directory / 'catalog-review-emptied')
+        data = json.loads((emptied / 'objects.json').read_text())
+        next(row for row in data['objects'] if row['id'] == 'fence-0')['measurements']['groundClearance'] = {
+            'valueNative': .27, 'status': 'conditional-model-estimate', 'source': 'fixture rail'}
+        (emptied / 'objects.json').write_text(json.dumps(data))
+        with patch.object(objects_stage, 'PANEL_CELLS', 10 ** 6):
+            assert len(review_fence_observations(emptied)) == 8
+        fence = next(row for row in json.loads((emptied / 'objects.json').read_text())['objects'] if row['id'] == 'fence-0')
+        assert not fence['observations'] and fence['measurements']['groundClearance']['status'] == 'unknown'
         assert report['semanticExperiment']['binding']['reuse'] == 'reused on a revision with identical semantic inputs'
         assert report['semanticExperiment']['sourceRevisionId'] == 'base', 'the experiment keeps the revision it ran on'
         assert np.isclose(rows['post-box-1']['heightNative'], .36) and np.isclose(rows['post-box-2']['heightNative'], .42)
         assert np.isclose(rows['fence-0']['heightNative'], .27) and np.isclose(rows['fence-1']['heightNative'], .355)
         assert rows['post-box-1']['side'] == 'right' and rows['fence-1']['side'] == 'left'
+        # The left rail is the observed lower-envelope hypothesis: shown as such, never differenced against measured points.
+        assert (rows['fence-0']['railPart'], rows['fence-1']['railPart']) == ('lower_edge', 'lower_envelope_hypothesis')
+        assert rows['fence-1']['label'] == '左侧光幕旁围栏下包络假设' and rows['fence-0']['label'] == '右侧光幕旁围栏下沿'
+        ids = {row['id'] for row in report['endpointEstimation']['differences']}
+        refused = {row['id'] for row in report['endpointEstimation']['excludedComparisons']}
+        assert ids == {'post-box-1:terminal-minus-rail', 'curtain-left-minus-right'} and refused == {'post-box-2:terminal-minus-rail', 'rail-left-minus-right'}, (ids, refused)
         assert report['modelMeasurementScale']['nativeToMeters'] is None, 'null scale builds without a centimetre crash'
 
         # (a) Same object ID, another GLB hash: the old endpoint is refused until re-measured.
@@ -265,9 +385,19 @@ def check():
             (tilted / name).write_text(json.dumps(data))
         retilted = finalize(tilted)
         consistent(tilted, retilted)
-        angles = [item['visibleExtentFloor']['angleToRevisionFloorDeg'] for item in retilted['objects'] if item['visibleHeightByPhoto']]
         expected = np.degrees(np.arccos(np.clip(NORMAL @ (rotation @ NORMAL), -1, 1)))
-        assert angles and np.allclose(angles, expected, atol=1e-6) and expected > 1.9, 'extents keep their objects-stage support and state its floor against this one'
+        extents = [item['visibleExtentFloor'] for item in retilted['objects'] if item['visibleHeightByPhoto']]
+        assert extents and expected > 1.9 and all(e['status'] == 'remeasured' and abs(e['angleToRevisionFloorDeg']) < 1e-6
+                                                   and np.isclose(e['objectsStageAngleToRevisionFloorDeg'], expected, atol=1e-6) for e in extents), \
+            'visible extents are re-measured on this floor; the objects-stage floor angle is kept as provenance'
+        masks, moved = supports(), 0
+        for item in retilted['objects']:
+            for got, saved in zip(item['observations'], catalog[item['id']]['observations']):
+                truth = measure_observed_points(points[masks[item['id']]], {'floor_plane': [*(rotation @ NORMAL), OFFSET]}, mask_pixels=1)
+                assert got['observedMeasurements']['dimensions_native'] == truth['dimensions_native'], item['id']
+                moved += max(abs(got['observedMeasurements']['dimensions_native'][k] - saved['observedMeasurements']['dimensions_native'][k])
+                             for k in ('height', 'width', 'depth')) > 1e-3
+        assert moved, 'the stale objects-stage extents are not shown on the tilted floor'
         # consistent() checked each angle against this floor exactly; here the objects-stage values must actually differ.
         evidence = [row for entity in retilted['revision']['document']['entities'] for row in entity.get('measurements', {}).get('orientationEvidence', {}).values()
                     if row.get('valueDeg') is not None]
@@ -302,7 +432,7 @@ def check():
                                 'model': {'file': 'post-box-1-volume-candidate.glb', 'sha256': sha(candidate_dir / 'post-box-1-volume-candidate.glb'),
                                           'nodes': ['post-box-1-closed-extrusion-hypothesis']},
                                 'sourceFaceGateAccepted': False, 'sourceFaceFitGate': {'terminalPartAmbiguity': {'resolved': False}},
-                                'sourceObservations': [{'photo': 1, 'source': 'SAM: yellow safety post; instance post-box-1'}],
+                                'sourceObservations': [{'photo': 1, 'source': SOURCES['post-box-1']}],
                                 'visibleLowerEdgeVertices': [0, 1], 'visibleLowerEdgeHeightNative': .30,
                                 'geometryScope': 'fixture closed extrusion hypothesis', 'thicknessIdentifiable': False, 'searchAtBound': False}]}
         main_hashes = {path.relative_to(main): sha(path) for path in main.rglob('*') if path.is_file()}
@@ -368,13 +498,38 @@ def check():
         swapped_report = finalize(swapped)
         swapped_rows = {row['id']: row for row in consistent(swapped, swapped_report).values()}
         assert np.isclose(swapped_rows['fence-1:near:post-box-1']['heightNative'], .27) and np.isclose(swapped_rows['fence-0:near:post-box-2']['heightNative'], .355)
+        swapped_support = {item['id']: item['observations'][0]['supportedPixels'] for item in swapped_report['objects'] if item['kind'] == 'safety fence'}
+        assert swapped_support == {'fence-0': int(fill(POLYGONS['fence-1']).sum()), 'fence-1': int(fill(POLYGONS['fence-0']).sum())}, \
+            'support is rebuilt on the plane named by geometryPlaneIndex, not by the stale source string'
+        # Rail roles: a measured clearance member is a lower edge; two hypotheses are refused with their own reason; unknown roles fail closed.
+        measured_rail = copy(main, directory / 'rail-measured-clearance')
+        geometry = json.loads((measured_rail / 'geometry.json').read_text())
+        geometry['fence']['continuations'] = [row for row in geometry['fence']['continuations'] if row['id'] != 'section-0-continued-3']
+        geometry['clearances'] = [{'id': 'fence-plane-0-lower-rail', 'meshNode': 'section-0-continued-3', 'heightNative': .27}]
+        (measured_rail / 'geometry.json').write_text(json.dumps(geometry))
+        rail = next(row for row in finalize(measured_rail)['endpointEstimation']['endpoints'] if row['objectId'] == 'fence-0')
+        assert (rail['memberRole'], rail['railPart']) == ('measured lower rail member', 'lower_edge')
+        both = copy(main, directory / 'rail-both-hypotheses')
+        geometry = json.loads((both / 'geometry.json').read_text())
+        for row in geometry['fence']['continuations']:
+            row['role'] = 'observed lower-envelope hypothesis'
+        (both / 'geometry.json').write_text(json.dumps(geometry))
+        estimation = finalize(both)['endpointEstimation']
+        refused = {row['id']: row['reason'] for row in estimation['excludedComparisons']}
+        assert set(refused) == {'post-box-1:terminal-minus-rail', 'post-box-2:terminal-minus-rail', 'rail-left-minus-right'}
+        assert refused['rail-left-minus-right'].startswith('两侧') and all('valueNative' not in row for row in estimation['excludedComparisons'])
+        unknown = copy(main, directory / 'rail-unknown-role')
+        geometry = json.loads((unknown / 'geometry.json').read_text())
+        geometry['fence']['continuations'][0]['role'] = 'lower-something new'
+        (unknown / 'geometry.json').write_text(json.dumps(geometry))
+        must_fail(lambda: finalize(unknown), 'Unknown lower-member role')
         far = copy(main, directory / 'rail-not-adjacent')
         write_scene(far / 'posts.glb', {**BOXES, 'box-1': ([-4., 0, .36], BOXES['box-1'][1])})
         far_report = finalize(far)
         light = next(row for row in far_report['endpointEstimation']['endpoints'] if row['id'] == 'post-box-1:terminal')
         assert light['pairingStatus'] == 'no_adjacent_lower_rail' and light['pairedEndpointId'] is None
         ids = {row['id'] for row in far_report['endpointEstimation']['differences']}
-        assert ids == {'post-box-2:terminal-minus-rail', 'curtain-left-minus-right'}, ids
+        assert ids == {'curtain-left-minus-right'}, ids  # post-box-2's only adjacent rail is the lower-envelope hypothesis
         one_rail = copy(main, directory / 'one-rail-both-curtains')
         write_scene(one_rail / 'fence-fitted.glb', {**RAILS, 'section-0-continued-3': ([0., .05, .27], [2.4, .02, .05])})
         one_report = finalize(one_rail)
@@ -440,8 +595,9 @@ def check():
         assert finalize(legacy)['semanticExperiment']['binding']['revisionId'] == 'semantic-legacy-manifest'
     print('PASS: same ID/new GLB hash refused then re-measured; floor-only change recomputes heights/feet and unbinds semantics; '
           'oneshot semantic stage binds on its own revision and records failed spend; refused builds leave every file untouched; '
-          'tilt is re-referenced to the revision floor and visible extents state their objects-stage floor; refused finalize changes nothing; '
-          'rails pair by plane identity within the adjacency limit, one rail is never compared left/right; '
+          'tilt and visible extents are re-measured on the revision floor with objects-stage supports (outline holes excluded, plane filter separates sections, exact decode); '
+          'catalog review drops only a stray fence fragment, idempotently, and unbinds semantics; refused finalize changes nothing; '
+          'rails pair by plane identity within the adjacency limit, one rail is never compared left/right, a lower-envelope rail hypothesis is labelled and never differenced; '
           'candidates never overwrite shared files, accepted bottoms or an earlier candidate; '
           'scale-only change and null scale keep native endpoints; candidate revision self-consistent, never accepted, main untouched; '
           'changed or translated polygon, photo, frame, uncarried catalog or edited manifest never reuses semantics; card/vertex/foot/semantic/export share one revision')

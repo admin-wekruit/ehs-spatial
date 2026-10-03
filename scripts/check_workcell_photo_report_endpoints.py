@@ -37,10 +37,11 @@ def check():
             endpoints.append({'id': ids[ident], 'objectId': ident, 'node': ident, 'modelFile': 'terminals.glb', 'heightNative': height,
                               'measurementScope': 'model_lower_rail_near_curtain' if ident == 'fence-0' else 'model_bottom_face_center',
                               **({'pairedEndpointId': ids['fence-0']} if ident == 'post-box-1' else {}),
+                              **({'railPart': 'lower_edge', 'memberRole': 'lower-rail continuation'} if ident == 'fence-0' else {}),
                               'pointNative': point.tolist(), 'footNative': foot.tolist()})
         scene.export(root / 'terminals.glb')
         (root / 'objects.json').write_text(json.dumps({'objects': objects, 'coverage': {}}))
-        measured = {'schemaVersion': 2, 'sceneTransformNative': transform.tolist(), 'objects': endpoints,
+        measured = {'schemaVersion': 3, 'sceneTransformNative': transform.tolist(), 'objects': endpoints,
                     'curtainMinusRail': [{'minuendId': ids['post-box-1'], 'subtrahendId': ids['fence-0'], 'valueNative': .13}],
                     'sourceFiles': {'terminals.glb': hashlib.sha256((root / 'terminals.glb').read_bytes()).hexdigest()}}
         rgb = np.full((2, 2, 3), 128, np.uint8)
@@ -100,10 +101,15 @@ def check():
         assert _ground_distance(item, geometry, transform)['feature'] is None
 
         for corruption, message in (('transform', 'different floor'), ('foot', 'Invalid model endpoint'), ('hash', 'is stale'),
-                                    ('schema', 'schema 1 instead of 2')):
+                                    ('schema', 'schema 1 instead of 3'), ('schema-2', 'schema 2 instead of 3'),
+                                    ('rail-part', 'rail endpoint without railPart')):
             invalid = deepcopy(measured)
             if corruption == 'schema':
                 invalid['schemaVersion'] = 1; invalid.pop('curtainMinusRail')
+            elif corruption == 'schema-2':  # a stale table that still carries curtainMinusRail is refused by its version alone
+                invalid['schemaVersion'] = 2
+            elif corruption == 'rail-part':  # a rail point that does not say which part it measures fails closed
+                next(row for row in invalid['objects'] if row['objectId'] == 'fence-0').pop('railPart')
             elif corruption == 'transform':
                 invalid['sceneTransformNative'][2][3] += .1
             elif corruption == 'foot':

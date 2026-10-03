@@ -89,9 +89,10 @@ LINEAGE = 'revision-lineage.json'
 SIDE_PHOTO = 4  # Left/right as seen by the reviewer in photo 4, facing the workcell.
 SCOPE_LABELS = {'model_bottom_face_center': '光幕底端', 'visible_face_lower_terminal': '光幕可见面下沿',
                 'model_lower_rail_near_curtain': '光幕旁围栏下沿'}
+HYPOTHESIS_LABEL = '光幕旁围栏下包络假设'  # railPart lower_envelope_hypothesis: not a lower-rail edge
 
 
-ENDPOINT_SCHEMA = 2
+ENDPOINT_SCHEMA = 3
 
 
 def _floor_angle(measured, up):
@@ -118,6 +119,8 @@ def _endpoint_estimation(root, measured, transform, doc):
     K, pose = np.asarray(camera['K'], float), np.asarray(camera['cameraToWorld'], float)
     endpoints = []
     for row in measured['objects']:
+        if row['measurementScope'] == 'model_lower_rail_near_curtain' and row.get('railPart') not in ('lower_edge', 'lower_envelope_hypothesis'):
+            raise ValueError('Model endpoint inspection is stale: rail endpoint without railPart: ' + row['id'])
         point, foot = trimesh.transform_points([row['pointNative'], row['footNative']], transform)
         height = row['heightNative']
         if not np.isfinite([*point, *foot, height]).all() or not np.allclose(point-foot, [0, 0, height], atol=1e-7) or abs(foot[2]) > 1e-7:
@@ -141,24 +144,32 @@ def _endpoint_estimation(root, measured, transform, doc):
     for row in endpoints:
         anchor = row['id'] if row['id'] in sides else next((key for key, value in by_id.items() if value.get('pairedEndpointId') == row['id']), None)
         row['side'] = {'左': 'left', '右': 'right'}.get(sides.get(anchor))
-        row['label'] = (sides[anchor] + '侧' if anchor in sides else '') + SCOPE_LABELS[row['measurementScope']]
+        row['label'] = (sides[anchor] + '侧' if anchor in sides else '') + (
+            HYPOTHESIS_LABEL if row.get('railPart') == 'lower_envelope_hypothesis' else SCOPE_LABELS[row['measurementScope']])
     differences = []
     for pair in measured['curtainMinusRail']:
         light = by_id[pair['minuendId']]
         differences.append({'id': pair['minuendId'] + '-minus-rail', 'minuendId': pair['minuendId'], 'subtrahendId': pair['subtrahendId'],
                             'valueNative': pair['valueNative'], 'label': f"{light['label']}减去旁边围栏下沿",
                             'description': '同一地面法向上的高度差；正值表示光幕测点更高。'})
+    excluded = [{'id': pair['minuendId'] + '-minus-rail', 'minuendId': pair['minuendId'], 'subtrahendId': pair['subtrahendId'],
+                 'reason': '旁边的围栏点是下包络假设，不是下横梁下沿；不与光幕测点相减。'} for pair in measured.get('excludedCurtainMinusRail', [])]
     for scope, noun in (('curtain', '光幕'), ('rail', '围栏下沿')):
         rows = {row['side']: row for row in endpoints if row['side'] and
                 (row['measurementScope'] == 'model_lower_rail_near_curtain') == (scope == 'rail')}
         # Two points of one rail member are not a left/right comparison of two rails.
         if {'left', 'right'} <= rows.keys() and (rows['left']['objectId'], rows['left']['node']) != (rows['right']['objectId'], rows['right']['node']):
-            differences.append({'id': f'{scope}-left-minus-right', 'minuendId': rows['left']['id'], 'subtrahendId': rows['right']['id'],
-                                'valueNative': rows['left']['heightNative'] - rows['right']['heightNative'],
+            pair = {'id': f'{scope}-left-minus-right', 'minuendId': rows['left']['id'], 'subtrahendId': rows['right']['id']}
+            if any(row.get('railPart') == 'lower_envelope_hypothesis' for row in (rows['left'], rows['right'])):
+                both = all(row.get('railPart') == 'lower_envelope_hypothesis' for row in (rows['left'], rows['right']))
+                excluded.append({**pair, 'reason': '两侧围栏点都是下包络假设，不是下横梁下沿：不做左右差。' if both else
+                                 '一侧围栏点是下包络假设，另一侧是下横梁下沿：测的不是同一部位，不做左右差。'})
+                continue
+            differences.append({**pair, 'valueNative': rows['left']['heightNative'] - rows['right']['heightNative'],
                                 'label': f'左右{noun}离地差（左 − 右）', 'description': '左右各自测点沿同一地面法向的高度差；不是精度或同高验证。'})
     return {'status': 'conditional_unvalidated', 'sidePhoto': SIDE_PHOTO,
-            'method': '读取当前显示网格中每个光幕的指定下沿及其旁边围栏下沿，沿同一地面法向测量；部位来源见端点记录。',
-            'endpoints': endpoints, 'differences': differences, 'sourceFiles': measured['sourceFiles'],
+            'method': '读取当前显示网格中每个光幕的指定下沿及其旁边围栏的下部构件（下横梁下沿，或标明的下包络假设），沿同一地面法向测量；部位来源见端点记录。',
+            'endpoints': endpoints, 'differences': differences, 'excludedComparisons': excluded, 'sourceFiles': measured['sourceFiles'],
             'units': 'native; display multiplies by modelMeasurementScale of this revision',
             'groundTruthUsedForEstimation': False}
 
@@ -195,6 +206,10 @@ def _build(root, staging):
     from scripts.workcell_photo_oneshot import _array, _frame
     geometry = json.loads((root / 'geometry.json').read_text())
     catalog = json.loads((root / 'objects.json').read_text())
+    from scripts.workcell_photo_objects import remeasure
+    # Visible extents are re-measured on this revision's frames and floor with each observation's
+    # objects-stage support (never its outline polygon); the catalog keeps the objects-stage values.
+    remeasured, missing_support = remeasure(root, catalog['objects'], geometry)
     doc = empty_document()
     doc['captureId'] = root.name
     doc['geometryBindings'] = {}
@@ -349,34 +364,47 @@ def _build(root, staging):
             if point_rep is not None:
                 point_representations.append(point_rep)
         photos = {o['photo'] for o in item['observations']}
+        stage = [o.get('observedMeasurements') or {} for o in item['observations']]
+        stage_angles = [a for a in (_floor_angle(m, up) for m in stage if m.get('status') == 'available') if a is not None]
+        changed = 0
+        if remeasured is not None:
+            for o, (measured, supported, mask_pixels) in zip(item['observations'], remeasured[item['id']]):
+                changed += supported != o.get('supportedPixels')
+                o.update(observedMeasurements=measured, supportedPixels=supported, maskPixels=mask_pixels)
         samples = [o for o in item['observations'] if o.get('observedMeasurements', {}).get('status') == 'available']
         item['visibleHeightByPhoto'] = {str(o['photo']): o['observedMeasurements']['dimensions_native']['height'] for o in samples}
-        # Visible extents keep the objects-stage support (segmentation mask, plane filters); outer polygons
-        # would re-admit see-through pixels. Their floor is recorded against this revision's floor.
         angles = [_floor_angle(o['observedMeasurements'], up) for o in samples]
         angles = [angle for angle in angles if angle is not None]
-        item['visibleExtentFloor'] = {'support': 'objects-stage segmentation support', 'angleToRevisionFloorDeg': max(angles) if angles else None}
+        item['visibleExtentFloor'] = ({
+            'status': 'remeasured', 'support': "objects-stage support rules re-applied on this revision's frames",
+            'floor': "this revision's floor", 'angleToRevisionFloorDeg': max(angles) if angles else None,
+            'objectsStageAngleToRevisionFloorDeg': max(stage_angles) if stage_angles else None,
+            'observationsWithChangedSupport': changed} if remeasured is not None else {
+            'status': 'objects_stage', 'support': 'objects-stage values; supports cannot be rebuilt here',
+            'missingSupportInputs': missing_support, 'floor': 'objects-stage floor', 'angleToRevisionFloorDeg': max(angles) if angles else None})
         heights = list(item['visibleHeightByPhoto'].values())
         item['visibleHeightNative'] = float(np.median(heights)) if len(photos) > 1 and heights else None
         item['visibleHeightRangeNative'] = [min(heights), max(heights)] if len(photos) > 1 and heights else None
         item['groundDistance'] = _ground_distance(item, geometry, transform)
-        measurements = {}
+        measurements, stage_orientation = {}, {}
         if len(photos) > 1 and samples:
             # Recompute canonical axes from the same visible support after the rigid world transform.
             selected = max(samples, key=lambda o: o['observedMeasurements']['quality']['supported_points'])
-            measurements = canonical_measurements(selected['observedMeasurements'], frame_id, [{'observationId': observations[item['observations'].index(selected)]}])
+            index = item['observations'].index(selected)
+            measurements = canonical_measurements(selected['observedMeasurements'], frame_id, [{'observationId': observations[index]}])
+            stage_orientation = canonical_measurements(stage[index], frame_id, []).get('orientationEvidence') or {}
             basis = measurements.get('basis')
             if basis and basis.get('cornersNative'):
                 basis['cornersNative'] = trimesh.transform_points(basis['cornersNative'], transform).tolist()
             if basis and basis.get('axesNative'):
                 basis['axesNative'] = (np.asarray(basis['axesNative']) @ transform[:3, :3].T).tolist()
-        for evidence in measurements.get('orientationEvidence', {}).values():
+        for key, evidence in measurements.get('orientationEvidence', {}).items():
             for field in ('axisNative', 'normalNative'):
                 if evidence.get(field) is not None:
                     evidence[field] = (transform[:3, :3] @ np.asarray(evidence[field])).tolist()
-                    # The fitted direction does not depend on the floor; its angle does. Report frame Z is this revision's floor normal.
+                    # Report frame Z is this revision's floor normal; the objects-stage angle is kept as provenance.
                     direction = np.asarray(evidence[field])
-                    evidence.update(objectsStageValueDeg=evidence['valueDeg'], floor="this revision's floor",
+                    evidence.update(objectsStageValueDeg=(stage_orientation.get(key) or {}).get('valueDeg'), floor="this revision's floor",
                                     valueDeg=float(np.degrees(np.arccos(np.clip(abs(direction[2]) / np.linalg.norm(direction), 0, 1)))))
         variants = {key: representation(item, spec, '-photo-'+key) for key, spec in item.get('modelsByPhoto', {}).items()}
         rep = variants.get('4') or (representation(item, item['model'], '') if (item.get('model') or {}).get('nodes') else None)
