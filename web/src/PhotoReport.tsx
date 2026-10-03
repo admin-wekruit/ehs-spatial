@@ -4,6 +4,7 @@ import { ReportScene } from "./ReportScene";
 import { ObjectFacts } from "./WorkcellReport";
 import { SceneResources } from "./SceneResources";
 import { PhotoSemanticExperiment, PhotoSemanticObject, type SemanticExperiment, type SpatialFact } from "./PhotoSemanticExperiment";
+import { answerSpatialQuery } from "./spatial-query";
 import type { BendAnalysis, InclinationAnalysis, SceneMeasurement } from "./SpatialMeasurements";
 import { I18nProvider } from "./i18n";
 import { activeModel } from "./core";
@@ -14,7 +15,7 @@ import "./workcell-report.css";
 import "./photo-report.css";
 
 type GroundSample = { valueNative: number | null; pointNative: number[]; footNative: number[]; reason?: string; source?: string; sourcePhotos?: number[]; rangeNative?: number[] };
-type CatalogObject = { id: string; label: string; representation: string; notes: string[]; observations: { photo: number }[]; measurements: Record<string, any>; physicalBottom?: { geometryScope: string }; modelTerminal?: { candidateStatus: string; acceptedForPhysicalUse: boolean }; visibleHeightNative?: number; visibleHeightRangeNative?: number[]; visibleHeightByPhoto?: Record<string, number>; groundDistance?: { byPhoto: Record<string, GroundSample>; feature?: GroundSample | null; rangeNative?: number[]; source: string; reason?: string } };
+type CatalogObject = { id: string; label: string; kind?: string; representation: string; notes: string[]; observations: { photo: number }[]; measurements: Record<string, any>; physicalBottom?: { geometryScope: string }; modelTerminal?: { candidateStatus: string; acceptedForPhysicalUse: boolean }; visibleHeightNative?: number; visibleHeightRangeNative?: number[]; visibleHeightByPhoto?: Record<string, number>; groundDistance?: { byPhoto: Record<string, GroundSample>; feature?: GroundSample | null; rangeNative?: number[]; source: string; reason?: string } };
 type Calibration = { primaryAxis: string; nativeToMeters: number | null; reference: { scope: string; scopeStatus: string; features: { wholeComponentHeightM: number; mainBodyDiameterM: number; redActuatorDiameterM: number } }; observedEnvelope?: { widthM: number | null }; renderingAssumptions?: string[] };
 type Comparison = { objectId: string; label: string; method: string; estimateNative: number | null; rangeNative: number[] | null; byPhoto: Record<string, { valueNative: number | null }>; sourcePhotos: number[]; byPhotoMethod?: string; groundTruthM: number; source: string; limitation: string };
 /** One model terminal measured on this revision's displayed representation, in native units. */
@@ -23,8 +24,12 @@ type EndpointDifference = { id: string; label: string; minuendId: string; subtra
 type EndpointEstimation = { status: "conditional_unvalidated"; sidePhoto: number; method: string; endpoints: Endpoint[]; differences: EndpointDifference[] };
 export type RevisionChoice = { id: string; label: string; branchId: string; status: string; documentSha256: string; parentRevisionId: string | null; url: string };
 type Lineage = { role?: string; label?: string; parentRevisionId?: string | null; candidateEvidence?: { url?: string | null; acceptedForPhysicalUse?: boolean } };
-export type PhotoReportData = { semanticExperiment?: SemanticExperiment; semanticBinding?: { status: string; reason: string; action?: string }; modelMeasurementScale: { nativeToMeters: number | null; rangeNativeToMeters?: number[] | null; status: string; source: string }; measurementUpdate?: { kind: string; revisionBuildSeconds?: number; sourceRevisionId?: string | null }; endpointEstimation?: EndpointEstimation; revisionChoices?: RevisionChoice[]; lineage?: Lineage; metrology?: { summary: string; reportURL: string }; experiment?: { title: string; summary: string; reportURL: string; timingLabel: string }; bendAnalysis?: BendAnalysis; inclinationAnalysis?: InclinationAnalysis; revision: Revision; assetURLs: Record<string, string>; objects: CatalogObject[]; geometry: { calibration?: Calibration; anchor: { nativeHeight: number | null; nativeWidth: number | null; assumedHeightM: number; assumedWidthM: number; mPerNative: number | null; referenceFit?: { status: string; mPerNative: number | null; candidateMPerNative?: number | null; reason?: string; diagnostics?: unknown }; assumptions?: string[] }; floor: { status: string } }; measurementEvaluation?: { comparisons: Comparison[]; groundTruthUsedForCalibration: boolean }; timing: { oneShotSeconds?: number }; nativeToMetersDefault: number | null };
+export type PhotoReportData = { policyEvidence?: PolicyEvidence; semanticExperiment?: SemanticExperiment; semanticBinding?: { status: string; reason: string; action?: string }; modelMeasurementScale: { nativeToMeters: number | null; rangeNativeToMeters?: number[] | null; status: string; source: string }; measurementUpdate?: { kind: string; revisionBuildSeconds?: number; sourceRevisionId?: string | null }; endpointEstimation?: EndpointEstimation; revisionChoices?: RevisionChoice[]; lineage?: Lineage; metrology?: { summary: string; reportURL: string }; experiment?: { title: string; summary: string; reportURL: string; timingLabel: string }; bendAnalysis?: BendAnalysis; inclinationAnalysis?: InclinationAnalysis; revision: Revision; assetURLs: Record<string, string>; objects: CatalogObject[]; geometry: { calibration?: Calibration; anchor: { nativeHeight: number | null; nativeWidth: number | null; assumedHeightM: number; assumedWidthM: number; mPerNative: number | null; referenceFit?: { status: string; mPerNative: number | null; candidateMPerNative?: number | null; reason?: string; diagnostics?: unknown }; assumptions?: string[] }; floor: { status: string } }; measurementEvaluation?: { comparisons: Comparison[]; groundTruthUsedForCalibration: boolean }; timing: { oneShotSeconds?: number }; nativeToMetersDefault: number | null };
 type View = "photo" | "point_cloud" | "model" | "compare";
+type PolicyEvidence = { engine: string; revisionId: string; documentSha256: string; ruleSet: { file: string; sha256: string; status: string }; conclusion: string;
+  items: { policyId: string; sourceText: string; predicate: string; threshold: number; unit: string; compileStatus: string; refusal?: string; applicability: string; machineResult: null; spec: { file: string; sha256: string };
+    subjects: { entityId: string; label: string; identitySource: string }[]; missingEvidence: string[]; evidenceStillNeeded?: { id: string; status: string; detail: string }[] }[] };
+const evidenceName: Record<string, string> = { reviewer_applicability_confirmation: "审核人确认规则适用", operator_anchored_metric_scale: "操作员锚定的米制尺度", subject_full_height: "对象整体高度（顶边离地）", reference_region: "参照区域（如机器人工作区包络）" };
 const scopeText: Record<string, string> = { model_bottom_face_center: "模型底面中心", visible_face_lower_terminal: "可见面下沿（整个外壳最低点未确认）", model_lower_rail_near_curtain: "光幕旁的围栏下横梁底面" };
 const sideOrder = ["right", "left", null] as const;
 const sideTitle = { right: "右侧（照片 4 视角）", left: "左侧（照片 4 视角）" } as Record<string, string>;
@@ -34,7 +39,7 @@ export function endpointBound(row: Endpoint, entities: Entity[], assets: { id: s
   return !!rep && rep.id === row.representationId && rep.assetId === row.assetId && assets.some(asset => asset.id === row.assetId && asset.sha256 === row.assetSha256);
 }
 export function PhotoReport({ data, base = typeof window === "undefined" ? "" : window.location.href, onRevision }: { data: PhotoReportData; base?: string; onRevision?: (choice: RevisionChoice, keep: { object: string | null; photo: string }) => void }) {
-  useEffect(() => { const section = window.location.hash.slice(1); if (["overview", "scene", "semantics", "sources"].includes(section)) document.getElementById(section)?.scrollIntoView(); }, []);
+  useEffect(() => { const section = window.location.hash.slice(1); if (["overview", "ask", "scene", "semantics", "policy", "sources"].includes(section)) document.getElementById(section)?.scrollIntoView(); }, []);
   const entry = new URL(window.location.href).searchParams, resolve = (path: string) => new URL(path, base).href;
   const endpointEstimate = data.endpointEstimation?.status === "conditional_unvalidated" ? data.endpointEstimation : undefined;
   const endpointRows = endpointEstimate?.endpoints ?? [], differences = endpointEstimate?.differences ?? [];
@@ -47,6 +52,7 @@ export function PhotoReport({ data, base = typeof window === "undefined" ? "" : 
   const [showGroundDistance, setShowGroundDistance] = useState(false);
   const [showEndpointComparison, setShowEndpointComparison] = useState(entry.get("measurement") === "endpoints" || defaultEndpoints);
   const [viewRequest, setViewRequest] = useState<{ view: View; nonce: number } | null>(null);
+  const [question, setQuestion] = useState(entry.get("q") ?? ""), [asked, setAsked] = useState(entry.get("q") ?? "");
   const anchor = data.geometry.anchor, calibration = data.geometry.calibration, reference = calibration?.reference.features;
   const referenceHeight = reference?.wholeComponentHeightM ?? anchor.assumedHeightM;
   const valid = Number.isFinite(height) && height > 0 && Number.isFinite(referenceHeight) && referenceHeight > 0;
@@ -184,8 +190,18 @@ export function PhotoReport({ data, base = typeof window === "undefined" ? "" : 
     finally { setExporting(false); }
   }
   const focus = [...new Map(endpointRows.map(row => [row.objectId, row.label])).entries(), ...(data.objects.some(item => item.id === "floor") ? [["floor", "地面"]] : [])];
+  // Recomputed on every render: an answer always reads the loaded revision and the current scale.
+  const answer = asked.trim() ? answerSpatialQuery(asked, { objects: data.objects, endpoints: endpointRows, differences, bends: data.bendAnalysis?.revisionId === revision.id ? data.bendAnalysis.items : [],
+    bound, format: modelCentimeters, revisionLabel: data.revision.label ?? revision.id }) : null;
+  const askCard = <section className="photo-report-ask" id="ask" aria-label="空间提问">
+    <h2>空间提问 · 读取当前版本的结构化事实</h2>
+    <form onSubmit={event => { event.preventDefault(); setAsked(question); }}><label>问题<input data-spatial-question value={question} placeholder="例如：右侧光幕离地多高？左右围栏谁更高？" onChange={event => setQuestion(event.target.value)} /></label><button type="submit">回答</button></form>
+    <p className="photo-semantic-note">规则解析对象类别、左右和问题类型；数值只来自本版本测点与当前标尺，缺事实时明确说明。任意新物体名称的语义检索需要文本编码器，本页不运行。</p>
+    {answer && <div className="photo-report-answer" data-answer-status={answer.status} role="status"><p data-spatial-answer>{answer.text}</p><small>{answer.interpretation}</small>
+      {answer.objects.length > 0 && <div>{answer.objects.map(id => <button type="button" key={id} onClick={() => selectSemanticObject(id)}>{data.objects.find(item => item.id === id)?.label ?? id}</button>)}</div>}</div>}
+  </section>;
   return <SceneResources.Provider value={resources}><main className="photo-report" data-revision-id={revision.id} data-document-sha256={revision.documentSha256}>
-    <header className="photo-report-header"><a className="photo-report-brand" href="#overview">PANOPTES <span>WORKCELL REPORT</span></a><nav><a href="#overview">概览</a><a href="#scene">对象与场景</a>{data.semanticExperiment && <a href="#semantics">语义实验</a>}<a href="#sources">来源与假设</a></nav></header>
+    <header className="photo-report-header"><a className="photo-report-brand" href="#overview">PANOPTES <span>WORKCELL REPORT</span></a><nav><a href="#overview">概览</a><a href="#ask">空间提问</a><a href="#scene">对象与场景</a>{data.semanticExperiment && <a href="#semantics">语义实验</a>}{data.policyEvidence && <a href="#policy">EHS 证据</a>}<a href="#sources">来源与假设</a></nav></header>
     <section className="photo-report-overview" id="overview"><div><p className="photo-report-eyebrow">四张照片 · 对象级空间重建</p><h1>{reference ? "工作单元测量报告" : "工作单元空间报告"}</h1><p>选取对象查看可见高度、离地间距与证据。拖动分界线，在同一相机下核对照片和模型。</p></div><dl><div><dt>照片</dt><dd>{revision.document.cameras.length}</dd></div><div><dt>对象</dt><dd>{data.objects.length}</dd></div><div><dt>{reference ? "基准整体高度" : data.experiment?.timingLabel || "本次计算"}</dt><dd>{reference ? (reference.wholeComponentHeightM * 100).toFixed(1) : data.timing.oneShotSeconds?.toFixed(1) ?? "—"}<small>{reference ? "cm" : "秒"}</small></dd></div>{reference && <div><dt>{data.measurementUpdate?.kind === "saved-geometry-replay" ? "原始完整流程" : "本次端到端"}</dt><dd>{data.timing.oneShotSeconds?.toFixed(1) ?? "—"}<small>秒</small></dd></div>}</dl></section>
     {choices.length > 0 && <section className={`photo-report-revision${candidate ? " photo-report-warning" : ""}`} aria-label="模型版本">
       <label>模型版本<select data-revision-select value={revision.id} onChange={event => { const choice = choices.find(item => item.id === event.target.value); if (choice && onRevision) onRevision(choice, { object: entityId, photo }); }}>{choices.map(choice => <option key={choice.id} value={choice.id}>{choice.label} · {choice.status === "main" ? "主模型" : "候选，未通过严格门槛"}</option>)}</select></label>
@@ -226,7 +242,18 @@ export function PhotoReport({ data, base = typeof window === "undefined" ? "" : 
       <details><summary>来源与对应部位说明</summary>{data.measurementEvaluation.comparisons.map(row => <article key={row.objectId}><h3>{row.label}</h3><p>{row.source}</p><p>{row.limitation}</p><p>来源照片：{row.sourcePhotos.join(" / ") || "无可用多视角支持"}</p></article>)}</details>
       <p><a href={resolve("measurement-evaluation.json")} download>下载全部物体的基准估计 JSON（{centimeters(reference?.wholeComponentHeightM)} 标尺）</a> · <a href={resolve("measurements.json")} download>下载现场提供的尺寸</a></p>
     </section>}
+    {askCard}
     {data.semanticExperiment && <PhotoSemanticExperiment data={data.semanticExperiment} selectedEntityId={entityId} onSelect={selectSemanticObject} />}
+    {data.policyEvidence && data.policyEvidence.revisionId === revision.id && <section id="policy" className="photo-report-sources photo-report-policy" aria-label="EHS 规则证据链" data-policy-revision={data.policyEvidence.revisionId}>
+      <h2>EHS 规则证据链 · 无判定</h2><p><strong>当前没有安全结论。</strong>适用性须由审核人依据证据确认；规则引擎（{data.policyEvidence.engine}）在此之前不输出结果。规则集：{data.policyEvidence.ruleSet.file}（{data.policyEvidence.ruleSet.sha256.slice(0, 12)}），示例规则，非认证条款。</p>
+      {data.policyEvidence.items.map(item => <article key={item.policyId} data-policy-id={item.policyId}><h3>{item.sourceText}</h3>
+        <p>规则 {item.policyId} · {item.compileStatus === "refused" ? "编译阶段拒绝执行" : `${item.predicate} ${item.threshold} ${item.unit}`} · 适用性 {item.applicability === "unknown" ? "待确认" : item.applicability} · 引擎结果 无</p>
+        {item.refusal && <p>拒绝原因：{item.refusal}</p>}
+        {item.subjects.length > 0 && <p>对象候选：{item.subjects.map(subject => <button type="button" key={subject.entityId} onClick={() => selectSemanticObject(subject.entityId)}>{subject.label}</button>)}<small>身份来自原图分割检测类别，尚未经审核人确认。</small></p>}
+        {item.evidenceStillNeeded && <ul>{item.evidenceStillNeeded.map(need => <li key={need.id} data-evidence-status={need.status}>{evidenceName[need.id] ?? need.id}：{need.status === "available" ? "已有" : "缺少"} · {need.detail}</li>)}</ul>}
+      </article>)}
+      <p>照片不能确认光幕的停机性能、接线与联锁或检测区有效性；这些需要设备资料和现场测试证据。</p>
+    </section>}
     {!data.semanticExperiment && data.semanticBinding && <section id="semantics" className="photo-semantic-experiment photo-report-warning" data-semantic-binding-status={data.semanticBinding.status}><h2>语义实验未绑定到本版本</h2><p>已有语义结果的输入与本版本不一致，不复用旧结果：{data.semanticBinding.reason}</p><p>{data.semanticBinding.action}</p></section>}
     <div id="scene"><nav className="photo-report-focus" aria-label="重点检查对象"><strong>重点检查</strong>{focus.map(([id, label]) => <button key={id} type="button" aria-pressed={entityId === id} onClick={() => { setEntityId(id); setImageId(`photo-${endpointEstimate?.sidePhoto ?? 4}`); setObservationId(null); showMeasurementOf(id); }}>{label}</button>)}<small>先选对象，再切换照片、原始点云和模型核对。</small></nav><ReportScene matchedComparison measurementScale={modelScale} initialView={initialView} viewRequest={viewRequest} measurementOverride={endpointAnnotation || groundAnnotation} revision={revision} selection={selection} onSelect={(id, obs) => { setEntityId(id); setObservationId(obs || null); setShowGroundDistance(false); }} imageId={imageId} cameraId={camera?.id || null} onCamera={(id) => { setImageId(id); setObservationId(null); }} onClearSelection={() => { setEntityId(null); setShowGroundDistance(false); }} inspector={(surface) => selected ? <>
       {data.semanticExperiment && <PhotoSemanticObject data={data.semanticExperiment} entityId={selected.id} onSelect={selectSemanticObject} facts={spatialFacts(selected.id)} resolve={resolve} onMeasure={endpointsOf(selected.id).some(bound) || physicalFeature(selected.id) ? () => showMeasurementOf(selected.id) : undefined} measureLabel="在 3D 模型中显示该对象的离地测量线" />}

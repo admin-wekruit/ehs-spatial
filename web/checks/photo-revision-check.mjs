@@ -82,6 +82,7 @@ try {
   await modelsLoaded(main);
   assert.equal(await page.locator('main.photo-report').getAttribute('data-revision-id'), main.revision.id);
   await endpointCard(main);
+  await everyObject(main);
   assert.ok(glbRequests.length && glbRequests.every(url => url.searchParams.get('revision') === main.revision.documentSha256));
   // 2. Semantic query -> light curtain -> its measurement in this revision.
   const query = main.semanticExperiment.queries.find(row => /光幕/.test(row.label));
@@ -105,6 +106,23 @@ try {
   assert.equal(await page.locator(`.photo-report-endpoints [data-endpoint-estimate="${endpoint.id}"]`).textContent(), cm(main, endpoint.heightNative, 2));
   await page.getByLabel('按钮整体高度厘米').fill('10');
   assert.equal(await page.locator(`[data-semantic-fact="${endpoint.id}"]`).textContent(), cm(main, endpoint.heightNative));
+  async function everyObject(report) {
+    // Every catalog object stays selectable with its own identity; measurements never shrink the scene.
+    for (const item of report.objects) {
+      await page.locator(`[data-entity-id="${item.id}"] > button`).first().click();
+      assert.equal(await page.locator('[data-selected-object]').getAttribute('data-selected-object'), item.id);
+    }
+    assert.equal(await page.locator('[data-policy-revision]').getAttribute('data-policy-revision'), report.revision.id, 'EHS evidence belongs to this revision');
+    record.checks.push({ step: 'every object selectable', revision: report.revision.id, objects: report.objects.length });
+  }
+  async function ask(report) {
+    const left = report.endpointEstimation.differences.find(row => row.id === 'curtain-left-minus-right');
+    await page.locator('[data-spatial-question]').fill('左右光幕谁更高？'); await page.getByRole('button', { name: '回答', exact: true }).click();
+    const text = await page.locator('[data-spatial-answer]').textContent();
+    assert.ok(text.includes(`左 − 右 = ${cm(report, left.valueNative)}`) && text.includes(left.valueNative > 0 ? '左侧光幕测点更高' : '右侧光幕测点更高'), text);
+    record.checks.push({ step: 'structured spatial question', revision: report.revision.id, question: '左右光幕谁更高？', answer: text });
+  }
+  await ask(main);
   record.revisions.main = { id: main.revision.id, documentSha256: main.revision.documentSha256, glb: await downloadGLB(main, 'main') };
   // 4. Switch to the candidate revision; the same object now reads the candidate model.
   glbRequests.length = 0;
@@ -113,6 +131,7 @@ try {
   await modelsLoaded(candidate);
   assert.equal(new URL(page.url()).searchParams.get('version'), candidate.revision.id);
   await endpointCard(candidate);
+  await everyObject(candidate);
   assert.ok(glbRequests.every(url => url.searchParams.get('revision') === candidate.revision.documentSha256), 'candidate assets carry its document hash');
   assert.ok(glbRequests.some(url => url.pathname.includes(`/revisions/${candidate.revision.id}/entity-post-box-`)), 'candidate curtain models load from the candidate revision');
   const candidateEndpoint = candidate.endpointEstimation.endpoints.find(row => row.objectId === target);
@@ -121,6 +140,7 @@ try {
   assert.notEqual(cm(candidate, candidateEndpoint.heightNative), cm(main, endpoint.heightNative), 'candidate and main measure different models');
   record.checks.push({ step: 'revision switch keeps object, reads candidate model', object: target, main: cm(main, endpoint.heightNative), candidate: cm(candidate, candidateEndpoint.heightNative) });
   await page.screenshot({ path: path.join(out, 'candidate-semantic-measurement.png'), fullPage: false });
+  await ask(candidate);
   record.revisions.candidate = { id: candidate.revision.id, documentSha256: candidate.revision.documentSha256, glb: await downloadGLB(candidate, 'candidate') };
   // 5. Generic caliper on the candidate: one surface point, JSON bound to this document.
   const panel = page.locator('.report-scene-inspector .spatial-measurements').first();

@@ -416,6 +416,8 @@ def _build_page(root, metrics):
     (page / "data.json").write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     shared = json.loads((page / "scene-report.json").read_text())
     shared["timing"] = data["timing"]
+    from scripts.workcell_policy_evidence import policy_evidence
+    shared["policyEvidence"] = policy_evidence(shared, json.loads((root / "objects.json").read_text())["objects"])
     if shared.get("semanticExperiment"):
         from scripts.workcell_semantic_report import package
         package(root, page, shared["semanticExperiment"])

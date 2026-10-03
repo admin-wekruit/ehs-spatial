@@ -67,6 +67,8 @@ def _package_candidate(page, root, report):
         if _sha((target / url).resolve()) != expected[asset_id]:
             raise ValueError('Candidate asset does not match its document hash: ' + asset_id)
     report['assetURLs'] = urls
+    from scripts.workcell_policy_evidence import policy_evidence
+    report['policyEvidence'] = policy_evidence(report, json.loads((root / 'objects.json').read_text())['objects'])
     semantic = report.get('semanticExperiment')
     if semantic:
         for obj in semantic['objects']:

@@ -162,6 +162,10 @@ def consistent(root, report):
         binding = report['semanticExperiment']['binding']
         assert (binding['revisionId'], binding['documentSha256']) == (revision['id'], revision['documentSha256'])
         assert all('facts' not in row['policyContext'] for row in report['semanticExperiment']['objects'])
+    from scripts.workcell_policy_evidence import policy_evidence
+    evidence = policy_evidence(report, json.loads((root / 'objects.json').read_text())['objects'])
+    assert (evidence['revisionId'], evidence['documentSha256']) == (revision['id'], revision['documentSha256'])
+    assert all(item['machineResult'] is None and item['applicability'] == 'unknown' for item in evidence['items']), 'no verdict without applicability'
     _export_metric_scene(root, report)
     name = next(n for n in ('workcell-conditional.glb', 'workcell-metric.glb', 'workcell-native.glb') if (root / n).is_file())
     with open(root / name, 'rb') as stream:
