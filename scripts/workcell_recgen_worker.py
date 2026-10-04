@@ -87,7 +87,9 @@ def main(plan_path):
             models[name] = {'views': indices, 'generationSeconds': result['seconds'],
                             'faces': result['faces_n'], 'stages': result['stages']}
         records[job['kind']] = {'models': models}
-    report = {'modelLoadSeconds': loaded, 'jobs': records}
+    torch = sys.modules.get('torch')  # loaded by RecGen on the GPU; absent in CPU plan checks
+    report = {'modelLoadSeconds': loaded, 'jobs': records,
+              'peakAllocatedGiB': torch.cuda.max_memory_allocated() / 2**30 if torch else None}
     print(json.dumps(report))
     return report
 

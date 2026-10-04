@@ -146,21 +146,26 @@ def score_view(caster, transform, view):
     return {"iou": iou, "boundary": boundary, "p50": p50, "loss": float(1 - iou + 2 * boundary + min(p50 if p50 is not None else 1, 1))}
 
 
-def refine(vertices, faces, views, max_iterations=100, *, uniform_scale=False):
+def refine(vertices, faces, views, max_iterations=100, *, uniform_scale=False, axis=None):
     """assemble_lucida_scene.refine: bounded Nelder-Mead over translation (x 0.3 of the model's size), rotation vector
     (<= 0.65 rad) and per-axis log scale (<= 0.4) about the model's centre, from the source-camera placement. Returns
     (4x4 applied to world vertices, record); identity when nothing beats the start.
-    uniform_scale uses a Sim(3) transform, preserving the mesh's intrinsic angles."""
+    uniform_scale uses a Sim(3) transform, preserving the mesh's intrinsic angles; axis limits the rotation to turns
+    about that one world direction (an upright model stays upright)."""
     from scipy.optimize import minimize
     from scipy.spatial.transform import Rotation
+    if axis is not None and not uniform_scale:
+        raise ValueError('axis needs uniform_scale: per-axis world scaling would tilt the model off that axis')
     caster = Caster(vertices, faces)
     centre = np.asarray(vertices).mean(0)
     radius = max(float(np.linalg.norm(np.ptp(vertices, 0))), 1e-4)
+    turns = 3 if axis is None else 1
 
     def candidate(x):
         t = np.eye(4)
-        scales = np.repeat(np.exp(x[6]), 3) if uniform_scale else np.exp(x[6:9])
-        t[:3, :3] = Rotation.from_rotvec(x[3:6]).as_matrix() @ np.diag(scales)
+        scales = np.repeat(np.exp(x[3 + turns]), 3) if uniform_scale else np.exp(x[3 + turns:])
+        rotation = x[3:6] if axis is None else x[3] * unit(axis)
+        t[:3, :3] = Rotation.from_rotvec(rotation).as_matrix() @ np.diag(scales)
         t[:3, 3] = centre - t[:3, :3] @ centre + x[:3] * radius
         return t
 
@@ -172,11 +177,11 @@ def refine(vertices, faces, views, max_iterations=100, *, uniform_scale=False):
     count = [0]
 
     def objective(x):
-        if np.max(np.abs(x[:3])) > .3 or np.linalg.norm(x[3:6]) > .65 or np.max(np.abs(x[6:])) > .4:
+        if np.max(np.abs(x[:3])) > .3 or np.linalg.norm(x[3:3 + turns]) > .65 or np.max(np.abs(x[3 + turns:])) > .4:
             return 100. + float(x @ x)
         count[0] += 1
         return score(candidate(x))[0]
-    n = 7 if uniform_scale else 9
+    n = 3 + turns + (1 if uniform_scale else 3)
     simplex = np.zeros((n + 1, n))
     simplex[1:] = np.diag([.015] * 3 + [.04] * (n - 3))
     fit = minimize(objective, np.zeros(n), method="Nelder-Mead", options={"initial_simplex": simplex, "maxiter": max_iterations,

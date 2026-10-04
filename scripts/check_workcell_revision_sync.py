@@ -1,6 +1,6 @@
 """One revision, one set of facts. Run: PYTHONPATH=.:scripts:modal_apps python scripts/check_workcell_revision_sync.py
 
-Synthetic four-photo run through the actual finalize -> estimate -> build ->
+Synthetic four-photo (legacy, no capture record) and two-photo one-scene runs through the actual finalize -> estimate -> build ->
 semantic bind tail and the candidate-model install. Counterexamples: same ID
 with another GLB hash, floor-only change, scale-only change and null scale,
 main versus candidate revision, and changed semantic sources. Stale endpoints
@@ -18,6 +18,7 @@ import tempfile
 
 import cv2
 import numpy as np
+from PIL import Image
 import trimesh
 
 from ehs_spatial.measurements import measure_observed_points
@@ -35,6 +36,8 @@ SHAPE = (24, 24)
 K = np.array([[20., 0, 12], [0, 20, 12], [0, 0, 1]])
 # Every photo looks along report -Y from y=+5: report -X is image right.
 CAMERA = np.eye(4); CAMERA[:3, :3] = [[-1, 0, 0], [0, 0, -1], [0, -1, 0]]; CAMERA[:3, 3] = [0, 5, .8]
+# The opposite view of the same scene: along report +Y from y=-5, report +X is image right (left and right swap).
+MIRROR = np.eye(4); MIRROR[:3, :3] = [[1, 0, 0], [0, 0, 1], [0, -1, 0]]; MIRROR[:3, 3] = [0, -5, .8]
 BOXES = {'box-1': ([-1., 0, .36], [.1, .05, 1.6]), 'box-2': ([1., 0, .42], [.1, .05, 1.6])}
 RAILS = {'section-0-continued-3': ([-1.8, .05, .27], [1.4, .02, .05]),
          'section-1-continued-45': ([1.8, .05, .355], [1.4, .02, .05])}
@@ -103,7 +106,7 @@ def must_fail(action, message):
     raise AssertionError('Accepted: ' + message)
 
 
-def base_run(root):
+def base_run(root, photos=4, mirrored=()):
     root.mkdir(parents=True)
     pose = NATIVE @ CAMERA
     yy, xx = np.indices(SHAPE)
@@ -115,15 +118,15 @@ def base_run(root):
     masks = supports()
     segmentation = {'prompts': [{'text': 'yellow safety post'}, {'text': 'safety fence'}],
                     'results': [[{'rle': [rle(masks['post-box-1']), rle(masks['post-box-2'])], 'scores': [.9, .9]},
-                                 {'rle': [rle(masks['fence-0'] | masks['fence-1'])], 'scores': [.9]}] for _ in range(4)]}
+                                 {'rle': [rle(masks['fence-0'] | masks['fence-1'])], 'scores': [.9]}] for _ in range(photos)]}
     (root / 'sam3.json').write_text(json.dumps(segmentation))
-    for photo in range(1, 5):
+    for photo in range(1, photos + 1):
         rgb = np.full((*SHAPE, 3), 120 + 10 * photo, np.uint8)
         for color, polygon in zip(((240, 200, 30), (230, 190, 40), (90, 90, 90), (70, 80, 90)), POLYGONS.values()):
             cv2.fillPoly(rgb, [np.asarray(polygon, np.int32)], color)
         cv2.imwrite(str(root / f'photo-{photo}.png'), rgb[..., ::-1])
         frame = {'image': encoded(rgb), 'pts3d': encoded(points), 'non_ambiguous_mask': encoded(np.ones(SHAPE, bool)),
-                 'camera_poses': encoded(pose.astype(np.float32)), 'intrinsics': encoded(K.astype(np.float32)),
+                 'camera_poses': encoded((NATIVE @ MIRROR if photo in mirrored else pose).astype(np.float32)), 'intrinsics': encoded(K.astype(np.float32)),
                  'input_mask_transform': {'input_to_canonical_pixel_centres': np.eye(3).tolist()}}
         with gzip.GzipFile(root / f'frame_{photo:04d}.json.gz', 'wb', mtime=0) as stream:
             stream.write(json.dumps(frame).encode())
@@ -152,7 +155,7 @@ def base_run(root):
                         'observations': [{'photo': photo, 'source': SOURCES[ident], 'polygons': [polygon],
                                           'box': [polygon[0][0], polygon[0][1], polygon[2][0] + 1, polygon[2][1] + 1],
                                           'supportedPixels': int(masks[ident].sum()), 'maskPixels': int(masks[ident].sum()),
-                                          'observedMeasurements': {**measured, 'source': {'photo': photo}}} for photo in range(1, 5)]})
+                                          'observedMeasurements': {**measured, 'source': {'photo': photo}}} for photo in range(1, photos + 1)]})
     (root / 'objects.json').write_text(json.dumps({'objects': objects, 'coverage': {}}))
 
 
@@ -239,6 +242,93 @@ def consistent(root, report):
     extras = head['scenes'][head.get('scene', 0)].get('extras', {})
     assert (extras['reportRevision'], extras['documentSha256']) == (revision['id'], revision['documentSha256']), extras
     return rows
+
+
+def scene_checks(directory):
+    """N photos of one scene: capture record, legacy fallback, one RecGen model per object placed against every view,
+    the placed model's mask IoU in every photo, and left/right read in the scene's reference photo."""
+    from scripts import workcell_photo_oneshot as oneshot
+    from fast_report.x7 import Caster, rays
+    images = []
+    for i in range(3):
+        images.append(directory / f'source-{i}.jpg'); images[-1].write_bytes(bytes([i]) * 16)
+    record = oneshot.capture_record(images[:2])
+    assert (record['photoCount'], record['referencePhoto']) == (2, 2) and [row['name'] for row in record['sources']] == ['source-0.jpg', 'source-1.jpg']
+    assert oneshot.capture_record(images, 1)['referencePhoto'] == 1, 'the reference photo is the one named, by default the last'
+    for photos, reference in ((images[:1], None), ([images[0], images[0]], None), (images, 4), (images, -1)):
+        must_fail(lambda: oneshot.capture_record(photos, reference), 'photo')
+    legacy = directory / 'scene-legacy'; legacy.mkdir()
+    for photo in (1, 2, 3, 4):
+        (legacy / f'frame_{photo:04d}.json.gz').write_bytes(b'')
+    assert oneshot.scene_photos(legacy) == (4, 4), 'a run before capture records: four photos, photo 4 the reviewer view'
+    (legacy / oneshot.CAPTURE).write_text(json.dumps(oneshot.capture_record(images, 1)))
+    assert oneshot.scene_photos(legacy) == (3, 1), 'the capture record decides'
+    # One multi-view RecGen group per object; no per-photo models. Robot/cart: every view that shows them, most support
+    # first (RecGen conditions on the first four, the refine places against all); the guard keeps its two best views.
+    for kind, pixels in (('robot', (900, 0, 4000, 700, 600, 800)), ('cart', (3000, 2600, 0, 2400, 9000, 2501)),
+                         ('guard', (50, 400, 300, 0, 900, 120))):
+        (legacy / f'{kind}-mask-selection.json').write_text(json.dumps([{'photo': i, 'supportedPixels': n} for i, n in enumerate(pixels, 1)]))
+    plans, views = oneshot.recgen_plans(legacy)
+    assert plans == [[('robot', [['multi', [3, 1, 6, 4]]])], [('cart', [['multi', [5, 1, 2, 6]]]), ('guard', [['multi', [5, 2]]])]], plans
+    assert views == {'robot': [3, 1, 6, 4, 5], 'cart': [5, 1, 2, 6], 'guard': [5, 2]}, views
+    (legacy / 'guard-mask-selection.json').write_text(json.dumps([{'photo': 1, 'supportedPixels': 900}, {'photo': 2, 'supportedPixels': 99}]))
+    must_fail(lambda: oneshot.recgen_plans(legacy), 'at least two views')
+    # Placement: the anchor-frame mesh enters the world through the anchor camera, the Sim(3) refine improves the
+    # silhouettes of its placement views, and the record scores every photo, including one that does not show it.
+    def look(center):
+        forward = np.array([0, 0, .45]) - center; forward /= np.linalg.norm(forward)
+        right = np.cross(forward, [0, 0, 1.]); right /= np.linalg.norm(right)
+        pose = np.eye(4); pose[:3, :3] = np.c_[right, np.cross(forward, right), forward]; pose[:3, 3] = center
+        return pose
+    truth = trimesh.creation.box([.6, .3, .9]); truth.apply_translation([0, 0, .45])
+    caster, intrinsics, inputs = Caster(truth.vertices, truth.faces), np.array([[120., 0, 64], [0, 120., 80], [0, 0, 1]]), {}
+    for photo, center in ((1, [0., -3, 1.]), (2, [2.5, -1.5, 1.2]), (3, [-2.5, -1.5, 1.])):
+        pose = look(np.array(center))
+        depth = caster.depth(np.eye(4), rays(intrinsics, pose, 128, 160))
+        shown = np.isfinite(depth) & (photo != 3)
+        inputs.update({f'v{photo}_mask': shown.astype(np.uint8) * 255, f'v{photo}_depth': np.where(np.isfinite(depth), depth, 0).astype(np.float32),
+                       f'v{photo}_K': intrinsics, f'v{photo}_c2w': pose})
+    offset = trimesh.transformations.rotation_matrix(.08, [0, 0, 1], [0, 0, .45]); offset[:3, 3] += [.05, -.03, .02]
+    generated = truth.copy(); generated.apply_transform(offset); generated.apply_transform(np.linalg.inv(inputs['v1_c2w']))
+    generated.visual.vertex_colors = np.full((len(generated.vertices), 4), 200, np.uint8)
+    placed, placement = oneshot.place_model(generated, inputs, [1, 2], [1, 2])
+    assert placement['generationViews'] == [1, 2] and placement['refineViews'] == [1, 2] and placement['moved']
+    assert np.mean(placement['iou_after']) > np.mean(placement['iou_before']) + .05 and min(placement['iou_after']) > .75, placement
+    assert [(row['photo'], row['targetPixels'] > 0) for row in placement['sourceChecks']] == [(1, True), (2, True), (3, False)], 'every photo is scored'
+    assert np.allclose(placed.vertices, trimesh.transform_points(trimesh.transform_points(generated.vertices, inputs['v1_c2w']), placement['transform'])), \
+        'the saved transform is exactly the applied anchor-to-world refine'
+    # A scene whose generated boards have no stable two-face bend keeps A1: the shared-angle fit records why, the run goes on.
+    from scripts.workcell_guard_silhouette import run as fit_shared_guards
+    flat = directory / 'flat-guard'; (flat / 'a1').mkdir(parents=True)
+    for side in ('left', 'right'):
+        trimesh.creation.box([1., .5, .001]).export(flat / 'a1' / f'guard-{side}.glb')
+    rejected = fit_shared_guards(flat, flat / 'a4', images[:2])
+    assert (rejected['promotionAllowed'], rejected['status'], rejected['objects']) == (False, 'unsupported-initializer', [])
+    assert 'left: measurement_no_stable_bend' in rejected['fitGate']['reasons'][0] and (flat / 'a4' / 'results.json').is_file()
+    # Two photos of one scene: every stage reads N = 2; the reference photo names left and right.
+    two = directory / 'two-photo-scene'
+    base_run(two, photos=2, mirrored={1})
+    capture = {**record, 'sources': [{'photo': i, 'name': f'photo-{i}.jpg', 'sha256': '0' * 64} for i in (1, 2)]}
+    (two / oneshot.CAPTURE).write_text(json.dumps(capture))
+    report = finalize(two)
+    assert len(report['revision']['document']['cameras']) == 2 and report['capture']['photoCount'] == 2 and report['capture']['referencePhoto'] == 2
+    assert report['revision']['label'] == '2 张照片 oneshot' and report['endpointEstimation']['sidePhoto'] == 2
+    sides = {row['objectId']: row['side'] for row in report['endpointEstimation']['endpoints']}
+    assert sides['post-box-1'] == 'right' and sides['post-box-2'] == 'left', sides
+    assert all(not entity.get('modelVariants') for entity in report['revision']['document']['entities']), 'one model per object'
+    (two / oneshot.CAPTURE).write_text(json.dumps({**capture, 'referencePhoto': 1}))
+    flipped = finalize(two)
+    assert flipped['endpointEstimation']['sidePhoto'] == 1
+    assert {row['objectId']: row['side'] for row in flipped['endpointEstimation']['endpoints']} == {
+        ident: {'left': 'right', 'right': 'left'}[side] for ident, side in sides.items()}, 'the opposite reference view swaps left and right'
+    assert next(row for row in flipped['endpointEstimation']['endpoints'] if row['objectId'] == 'post-box-1')['label'] == '左侧光幕底端'
+    segmentation = json.loads((two / 'sam3.json').read_text())
+    oneshot._mask_sheet(two, segmentation, ('yellow safety post',), 'sheet.jpg')
+    assert Image.open(two / 'sheet.jpg').size == (SHAPE[1], 2 * (SHAPE[0] + 28)), 'two photos: one column of two tiles'
+    three = directory / 'three-photo-scene'
+    base_run(three, photos=3)
+    oneshot._mask_sheet(three, json.loads((three / 'sam3.json').read_text()), ('yellow safety post',), 'sheet.jpg')
+    assert Image.open(three / 'sheet.jpg').size == (2 * SHAPE[1], 2 * (SHAPE[0] + 28)), 'three photos: two columns, one blank tile'
 
 
 def check():
@@ -593,7 +683,10 @@ def check():
         legacy = copy(main, directory / 'semantic-legacy-manifest')
         edit_manifest(legacy, lambda m: [row.pop('polygons') for row in m['observations']])
         assert finalize(legacy)['semanticExperiment']['binding']['revisionId'] == 'semantic-legacy-manifest'
-    print('PASS: same ID/new GLB hash refused then re-measured; floor-only change recomputes heights/feet and unbinds semantics; '
+        # (g) N photos of one scene.
+        scene_checks(directory)
+    print('PASS: N-photo scene (capture record, legacy four-photo fallback, one multi-view RecGen group per object, Sim(3) placement scored in every photo, '
+          'reference photo names left/right, N-tile sheets); same ID/new GLB hash refused then re-measured; floor-only change recomputes heights/feet and unbinds semantics; '
           'oneshot semantic stage binds on its own revision and records failed spend; refused builds leave every file untouched; '
           'tilt and visible extents are re-measured on the revision floor with objects-stage supports (outline holes excluded, plane filter separates sections, exact decode); '
           'catalog review drops only a stray fence fragment, idempotently, and unbinds semantics; refused finalize changes nothing; '

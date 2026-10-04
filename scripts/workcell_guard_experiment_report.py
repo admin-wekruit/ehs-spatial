@@ -45,6 +45,8 @@ def structural_models(root, out, catalog):
         item['structuralModel'] = {'source':'structural-result.json','modelAngleDeg':row['meshAngleReadbackDeg'],
                                    'measurementAngleDeg':None,'prior':result['prior'],'ambiguity':result['ambiguity']}
     shutil.copy2(out/'guard-partition.json',out/'guard-generated-initializer-partition.json')
+    # The catalog's guard observations were associated through this generated assembly; keep it, it is replaced below.
+    shutil.copy2(out/'guard-multi.glb',out/'guard-generated-initializer.glb')
     assembly = trimesh.Scene(); source_nodes = {}
     for side in ('left','center','right'):
         scene = trimesh.load(out/f'guard-{side}.glb',force='scene')
@@ -60,7 +62,7 @@ def structural_models(root, out, catalog):
         _, geometry = loaded.graph.get(node); count = len(loaded.geometry[geometry].faces)
         ranges[node] = list(range(offset,offset+count)); offset += count
     partition = {'sourceFile':'guard-multi.glb','method':'assembly of final A4 left/right sheets and unchanged A1 center; actual exported face ownership',
-                 'initializerProvenance':{'partition':'guard-generated-initializer-partition.json',
+                 'initializerProvenance':{'partition':'guard-generated-initializer-partition.json','assembly':'guard-generated-initializer.glb',
                     'models':'experiment-data/controls/A1-similarity/',
                     'scope':'Original generated assembly partition initializes A4; its face indices do not describe the final analytic sheets.'},
                  'parts':[{'side':side,'file':f'guard-{side}.glb',

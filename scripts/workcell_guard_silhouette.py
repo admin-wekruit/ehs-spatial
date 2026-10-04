@@ -235,11 +235,26 @@ def _export(polygons, pose, board, frames, path):
 
 def run(root, out, sources):
     root, out = Path(root), Path(out); out.mkdir(parents=True, exist_ok=True)
-    if len(sources) != 4:
-        raise ValueError('Exactly four raw source photos are required')
+    if len(sources) < 2:
+        raise ValueError('Every raw source photo of the scene (at least two) is required')
     started = time.monotonic()
     meshes = {side: trimesh.load(root / 'a1' / f'guard-{side}.glb', force='mesh') for side in SIDES}
-    templates = {side: _template(mesh) for side, mesh in meshes.items()}
+    templates, unsupported = {}, []
+    for side, mesh in meshes.items():
+        try:
+            templates[side] = _template(mesh)
+        except PlatformError as error:
+            unsupported.append(f'{side}: {error.code}')
+    if unsupported:
+        # Generated A1 boards without a stable two-face bend cannot initialize the shared-angle model:
+        # A1 stays in the scene and this records why (never a failed run, never a fabricated angle).
+        result = {'schemaVersion': 1, 'route': 'shared-angle-silhouette-prior', 'objects': [], 'overlays': [],
+                  'promotionAllowed': False, 'selected': False, 'status': 'unsupported-initializer',
+                  'fitGate': {'passed': False, 'reasons': ['A1 board has no stable two-face bend to initialize the shared-angle model: ' + '; '.join(unsupported)]},
+                  'centerPolicy': 'unchanged A1', 'prior': 'User supplied same-angle specification for left and right; not applied.',
+                  'wallSeconds': time.monotonic() - started}
+        _write(out / 'results.json', result)
+        return result
     frames, boards, association = _inputs(root, sources=sources)
     observations = _observations(boards, frames)
     initial = np.r_[np.deg2rad(templates['left']['initialAngleDeg']), np.zeros(18)]
@@ -396,12 +411,12 @@ if __name__ == '__main__':
     parser.add_argument('--self-check', action='store_true')
     parser.add_argument('--root', type=Path)
     parser.add_argument('--out', type=Path)
-    parser.add_argument('--images', type=Path, nargs=4)
+    parser.add_argument('--images', type=Path, nargs='+', help='Every photo of the scene, in photo order')
     args = parser.parse_args()
     if args.self_check:
         _self_check()
     elif args.root is None or args.out is None or args.images is None:
-        parser.error('--root, --out and four --images are required')
+        parser.error('--root, --out and every scene photo as --images are required')
     else:
         result = run(args.root, args.out, args.images)
         print(json.dumps({k: result[k] for k in ('sharedAngleDeg', 'promotionAllowed', 'fitGate', 'ambiguity', 'wallSeconds')}, indent=2))

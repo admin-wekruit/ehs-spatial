@@ -41,6 +41,10 @@ def validate_measurements(data):
         _positive(target.get('groundTruthM'), f'{ident} groundTruthM')
         if not target.get('feature') or not target.get('provenance'):
             raise ValueError('Evaluation feature and provenance are required')
+    binding = data.get('evaluation', {}).get('capture')
+    if binding is not None and (not isinstance(binding.get('photoSha256'), list) or not binding['photoSha256']
+                                or not all(isinstance(h, str) and len(h) == 64 for h in binding['photoSha256'])):
+        raise ValueError('evaluation.capture.photoSha256 must list the SHA-256 of every photo the targets were supplied for')
     return copy.deepcopy(data)
 
 
@@ -115,9 +119,9 @@ def apply_measurements(root, measurements):
     if fit.get('status') == 'available' and not fit.get('camerasFixed'):
         raise ValueError('Main scene calibration requires the unchanged reconstruction cameras')
     if fit.get('fittedNuisanceParameters') is not None:
-        from scripts.workcell_photo_oneshot import _array, _frame
+        from scripts.workcell_photo_oneshot import _array, _frame, scene_photos
         actual = []
-        for photo in range(1, 5):
+        for photo in range(1, scene_photos(root)[0] + 1):
             raw = _frame(root, photo)
             actual.append({'photo': photo, 'K': _array(raw['intrinsics']).tolist(),
                            'pose': _array(raw['camera_poses']).tolist(),
@@ -143,6 +147,15 @@ def apply_measurements(root, measurements):
                   assumedWidthM=features['mainBodyDiameterM'], scope=reference['scope'],
                   status='three-dimension 3D reference fit' if scale is not None else '3D reference scale unsupported',
                   relativeWidthResidual=None)
+    catalog = json.loads((root/'objects.json').read_text())
+    button = next((o for o in catalog['objects'] if o['id'] == 'emergency-button'), None)
+    if button is None:
+        # This scene's photos associate no button: the supplied dimensions have nothing to scale; units stay native.
+        anchor['status'] = 'no button reference observed in this scene; native units'
+        geometry['calibration']['diagnostics']['projectionByPhoto'] = []
+        for name, value in [('geometry.json', geometry), ('measurements.json', measurements)]:
+            (root/name).write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False)+'\n')
+        return geometry
     meshes = button_meshes(geometry)
     scene = trimesh.load(root/'object-extras.glb', force='scene')
     for node, mesh in meshes.items():
@@ -151,8 +164,6 @@ def apply_measurements(root, measurements):
         scene.geometry[geometry_id] = local
     (root/'object-extras.glb').write_bytes(scene.export(file_type='glb'))
     geometry['calibration']['diagnostics']['projectionByPhoto'] = _projection_diagnostics(root, anchor, meshes)
-    catalog = json.loads((root/'objects.json').read_text())
-    button = next(o for o in catalog['objects'] if o['id'] == 'emergency-button')
     button['referenceGeometry'] = {'features': features, 'provenance': reference['provenance'],
                                    'scope': reference['scope'], 'scopeStatus': reference['scopeStatus'],
                                    'observedEnvelope': geometry['calibration']['observedEnvelope'],
@@ -178,9 +189,16 @@ def _summary(by_photo, scale, eligible=True):
             'sourcePhotos': sorted(int(p) for p in by_photo), 'method': 'median of valid saved per-photo visible support; at least two views'}
 
 
-def measurement_evaluation(objects, geometry, measurements):
-    """GT only enters subtraction, after estimates are frozen by source evidence."""
+def measurement_evaluation(objects, geometry, measurements, capture=None):
+    """GT only enters subtraction, after estimates are frozen by source evidence.
+
+    Target object ids are per-scene ordinal names, so check values are subtracted only for the photo set they were supplied
+    for: evaluation.capture.photoSha256 must equal this capture's photos. Values without that binding apply only to a
+    legacy run without capture.json (the four photos they were supplied for)."""
     measurements = validate_measurements(measurements)
+    binding = (measurements.get('evaluation') or {}).get('capture')
+    photos = sorted(row['sha256'] for row in capture['sources']) if capture else None
+    bound = binding is None and capture is None or (binding is not None and photos == sorted(binding['photoSha256']))
     scale = geometry['anchor']['mPerNative']
     estimates = []
     for item in objects:
@@ -191,11 +209,17 @@ def measurement_evaluation(objects, geometry, measurements):
         estimates.append({'objectId': item['id'], 'label': item['label'], 'visibleHeight': heights,
                           'lowerEdge': lower, 'physicalDimensionsUnknown': True, 'poseDependent': pose_dependent,
                           'limitation': 'Visible support only; occluded full extent and physical endpoint association remain unconfirmed.'})
-    comparisons = []
+    comparisons, absent = [], []
     for target in measurements.get('evaluation', {}).get('targets', []):
+        if not bound:
+            absent.append({'objectId': target['objectId'], 'feature': target['feature'],
+                           'reason': '检查值是为另一组照片提供的，对象 ID 只是每个场景内的序号名，无法确认是同一工位的同一物体，因此不相减。'})
+            continue
         item = next((o for o in objects if o['id'] == target['objectId']), None)
-        if item is None:
-            raise ValueError(f"Evaluation object missing: {target['objectId']}")
+        if item is None:  # another scene's catalog may not contain this object id; never compare a different object
+            absent.append({'objectId': target['objectId'], 'feature': target['feature'],
+                           'reason': 'No object with this id in this scene; the check value is not subtracted.'})
+            continue
         ground = item['groundDistance']; feature = ground.get('feature') or {}
         value = feature.get('valueNative')
         bounds = feature.get('rangeNative') if value is not None else None
@@ -214,4 +238,4 @@ def measurement_evaluation(objects, geometry, measurements):
             'relativeError': error/truth if error is not None else None, 'source': source,
             'target': target, 'limitation': 'Metric result requires accepted 3D reference scale and independently supported physical lower edge.'})
     return {'schemaVersion': 1, 'scaleMPerNative': scale, 'groundTruthUsedForCalibration': False,
-            'comparisons': comparisons, 'objectEstimates': estimates}
+            'comparisons': comparisons, 'absentTargets': absent, 'objectEstimates': estimates}

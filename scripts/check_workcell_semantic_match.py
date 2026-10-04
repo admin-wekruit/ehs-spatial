@@ -6,8 +6,8 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 
-from workcell_semantic_match import (ENCODERS, analyze, associate, fuse, nearest_matches, normalize, observed_points,
-                                    point_overlaps, prepare, read_json, sha256, write_json)
+from workcell_semantic_match import (ENCODERS, analyze, associate, config_checked, fuse, nearest_matches, normalize, observed_points,
+                                    point_overlaps, prepare, read_json, reference_classes, sha256, write_json)
 
 
 def must_fail(action):
@@ -66,6 +66,16 @@ def check_pipeline():
         assert original["associations"] == permuted["associations"]
         assert all(row["referenceAgreement"]["correct"] == 0 for row in permuted["summary"])
         assert permuted["objects"][0]["results"][0]["top3"][0]["id"] == "a"
+        # Object ids differ per scene: a protocol may name references by catalog kind, resolved against this catalog.
+        by_kind = {**config, "referenceClasses": {}, "referenceClassesByKind": {"thing": "a"}}
+        write_json(root / "objects.json", {"objects": [{"id": "one", "kind": "thing", "label": "Original proxy", "observations": [dict(observation, photo=p) for p in (1, 2)]}]})
+        assert reference_classes(by_kind, read_json(root / "objects.json")["objects"]) == {"one": "a"}
+        assert reference_classes({**by_kind, "referenceClasses": {"one": "b"}}, [{"id": "one", "kind": "thing"}]) == {"one": "b"}, "an explicit id map wins"
+        must_fail(lambda: config_checked({**by_kind, "referenceClassesByKind": {"thing": "unknown"}}))
+        prepare(root, out, by_kind); embeddings(); analyze(root, out, by_kind)
+        kinded = read_json(out / "semantic-experiment.json")
+        assert all(row["referenceAgreement"] == {"correct": 1, "total": 1} for row in kinded["summary"])
+        assert kinded["protocol"]["referenceClasses"] == {"one": "a"} and kinded["protocol"]["referenceClassesByKind"] == {"thing": "a"}
         config["classes"][0]["phrase"] = "a changed neural input"
         must_fail(lambda: analyze(root, out, config))
 
@@ -117,7 +127,7 @@ def main():
     must_fail(lambda: point_overlaps([np.array([[np.nan, 0, 0]])], [1], .04))
     must_fail(lambda: normalize([[0, 0, 0]]))
     check_pipeline()
-    print("PASS: label-independent matching, spatial separation, one view per photo, normalized fusion, valid observed-point support, CPU pipeline and stale embedding rejection")
+    print("PASS: label-independent matching, spatial separation, one view per photo, normalized fusion, valid observed-point support, CPU pipeline, kind-keyed references and stale embedding rejection")
 
 
 if __name__ == "__main__":

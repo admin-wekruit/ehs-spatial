@@ -69,4 +69,7 @@ assert.equal(answer.status, "missing"); assert.match(answer.text, /不比较：�
 answer = answerSpatialQuery("光幕和围栏谁更高", hypothesis);
 assert.equal(answer.facts.length, 1); assert.match(answer.text, /右侧光幕底端减去旁边围栏下沿：4\.50 cm.*另一侧不比较：旁边的围栏点是下包络假设/);
 assert.match(answerSpatialQuery("左侧围栏离地多高", hypothesis).text, /围栏下包络假设，不是下横梁下沿/);
+// Left/right are read in the scene's reference photo: a missing side names that photo, not a fixed photo 4.
+const unsided = { ...input(), endpoints: endpoints.map(row => ({ ...row, side: null })), sidePhoto: 2 };
+assert.match(answerSpatialQuery("找一下左侧光幕", unsided).text, /左右只对有照片 2 测点的对象给出/);
 console.log("PASS: structured spatial questions read the loaded revision's endpoints with the current scale; comparisons, missing facts, unknown scale and refused unlike comparisons stay explicit");

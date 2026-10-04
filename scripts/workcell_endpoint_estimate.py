@@ -1,4 +1,4 @@
-"""Conditional terminal heights from actual display meshes and Photo 4 pointmaps.
+"""Conditional terminal heights from actual display meshes and the reference photo's pointmaps.
 
 ``estimate(root)`` measures current GLBs; ``measure_edge``/``build`` separately
 diagnose named RGB edges using cached depth. No surveyed comparison values or
@@ -15,7 +15,7 @@ import trimesh
 
 from workcell_photo_geometry import _intersect
 from workcell_photo_metrology import _fence_plane_index
-from workcell_photo_oneshot import _array, _frame
+from workcell_photo_oneshot import _array, _frame, scene_photos
 
 
 MEASURED_RAIL = 'measured lower rail member'
@@ -337,7 +337,9 @@ def build(root, out):
     root, out = Path(root), Path(out)
     physical = json.loads((root / 'physical-clearances.json').read_text())
     catalog = json.loads((root / 'objects.json').read_text())['objects']
-    raw = _frame(root, 4)
+    # ponytail: this named-edge diagnostic was frozen on the 2026-10-01 run (segment 319 of its photo 4 = reference photo).
+    photo = scene_photos(root)[1]
+    raw = _frame(root, photo)
     points = _array(raw['pts3d'])
     frame = {'points': points, 'conf': _array(raw['conf']),
              'valid': _array(raw['non_ambiguous_mask']).astype(bool) & np.isfinite(points).all(2),
@@ -345,16 +347,16 @@ def build(root, out):
              'K': _array(raw['intrinsics']), 'pose': _array(raw['camera_poses'])}
     floor_samples = np.array([s['pointNative'] for view in physical['ground']['sourceSupport'] for s in view['samples'] if s['planeInlier']])
     light = next(x for x in physical['diagnostics']['objectEdges'] if x['id'] == 'post-box-1')
-    light_edge = next(x for x in light['bottomCandidates'] if x['photo'] == 4 and x['sourceSegmentIndex'] == 319)
+    light_edge = next(x for x in light['bottomCandidates'] if x['photo'] == photo and x['sourceSegmentIndex'] == 319)
     fence = next(x for x in physical['objects'] if x['id'] == 'fence-0')
-    fence_edge = next(x for x in fence['bottomEdge']['observations'] if x['photo'] == 4)
+    fence_edge = next(x for x in fence['bottomEdge']['observations'] if x['photo'] == photo)
     results = []
     for ident, edge in [('post-box-1', light_edge), ('fence-0', fence_edge)]:
         item = next(x for x in catalog if x['id'] == ident)
-        observation = next(x for x in item['observations'] if x['photo'] == 4)
+        observation = next(x for x in item['observations'] if x['photo'] == photo)
         mask = _observation_point_mask(observation, points.shape[:2])
         estimate = measure_edge(frame, mask, edge['rawEnds'], physical['ground'], floor_samples=floor_samples)
-        results.append({'objectId': ident, 'photo': 4, 'sourceSelection': edge, **estimate})
+        results.append({'objectId': ident, 'photo': photo, 'sourceSelection': edge, **estimate})
     comparisons = {}
     for method in ('directPointmap', 'localSurface'):
         light_height, fence_height = (r[method]['heightNative'] for r in results)
@@ -362,8 +364,8 @@ def build(root, out):
         comparisons[method] = {'lightMinusFenceNative': difference,
                                'sign': 'light_higher' if difference is not None and difference > 0 else 'light_lower' if difference is not None and difference < 0 else 'equal' if difference == 0 else 'unsupported'}
     artifact = {'schemaVersion': 1, 'status': 'conditional_single_photo', 'mPerNative': None,
-                'scope': 'Named visible terminal edges in Photo4, predicted pointmap or local interior surface, same saved floor. Source observations selected before comparison. No surveyed clearance values enter this estimator.',
-                'sourceFiles': {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in ('frame_0004.json.gz', 'objects.json', 'physical-clearances.json')},
+                'scope': f'Named visible terminal edges in reference photo {photo}, predicted pointmap or local interior surface, same saved floor. Source observations selected before comparison. No surveyed clearance values enter this estimator.',
+                'sourceFiles': {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in (f'frame_{photo:04d}.json.gz', 'objects.json', 'physical-clearances.json')},
                 'groundResidualP95Native': physical['ground']['residualP95Native'],
                 'objects': results, 'comparison': comparisons}
     out.mkdir(parents=True, exist_ok=False)

@@ -42,6 +42,8 @@ def button_meshes(geometry):
         from scripts.workcell_metrology_models import reference_meshes
         names = {'gray-housing': 'gray-base', 'yellow-body': 'yellow-body', 'red-actuator': 'red-cap'}
         return {'emergency-button-'+names[name]: mesh for name, mesh in reference_meshes(fit['fittedNuisanceParameters']).items()}
+    if 'centerNative' not in anchor:
+        return {}  # no button reference was associated across this scene's photos: nothing to display
     # Rejected calibration candidates belong in their diagnostic export. Keep
     # the existing image-supported display envelope independent of that fit.
     center = np.asarray(anchor['centerNative'], float)
@@ -390,21 +392,33 @@ def _guard_parts(root, detections, frames, masks):
 
 # Files build() writes into its root; everything else there is an input.
 BUILD_OUTPUTS = ('guard-left.glb', 'guard-center.glb', 'guard-right.glb', 'guard-partition.json', 'object-extras.glb',
-                 'object-proxies.glb', 'objects.json')
+                 'object-proxies.glb', 'gantry.glb', 'objects.json')
+
+
+def _placement(root, kind):
+    """The multi-view model's placement record (generation views, Sim(3) refine, per-photo mask IoU), if saved."""
+    path = Path(root) / f'{kind}-placement.json'
+    if not path.is_file():
+        return None
+    placement = json.loads(path.read_text())
+    return {'file': path.name, 'generationViews': placement['generationViews'], 'refineViews': placement.get('refineViews', placement['generationViews']),
+            'maskIoUByPhoto': {str(row.get('photo', i)): round(row['iou'], 4) for i, row in enumerate(placement['sourceChecks'], 1)},
+            'refineMoved': placement.get('moved'), 'basis': placement.get('basis')}
 
 
 def build(root, sources, proxy_textures=True):
-    from workcell_photo_oneshot import _array, _frame
+    from workcell_photo_oneshot import _array, _frame, scene_photos
     root = Path(root)
     sources = [Path(p) for p in sources]
-    if len(sources) != 4 or len(set(p.resolve() for p in sources)) != 4 or not all(p.is_file() for p in sources):
-        raise ValueError('Four distinct source photos are required')
+    count = scene_photos(root)[0]
+    if len(sources) != count or count < 2 or len(set(p.resolve() for p in sources)) != count or not all(p.is_file() for p in sources):
+        raise ValueError(f'All {count} distinct source photos of the scene are required (at least two)')
     geometry = json.loads((root / 'geometry.json').read_text())
     segmentation = json.loads((root / 'sam3.json').read_text())
-    if len(segmentation['results']) != 4:
-        raise ValueError('SAM results must contain four photos')
+    if len(segmentation['results']) != count:
+        raise ValueError(f'SAM results must contain all {count} photos')
     frames = {}
-    for i in range(1, 5):
+    for i in range(1, count + 1):
         raw = _frame(root, i)
         points, rgb = _array(raw['pts3d']), _array(raw['image'])
         valid = _array(raw['non_ambiguous_mask']).astype(bool) & np.isfinite(points).all(2)
@@ -456,23 +470,30 @@ def build(root, sources, proxy_textures=True):
         return item
     def observations(rows):
         return [observe(r['mask'], r['photo'], f"SAM: {r['word']}; instance {r['instance']}") for r in rows]
-    robot_models = {}
-    for i in frames:
-        _, nodes = _nodes(root, f'robot-v{i}.glb')
-        robot_models[str(i)] = {'file': f'robot-v{i}.glb', 'nodes': nodes}
+    # One scene, one model per object: the robot and the cart each have one multi-view RecGen model placed by a
+    # shape-preserving refine against every view that shows them (never one model per photo).
+    def multi_view(ident, label, kind, file, rows):
+        placement = _placement(root, kind)
+        _, nodes = _nodes(root, file)
+        item = add(ident, label, kind, file, nodes, rows,
+                   f"one multi-view RecGen model from photos {' / '.join(map(str, placement['generationViews']))}; Sim(3)-refined to the masks and depth of {' / '.join(map(str, placement['refineViews']))}"
+                   if placement else f'RecGen model {file} of a run without a placement record',
+                   ['One static model for the whole scene; it does not change with the selected photo.',
+                    'Per-photo mask IoU of the placed model is recorded in multiViewModel; occlusion and segmentation lower it. Not a physical accuracy score.'])
+        if placement:
+            item['multiViewModel'] = placement
+        return item
     robot_obs = []
     for i in frames:
         rows = [r for r in detections.get('industrial robot arm', []) if r['photo'] == i]
         if rows:
             robot_obs.append(observe(np.logical_or.reduce([r['mask'] for r in rows]), i, 'SAM industrial robot arm'))
-    robot = add('robot', 'Industrial robot arm', 'robot', 'robot-v1.glb', robot_models['1']['nodes'], robot_obs,
-                'generated pose per source photo', ['Robot configurations differ across photos; no static cross-view shape claim.'])
-    robot['modelsByPhoto'] = robot_models
+    multi_view('robot', 'Industrial robot arm', 'robot', 'robot-multi.glb', robot_obs)
     cart_masks = np.load(root / 'cart-input.npz')
-    _, nodes = _nodes(root, 'cart-single.glb')
-    add('cart', 'Work cart', 'cart', 'cart-single.glb', nodes,
-        [observe(cart_masks[f'v{i}_mask'] > 0, i, 'Selected cart mask; cart-mask-selection.json') for i in frames],
-        'generated from RecGen photo 1; linked silhouette observations from four photos')
+    cart_obs = [observe(cart_masks[f'v{i}_mask'] > 0, i, 'Selected cart mask; cart-mask-selection.json') for i in frames]
+    # ponytail: runs before 2026-10-04 have a single-photo cart-single.glb; the new name is the multi-view model.
+    multi_view('cart', 'Work cart', 'cart', 'cart-multi.glb' if (root / 'cart-multi.glb').is_file() else 'cart-single.glb',
+               [o for o in cart_obs if o])
     guard_masks = np.load(root / 'guard-input.npz')
     for part in _guard_parts(root, detections, frames, guard_masks):
         _, nodes = _nodes(root, part['file'])
@@ -533,7 +554,7 @@ def build(root, sources, proxy_textures=True):
     for node, mesh in button_meshes(geometry).items():
         scene.add_geometry(mesh, node_name=node, geom_name=node); button_nodes.append(node)
     button_obs = []
-    for view in anchor['views']:
+    for view in anchor['views'] if button_nodes else []:
         i = view['photo']; frame = frames[i]
         x0,y0,x1,y1 = view['boxRaw']
         corners = np.asarray([[x0,y0,1],[x1,y1,1]]) @ np.asarray(frame['raw']['input_mask_transform']['input_to_canonical_pixel_centres']).T
@@ -542,11 +563,12 @@ def build(root, sources, proxy_textures=True):
         lo = np.maximum(lo,0); hi = np.minimum(hi, mask.shape[::-1])
         mask[lo[1]:hi[1],lo[0]:hi[0]] = True
         button_obs.append(observe(mask,i,'geometry.anchor component envelope transformed from original photo'))
-    button = add('emergency-button', 'Emergency stop button', 'emergency stop button', 'object-extras.glb', button_nodes,
-                 button_obs, 'parametric component; image-supported position/envelope',
-                 anchor['assumptions'] + ['Red/yellow/gray part proportions and unseen thickness are rendering assumptions. Supplied dimensions remain an input hypothesis.'])
-    for key, field in [('height','nativeHeight'),('width','nativeWidth')]:
-        button['measurements'][key] = {'valueNative': anchor[field], 'status':'input-hypothesis', 'source':'geometry.anchor provisional whole-component envelope; uniform scale applies'}
+    if button_nodes:  # a scene whose photos associate no button reference has no button object (and a native scale)
+        button = add('emergency-button', 'Emergency stop button', 'emergency stop button', 'object-extras.glb', button_nodes,
+                     button_obs, 'parametric component; image-supported position/envelope',
+                     anchor['assumptions'] + ['Red/yellow/gray part proportions and unseen thickness are rendering assumptions. Supplied dimensions remain an input hypothesis.'])
+        for key, field in [('height','nativeHeight'),('width','nativeWidth')]:
+            button['measurements'][key] = {'valueNative': anchor[field], 'status':'input-hypothesis', 'source':'geometry.anchor provisional whole-component envelope; uniform scale applies'}
     # Compatible aliases may identify the same instance, but class alone never joins observations.
     families = {'stack light':'signal light', 'workcell sign':'sign', 'warning sign':'sign', 'instruction poster':'sign'}
     groups, aliases = [], []
@@ -606,18 +628,59 @@ def build(root, sources, proxy_textures=True):
                           'unsupportedObservations':unsupported,
                           'projectionMedianPixels':{str(i):f['projectionMedianPixels'] for i,f in frames.items()},
                           'status':'detected evidence coverage; semantic completeness requires visual review'}}
-    (root/'object-extras.glb').write_bytes(scene.export(file_type='glb'))
+    if len(scene.geometry):  # trimesh cannot export an empty scene; nothing references the file then
+        (root/'object-extras.glb').write_bytes(scene.export(file_type='glb'))
     (root/'objects.json').write_text(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n')
     # One placed model per extra object: merge repeats, alias floor/robot/cart/guard hits, replace raw fragments.
     from scripts.workcell_extra_models import consolidate
     consolidate(root, sources, textures=proxy_textures)
+    add_gantry(root, sorted(frames), geometry, segmentation)
     return json.loads((root/'objects.json').read_text())
+
+
+def add_gantry(root, photos, geometry, segmentation):
+    """One multi-view gantry model (entrance portal, braced frames) that carries the lamps and signs.
+
+    Members are fitted from the gantry instance masks of every photo of the scene (scripts/workcell_gantry);
+    a refused fit is recorded in coverage.gantry and adds no object."""
+    from scripts.workcell_gantry import GANTRY_WORDS, build_gantry, masks_from_segmentation
+    root = Path(root)
+    words = [prompt['text'] for prompt in segmentation['prompts']]
+    text = (root / 'objects.json').read_text()
+    catalog = json.loads(text)
+    catalog['objects'] = [item for item in catalog['objects'] if item['id'] != 'gantry']
+    if not all(word in words for word in GANTRY_WORDS):
+        catalog['coverage']['gantry'] = {'status': 'not_segmented', 'reason': 'gantry prompts were not part of this run'}
+    else:
+        scene, record = build_gantry(root, photos, masks_from_segmentation(segmentation, photos), geometry)
+        if scene is None:
+            catalog['coverage']['gantry'] = record
+        else:
+            (root / 'gantry.glb').write_bytes(scene.export(file_type='glb'))
+            members = record.get('members', [])
+            # Visible extents of each gantry observation by the same support rule and measurement as every other object.
+            (measured, _), observations = remeasure(root, [{'id': 'gantry', 'observations': record['observations']}], geometry), record['observations']
+            for observation, (extent, supported, mask_pixels) in zip(observations, measured['gantry'] if measured else []):
+                observation.update(maskPixels=mask_pixels, supportedPixels=supported, observedMeasurements=extent)
+            catalog['objects'].append({
+                'id': 'gantry', 'label': 'Entrance gantry', 'kind': 'gantry',
+                'model': {'file': 'gantry.glb', 'nodes': list(scene.graph.nodes_geometry)},
+                'observations': record['observations'], 'measurements': _unknown('Fitted structural members; extents beyond the photos are inferred.'),
+                'representation': 'multi-view fitted structural members (posts, beams, braces) from every photo of the scene',
+                'notes': ['Posts are extended to the fitted floor and to the beam they carry; widths assume a square section.',
+                          'Members seen in one photo only are flagged singleView in gantryModel.'],
+                'gantryModel': {key: record[key] for key in ('status', 'rule', 'validation', 'joints') if key in record} |
+                               {'members': [{k: m[k] for k in ('id', 'type', 'sourcePhotos', 'singleView') if k in m} for m in members]}})
+            catalog['coverage']['gantry'] = {'status': record.get('status', 'built'), 'members': len(members)}
+    catalog['coverage']['objects'] = len(catalog['objects'])
+    catalog['coverage']['observations'] = sum(len(item['observations']) for item in catalog['objects'])
+    (root / 'objects.json').write_text(json.dumps(catalog, ensure_ascii=False, indent=2, allow_nan=False) + ('\n' if text.endswith('\n') else ''))
 
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root',type=Path,required=True)
-    parser.add_argument('--sources',type=Path,nargs=4)
+    parser.add_argument('--sources',type=Path,nargs='+',help='Every photo of the scene, in photo order')
     parser.add_argument('--review-fence-support',action='store_true',help='Apply the fence-panel support rule to an existing catalog')
     args=parser.parse_args()
     if args.review_fence_support:

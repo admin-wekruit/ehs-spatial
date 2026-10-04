@@ -17,7 +17,7 @@ Proxies are placement and visible-extent models from cleaned pointmap support (e
 depth within 3 MAD of its median); thickness and hidden extent remain unknown, and objects mounted on
 unmodelled structure (gantry, ceiling) still appear without that structure.
 
-python scripts/workcell_extra_models.py --root RUN --sources a.jpg b.jpg c.jpg d.jpg
+python scripts/workcell_extra_models.py --root RUN --sources PHOTO_1.jpg ... PHOTO_N.jpg
 """
 import argparse
 import json
@@ -148,7 +148,7 @@ def _proxy(points, colors, kind, geometry, pixels=None, frame=None):
 
 def consolidate(root, sources=None, textures=True):
     """Rewrite objects.json and object-proxies.glb; returns the merge/alias record. Deterministic and idempotent."""
-    from scripts.workcell_photo_oneshot import _array, _frame
+    from scripts.workcell_photo_oneshot import _array, _frame, scene_photos
     root = Path(root)
     text = (root / 'objects.json').read_text()
     catalog = json.loads(text)
@@ -235,9 +235,9 @@ def consolidate(root, sources=None, textures=True):
     texture_frames = None
     if textures:
         if sources is None:
-            raise ValueError('Textured proxies need the four original photos')
+            raise ValueError('Textured proxies need every original photo of the scene')
         from scripts.workcell_photo_texture import source_texture_frames
-        texture_frames = source_texture_frames(root, {p: frame(p) for p in range(1, 5)}, [Path(p) for p in sources])
+        texture_frames = source_texture_frames(root, {p: frame(p) for p in range(1, scene_photos(root)[0] + 1)}, [Path(p) for p in sources])
     floor_hull = None
     if (root / 'floor-fitted.glb').is_file():
         vertices = np.asarray(trimesh.load(root / 'floor-fitted.glb', force='mesh').vertices)
@@ -311,7 +311,7 @@ def consolidate(root, sources=None, textures=True):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--root', type=Path, required=True)
-    parser.add_argument('--sources', type=Path, nargs=4)
+    parser.add_argument('--sources', type=Path, nargs='+', help='Every photo of the scene, in photo order')
     parser.add_argument('--no-textures', action='store_true')
     args = parser.parse_args()
     print(json.dumps(consolidate(args.root, args.sources, textures=not args.no_textures), ensure_ascii=False, indent=2))

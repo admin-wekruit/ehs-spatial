@@ -1,4 +1,4 @@
-"""Four-photo metrology experiment; source features, never evaluation distances.
+"""N-photo (one scene) metrology experiment; source features, never evaluation distances.
 
 All geometry uses MapAnything's native world and canonical camera intrinsics.
 Original JPEG pixel centres are mapped with the saved crop/resize affine. SAM
@@ -86,8 +86,8 @@ def _load(root, sources, cameras):
     if isinstance(cameras, (str, Path)):
         cameras = json.loads(Path(cameras).read_text())
     replacements = {int(row['photo']): row for row in (cameras or {}).get('frames', [])}
-    if cameras is not None and (set(replacements) != {1, 2, 3, 4} or cameras.get('worldFrame') != 'MapAnything native'):
-        raise ValueError('Replacement cameras must contain four cameras in MapAnything native gauge')
+    if cameras is not None and (set(replacements) != set(range(1, len(sources) + 1)) or cameras.get('worldFrame') != 'MapAnything native'):
+        raise ValueError('Replacement cameras must contain every scene camera in MapAnything native gauge')
     frames, candidates, metadata = {}, [], []
     for photo, source in enumerate(sources, 1):
         raw = _frame(root, photo)
@@ -1186,7 +1186,7 @@ def _fit_ground(geometry, frames, legacy, objects, refined, drawings, catalog):
              for obj in objects if obj['id'].startswith('post-') and obj.get('topEdge') and obj.get('bottomEdge')]
     radius_basis = 'triangulated visible top-to-bottom housing span'
     if not spans:
-        spans = [max(catalog[ident]['modelDimensionsNative']) for ident in TARGETS if ident.startswith('post-')]
+        spans = [max(catalog[ident]['modelDimensionsNative']) for ident in legacy if ident.startswith('post-')]
         radius_basis = 'saved source-pointmap housing span; association only'
     radius = max(float(np.median(spans)) * .3, geometry['floor']['residualP95Native'] * 6)
     locations = {ident: np.asarray(row['footNative']) for ident, row in legacy.items() if row['footNative'] is not None}
@@ -1330,8 +1330,10 @@ def source_physical_clearances(geometry, catalog, segmentation, frames, *, camer
     up = _unit(np.asarray(geometry['floor']['normal'], float))
     if drawings is None:
         drawings = {photo: {'standard': [], 'selected': [], 'candidates': [], 'floorPixelsRaw': []} for photo in frames}
-    legacy = {ident: _legacy(catalog[ident], geometry) for ident in TARGETS}
-    objects, edge_diagnostics = _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings)
+    # The targets this scene's catalog actually contains (another cell may show one fence section, or no second post).
+    targets = tuple(ident for ident in TARGETS if ident in catalog)
+    legacy = {ident: _legacy(catalog[ident], geometry) for ident in targets}
+    objects, edge_diagnostics = _object_edges(catalog, segmentation, geometry, frames, up, legacy, drawings, targets=targets)
     stage_errors = []
     try:
         ground = _fit_ground(geometry, frames, legacy, objects, cameras_refined, drawings, catalog)
@@ -1342,7 +1344,8 @@ def source_physical_clearances(geometry, catalog, segmentation, frames, *, camer
     return {'schemaVersion': 1, 'coordinateSystem': 'MapAnything native', 'units': 'native',
             'ground': ground, 'objects': objects,
             'associationFloor': geometry['floor'],
-            'observedEnvelopeBaselines': [{'id': ident, **legacy[ident]} for ident in TARGETS],
+            'observedEnvelopeBaselines': [{'id': ident, **legacy[ident]} for ident in targets],
+            'absentTargets': [ident for ident in TARGETS if ident not in targets],
             'diagnostics': {'objectEdges': edge_diagnostics, 'stageErrors': stage_errors},
             'scope': 'Visible rigid source edges in two or more photos to one inferred local floor. Mask-envelope baselines are not physical bottoms. Occluded object portions and hardware remain unknown.',
             'timingScope': 'Source edge and local-ground analysis after loading; excludes depth, segmentation and model generation.',
@@ -1371,8 +1374,8 @@ def apply_source_clearances(root, sources):
     import trimesh
     root = Path(root)
     sources = [Path(source) for source in sources]
-    if len(sources) != 4:
-        raise ValueError('Exactly four original JPEG sources are required in recorded order')
+    if len(sources) < 2:
+        raise ValueError('Every original JPEG of the scene (at least two) is required in recorded order')
     geometry, catalog, segmentation, frames, _, inputs = _load(root, sources, None)
     drawings = {photo: {'standard': [], 'selected': [], 'candidates': [], 'floorPixelsRaw': []} for photo in frames}
     result = source_physical_clearances(geometry, catalog, segmentation, frames, drawings=drawings)
@@ -1477,7 +1480,7 @@ def _validate_results(result):
         if not joint or result['routes']['J']['scaleMPerNative'] != joint.get('mPerNative'):
             raise ValueError('Joint route must use its own validated metric scale')
     for route in result['routes'].values():
-        if {row['id'] for row in route['objects']} != set(TARGETS):
+        if {row['id'] for row in route['objects']} != set(TARGETS) - set(result.get('absentTargets', [])):
             raise ValueError('Every route must preserve all target identities')
         for row in route['objects']:
             if row.get('heightNative') is None:
@@ -1500,8 +1503,8 @@ def build(root, out, sources, reference, cameras=None, joint_reference=None):
     sources = [Path(source) for source in sources]
     reference = _reference(reference)
     joint_reference = _joint_reference(joint_reference, reference, cameras)
-    if len(sources) != 4:
-        raise ValueError('Exactly four original JPEG sources are required in recorded order')
+    if len(sources) < 2:
+        raise ValueError('Every original JPEG of the scene (at least two) is required in recorded order')
     if root.resolve() == out.resolve():
         raise ValueError('Output must not replace the saved source experiment')
     out.mkdir(parents=True, exist_ok=False)
@@ -1531,13 +1534,13 @@ def build(root, out, sources, reference, cameras=None, joint_reference=None):
     result = {'schemaVersion': 1, 'coordinateSystem': 'MapAnything native',
               'cameraRoute': 'replacement cameras; independently retriangulated source geometry' if cameras is not None else 'original MapAnything cameras',
               'reference': reference, 'sourceInputs': inputs, 'calibration': calibration,
-              'ground': ground, 'objects': objects,
+              'ground': ground, 'objects': objects, 'absentTargets': physical['absentTargets'],
               'routes': {'A': _route('Saved geometry / saved whole-height scale', original, old),
                          'B': _route('Saved geometry / new named-circle scale', original, new),
                          'C': _route('Source end edges and local floor / saved whole-height scale', objects, old),
                          'D': _route('Source end edges and local floor / new named-circle scale', objects, new)},
               'diagnostics': physical['diagnostics'],
-              'limitations': ['Only four supplied photos; no measured camera calibration or camera height.',
+              'limitations': [f'Only {len(sources)} supplied photos; no measured camera calibration or camera height.',
                               'Circular standard sections and housing uprightness are image-tested hypotheses.',
                               'A/B intentionally retain old points and are labelled baselines; they are not recalibrated geometry.',
                               'SAM and old pointmaps associate image regions; replacement-camera floor points and edges are newly triangulated.',
@@ -1560,7 +1563,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
-    parser.add_argument('--sources', type=Path, nargs=4, required=True)
+    parser.add_argument('--sources', type=Path, nargs='+', required=True, help='Every photo of the scene, in photo order')
     parser.add_argument('--reference', type=Path)
     parser.add_argument('--cameras', type=Path)
     args = parser.parse_args()

@@ -4,6 +4,7 @@ Dimensions describe the entire red cap + yellow/gray housing. They remain a
 hypothesis until the physical reference and its external dimensions are confirmed.
 No raw-image ROI or manually picked edge is used.
 """
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -180,8 +181,8 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2, reference
     root = Path(root)
     if not np.isfinite([diameter_m, height_m]).all() or min(diameter_m, height_m) <= 0:
         raise ValueError('Reference width and height must be finite and positive')
-    if len(sources) != 4:
-        raise ValueError('Exactly four source photos are required')
+    if len(sources) < 2:
+        raise ValueError('At least two source photos of one scene are required')
     seg = json.loads((root / 'sam3.json').read_text())
     frames, floor_points, fence_points, candidates = [], [], [], []
     for i, source in enumerate(sources, 1):
@@ -226,7 +227,7 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2, reference
     (root / 'floor-fitted.glb').write_bytes(floor_mesh.export(file_type='glb'))
     floor = {'normal': up.tolist(), 'offset': d, 'supportPoints': int(support.sum()),
              'residualP95Native': float(np.percentile(abs(floor_support @ up + d), 95)),
-             'sourcePhotos': list(range(1, 5)), 'method': 'automatic lower-image unsegmented horizontal plane consensus',
+             'sourcePhotos': list(range(1, len(sources) + 1)), 'method': 'automatic lower-image unsegmented horizontal plane consensus',
              'status': 'observed fit; floor identity inferred from orientation and lower-image support'}
     # Publish the same fitted ground early so semantic panel routing need not wait for fence fitting.
     (root / 'floor-reference.json').write_text(json.dumps(floor) + '\n')
@@ -293,8 +294,10 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2, reference
                         del rgb
                     fit = fit_reference_shape(compact, observations, reference, up)
                 except (ValueError, KeyError, np.linalg.LinAlgError, FloatingPointError) as error:
+                    # The contour hash binds a single-photo conditional scale to exactly these observations.
                     fit = {'status': 'unsupported', 'mPerNative': None, 'candidateMPerNative': None,
-                           'reason': f'{type(error).__name__}: {error}', 'observations': observations}
+                           'reason': f'{type(error).__name__}: {error}', 'observations': observations,
+                           'sourceContourSha256': hashlib.sha256(json.dumps(observations, sort_keys=True).encode()).hexdigest()}
                 anchor['referenceFit'] = fit
                 if fit['status'] == 'available':
                     shape = fit['fittedNuisanceParameters']
@@ -552,7 +555,7 @@ def build(root: Path, sources: list[Path], diameter_m=.2, height_m=.2, reference
     # Triangles are only built inside the segmentation and close to the fitted
     # section's pointmap support. No face extends beneath the observed panel.
     panel_choices = {}
-    for photo in range(1, 5):
+    for photo in range(1, len(sources) + 1):
         frame = _frame(root, photo)
         points, colors = _array(frame['pts3d']), _array(frame['image'])
         mask = _mask(frame, _response(seg, photo, 'safety fence'))
@@ -740,7 +743,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
-    parser.add_argument('--images', type=Path, nargs=4, required=True)
+    parser.add_argument('--images', type=Path, nargs='+', required=True, help='Two or more photos of one scene, in photo order')
     parser.add_argument('--height-m', type=float, default=.2)
     parser.add_argument('--width-m', type=float, default=.2)
     args = parser.parse_args()

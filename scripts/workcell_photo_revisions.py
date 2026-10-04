@@ -84,7 +84,7 @@ def _package_candidate(page, root, report):
     return target
 
 
-def build(root, out, viewer_assets, candidates=(), *, main_id, evidence_url=None):
+def build(root, out, viewer_assets, candidates=(), *, main_id, evidence_url=None, experiment=None):
     root, out = Path(root).resolve(), Path(out).resolve()
     if out.exists():
         raise ValueError('Output must be a new directory')
@@ -132,7 +132,9 @@ def build(root, out, viewer_assets, candidates=(), *, main_id, evidence_url=None
                       revisionChoices=[{**row, 'url': '../../' + row['url']} for row in choices])
         (target / 'scene-report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + '\n')
     main_report.update(measurementUpdate=update, revisionChoices=choices)
-    if evidence_url and built:
+    if evidence_url and experiment:
+        main_report['experiment'] = {**experiment, 'reportURL': evidence_url, 'timingLabel': '完整流程'}
+    elif evidence_url and built:
         main_report['experiment'] = {'title': '光幕候选模型可切换核对',
                                      'summary': '页面上方可在主模型与候选模型之间切换；模型、离地测点、卡尺、语义空间证据和下载都只读取所选版本。候选未通过跨图严格门槛，不替换主模型；拟合用到的是哪块板面、哪条下沿，原图逐图核对见证据页。',
                                      'reportURL': evidence_url, 'timingLabel': '原始完整流程'}
@@ -148,7 +150,8 @@ if __name__ == '__main__':
     parser.add_argument('--main-id', required=True, help='Revision ID of the main model build')
     parser.add_argument('--candidate', nargs=3, action='append', default=[], metavar=('EVIDENCE_DIR', 'REVISION_ID', 'LABEL'),
                         help='Directory with volume-candidates.json and its GLBs, the candidate revision ID and its label')
-    parser.add_argument('--evidence-url', help='Relative URL of the published candidate evidence page')
+    parser.add_argument('--evidence-url', help='Relative URL of the published evidence page')
+    parser.add_argument('--experiment', nargs=2, metavar=('TITLE', 'SUMMARY'), help='Evidence link block shown on the report page')
     args = parser.parse_args()
-    print(json.dumps(build(args.root, args.out, args.viewer_assets, args.candidate, main_id=args.main_id,
-                           evidence_url=args.evidence_url), ensure_ascii=False, indent=2))
+    print(json.dumps(build(args.root, args.out, args.viewer_assets, args.candidate, main_id=args.main_id, evidence_url=args.evidence_url,
+                           experiment=dict(zip(('title', 'summary'), args.experiment)) if args.experiment else None), ensure_ascii=False, indent=2))

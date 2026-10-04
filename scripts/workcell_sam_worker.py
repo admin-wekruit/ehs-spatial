@@ -1,4 +1,4 @@
-"""One SAM 3 load on GPU 1; text prompts, then OWLv2 cart boxes on the same four photos."""
+"""One SAM 3 load on GPU 1; text prompts, then OWLv2 cart boxes on the same N photos of one scene."""
 import json
 from pathlib import Path
 import sys
@@ -38,7 +38,8 @@ def main(root):
     model = Sam3Model.from_pretrained(MODEL_ID, revision=REVISION, cache_dir="/v/sam3/huggingface/hub", torch_dtype=torch.bfloat16).to("cuda").eval()
     words = json.loads((root / "words.json").read_text())
     prompts = [{"text": w} for w in words]
-    images = [Image.open(root / f"source-{i}.jpg").convert("RGB") for i in range(1, 5)]
+    count = len(list(root.glob("source-*.jpg")))
+    images = [Image.open(root / f"source-{i}.jpg").convert("RGB") for i in range(1, count + 1)]
     results = []
     for image in images:
         base = processor(images=image, return_tensors="pt").to("cuda")
@@ -60,8 +61,8 @@ def main(root):
             raise TimeoutError("OWLv2 cart boxes did not arrive")
         time.sleep(.1)
     boxes = json.loads((root / "cart-boxes.json").read_text())["results"]
-    if len(boxes) != 4:
-        raise ValueError("Expected one cart box for each image")
+    if len(boxes) != count:
+        raise ValueError("Expected one cart proposal list for each image")
     cart_results = []
     for i, box_rows in enumerate(boxes, 1):
         # OWLv2 boxes are on MapAnything's canonical raster, not the raw JPEG.
@@ -82,7 +83,8 @@ def main(root):
             masks.extend(candidate_masks); scores.extend(candidate_scores)
         cart_results.append({"rle": masks, "scores": scores})
     (root / "cart-masks.json").write_text(json.dumps({"results": cart_results}))
-    (root / "sam-timing.json").write_text(json.dumps({"containerSeconds": time.monotonic() - started}))
+    (root / "sam-timing.json").write_text(json.dumps({"containerSeconds": time.monotonic() - started, "photos": count,
+                                                      "peakAllocatedGiB": torch.cuda.max_memory_allocated() / 2**30}))
     print(json.dumps({"sam3": "ok", "seconds": time.monotonic() - started}), flush=True)
 
 

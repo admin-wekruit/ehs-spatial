@@ -63,7 +63,7 @@ def policy_evidence(report, catalog):
                                      + '; no top-of-object height fact exists.'})
         if spec['predicate'] in ('max_separation', 'min_separation'):
             needed.append({'id': 'reference_region', 'status': 'missing' if 'industrial robot arm' in spec['object_labels'] else 'unknown',
-                           'detail': 'A robot work-area envelope is not modelled; robot poses differ per photo and are not a hazard zone.'
+                           'detail': 'A robot work-area envelope is not modelled; the one static robot model of this scene is not a hazard zone.'
                                      if 'industrial robot arm' in spec['object_labels'] else 'Reference region identity is not a perception class.'})
         row.update(compileStatus='compiled', applicability=engine[0]['applicability'] if engine else 'unknown', engine=engine,
                    evidenceStillNeeded=needed, missingEvidence=sorted({item for finding in engine for item in finding['missingEvidence']}))

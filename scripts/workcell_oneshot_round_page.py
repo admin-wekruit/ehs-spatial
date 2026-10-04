@@ -20,9 +20,14 @@ def _read(path):
     return json.loads(Path(path).read_text())
 
 
-def _cm(report, row):
+def _cm(report, row, key='heightNative'):
     scale = report['modelMeasurementScale']['nativeToMeters']
-    return None if scale is None else row['heightNative'] * scale * 100
+    return None if scale is None else row[key] * scale * 100
+
+
+def _photos(report):
+    """Photos of the run's one scene (legacy reports: one camera per photo)."""
+    return (report.get('capture') or {}).get('photoCount') or len(report['revision']['document']['cameras'])
 
 
 def _table(head, rows):
@@ -97,12 +102,12 @@ def build(args):
         ['小车提议（OWLv2）+ 掩码', f"{stage['owlSeconds'] + stage['cartMaskSeconds']:.1f}", 'GPU 0'],
         ['输入准备', f"{stage['prepareSeconds']:.1f}", 'CPU'],
         ['模型（RecGen，两卡）', f"{stage['modelSeconds']:.1f}", 'GPU 0+1'],
-        ['后处理（物理下沿、护板拟合、目录、finalize）', f"{stage['metricTailSeconds']:.1f}", 'CPU，GPU 容器内空等'],
+        ['后处理（物理下沿、护板拟合、目录、finalize）', f"{stage['metricTailSeconds']:.1f}", f"CPU；其中信号灯 RecGen {stage['smallObjectSeconds']:.1f} s 用 GPU" if 'smallObjectSeconds' in stage else 'CPU，GPU 容器内空等'],
         ['　其中：物理下沿提取', f"{_read(run / 'physical-clearances.json')['wallSeconds']:.1f}", '与护板拟合并行'],
         ['　其中：三块护板共享拟合', f"{_read(run / 'structural-result.json')['wallSeconds']:.1f}", '与物理下沿并行'],
         ['语义阶段（另一个临时容器）', f"{semantic_call['wallSeconds']:.1f}", f"容器内 {semantic_first['functionSeconds']:.1f} s"],
         ['本机打包与报告', f'{local_tail:.1f}', 'CPU'],
-        ['完整 oneshot', f"{metrics['oneShotWallSeconds']:.1f}", '四张原图 → 可打开的报告'],
+        ['完整 oneshot', f"{metrics['oneShotWallSeconds']:.1f}", f'{_photos(main)} 张原图 → 可打开的报告'],
     ]
     spend_rows = [['oneshot 主容器', 'completed', f"{modal['containerWallSeconds']:.1f}", f"{modal['wallSecondsIncludingColdStart']:.1f}",
                    f"{_read(run / 'spend-ledger.json')['estimate']['functionWindowEstimateUsd']:.3f}",
@@ -127,9 +132,9 @@ def build(args):
             if old.get(ident) and old[ident][0] != label:
                 label += f'（上一版标为“{old[ident][0]}”）'
             reading_rows.append([('候选 · ' if table is readings[1] else '主模型 · ') + label, fmt(table.get(ident)), fmt(old.get(ident))])
-    difference_rows = [[row['label'], f"{row['valueNative'] * main['modelMeasurementScale']['nativeToMeters'] * 100:.2f}"]
-                       for row in main['endpointEstimation']['differences']]
-    difference_rows += [['候选：' + row['label'], f"{row['valueNative'] * candidate['modelMeasurementScale']['nativeToMeters'] * 100:.2f}"]
+    fmt_cm = lambda value: '原生单位' if value is None else f'{value:.2f}'
+    difference_rows = [[row['label'], fmt_cm(_cm(main, row, 'valueNative'))] for row in main['endpointEstimation']['differences']]
+    difference_rows += [['候选：' + row['label'], fmt_cm(_cm(candidate, row, 'valueNative'))]
                         for row in candidate['endpointEstimation']['differences']]
 
     coverage = _read(final / 'objects.json')['coverage']
@@ -171,9 +176,9 @@ th,td{{border-bottom:1px solid var(--line);padding:6px 10px;text-align:left;vert
 figcaption,.files,small{{color:var(--muted);font-size:13px}}pre.readme{{white-space:pre-wrap;font:13px/1.55 ui-monospace,monospace;background:var(--bg);padding:12px;border-radius:8px;max-height:420px;overflow:auto}}
 .tag{{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:1px 10px;margin-right:6px;font-size:13px}}</style><main>
 <p><a href="{report}">← 打开 3D 报告（主模型）</a> · <a href="{report}?version={escape(args.candidate_id)}">候选版本</a></p>
-<h1>四张照片 oneshot 重跑（{escape(args.main_id)}）</h1>
+<h1>{_photos(main)} 张照片 oneshot 重跑（{escape(args.main_id)}）</h1>
 <p><span class="tag">已有功能：一套 revision 一套事实</span><span class="tag">候选：G 光幕封闭外形，未接受</span><span class="tag">物理验证：无</span></p>
-<p>所有离地值都是条件模型估计：比例 {main['modelMeasurementScale']['nativeToMeters']:.5f} m/native 来自照片 4 主体 8.5 cm 的条件比例（{escape(main['modelMeasurementScale']['status'])}），accepted physical scale 仍为 null。</p>
+<p>所有离地值都是条件模型估计：{'原生单位，本场景没有按钮标尺' if main['modelMeasurementScale']['nativeToMeters'] is None else f"比例 {main['modelMeasurementScale']['nativeToMeters']:.5f} m/native"}（{escape(main['modelMeasurementScale']['status'])}；{escape(main['modelMeasurementScale']['source'])}），accepted physical scale 仍为 null。</p>
 {('<section><h2>本轮结论</h2><ul>' + ''.join(f'<li>{escape(text)}</li>' for text in args.finding) + '</ul></section>') if args.finding else ''}
 <section><h2>延迟（秒）</h2>{_table(['阶段', '秒', '说明'], latency)}
 <p><small>GPU 显存峰值：MapAnything {geometry_peak['peakAllocatedGiB']:.2f} GiB（保留 {geometry_peak['peakReservedGiB']:.2f}）/ 80 GiB；语义编码器 {", ".join(f"{k} {v:.2f} GiB" for k, v in encoder_peaks.items() if v is not None)}；SAM 3 与 RecGen 进程未记录峰值。</small></p></section>

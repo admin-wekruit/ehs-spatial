@@ -1,4 +1,4 @@
-"""Bounded four-photo experiments in one ephemeral two-A100 allocation per call."""
+"""Bounded experiments on one N-photo scene run, in one ephemeral two-A100 allocation per call."""
 import hashlib
 import io
 import json
@@ -62,7 +62,7 @@ def experiment(payload: bytes, mode: str, joint_max_nfev: int = 100):
             code_files += [Path('/repo/scripts')/name for name in ('workcell_depth_metrology.py', 'check_workcell_depth_metrology.py')]
         (out/'implementation-manifest.json').write_text(json.dumps({str(p.relative_to('/repo')):hashlib.sha256(p.read_bytes()).hexdigest() for p in code_files},indent=2))
         env = os.environ.copy(); env['PYTHONPATH'] = '/repo:/repo/scripts'
-        sources = [str(root/f'source-{i}.jpg') for i in range(1,5)]
+        sources = [str(root/f'source-{i}.jpg') for i in range(1, len(list(root.glob('source-*.jpg'))) + 1)]
         records = {}
         def run(name, code, timeout):
             start = time.monotonic()
@@ -232,8 +232,8 @@ def main(baseline: str, out: str, sources: str, mode: str = 'controls', control:
         relative = Path(summary['volumeRunPath'])
         depth_run_path('/v/layers', relative)
     source_paths = [Path(p) for p in sources.split(',')]
-    if len(source_paths) != 4 or not all(p.is_file() for p in source_paths): raise ValueError('Four source photos required')
-    files = [*root.glob('frame_*.json.gz'), *root.glob('photo-*.png')]
+    if len(source_paths) < 2 or not all(p.is_file() for p in source_paths): raise ValueError('Every source photo of the scene (at least two) is required')
+    files = [*root.glob('frame_*.json.gz'), *root.glob('photo-*.png'), *root.glob('capture.json')]
     files += [root/name for name in ('geometry.json','sam3.json','objects.json')]
     if mode in ('physical-bottoms', 'post-shells'):
         files += [root/name for name in ('posts.glb','fence-fitted.glb','physical-clearances.json')]

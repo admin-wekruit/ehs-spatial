@@ -215,8 +215,8 @@ def _select_tracks(tracks, frames, maximum, mode):
 def _prepare(frames, tracks, observations, max_tracks, *, refine_cameras=True, track_selection='spatial_round_robin'):
     if isinstance(max_tracks, bool) or not isinstance(max_tracks, int) or max_tracks <= 0:
         raise ValueError('Track cap must be a positive integer')
-    if set(frames) != {1, 2, 3, 4}:
-        raise ValueError('Exactly four source cameras are required')
+    if len(frames) < 2 or set(frames) != set(range(1, len(frames) + 1)):
+        raise ValueError('Every source camera of the scene (photos 1..N, N >= 2) is required')
     for frame in frames.values():
         K, A, pose = (np.asarray(frame[k], float) for k in ('K', 'A', 'pose'))
         if K.shape != (3, 3) or A.shape != (3, 3) or pose.shape != (4, 4) or not all(np.isfinite(a).all() for a in (K, A, pose)):

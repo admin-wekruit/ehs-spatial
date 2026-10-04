@@ -236,8 +236,8 @@ def build(root, sources, out):
     """Remote cached-run entry point; emits candidates, per-view JPEGs and JSON."""
     root, out = Path(root), Path(out)
     sources = [Path(source) for source in sources]
-    if len(sources) != 4 or root.resolve() == out.resolve() or root.resolve() in out.resolve().parents:
-        raise ValueError('Provide four original JPEGs and a separate output directory outside the frozen run')
+    if len(sources) < 2 or root.resolve() == out.resolve() or root.resolve() in out.resolve().parents:
+        raise ValueError('Provide every original JPEG of the scene and a separate output directory outside the frozen run')
     if out.exists() and any(out.iterdir()):
         raise ValueError('Candidate output directory must be empty')
     start = time.monotonic()
@@ -740,8 +740,8 @@ def build_multiview(root, sources, out, *, orientation='upright', compare_orient
     """Modal entry: source-supported shell surfaces and their actual model bottom."""
     root, out = Path(root), Path(out)
     sources = [Path(path) for path in sources]
-    if len(sources) != 4 or root.resolve() == out.resolve():
-        raise ValueError('Four original photos and a distinct new output directory are required')
+    if len(sources) < 2 or root.resolve() == out.resolve():
+        raise ValueError('Every original photo of the scene and a distinct new output directory are required')
     if out.exists() and any(out.iterdir()):
         raise ValueError('Output directory must be empty')
     started = time.monotonic()
@@ -956,8 +956,8 @@ def build_volume_candidates(root, sources, face_result, out):
         face_result = json.loads(Path(face_result).read_text())
     else:
         face_root = out
-    if root.resolve() == out.resolve() or len(sources) != 4:
-        raise ValueError('Four source photos and a separate candidate output are required')
+    if root.resolve() == out.resolve() or len(sources) < 2:
+        raise ValueError('Every source photo of the scene and a separate candidate output are required')
     started = time.monotonic()
     for name in ('geometry.json', 'objects.json', 'posts.glb', 'sam3.json'):
         if face_result.get('sourceFiles', {}).get(name) != hashlib.sha256((root / name).read_bytes()).hexdigest():
@@ -994,8 +994,8 @@ def build_volume_candidates(root, sources, face_result, out):
             if corners.shape != (4, 3) or not np.allclose(corners, item['cornersNative'], atol=1e-6, rtol=0):
                 raise ValueError('Exported source face has changed observed vertex identity')
             observed_photos = {row['photo']: row for row in catalog[ident]['observations']}
-            if set(observed_photos) != {1, 2, 3, 4}:
-                raise ValueError('Volume comparison requires all four same-instance catalog associations')
+            if set(observed_photos) != set(range(1, len(sources) + 1)):
+                raise ValueError('Volume comparison requires a same-instance catalog association in every scene photo')
             canonical, original, associations = [], [], []
             for photo, observation in sorted(observed_photos.items()):
                 if not any(row['photo'] == photo and row.get('source') == observation['source'] for row in item['sourceSurfaceObservations']):
@@ -1083,7 +1083,7 @@ def build_volume_candidates(root, sources, face_result, out):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
-    parser.add_argument('--sources', type=Path, nargs=4, required=True)
+    parser.add_argument('--sources', type=Path, nargs='+', required=True, help='Every photo of the scene, in photo order')
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
     result = build(args.root, args.sources, args.out)

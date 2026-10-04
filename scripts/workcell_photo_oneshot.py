@@ -1,8 +1,11 @@
-"""One command: four raw workcell photos -> calibrated candidate and interactive 3D report.
+"""One command: N >= 2 raw photos of ONE workcell scene -> calibrated candidate and interactive 3D report.
 
+Every photo must show the same physical scene (one cell): MapAnything fuses them into one world.
+The reference photo (--reference-photo K, 1-based, default the last) fixes the left/right
+convention, the post primitives and the emergency-button scale reference.
 Heavy stages share one ephemeral two-A100 Modal container, with GPU 0 for
-geometry/OWLv2 and GPU 1 for SAM 3, then both GPUs for RecGen.
-Run with the project venv: python scripts/workcell_photo_oneshot.py --images a.jpg b.jpg c.jpg d.jpg --out NEW_DIR --viewer-assets THREE_0_178_0_DIR
+geometry/OWLv2 and GPU 1 for SAM 3, then both GPUs for RecGen (one multi-view model per object).
+Run with the project venv: python scripts/workcell_photo_oneshot.py --images a.jpg b.jpg --out NEW_DIR --viewer-assets THREE_0_178_0_DIR
 """
 
 import argparse
@@ -40,7 +43,41 @@ WORDS = ("industrial robot arm", "safety fence", "yellow safety post", "black bo
          "emergency stop button", "red emergency stop switch", "light curtain",
          "work platform", "cart", "control cabinet", "signal light", "stack light",
          "warning sign", "workcell sign", "folding safety barrier", "cable tray",
-         "instruction poster", "transparent safety panel", "floor marking", GUARD_WORD)
+         "instruction poster", "transparent safety panel", "floor marking", GUARD_WORD,
+         # Entrance gantry members and its top pipe (scripts/workcell_gantry.GANTRY_WORDS; prompt probe 2026-10-04).
+         "white steel beam", "blue pipe")
+
+
+CAPTURE = "capture.json"
+
+
+def capture_record(images, reference_photo=None):
+    """The scene's photo set: photo i is images[i-1]; one reference photo (default the last)."""
+    images = [Path(p) for p in images]
+    if len(images) < 2 or len({p.resolve() for p in images}) != len(images) or not all(p.is_file() for p in images):
+        raise ValueError("At least two distinct, readable photos of one scene are required")
+    reference = len(images) if reference_photo in (None, 0) else reference_photo
+    if type(reference) is not int or not 1 <= reference <= len(images):
+        raise ValueError(f"--reference-photo must name one of photos 1..{len(images)}")
+    return {"schemaVersion": 1, "photoCount": len(images), "referencePhoto": reference,
+            "referenceRole": "left/right convention, post primitives and emergency-button scale reference",
+            "scope": "all photos show one physical scene; MapAnything fuses them into one world",
+            "sources": [{"photo": i, "name": p.name, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+                        for i, p in enumerate(images, 1)]}
+
+
+def scene_photos(root):
+    """(photo count, reference photo) of a run: capture.json, else a legacy run's frames 1..N with N the reference."""
+    path = Path(root) / CAPTURE
+    if path.is_file():
+        record = json.loads(path.read_text())
+        count, reference = record["photoCount"], record["referencePhoto"]
+    else:
+        # ponytail: pre-capture runs were four photos with photo 4 the reviewer's view; frames are numbered 1..N.
+        count = reference = max((int(p.name[6:10]) for p in Path(root).glob("frame_*.json.gz")), default=0)
+    if type(count) is not int or type(reference) is not int or count < 1 or not 1 <= reference <= count:
+        raise ValueError("Run has no valid photo set (capture.json or frame_0001..N)")
+    return count, reference
 
 
 def _array(spec):
@@ -91,23 +128,18 @@ def _job(name, argv, out):
     return record
 
 
-def _foreground(root, seg, index, word, minimum=300):
-    frame = _frame(root, index)
-    mask = _mask(frame, _response(seg, index, word))
-    good = _array(frame["non_ambiguous_mask"]).astype(bool)
-    result = mask & good
-    if result.sum() < minimum:
-        raise ValueError(f"photo {index}: {word} has only {result.sum()} valid pixels")
-    return frame, result
+ROBOT_MIN_PIXELS, CART_MIN_PIXELS, GUARD_MIN_PIXELS = 500, 2500, 100
+RECGEN_MAX_VIEWS = 4  # fast_report.recgen_fast DEFAULT max_views: RecGen conditions on the first four views, anchor first
 
 
 def _prepare_inputs(root, seg, cart_seg):
-    robot, cart, guard, cart_picks, guard_picks = {}, {}, {}, [], []
+    """Per-view RecGen inputs of one scene; a view that does not show an object keeps an empty mask."""
+    robot, cart, guard, robot_picks, cart_picks, guard_picks = {}, {}, {}, [], [], []
     floor = json.loads((root / "floor-reference.json").read_text())
     ground_n = np.asarray(floor["normal"])
     ground_d = floor["offset"]
-    for i in range(1, 5):
-        frame, robot_mask = _foreground(root, seg, i, "industrial robot arm", 500)
+    for i in range(1, scene_photos(root)[0] + 1):
+        frame = _frame(root, i)
         rgb, points = _array(frame["image"]).copy(), _array(frame["pts3d"])
         pose, K = _array(frame["camera_poses"]), _array(frame["intrinsics"])
         local = (points - pose[:3, 3]) @ pose[:3, :3]
@@ -118,7 +150,9 @@ def _prepare_inputs(root, seg, cart_seg):
         v = K[1, 1] * local[..., 1] / np.maximum(depth, 1e-6) + K[1, 2]
         if np.nanmedian(np.hypot(u[good] - xx[good], v[good] - yy[good])) >= 3:
             raise ValueError(f"photo {i}: camera/point projection mismatch")
-        robot_mask &= good
+        robot_mask = _mask(frame, _response(seg, i, "industrial robot arm")) & good
+        if robot_mask.sum() < ROBOT_MIN_PIXELS:
+            robot_mask[:] = False  # this view does not show the robot well enough to condition or place its model
         guard_response = _response(seg, i, GUARD_WORD)
         panels = []
         for encoded, confidence in zip(guard_response['rle'], guard_response['scores']):
@@ -143,32 +177,84 @@ def _prepare_inputs(root, seg, cart_seg):
             guard_fraction = (mask & guard_mask).sum() / max(1, mask.sum())
             mask = retained
             overlap = (mask & robot_mask).sum() / max(1, mask.sum())
-            if mask.sum() > 2500 and guard_fraction < .5 and overlap < .25:
+            if mask.sum() > CART_MIN_PIXELS and guard_fraction < .5 and overlap < .25:
                 choices.append((score, k, mask, overlap, guard_fraction))
-        if not choices:
-            raise ValueError(f"photo {i}: no cart mask separate from robot")
-        score, picked, cart_mask, overlap, guard_fraction = max(choices, key=lambda row: row[0])
+        guard_fraction = None
+        if choices:
+            score, picked, cart_mask, overlap, guard_fraction = max(choices, key=lambda row: row[0])
+        else:  # this view shows no cart mask separate from robot and guard
+            score, picked, cart_mask, overlap = None, None, np.zeros_like(good), None
         guard_picks.append({"photo": i, "supportedPixels": int(guard_mask.sum()),
-                            "source": GUARD_WORD, "selectedPanels": len(panels), "routing": "score >= .6; above floor residual; area >= .2 largest supported panel", "excludedFromCartFraction": float(guard_fraction)})
+                            "source": GUARD_WORD, "selectedPanels": len(panels), "routing": "score >= .6; above floor residual; area >= .2 largest supported panel",
+                            "excludedFromCartFraction": None if guard_fraction is None else float(guard_fraction)})
         cart_picks.append({"photo": i, "instance": picked, "score": score,
-                           "robotOverlap": round(float(overlap), 3), "supportedPixels": int(cart_mask.sum())})
+                           "robotOverlap": None if overlap is None else round(float(overlap), 3), "supportedPixels": int(cart_mask.sum())})
+        robot_picks.append({"photo": i, "supportedPixels": int(robot_mask.sum()), "source": "industrial robot arm",
+                            "routing": f"union of SAM instances; at least {ROBOT_MIN_PIXELS} valid pixels, else not visible"})
         shared = {f"v{i}_rgb": rgb, f"v{i}_depth": np.where(good, depth, 0),
                   f"v{i}_K": K, f"v{i}_c2w": pose}
         robot.update(shared | {f"v{i}_mask": robot_mask.astype(np.uint8) * 255})
         cart.update(shared | {f"v{i}_mask": cart_mask.astype(np.uint8) * 255})
         guard.update(shared | {f"v{i}_mask": guard_mask.astype(np.uint8) * 255})
+    if not _visible_views(robot_picks, ROBOT_MIN_PIXELS):
+        raise ValueError(f"No photo shows {ROBOT_MIN_PIXELS} valid robot pixels")
+    if not _visible_views(cart_picks, CART_MIN_PIXELS):
+        raise ValueError("No photo shows a cart mask separate from robot and guard")
     np.savez_compressed(root / "robot-input.npz", **robot)
     np.savez_compressed(root / "cart-input.npz", **cart)
     np.savez_compressed(root / "guard-input.npz", **guard)
+    (root / "robot-mask-selection.json").write_text(json.dumps(robot_picks, indent=2) + "\n")
     (root / "guard-mask-selection.json").write_text(json.dumps(guard_picks, indent=2) + "\n")
     (root / "cart-mask-selection.json").write_text(json.dumps(cart_picks, indent=2) + "\n")
 
 
-def _guard_views(rows):
-    # RecGen's shape/appearance conditioning uses the first pair. Occluded
-    # capture-order views erased the connecting face; rank actual mask support.
-    return [r['photo'] for r in sorted(rows, key=lambda r: (-r['supportedPixels'], r['photo']))
-            if r['supportedPixels'] >= 100][:2]
+def _visible_views(rows, minimum):
+    """Photos with at least `minimum` supported mask pixels, most support first.
+
+    RecGen's shape/appearance conditioning anchors on the first view; occluded
+    capture-order views erased the guard's connecting face, so rank actual support."""
+    return [r['photo'] for r in sorted(rows, key=lambda r: (-r['supportedPixels'], r['photo'])) if r['supportedPixels'] >= minimum]
+
+
+def recgen_plans(root):
+    """One multi-view RecGen model per object; returns (per-GPU job lists, views each model is placed against).
+
+    Robot and cart: one group over every view that shows them (RecGen reads the first four, anchor first), placed
+    against all of those views. Guard: its two best-supported views, which also place it (unchanged recipe)."""
+    rows = {kind: json.loads((Path(root) / f"{kind}-mask-selection.json").read_text()) for kind in ("robot", "cart", "guard")}
+    views = {"robot": _visible_views(rows["robot"], ROBOT_MIN_PIXELS), "cart": _visible_views(rows["cart"], CART_MIN_PIXELS)}
+    generation = {kind: views[kind][:RECGEN_MAX_VIEWS] for kind in views}
+    generation["guard"] = views["guard"] = _visible_views(rows["guard"], GUARD_MIN_PIXELS)[:2]
+    if len(generation["guard"]) < 2:
+        raise ValueError("V-guard lacks independent support in at least two views")
+    plans = [[("robot", [["multi", generation["robot"]]])],
+             [("cart", [["multi", generation["cart"]]]), ("guard", [["multi", generation["guard"]]])]]
+    return plans, views
+
+
+def place_model(mesh, inputs, generation, refine_views):
+    """Place one RecGen mesh (anchor-camera frame) in the scene world, then similarity-refine it (fast_report.x7.refine,
+    shape-preserving Sim(3)) against the masks and depth of refine_views; score its mask IoU in every photo."""
+    from fast_report.x7 import Caster, light, rays, refine, score_view
+    mesh = mesh.copy()
+    mesh.apply_transform(inputs[f"v{generation[0]}_c2w"])
+    v, f, _ = light(mesh.vertices, mesh.faces, mesh.visual.vertex_colors[:, :3])
+    photos = sorted(int(key[1:-5]) for key in inputs.keys() if key.endswith("_mask"))
+    views = {}
+    for i in photos:
+        depth = inputs[f"v{i}_depth"][::2, ::2]
+        K = inputs[f"v{i}_K"].copy(); K[:2] /= 2
+        views[i] = {"rays": rays(K, inputs[f"v{i}_c2w"], depth.shape[1], depth.shape[0]),
+                    "target": inputs[f"v{i}_mask"][::2, ::2] > 0, "depth": depth}
+    transform, placement = refine(v, f, [views[i] for i in refine_views], uniform_scale=True)
+    mesh.apply_transform(transform)
+    caster = Caster(v, f)
+    placement.update(generationViews=list(generation), refineViews=list(refine_views), transform=transform.tolist(),
+                     sourceChecks=[{"photo": i, "targetPixels": int(views[i]["target"].sum()), **score_view(caster, transform, views[i])}
+                                   for i in photos],
+                     sourceCheckScope="half-resolution SAM mask of every photo; the model is hidden only where scene depth is in front of it outside the mask",
+                     basis="shape-preserving similarity alignment to source masks and estimated depth; not surveyed physical accuracy")
+    return mesh, placement
 
 
 def _surface(root, seg, name, index, word, mask_override=None):
@@ -197,7 +283,9 @@ def _surface(root, seg, name, index, word, mask_override=None):
 
 
 def _posts(root, seg):
-    frame = _frame(root, 4)
+    """Up to two yellow posts and two black bollards from the scene's reference photo (photo 4 in legacy runs)."""
+    reference = scene_photos(root)[1]
+    frame = _frame(root, reference)
     points, colors = _array(frame["pts3d"]), _array(frame["image"])
     valid = _array(frame["non_ambiguous_mask"]).astype(bool)
     normal = np.asarray(json.loads((root / "geometry.json").read_text())["floor"]["normal"], float)
@@ -210,7 +298,7 @@ def _posts(root, seg):
     local_points = points @ transform[:3, :3]
     scene, records = trimesh.Scene(), []
     for word, kind in (("yellow safety post", "box"), ("black bollard", "cylinder")):
-        response = _response(seg, 4, word)
+        response = _response(seg, reference, word)
         candidates = []
         for encoded, score in zip(response["rle"], response["scores"]):
             mask = _mask(frame, {"rle": [encoded]}) & valid
@@ -233,21 +321,22 @@ def _posts(root, seg):
             mesh.visual.vertex_colors = np.tile(np.r_[color, 255], (len(mesh.vertices), 1))
             label = f"{kind}-{number}"
             scene.add_geometry(mesh, node_name=label, geom_name=label)
-            records.append({"name": label, "sourcePhoto": 4, "score": score,
+            records.append({"name": label, "sourcePhoto": reference, "score": score,
                             "supportedPixels": int(mask.sum()), "kind": kind,
                             "groundNormalNative": normal.tolist(),
                             "axisStatus": "upright display prior; not a measured physical axis"})
-    if len(records) != 4:
-        raise ValueError(f"Expected two yellow and two black posts, got {len(records)}")
+    if not records:
+        raise ValueError(f"Photo {reference}: no yellow post or black bollard with score >= .8 and 200 pixels")
     (root / "posts.glb").write_bytes(scene.export(file_type="glb"))
     (root / "posts-source.json").write_text(json.dumps(records, indent=2) + "\n")
     return records
 
 
 def _mask_sheet(root, seg, groups, filename, cart=None):
+    """Contact sheet of every photo, two per column (four photos: the historical 2 x 2)."""
     tiles = []
     colors = ((20, 80, 255), (0, 210, 20), (240, 100, 20), (200, 0, 180), (0, 180, 220))
-    for i in range(1, 5):
+    for i in range(1, scene_photos(root)[0] + 1):
         frame = _frame(root, i)
         image = _array(frame["image"]).copy()
         for j, word in enumerate(groups):
@@ -262,13 +351,17 @@ def _mask_sheet(root, seg, groups, filename, cart=None):
         cv2.putText(header, f"Photo {i}", (8, 20), cv2.FONT_HERSHEY_SIMPLEX,
                     .65, (255, 255, 255), 1)
         tiles.append(np.vstack([header, image]))
-    sheet = np.hstack([np.vstack(tiles[:2]), np.vstack(tiles[2:])])
+    height, width = max(t.shape[0] for t in tiles), max(t.shape[1] for t in tiles)
+    tiles = [np.pad(t, ((0, height - t.shape[0]), (0, width - t.shape[1]), (0, 0))) for t in tiles]
+    tiles += [np.zeros_like(tiles[0])] * (len(tiles) % 2)
+    sheet = np.hstack([np.vstack(tiles[i:i + 2]) for i in range(0, len(tiles), 2)])
     Image.fromarray(sheet).save(root / filename, quality=86)
 
 
 def _bbox_quality(root, seg, kind):
+    """The one multi-view model's projected box against its mask box, in every photo that shows the object."""
     rows = []
-    for i in range(1, 5):
+    for i in range(1, scene_photos(root)[0] + 1):
         frame = _frame(root, i)
         pose, K = _array(frame["camera_poses"]), _array(frame["intrinsics"])
         if kind == "robot":
@@ -277,9 +370,11 @@ def _bbox_quality(root, seg, kind):
             z = np.load(root / "cart-input.npz")
             mask = z[f"v{i}_mask"] > 0
         yy, xx = np.nonzero(mask)
+        if not len(xx):
+            rows.append({"photo": i, "model": "multi", "maskBBox": None, "reason": "object not visible in this photo"})
+            continue
         truth = np.array([xx.min(), xx.max(), yy.min(), yy.max()], float)
-        models = ((f"robot-v{i}", f"v{i}"), ("robot-multi", "multi")) if kind == "robot" else (("cart-single", "single"),)
-        for model, label in models:
+        for model, label in ((f"{kind}-multi", "multi"),):
             verts = trimesh.load(root / f"{model}.glb", force="mesh", process=False).vertices
             local = (verts - pose[:3, 3]) @ pose[:3, :3]
             q = local[:, 2] > .01
@@ -352,6 +447,8 @@ def _export_metric_scene(root, report):
 def _anchor_sheet(root, sources, anchor):
     """Show exactly which physical component the editable dimensions refer to."""
     views = anchor["views"]
+    if not views:  # no button reference observed in this scene: nothing to show, scale stays native
+        return
     sheet = Image.new("RGB", (160 * len(views), 188), "#152222")
     draw = ImageDraw.Draw(sheet)
     for number, view in enumerate(views):
@@ -388,14 +485,17 @@ def _build_page(root, metrics):
     page.mkdir()
     shutil.copytree(built, page, dirs_exist_ok=True)
     shutil.copyfile(built / "photo.html", page / "index.html")
-    assets = ("robot-v1.glb", "robot-v2.glb", "robot-v3.glb", "robot-v4.glb", "robot-multi.glb",
-              "cart-single.glb", "guard-multi.glb", "guard-left.glb", "guard-center.glb", "guard-right.glb",
+    assets = ("guard-multi.glb", "guard-left.glb", "guard-center.glb", "guard-right.glb",
               "guard-partition.json", "cart-observed.glb", "posts.glb", "fence-observed.glb",
               "mask-contact-sheet.jpg", "extra-mask-contact-sheet.jpg", "cart-mask-sheet.jpg",
               "fence-fitted.glb", "floor-fitted.glb", "geometry.json",
-              "objects.json", "object-extras.glb", "scene-report.json")
+              "objects.json", "scene-report.json")
     for name in assets:
         shutil.copyfile(root / name, page / name)
+    # One multi-view model per object (robot-multi, cart-multi) and its placement; legacy runs carry per-photo robots.
+    for path in [*root.glob("robot-*.glb"), *root.glob("cart-multi.glb"), *root.glob("cart-single.glb"),
+                 *root.glob("*-placement.json"), *root.glob(CAPTURE), *root.glob("object-extras.glb")]:
+        shutil.copyfile(path, page / path.name)
     for name in ('measurements.json', 'measurement-evaluation.json', 'physical-clearances.json', 'structural-result.json', 'housing-models.json', 'model-endpoint-estimate.json', 'workcell-metric.glb', 'workcell-native.glb', 'workcell-conditional.glb'):
         if (root/name).is_file():
             shutil.copyfile(root/name, page/name)
@@ -404,7 +504,7 @@ def _build_page(root, metrics):
     for evidence in [*root.glob("geometry-*.jpg"), *root.glob("geometry-*.png")]:
         shutil.copyfile(evidence, page / evidence.name)
     frames = []
-    for i in range(1, 5):
+    for i in range(1, scene_photos(root)[0] + 1):
         shutil.copyfile(root / f"photo-{i}.png", page / f"photo-{i}.png")
         frame = _frame(root, i)
         shape = frame["image"]["shape"]
@@ -457,20 +557,20 @@ def _semantic_stage(out, protocol, ledger):
     return finalize(out)
 
 
-def run(images, out, diameter_m, height_m, viewer_assets, measurements=None, semantic_protocol=None):
+def run(images, out, diameter_m, height_m, viewer_assets, measurements=None, semantic_protocol=None, reference_photo=None):
     from scripts.workcell_photo_calibration import load_measurements, resolve_dimensions
     measured = load_measurements(measurements) if measurements else None
     if semantic_protocol is not None:
         from scripts.workcell_semantic_match import config_checked, read_json
         config_checked(read_json(semantic_protocol))
     diameter_m, height_m = resolve_dimensions(measured, diameter_m, height_m)
-    if len(images) != 4 or len(set(images)) != 4 or any(not p.is_file() for p in images):
-        raise ValueError("Exactly four distinct, readable source photos are required")
+    capture = capture_record(images, reference_photo)  # N >= 2 distinct readable photos of one scene
     if not all(np.isfinite(v) and v > 0 for v in (diameter_m, height_m)):
         raise ValueError("Button dimensions must be finite and positive")
     if out.exists():
         raise ValueError("Output must be a new directory; a one-shot run never mutates earlier evidence")
     out.mkdir(parents=True)
+    (out / CAPTURE).write_text(json.dumps(capture, indent=2) + "\n")
     # Freeze the built viewer before compute; concurrent rebuilds must not change a running report.
     _freeze_report_ui(out, viewer_assets)
     began = time.monotonic()
@@ -482,56 +582,81 @@ def run(images, out, diameter_m, height_m, viewer_assets, measurements=None, sem
         reference_path = out / "reference-input.json"
         reference_path.write_text(json.dumps(measured['reference']))
         reference_args = ['--reference', str(reference_path)]
+    def estimate():
+        # A failed cloud stage still returns its timing: its spend is recorded the same way.
+        if not (out / "modal-timing.json").is_file():
+            return
+        modal_timing = json.loads((out / "modal-timing.json").read_text())
+        usd_per_second = 2 * .000694 + 16 * .0000131 + 80 * .00000222
+        ledger["estimate"] = {
+            "usdPerSecond": round(usd_per_second, 7),
+            "functionWindowEstimateUsd": round(usd_per_second * modal_timing["containerWallSeconds"], 3),
+            "callWindowEstimateUsd": round(usd_per_second * modal_timing["wallSecondsIncludingColdStart"], 3),
+            "rateSource": "https://modal.com/pricing",
+            "rateCheckedDate": "2026-09-30",
+            "basis": "reserved-resource list-rate estimates, not invoice amounts; call window includes possible scheduling time"}
     try:
         record = _job("one-container", ["modal_apps/workcell_photo_all.py", "--images", paths,
-                  "--out", str(out), "--words", ",".join(WORDS),
+                  "--out", str(out), "--words", ",".join(WORDS), "--reference-photo", str(capture["referencePhoto"]),
                   "--button-diameter-m", str(diameter_m), "--button-height-m", str(height_m), *reference_args], out)
     except Exception as error:
         ledger["failure"] = str(error)
         if (out / "modal-call.json").is_file():
             ledger["runs"].append(json.loads((out / "modal-call.json").read_text()))
+        estimate()
         (out / "spend-ledger.json").write_text(json.dumps(ledger, indent=2) + "\n")
         raise
     ledger["runs"].append(record)
-    modal_timing = json.loads((out / "modal-timing.json").read_text())
-    usd_per_second = 2 * .000694 + 16 * .0000131 + 80 * .00000222
-    ledger["estimate"] = {
-        "usdPerSecond": round(usd_per_second, 7),
-        "functionWindowEstimateUsd": round(usd_per_second * modal_timing["containerWallSeconds"], 3),
-        "callWindowEstimateUsd": round(usd_per_second * modal_timing["wallSecondsIncludingColdStart"], 3),
-        "rateSource": "https://modal.com/pricing",
-        "rateCheckedDate": "2026-09-30",
-        "basis": "reserved-resource list-rate estimates, not invoice amounts; call window includes possible scheduling time"}
+    estimate()
     (out / "spend-ledger.json").write_text(json.dumps(ledger, indent=2) + "\n")
+    local, tick = {}, time.monotonic()
+    def lap(name):
+        nonlocal tick
+        local[name] = round(time.monotonic() - tick, 2)
+        tick = time.monotonic()
     seg = json.loads((out / "sam3.json").read_text())
     cart_seg = json.loads((out / "cart-masks.json").read_text())
-    if len(seg["results"]) != 4 or len(cart_seg["results"]) != 4:
-        raise ValueError("Modal result must include four images")
+    count, reference = capture["photoCount"], capture["referencePhoto"]
+    if len(seg["results"]) != count or len(cart_seg["results"]) != count:
+        raise ValueError(f"Modal result must include all {count} photos")
     robot_quality = _bbox_quality(out, seg, "robot")
     cart_quality = _bbox_quality(out, seg, "cart")
     (out / "bbox-eval.json").write_text(json.dumps(robot_quality, indent=2) + "\n")
     (out / "cart-bbox-eval.json").write_text(json.dumps(cart_quality, indent=2) + "\n")
     cart_z = np.load(out / "cart-input.npz")
-    surfaces = {"cart": _surface(out, seg, "cart-observed", 1, "cart", cart_z["v1_mask"] > 0),
-                "fence": _surface(out, seg, "fence-observed", 4, "safety fence")}
+    cart_view = json.loads((out / "cart-placement.json").read_text())["generationViews"][0]
+    surfaces = {"cart": _surface(out, seg, "cart-observed", cart_view, "cart", cart_z[f"v{cart_view}_mask"] > 0)}
+    for photo in [reference, *(i for i in range(1, count + 1) if i != reference)]:
+        try:  # the reference photo first, then the others: the first with enough observed fence surface
+            surfaces["fence"] = _surface(out, seg, "fence-observed", photo, "safety fence")
+            break
+        except ValueError:
+            continue
+    else:
+        raise ValueError("fence-observed: insufficient observed fence surface in every photo")
     posts = json.loads((out / "posts-source.json").read_text())
     _mask_sheet(out, seg, ("industrial robot arm", "safety fence", "work platform"), "mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("yellow safety post", "black bollard", "emergency stop button"), "extra-mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("cart",), "cart-mask-sheet.jpg", cart_seg)
+    lap("evidenceSheetsSeconds")
     # Always re-run the shared tail locally: the cloud built under a temporary directory name, and
     # evaluation targets (when supplied) join here. It re-measures the current models and rebuilds.
     from scripts.workcell_photo_report import finalize
     finalize(out, measured)
+    lap("finalizeSeconds")
     if semantic_protocol is not None:
         _semantic_stage(out, semantic_protocol, ledger)
+        lap("semanticStageSeconds")
     geometry = json.loads((out / "geometry.json").read_text())
     _anchor_sheet(out, images, geometry["anchor"])
     _export_metric_scene(out, json.loads((out / 'scene-report.json').read_text()))
-    metrics = {"oneShotWallSeconds": round(time.monotonic() - began, 2),
+    lap("exportSeconds")
+    metrics = {"oneShotWallSeconds": round(time.monotonic() - began, 2), "capture": capture,
                "robotQuality": robot_quality, "cartQuality": cart_quality,
                "surfaces": surfaces, "posts": posts, "runs": ledger["runs"], "geometry": geometry,
-               "stageTiming": json.loads((out / "stage-timing.json").read_text())}
+               "stageTiming": json.loads((out / "stage-timing.json").read_text()), "localStageTiming": local}
     page = _build_page(out, metrics)
+    lap("pageSeconds")
     metrics["oneShotWallSeconds"] = round(time.monotonic() - began, 2)
     page_data = json.loads((page / "data.json").read_text())
     page_data["timing"]["oneShotSeconds"] = metrics["oneShotWallSeconds"]
@@ -542,13 +667,14 @@ def run(images, out, diameter_m, height_m, viewer_assets, measurements=None, sem
     (out / "scene-report.json").write_text(json.dumps(shared, ensure_ascii=False, indent=2) + "\n")
     (out / "one-shot.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2) + "\n")
     (out / "spend-ledger.json").write_text(json.dumps(ledger, indent=2) + "\n")
-    print(json.dumps({"oneShotWallSeconds": metrics["oneShotWallSeconds"],
+    print(json.dumps({"oneShotWallSeconds": metrics["oneShotWallSeconds"], "photos": count, "referencePhoto": reference,
                       "buttonStatus": geometry["anchor"]["status"], "output": str(out)}), flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--images", type=Path, nargs=4)
+    parser.add_argument("--images", type=Path, nargs="+", help="Two or more photos of ONE scene, in photo order")
+    parser.add_argument("--reference-photo", type=int, help="1-based photo for left/right, posts and the button scale reference (default: the last)")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--viewer-assets", type=Path, help="Three.js 0.178.0 runtime directory; see docs/workcell-photo/HANDOFF.md")
     parser.add_argument("--button-diameter-m", type=float, help="Legacy whole-envelope width; cannot combine with --measurements")
@@ -562,9 +688,11 @@ def main():
         return
     if not args.images or not args.out or not args.viewer_assets:
         parser.error("--images, --out and --viewer-assets are required")
+    if len(args.images) < 2:
+        parser.error("--images needs at least two photos of one scene")
     run([p.resolve() for p in args.images], args.out.resolve(),
         args.button_diameter_m, args.button_height_m, args.viewer_assets.resolve(), args.measurements,
-        args.semantic_protocol.resolve() if args.semantic_protocol else None)
+        args.semantic_protocol.resolve() if args.semantic_protocol else None, args.reference_photo)
 
 
 if __name__ == "__main__":

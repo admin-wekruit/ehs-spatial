@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url), ts = require('typescript'), React = require('react');
 let state = 0, height = 10, exported, filename, endpointLines = false, selectedPhoto = 'photo-4';
+const sets = []; // every value passed to a state setter (clicks record where they send the view)
 const reportLocation = { href: 'https://example.test/report/' };
 class Group {
   children = []; scaleValue = 1; rotation = {}; matrix = { fromArray() {} };
@@ -18,7 +19,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 vm.runInNewContext(compiled, {
   exports: module.exports, module,
   require: id => {
-    if (id === 'react') return { ...React, useEffect: () => {}, useState: initial => [state++ === 3 ? height : state === 1 ? selectedPhoto : state === 2 ? 'fence-0' : state === 7 ? true : state === 8 ? endpointLines ?? initial : initial, () => {}], useMemo: fn => fn() };
+    if (id === 'react') return { ...React, useEffect: () => {}, useState: initial => [state++ === 3 ? height : state === 1 ? selectedPhoto : state === 2 ? 'fence-0' : state === 7 ? true : state === 8 ? endpointLines ?? initial : initial, value => sets.push(value)], useMemo: fn => fn() };
     if (id === 'react/jsx-runtime') return require(id);
     if (id === 'react-dom/client') return { createRoot: () => ({ render() {} }) };
     if (id === './ReportScene') return { ReportScene };
@@ -156,12 +157,30 @@ hypothesis.endpointEstimation.endpoints.push({ id: 'fence-1:near:post-box-2', ob
 hypothesis.endpointEstimation.excludedComparisons = [{ id: 'rail-left-minus-right', minuendId: 'fence-1:near:post-box-2', subtrahendId: 'fence-0:near:post-box-1', reason: '一侧围栏点是下包络假设，另一侧是下横梁下沿：测的不是同一部位，不做左右差。' }];
 hypothesis.measurementEvaluation = { groundTruthUsedForCalibration: false, comparisons: [{ objectId: 'fence-1', label: '左侧围栏', method: 'fixture', estimateNative: null, estimateM: null, rangeNative: null, rangeM: null, byPhoto: {}, sourcePhotos: [], groundTruthM: .24 }] };
 result = render(hypothesis);
-const text = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : node?.props ? text(node.props.children) : '';
+const text = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(text).join('') : node?.props ? text(node.props.children) : '';
 assert.ok(result.nodes.some(n => n.type === 'small' && /下包络假设.*不是下横梁下沿/.test(text(n))), 'the hypothesis scope is stated on the card');
 assert.ok(result.nodes.some(n => n.props['data-endpoint-excluded'] === 'rail-left-minus-right' && /测的不是同一部位/.test(text(n))), 'the refused comparison is shown with its reason');
 assert.ok(!result.nodes.some(n => n.props['data-endpoint-difference'] === 'rail-left-minus-right'), 'no number for a refused comparison');
 assert.equal(text(result.nodes.find(n => 'data-endpoint-check-error' in n.props)), '未相减（下包络假设，不是下横梁下沿）', 'a hypothesis is never subtracted from a check value');
 assert.match(walk(result.scene.props.inspector(null)).find(n => n.type === SemanticObject).props.facts.find(fact => fact.testId === 'fence-1:near:post-box-2')?.status ?? '下包络假设', /下包络假设/);
+// One scene of N photos: the reference photo (not a fixed photo 4) names the sides and is where focus buttons go;
+// a multi-view model states its views and per-photo mask IoU and is never swapped by photo.
+const scene = structuredClone(conditional);
+scene.endpointEstimation.sidePhoto = 2; scene.revision.document.cameras = [{ imageId: 'photo-1', id: 'camera-1' }, { imageId: 'photo-2', id: 'camera-2' }];
+scene.capture = { photoCount: 2, referencePhoto: 2, sources: [{ photo: 1, name: 'image_03.jpg' }, { photo: 2, name: 'image_04.jpg' }] };
+scene.objects[0].multiViewModel = { generationViews: [1, 2], refineViews: [1, 2], maskIoUByPhoto: { '1': .571, '2': .604 } };
+selectedPhoto = 'photo-1'; endpointLines = true;
+result = render(scene);
+assert.ok(result.nodes.some(n => n.type === 'h4' && text(n) === '右侧（照片 2 视角）'), 'sides are titled with the reference photo');
+assert.equal(text(result.nodes.find(n => 'data-capture-sources' in n.props)), '照片 1 = image_03.jpg · 照片 2 = image_04.jpg；参考照片 2（左右、立柱与按钮标尺）。');
+assert.equal(text(result.nodes.find(n => n.props?.className === 'photo-report-eyebrow')), '2 张照片 · 一个场景 · 对象级空间重建', 'the overview counts this scene\'s photos');
+assert.equal(text(render(conditional).nodes.find(n => n.props?.className === 'photo-report-eyebrow')), '1 张照片 · 对象级空间重建', 'a run without a capture record claims no single scene');
+sets.length = 0; result.nodes.find(n => n.type === 'button' && n.props['aria-pressed'] !== undefined && text(n) === '右侧光幕旁围栏下沿').props.onClick();
+assert.ok(sets.includes('photo-2') && !sets.includes('photo-4'), 'a focus button opens the reference photo');
+const card = walk(result.scene.props.inspector(null));
+assert.match(text(card.find(n => 'data-multi-view-model' in n.props)), /照片 1 \/ 2 联合生成.*照片 1 0\.57，照片 2 0\.60/);
+assert.ok(!card.some(n => 'data-fixed-scene-model' in n.props), 'one multi-view model has no per-photo pose note');
+assert.equal(result.scene.props.revision.document.entities[0].activeModelRepresentationId, scene.revision.document.entities[0].activeModelRepresentationId);
 selectedPhoto = 'photo-4'; endpointLines = undefined; reportLocation.href = 'https://example.test/report/?measurement=endpoints';
 assert.equal(render(conditional).scene.props.measurementOverride.method, 'conditional-endpoint-comparison', 'the shared URL enables annotations without another click');
-console.log('PASS: accepted scale, 52-model exports, no bbox fallback, source points preserved, unified conditional model scale/export, revision-bound endpoints and live semantic facts');
+console.log('PASS: accepted scale, 52-model exports, no bbox fallback, source points preserved, unified conditional model scale/export, revision-bound endpoints and live semantic facts; N-photo scene: reference-photo sides and focus, capture sources, one multi-view model with per-photo IoU');

@@ -21,7 +21,7 @@ from scipy.spatial.transform import Rotation
 
 from workcell_photo_geometry import _rays, _intersect
 from workcell_photo_objects import _project, _inside
-from workcell_photo_oneshot import _array, _frame, _mask, _response, GUARD_WORD
+from workcell_photo_oneshot import _array, _frame, _mask, _response, GUARD_WORD, scene_photos
 
 SIDES = ('left', 'center', 'right')
 
@@ -66,9 +66,10 @@ def _inputs(root, cameras=None, sources=None):
     guard = np.load(root / 'guard-input.npz')
     frames, candidates = {}, {}
     replacements = {int(f['photo']): f for f in (_json(cameras) or {}).get('frames', [])}
-    if replacements and set(replacements) != set(range(1, 5)):
-        raise ValueError('Camera refinement must supply all four cameras in the original world gauge')
-    for photo in range(1, 5):
+    photos = range(1, scene_photos(root)[0] + 1)
+    if replacements and set(replacements) != set(photos):
+        raise ValueError('Camera refinement must supply every scene camera in the original world gauge')
+    for photo in photos:
         raw = _frame(root, photo)
         rgb, points = _array(raw['image']), _array(raw['pts3d'])
         original_pose, original_K = _array(raw['camera_poses']), _array(raw['intrinsics'])
@@ -694,8 +695,8 @@ def _record(board, fitted, parameters, frames, out, anchor, floor):
 def build(root, out, cameras=None, tracks=None, sources=None, feature_method='sift'):
     start = time.monotonic(); root, out = Path(root), Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    if sources is not None and len(sources) != 4:
-        raise ValueError('Exactly four source image paths required')
+    if sources is not None and len(sources) != scene_photos(root)[0]:
+        raise ValueError('Every source image path of the scene is required')
     if feature_method == 'lk' and (sources is None or tracks is not None):
         raise ValueError('Explicit LK experiment requires raw source photos and cannot also supply external tracks')
     geometry = _json(root / 'geometry.json')
@@ -782,7 +783,7 @@ if __name__ == '__main__':
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--cameras', type=Path)
     parser.add_argument('--tracks', type=Path)
-    parser.add_argument('--images', type=Path, nargs=4)
+    parser.add_argument('--images', type=Path, nargs='+', help='Every photo of the scene, in photo order')
     parser.add_argument('--feature-method', choices=('sift', 'lk'), default='sift')
     args = parser.parse_args()
     results = build(args.root, args.out, args.cameras, args.tracks, args.images, args.feature_method)

@@ -14,6 +14,8 @@ export type QueryBend = { entityId: string; status: string; result?: { value: nu
 export type QueryInput<E extends QueryEndpoint = QueryEndpoint> = {
   objects: QueryObject[]; endpoints: E[]; differences: QueryDifference[]; excluded?: QueryExclusion[]; bends?: QueryBend[];
   bound: (row: E) => boolean; format: (native: number) => string; revisionLabel: string;
+  /** The photo whose view defines left/right in this revision (the scene's reference photo). */
+  sidePhoto?: number;
 };
 export type QueryAnswer = {
   status: "answered" | "missing" | "unrecognized"; text: string; interpretation: string;
@@ -32,6 +34,7 @@ const KINDS: { pattern: RegExp; kind: string; name: string }[] = [
   { pattern: /标线|marking/i, kind: "floor marking", name: "地面标线" },
   { pattern: /标识牌|标牌|警示牌|sign\b/i, kind: "sign", name: "标识牌" },
   { pattern: /线缆托架|线槽|cable tray/i, kind: "cable tray", name: "线缆托架" },
+  { pattern: /龙门架|门架|门框|gantry/i, kind: "gantry", name: "龙门架" },
 ];
 const FLOOR = { pattern: /地面(?!标线)|floor/i, kind: "floor", name: "地面" };
 const COMPARE = /谁更高|哪个更高|哪边更高|哪侧更高|谁高|哪个高|高差|差多少|相差|比较|对比|一样高|compare|higher|difference/i;
@@ -68,7 +71,7 @@ export function answerSpatialQuery<E extends QueryEndpoint>(question: string, in
     const objects = ofKind(kind.kind), sided = sides.length ? rowsOf(kind.kind).filter(row => row.side && sides.includes(row.side)).map(row => row.objectId) : [];
     const targets = sides.length ? sided : objects.map(object => object.id);
     return targets.length ? result("answered", `找到 ${targets.length} 个${kind.name}：${targets.map(id => input.objects.find(object => object.id === id)?.label ?? id).join("、")}。点击查看原图、模型和测量。`, targets)
-      : result("missing", sides.length ? `本版本没有可判定左右的${kind.name}；左右只对有照片 4 测点的对象给出。` : `本版本没有${kind.name}对象。`, objects.map(object => object.id));
+      : result("missing", sides.length ? `本版本没有可判定左右的${kind.name}；左右只对有${input.sidePhoto ? `照片 ${input.sidePhoto} ` : "参考照片"}测点的对象给出。` : `本版本没有${kind.name}对象。`, objects.map(object => object.id));
   }
   if (intent === "compare") {
     if (kinds.length >= 2 && kinds.some(row => row.kind === "yellow safety post") && kinds.some(row => row.kind === "safety fence")) {

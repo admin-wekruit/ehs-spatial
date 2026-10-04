@@ -21,8 +21,8 @@ from workcell_photo_objects import _project
 def source_texture_frames(root, frames, sources):
     """Attach exact original rasters/transforms to existing camera records."""
     from workcell_photo_oneshot import _frame
-    if len(sources) != 4:
-        raise ValueError('Four original source images are required')
+    if not frames or max(frames) > len(sources):
+        raise ValueError('Every textured photo needs its original source image')
     result = {}
     for photo, frame in frames.items():
         raw = _frame(root, photo)

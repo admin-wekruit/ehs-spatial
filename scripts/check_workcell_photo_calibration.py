@@ -85,6 +85,14 @@ def check(root, inputs, supported):
     evaluation = measurement_evaluation(objects, geometry, inputs)
     assert evaluation['comparisons'][0]['estimateM'] == (.2 if supported else None)
     assert all(r['estimateM'] is None for r in evaluation['comparisons'][1:]), 'No point minimum fallback'
+    # Check values bind to the photo set they were supplied for; another capture never inherits them by (ordinal) object id.
+    capture = {'sources': [{'photo': 1, 'sha256': 'a' * 64}, {'photo': 2, 'sha256': 'b' * 64}]}
+    unbound = measurement_evaluation(objects, geometry, inputs, capture)
+    assert unbound['comparisons'] == [] and [r['objectId'] for r in unbound['absentTargets']] == [t['objectId'] for t in inputs['evaluation']['targets']]
+    bound = copy.deepcopy(inputs); bound['evaluation']['capture'] = {'photoSha256': ['b' * 64, 'a' * 64]}
+    assert measurement_evaluation(objects, geometry, bound, capture)['comparisons'] == evaluation['comparisons']
+    other = copy.deepcopy(bound); other['evaluation']['capture'] = {'photoSha256': ['a' * 64]}
+    assert measurement_evaluation(objects, geometry, other, capture)['comparisons'] == []
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in root.glob('*.glb')}
     return geometry, evaluation, hashes
 
@@ -95,6 +103,11 @@ for name in measurements['reference']['features']:
         try: validate_measurements(bad)
         except ValueError: pass
         else: raise AssertionError('Invalid input accepted')
+for binding in ({}, {'photoSha256': []}, {'photoSha256': ['not-a-hash']}):
+    bad = copy.deepcopy(measurements); bad['evaluation']['capture'] = binding
+    try: validate_measurements(bad)
+    except ValueError: pass
+    else: raise AssertionError('Malformed capture binding accepted')
 for supported in (True, False):
     with tempfile.TemporaryDirectory() as tmp:
         roots = [Path(tmp)/name for name in ('a','b')]

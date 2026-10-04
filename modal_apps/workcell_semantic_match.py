@@ -86,11 +86,13 @@ def main(root: str, out: str, config: str):
     destination.mkdir(parents=True, exist_ok=True)
     if (destination / "spend-ledger.json").exists():
         raise ValueError("Choose a fresh output directory; never overwrite a spend ledger")
+    frames = sorted(baseline.glob("frame_*.json.gz"))
     files = [baseline / name for name in ("objects.json", "scene-report.json")]
-    files += [baseline / f"photo-{i}.png" for i in range(1, 5)]
-    files += sorted(baseline.glob("frame_*.json.gz"))
-    if not all(path.is_file() for path in files) or len(files) != 10:
-        raise ValueError("Expected frozen catalog, scene, four photos and four depth frames")
+    files += [baseline / f"photo-{i}.png" for i in range(1, len(frames) + 1)]
+    files += frames
+    if (len(frames) < 2 or not all(path.is_file() for path in files)
+            or [f.name for f in frames] != [f"frame_{i:04d}.json.gz" for i in range(1, len(frames) + 1)]):
+        raise ValueError("Expected frozen catalog, scene, and photo/depth frame 1..N (N >= 2) of one scene")
     archive, hashes = io.BytesIO(), {}
     with tarfile.open(fileobj=archive, mode="w:gz") as bundle:
         for path, name in [(path, path.name) for path in files] + [(Path(config), "protocol.json")]:

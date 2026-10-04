@@ -18,7 +18,7 @@ LABELS = {'robot': '工业机器人', 'cart': '载料运输车', 'floor': '地�
           'warning sign': '警示牌', 'workcell sign': '工位标识牌', 'folding safety barrier': '折叠防护板',
           'cable tray': '线缆托架', 'instruction poster': '作业指导海报',
           'transparent safety panel': '透明护板', 'floor marking': '地面标线',
-          'light curtain': '光幕', 'work platform': '平台/护板可见表面', 'control cabinet': '控制柜'}
+          'light curtain': '光幕', 'work platform': '平台/护板可见表面', 'control cabinet': '控制柜', 'gantry': '入口龙门架'}
 
 
 def _source_points(frame, transform):
@@ -86,7 +86,7 @@ def _ground_distance(item, geometry, transform):
 
 
 LINEAGE = 'revision-lineage.json'
-SIDE_PHOTO = 4  # Left/right as seen by the reviewer in photo 4, facing the workcell.
+# Left/right are as seen by the reviewer in the scene's reference photo (capture.json; photo 4 in legacy runs), facing the workcell.
 SCOPE_LABELS = {'model_bottom_face_center': '光幕底端', 'visible_face_lower_terminal': '光幕可见面下沿',
                 'model_lower_rail_near_curtain': '光幕旁围栏下沿'}
 HYPOTHESIS_LABEL = '光幕旁围栏下包络假设'  # railPart lower_envelope_hypothesis: not a lower-rail edge
@@ -106,6 +106,8 @@ def _floor_angle(measured, up):
 
 def _endpoint_estimation(root, measured, transform, doc):
     """Bind current model endpoints to this document's representations; values stay native."""
+    from scripts.workcell_photo_oneshot import scene_photos
+    side_photo = scene_photos(root)[1]
     if measured.get('schemaVersion') != ENDPOINT_SCHEMA or 'curtainMinusRail' not in measured:
         raise ValueError(f"Model endpoint inspection is stale: schema {measured.get('schemaVersion')} instead of {ENDPOINT_SCHEMA}; run finalize")
     for name, digest in measured['sourceFiles'].items():
@@ -115,7 +117,7 @@ def _endpoint_estimation(root, measured, transform, doc):
         raise ValueError('Model endpoint inspection uses a different floor')
     entities = {entity['id']: entity for entity in doc['entities']}
     assets = {asset['id']: asset for asset in doc['assets']}
-    camera = next(row for row in doc['cameras'] if row['imageId'] == f'photo-{SIDE_PHOTO}')
+    camera = next(row for row in doc['cameras'] if row['imageId'] == f'photo-{side_photo}')
     K, pose = np.asarray(camera['K'], float), np.asarray(camera['cameraToWorld'], float)
     endpoints = []
     for row in measured['objects']:
@@ -167,7 +169,7 @@ def _endpoint_estimation(root, measured, transform, doc):
                 continue
             differences.append({**pair, 'valueNative': rows['left']['heightNative'] - rows['right']['heightNative'],
                                 'label': f'左右{noun}离地差（左 − 右）', 'description': '左右各自测点沿同一地面法向的高度差；不是精度或同高验证。'})
-    return {'status': 'conditional_unvalidated', 'sidePhoto': SIDE_PHOTO,
+    return {'status': 'conditional_unvalidated', 'sidePhoto': side_photo,
             'method': '读取当前显示网格中每个光幕的指定下沿及其旁边围栏的下部构件（下横梁下沿，或标明的下包络假设），沿同一地面法向测量；部位来源见端点记录。',
             'endpoints': endpoints, 'differences': differences, 'excludedComparisons': excluded, 'sourceFiles': measured['sourceFiles'],
             'units': 'native; display multiplies by modelMeasurementScale of this revision',
@@ -203,9 +205,17 @@ def build(root, endpoints=None):
 
 
 def _build(root, staging):
-    from scripts.workcell_photo_oneshot import _array, _frame
+    from scripts.workcell_photo_oneshot import CAPTURE, _array, _frame, scene_photos
+    count, reference = scene_photos(root)
     geometry = json.loads((root / 'geometry.json').read_text())
     catalog = json.loads((root / 'objects.json').read_text())
+    if geometry.get('calibration') and not any(item['id'] == geometry['calibration']['reference'].get('objectId', 'emergency-button')
+                                               for item in catalog['objects']):
+        # The supplied button dimensions describe an object this scene never observed: not a reference for this report.
+        geometry.pop('calibration')
+    for item in catalog['objects']:
+        if (item.get('recgenModel') or {}).get('accepted'):  # the proxy's box size no longer describes the shown model
+            item.pop('modelDimensionsNative', None)
     from scripts.workcell_photo_objects import remeasure
     # Visible extents are re-measured on this revision's frames and floor with each observation's
     # objects-stage support (never its outline polygon); the catalog keeps the objects-stage values.
@@ -265,7 +275,7 @@ def _build(root, staging):
                 'sourceRefs': refs}
 
     context_representations, context_observations = [], []
-    for i in range(1, 5):
+    for i in range(1, count + 1):
         f = _frame(root, i)
         source_frames[i] = _source_points(f, transform)
         image = asset(root / f'photo-{i}.png', f'photo-{i}', 'source_image', photo=i)
@@ -289,7 +299,7 @@ def _build(root, staging):
         if context is not None:
             context_representations.append(context)
     if context_representations:
-        doc['entities'].append({'id': 'source-capture-points', 'label': '四张照片的推断点云（非真值）',
+        doc['entities'].append({'id': 'source-capture-points', 'label': f'{count} 张照片的推断点云（非真值）',
             'observationRefs': context_observations, 'representations': context_representations, 'visible': True, 'sourceContext': True,
             'associationState': 'association_pending',
             'physicalDimensionsUnknown': True, 'modelOrientationUnknown': True})
@@ -337,7 +347,7 @@ def _build(root, staging):
         category = item['kind']
         counts[category] = counts.get(category, 0) + 1
         label = LABELS.get(category, item['label'])
-        if category not in ('robot', 'cart', 'floor', 'emergency stop button', 'emergency_button'):
+        if category not in ('robot', 'cart', 'floor', 'emergency stop button', 'emergency_button', 'gantry'):
             label += ' ' + str(counts[category])
         if 'button' in item['id']:
             label = '红黄急停按钮'
@@ -406,8 +416,9 @@ def _build(root, staging):
                     direction = np.asarray(evidence[field])
                     evidence.update(objectsStageValueDeg=(stage_orientation.get(key) or {}).get('valueDeg'), floor="this revision's floor",
                                     valueDeg=float(np.degrees(np.arccos(np.clip(abs(direction[2]) / np.linalg.norm(direction), 0, 1)))))
+        # One model per object. Legacy catalogs (per-photo robot poses) show the reference photo's pose, never a swap.
         variants = {key: representation(item, spec, '-photo-'+key) for key, spec in item.get('modelsByPhoto', {}).items()}
-        rep = variants.get('4') or (representation(item, item['model'], '') if (item.get('model') or {}).get('nodes') else None)
+        rep = variants.get(str(reference)) or (representation(item, item['model'], '') if (item.get('model') or {}).get('nodes') else None)
         entity = {'id': item['id'], 'label': label, 'observationRefs': observations,
                   'associationState': 'association_pending', 'representations': ([rep] if rep else []) + point_representations,
                   'activeModelRepresentationId': rep['id'] if rep else None, 'currentModelTransform': rep['transform'] if rep else None,
@@ -425,7 +436,7 @@ def _build(root, staging):
                 'parentRevisionId': lineage.get('parentRevisionId'), 'sourceRevisionId': lineage.get('sourceRevisionId'),
                 'createdAt': timestamp,
                 'documentSha256': hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest(),
-                'label': lineage.get('label', '四张照片 oneshot'), 'document': doc}
+                'label': lineage.get('label', f'{count} 张照片 oneshot'), 'document': doc}
     Revision.model_validate(revision)
     from ehs_spatial.platform.scene_measurements import analyze_bends
     guard_revision = {**revision, 'document': {**doc, 'entities': [e for e in doc['entities'] if e['id'].startswith('v-guard-')]}}
@@ -435,14 +446,17 @@ def _build(root, staging):
     result = {'schemaVersion': 1, 'revision': revision, 'assetURLs': urls, 'objects': catalog['objects'],
               'coverage': catalog['coverage'], 'geometry': geometry, 'sceneTransformNative': transform.tolist(),
               'nativeToMetersDefault': scale, 'timing': {},
-              'bendAnalysis': bend_analysis, 'modelMeasurementScale': measurement_scale}
+              'bendAnalysis': bend_analysis, 'modelMeasurementScale': measurement_scale,
+              'capture': {'photoCount': count, 'referencePhoto': reference,
+                          'sources': json.loads((root / CAPTURE).read_text())['sources'] if (root / CAPTURE).is_file() else None}}
     endpoint_path = staging / 'model-endpoint-estimate.json'
     endpoint_path = endpoint_path if endpoint_path.is_file() else root / 'model-endpoint-estimate.json'
     if endpoint_path.is_file():
         result['endpointEstimation'] = _endpoint_estimation(root, json.loads(endpoint_path.read_text()), transform, doc)
     if (root/'measurements.json').is_file():
         from scripts.workcell_photo_calibration import load_measurements, measurement_evaluation
-        result['measurementEvaluation'] = measurement_evaluation(catalog['objects'], geometry, load_measurements(root/'measurements.json'))
+        result['measurementEvaluation'] = measurement_evaluation(catalog['objects'], geometry, load_measurements(root/'measurements.json'),
+                                                                 json.loads((root / CAPTURE).read_text()) if (root / CAPTURE).is_file() else None)
         (staging/'measurement-evaluation.json').write_text(json.dumps(result['measurementEvaluation'], ensure_ascii=False, indent=2)+'\n')
     if lineage:
         result['lineage'] = lineage

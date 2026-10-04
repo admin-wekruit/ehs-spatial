@@ -44,12 +44,24 @@ def config_checked(config):
     for key in ("overlapNative", "overlapThreshold", "semanticThreshold"):
         if not np.isfinite(config[key]) or not 0 < config[key] <= 1:
             raise ValueError(f"Invalid {key}")
-    if not isinstance(config["referenceClasses"], dict):
-        raise ValueError("referenceClasses must be an evaluation mapping")
+    by_kind = config.get("referenceClassesByKind", {})
+    if not isinstance(config["referenceClasses"], dict) or not isinstance(by_kind, dict):
+        raise ValueError("referenceClasses and referenceClassesByKind must be evaluation mappings")
     classes = {r["id"] for r in config["classes"]}
-    if any(v not in classes for v in config["referenceClasses"].values()):
+    if any(v not in classes for v in [*config["referenceClasses"].values(), *by_kind.values()]):
         raise ValueError("Unknown reference class")
     return config
+
+
+def reference_classes(config, objects):
+    """Evaluation reference class per catalog object id.
+
+    Object ids differ per scene, so a protocol may name classes by catalog kind
+    (referenceClassesByKind) and resolve them against this catalog; an explicit
+    id map (referenceClasses, frozen protocols of older runs) takes precedence."""
+    by_kind = config.get("referenceClassesByKind", {})
+    resolved = {o["id"]: by_kind[o["kind"]] for o in objects if o.get("kind") in by_kind}
+    return {**resolved, **config["referenceClasses"]}
 
 
 def normalize(values):
@@ -97,7 +109,7 @@ def observed_points(pointmap, valid, mask, transform, cap=1024):
     points = pointmap[supported]
     count = len(points)
     if count > cap:
-        # ponytail: deterministic raster-order sampling caps this four-photo experiment;
+        # ponytail: deterministic raster-order sampling caps this few-photo experiment;
         # larger captures should replace it with an explicit spatial sampling protocol.
         points = points[np.linspace(0, count - 1, cap, dtype=int)]
     return (points @ transform[:3, :3].T + transform[:3, 3]).astype(np.float32), count
@@ -321,6 +333,7 @@ def analyze(root, out, config):
         if sha256(root / source["file"]) != source["sha256"]:
             raise ValueError(f"Source changed since preparation: {source['file']}")
     catalog = read_json(root / "objects.json")["objects"]
+    references = reference_classes(config, catalog)
     observations = manifest["observations"]
     ids = [o["observationId"] for o in observations]
     entities, photos = [o["entityId"] for o in observations], [o["photo"] for o in observations]
@@ -367,7 +380,7 @@ def analyze(root, out, config):
                     "supportObservationIds": [ids[i] for i in selection], "anchorObservationId": ids[anchor] if anchor is not None else None,
                     "status": "available" if selection else "unavailable_no_valid_point_support"})
                 available[variant] += bool(top)
-                reference = config["referenceClasses"].get(obj["entityId"])
+                reference = references.get(obj["entityId"])
                 if reference is not None:
                     total[variant] += 1
                     correct[variant] += bool(top and top[0]["id"] == reference)
@@ -409,7 +422,8 @@ def analyze(root, out, config):
         "protocol": {"frozenAt": config.get("frozenAt"), "referenceStatus": config.get("referenceStatus", "proxy catalog labels, not ground truth"),
                      "notes": config.get("notes", []), "overlapNative": config["overlapNative"], "overlapThreshold": config["overlapThreshold"], "semanticThreshold": config["semanticThreshold"],
                      "sources": manifest["sources"], "pointSource": manifest["pointSource"], "sceneTransformNative": manifest["sceneTransformNative"],
-                     "classes": config["classes"], "queries": config["queries"], "referenceClasses": config["referenceClasses"],
+                     "classes": config["classes"], "queries": config["queries"], "referenceClasses": references,
+                     "referenceClassesByKind": config.get("referenceClassesByKind", {}), "explicitReferenceClasses": config["referenceClasses"],
                      "referenceUse": "Evaluation only; no labels or entity identities in neural inputs or spatial/semantic association"},
         "timing": timings, "summary": summaries, "objects": objects, "queries": queries, "associations": associations}
     write_json(out / "semantic-experiment.json", result)

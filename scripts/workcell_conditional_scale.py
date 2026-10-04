@@ -12,25 +12,30 @@ import numpy as np
 
 from workcell_photo_geometry import _unit
 from workcell_photo_metrology import _horizontal, _pixels, _reference, _tangencies
-from workcell_photo_oneshot import _array, _frame
+from workcell_photo_oneshot import _array, _frame, scene_photos
 
 
 def model_measurement_scale(root, geometry):
-    """One explicit scale for model tools; never promote a conditional fit."""
+    """One explicit scale for model tools; never promote a conditional fit.
+
+    The conditional scale reads the button only in this scene's reference photo; a scene whose
+    reference photo has no associated button observation keeps native units (no scale is borrowed)."""
     from scripts.workcell_photo_calibration import accepted_scale
     accepted = accepted_scale(geometry)
     if accepted is not None:
         return {'status': 'accepted_3d_reference', 'nativeToMeters': accepted,
                 'rangeNativeToMeters': [accepted, accepted],
                 'source': '已通过当前固定相机三维参考拟合的按钮标尺。'}
+    photo = scene_photos(root)[1]
     observations = geometry['anchor'].get('referenceFit', {}).get('observations', [])
-    if not (Path(root) / 'reference-input.json').is_file() or not any(o.get('photo') == 4 for o in observations):
-        return {'status': 'uncalibrated', 'nativeToMeters': None, 'rangeNativeToMeters': None,
-                'source': '没有可用于本报告的按钮轮廓标尺；保留原生单位。'}
-    evidence = conditional_scale(root, photo=4)
+    if not (Path(root) / 'reference-input.json').is_file() or not any(o.get('photo') == photo for o in observations):
+        return {'status': 'uncalibrated', 'nativeToMeters': None, 'rangeNativeToMeters': None, 'referencePhoto': photo,
+                'source': f'参考照片 {photo} 中没有可用于本报告的按钮轮廓标尺；保留原生单位，不借用其他场景的比例。'}
+    evidence = conditional_scale(root, photo=photo)
+    primary, red = evidence['primary'], evidence['redCrosscheck']
     return {'status': evidence['status'], 'nativeToMeters': evidence['conditionalMPerNative'],
-            'rangeNativeToMeters': evidence['rangeMPerNative'],
-            'source': '照片 4 主体直径 8.5 cm 的条件比例；红帽 4 cm 交叉检查。三尺寸联合标定仍未通过。',
+            'rangeNativeToMeters': evidence['rangeMPerNative'], 'referencePhoto': photo,
+            'source': f"照片 {photo} 主体直径 {primary['knownDimensionM'] * 100:g} cm 的条件比例；红帽 {red['knownDimensionM'] * 100:g} cm 交叉检查。三尺寸联合标定仍未通过。",
             'evidence': evidence}
 
 
