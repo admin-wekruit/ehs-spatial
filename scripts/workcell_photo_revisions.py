@@ -152,6 +152,15 @@ if __name__ == '__main__':
                         help='Directory with volume-candidates.json and its GLBs, the candidate revision ID and its label')
     parser.add_argument('--evidence-url', help='Relative URL of the published evidence page')
     parser.add_argument('--experiment', nargs=2, metavar=('TITLE', 'SUMMARY'), help='Evidence link block shown on the report page')
+    parser.add_argument('--gate', type=Path, help='The run behind the published report: refuse to build when the regression gate '
+                                                  '(scripts/workcell_regression_gate.py) fails against it')
+    parser.add_argument('--accept', action='append', default=[], help='OBJECT=REASON for --gate: a deliberate, explained change')
     args = parser.parse_args()
+    if args.gate:
+        from scripts.workcell_regression_gate import compare, score
+        failures, notes = compare(score(args.gate), score(args.root), dict(a.split('=', 1) for a in args.accept))
+        if failures:
+            raise SystemExit('Regression gate failed against ' + str(args.gate) + ':\n  ' + '\n  '.join(failures))
+        print(json.dumps({'gate': 'passed', 'baseline': str(args.gate), 'accepted': notes}, ensure_ascii=False))
     print(json.dumps(build(args.root, args.out, args.viewer_assets, args.candidate, main_id=args.main_id, evidence_url=args.evidence_url,
                            experiment=dict(zip(('title', 'summary'), args.experiment)) if args.experiment else None), ensure_ascii=False, indent=2))
