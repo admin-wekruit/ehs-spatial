@@ -266,7 +266,11 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     const measurement=layers.measurement;
     if(measurement?.revisionId===revisionId&&measurement.coordinateFrameId===frameId){
       for(const path of measurement.lines)for(let i=1;i<path.points.length;i++)line(project(path.points[i-1]),project(path.points[i]),path.color,2.5);
-      const label=(point:number[],content:string)=>{const p=project(point);if(!p)return;const text=document.createElementNS(svg.namespaceURI,'text');text.textContent=content;for(const[k,v]of Object.entries({x:p[0]+8,y:p[1]-8,fill:'#fff',stroke:'#182a31','stroke-width':3,'paint-order':'stroke','font-size':17,'font-weight':700}))text.setAttribute(k,String(v));svg.append(text);if(overlay){overlay.font='700 20px sans-serif';overlay.lineWidth=4;overlay.strokeStyle='#fff';overlay.strokeText(content,p[0]+8,p[1]-8);overlay.fillStyle='#182a31';overlay.fillText(content,p[0]+8,p[1]-8);}};
+      // ponytail: greedy screen-space placement, labels never overlap; a label that collides moves down one line at a time.
+      const placed:number[][]=[];
+      const label=(point:number[],content:string)=>{const p=project(point);if(!p)return;const w=Array.from(content).reduce((s,ch)=>s+(ch.charCodeAt(0)>255?17:9.5),0),h=21;let x=p[0]+8,y=p[1]-8;
+        for(let i=0;i<12&&placed.some(([ax,ay,aw,ah])=>x<ax+aw&&ax<x+w&&y-h<ay&&ay-ah<y);i++)y+=h;placed.push([x,y,w,h]);
+        const text=document.createElementNS(svg.namespaceURI,'text');text.textContent=content;for(const[k,v]of Object.entries({x,y,fill:'#fff',stroke:'#182a31','stroke-width':3,'paint-order':'stroke','font-size':17,'font-weight':700}))text.setAttribute(k,String(v));svg.append(text);if(overlay){overlay.font='700 20px sans-serif';overlay.lineWidth=4;overlay.strokeStyle='#fff';overlay.strokeText(content,x,y);overlay.fillStyle='#182a31';overlay.fillText(content,x,y);}};
       label(measurement.labelPoint,measurement.displayLabel ?? (Number(measurement.value.toPrecision(4))+(measurement.unit==='deg'?'°':'')));
       for(const extra of measurement.labels??[])label(extra.point,extra.text);  // e.g. Blender-style box dimensions
     }

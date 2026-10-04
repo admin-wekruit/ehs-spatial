@@ -342,6 +342,14 @@ def _build(root, staging):
             mesh.visual.vertex_attributes['color'] = np.concatenate([trimesh.visual.color.to_rgba(p.visual.vertex_attributes['color']) for p in parts])
             if all(p.visual.material.doubleSided for p in parts):
                 mesh.visual.material.doubleSided = True
+        if len(parts) > 1 and all(p.visual.kind == 'texture' and getattr(p.visual.material, 'baseColorTexture', None) is not None for p in parts):
+            # Packing several photo-textured sheets invents a metallic-roughness texture and drops double-sidedness; keep the
+            # packed colour atlas only, with the sheets' own factors (one-chart photo textures are double-sided).
+            first = parts[0].visual.material
+            mesh.visual.material = trimesh.visual.material.PBRMaterial(
+                baseColorTexture=mesh.visual.material.baseColorTexture, baseColorFactor=[255, 255, 255, 255],
+                metallicFactor=first.metallicFactor, roughnessFactor=first.roughnessFactor,
+                doubleSided=all(p.visual.material.doubleSided for p in parts))
         if not np.isfinite(mesh.vertices).all() or not len(mesh.faces):
             raise ValueError(f"{item['id']}: invalid mesh")
         if not suffix:

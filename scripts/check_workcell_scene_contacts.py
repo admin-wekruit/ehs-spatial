@@ -69,9 +69,10 @@ def check_run(root):
             share = float(contacts.inside(points, box).mean()) if len(points) else 0.
             assert share < contacts.CONTACT or (node, ident) in unresolved, (ident, node, round(share, 4))
             worst = max(worst, share)
-    for row in record['duplicates']:
+    for row in [row for rec in [record, *record.get('earlierPasses', [])] for row in rec.get('duplicates', [])]:
         assert row['node'] not in items[row['object']]['model']['nodes'], row
-    return {**record, 'worstInsideFraction': round(worst, 4)}
+    return {**record, 'duplicates': [row for rec in [record, *record.get('earlierPasses', [])] for row in rec.get('duplicates', [])],
+            'worstInsideFraction': round(worst, 4)}
 
 
 if __name__ == '__main__':

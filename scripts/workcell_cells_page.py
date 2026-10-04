@@ -80,6 +80,11 @@ def _cell(label, run, url, ui_seconds):
                      else f"，倾斜 {lamp.get('principalAxisTiltDeg')}°（立正未通过，保留自由拟合）" if upright else '')
             models.append([item['id'], f"RecGen（灯，{len(lamp.get('views') or [])} 个视角）" + ('' if lamp.get('accepted') else '，未通过→代理') + stood,
                            ', '.join(map(str, lamp.get('views') or [])), _iou(lamp)])
+        plates = item.get('guardPlates')
+        if plates:
+            fmt = lambda v: ' / '.join(f"照片{p} {x:.2f}" for p, x in sorted(v.items())) or '—'
+            models.append([item['id'], f"照片拟合平板（{len(plates['faces'])} 面），替换 RecGen 块（该块 IoU：{fmt(plates['recgenPartIouByPhoto'])}）",
+                           ', '.join(map(str, plates['photos'])), fmt(plates['iouByPhoto'])])
         gantry = item.get('gantryModel')
         if gantry:
             validation = gantry.get('validation', {})
@@ -88,7 +93,7 @@ def _cell(label, run, url, ui_seconds):
     # One guard model, partitioned into the left / centre / right boards; a promoted A4 fit keeps the RecGen record aside.
     placement = next((run / name for name in ('guard-placement-initializer.json', 'guard-placement.json') if (run / name).is_file()), None)
     guard = _read(placement) if placement else {}
-    if guard.get('sourceChecks') and guard.get('generationViews'):
+    if guard.get('sourceChecks') and guard.get('generationViews') and not any(item.get('guardPlates') for item in catalog['objects']):
         models.append(['v-guard-left / center / right', 'RecGen 多视角（一个护板模型，按原图掩码分成三块）', ', '.join(map(str, guard['generationViews'])),
                        ' / '.join(f"照片{n + 1} {check['iou']:.2f}" for n, check in enumerate(guard['sourceChecks']))])
     endpoints = [[row['label'], f"{row['heightNative'] * factor * 100:.2f} cm" if factor else f"{row['heightNative']:.4f} native"]

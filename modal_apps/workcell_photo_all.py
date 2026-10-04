@@ -240,6 +240,18 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
             catalog = _small_objects(root, catalog, len(images), sources)
             lamp_seconds = time.monotonic() - lamps_started
             (root/'objects.json').write_text(json.dumps(catalog, ensure_ascii=False, indent=2))
+            # V-guard boards: unless the structural shared-angle fit took them over, folded plates fitted to each board's own
+            # photo support replace the generated guard parts where they match the masks at least as well.
+            plates_started = time.monotonic()
+            if not structural_result.get('promotionAllowed'):
+                try:
+                    from scripts.workcell_guard_plates import build as guard_plates
+                    guard_plates(root, sources)
+                except Exception as error:  # ponytail: the generated parts stay and the reason is published
+                    catalog = json.loads((root/'objects.json').read_text())
+                    catalog['coverage']['guardPlates'] = {'status': 'failed', 'error': f'{type(error).__name__}: {error}'[-1500:]}
+                    (root/'objects.json').write_text(json.dumps(catalog, ensure_ascii=False, indent=2))
+            plate_seconds = time.monotonic() - plates_started
             # Contacts, not interpenetration: mounted objects touch the gantry, one physical member has one model.
             contacts_started = time.monotonic()
             try:
@@ -259,7 +271,7 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
                 "segmentationSeconds": json.loads((root / "sam-timing.json").read_text())["containerSeconds"],
                 "cartMaskSeconds": sam_end-owl_end, "prepareSeconds": prepare_end-sam_end,
                 "modelSeconds": model_end-prepare_end,
-                "metricTailSeconds": complete_end-model_end, "smallObjectSeconds": lamp_seconds, "contactSeconds": contact_seconds}))
+                "metricTailSeconds": complete_end-model_end, "smallObjectSeconds": lamp_seconds, "guardPlateSeconds": plate_seconds, "contactSeconds": contact_seconds}))
             return _archive_result(root, started)
         except Exception as error:
             return _archive_result(root, started, {'type': type(error).__name__, 'message': str(error)})

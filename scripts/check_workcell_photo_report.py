@@ -38,6 +38,8 @@ if (root/CAPTURE).is_file():
     # A scene that never observed the button shows no supplied button dimensions; check values subtract only for their own photos.
     assert 'emergency-button' in objects or not report['geometry'].get('calibration'), 'calibration of an unobserved reference'
     assert not any((o.get('recgenModel') or {}).get('accepted') and 'modelDimensionsNative' in o for o in objects.values()), 'stale proxy size on a RecGen lamp'
+    # Every displayed model stays readable by the measurement layer (a failed bend analysis means an unreadable GLB).
+    assert not [i['entityId'] for i in (report.get('bendAnalysis') or {}).get('items', []) if i.get('status') == 'failed'], report['bendAnalysis']
     supplied = json.loads((root/'measurements.json').read_text()) if (root/'measurements.json').is_file() else {}
     binding = (supplied.get('evaluation') or {}).get('capture')
     if supplied and (binding is None or sorted(binding['photoSha256']) != sorted(s['sha256'] for s in json.loads((root/CAPTURE).read_text())['sources'])):

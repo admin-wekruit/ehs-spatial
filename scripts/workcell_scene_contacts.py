@@ -185,8 +185,12 @@ def resolve(root):
                       f'a structural member >= {DUPLICATE:.0%} inside and parallel is the same physical member (one model stays); '
                       f'otherwise the member shifts aside (gantry IoU drop <= {IOU_DROP}) and lamps slide toward their camera',
               'duplicates': [], 'members': [], 'lamps': [], 'contacts': [], 'unresolved': []}
+    previous = catalog['coverage'].get('contacts')
+
     def save():
         record['status'] = 'resolved' if not record['unresolved'] else 'partly resolved'
+        if previous:  # a later pass (e.g. after new guard plates) keeps what earlier passes changed
+            record['earlierPasses'] = (previous.get('earlierPasses') or []) + [{k: v for k, v in previous.items() if k != 'earlierPasses'}]
         catalog['coverage']['contacts'] = record
         (root / 'objects.json').write_text(json.dumps(catalog, ensure_ascii=False, indent=2, allow_nan=False) + ('\n' if text.endswith('\n') else ''))
         return record
