@@ -38,6 +38,23 @@ if (root/CAPTURE).is_file():
     # A scene that never observed the button shows no supplied button dimensions; check values subtract only for their own photos.
     assert 'emergency-button' in objects or not report['geometry'].get('calibration'), 'calibration of an unobserved reference'
     assert not any((o.get('recgenModel') or {}).get('accepted') and 'modelDimensionsNative' in o for o in objects.values()), 'stale proxy size on a RecGen lamp'
+    # A model assembled from several photo-textured sheets keeps their colours (trimesh's atlas packing swapped red and blue).
+    def _sampled(mesh):
+        image = np.asarray(mesh.visual.material.baseColorTexture.convert('RGB')); uv = np.asarray(mesh.visual.uv); h, w = image.shape[:2]
+        faces = np.asarray(mesh.faces); a = np.random.default_rng(0).random((len(faces), 100, 2)); a = np.where(a.sum(-1, keepdims=True) > 1, 1 - a, a)
+        q = uv[faces[:, 0]][:, None] * (1 - a.sum(-1, keepdims=True)) + uv[faces[:, 1]][:, None] * a[..., :1] + uv[faces[:, 2]][:, None] * a[..., 1:]
+        x = np.clip((q[..., 0] * w - .5).round().astype(int), 0, w - 1); y = np.clip(((1 - q[..., 1]) * h - .5).round().astype(int), 0, h - 1)
+        return image[y, x].reshape(-1, 3).mean(0)
+    names = {a['id']: a['metadata']['name'] for a in doc['assets']}
+    for entity in entities:
+        item = objects[entity['id']]
+        source = trimesh.load(root/item['model']['file'], force='scene') if (item.get('model') or {}).get('nodes') else None
+        sheets = [source.geometry[source.graph[n][1]] for n in item['model']['nodes']] if source else []
+        if len(sheets) > 1 and all(s.visual.kind == 'texture' and getattr(s.visual.material, 'baseColorTexture', None) is not None for s in sheets):
+            rep = next(r for r in entity['representations'] if r['id'] == entity['activeModelRepresentationId'])
+            shown = trimesh.load(root/names[rep['assetId']], force='mesh', process=False)
+            want = np.average([_sampled(s) for s in sheets], axis=0, weights=[s.area for s in sheets])
+            assert np.abs(_sampled(shown) - want).max() <= 12, (entity['id'], _sampled(shown).round(1), want.round(1))
     # Every displayed model stays readable by the measurement layer (a failed bend analysis means an unreadable GLB).
     assert not [i['entityId'] for i in (report.get('bendAnalysis') or {}).get('items', []) if i.get('status') == 'failed'], report['bendAnalysis']
     supplied = json.loads((root/'measurements.json').read_text()) if (root/'measurements.json').is_file() else {}

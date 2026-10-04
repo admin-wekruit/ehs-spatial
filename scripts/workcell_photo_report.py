@@ -204,6 +204,28 @@ def build(root, endpoints=None):
     return result
 
 
+def textured_union(parts):
+    """One mesh from several photo-textured sheets with a side-by-side RGB atlas and remapped UVs. trimesh's own packing
+    swapped red and blue (2026-10-04: a yellow-black guard wing published blue-white), invented a metallic-roughness
+    texture and dropped double-sidedness."""
+    from PIL import Image
+    images = [np.asarray(p.visual.material.baseColorTexture.convert('RGB')) for p in parts]
+    height, width = max(i.shape[0] for i in images), sum(i.shape[1] for i in images)
+    atlas, uvs, x = np.full((height, width, 3), 115, np.uint8), [], 0
+    for part, image in zip(parts, images):
+        h, w = image.shape[:2]
+        atlas[:h, x:x + w] = image
+        uv = np.asarray(part.visual.uv, float)
+        uvs.append(np.c_[(x + uv[:, 0] * w) / width, 1 - (1 - uv[:, 1]) * h / height])  # glTF v up; image rows from the top
+        x += w
+    offsets = np.cumsum([0] + [len(p.vertices) for p in parts[:-1]])
+    first = parts[0].visual.material
+    return trimesh.Trimesh(np.concatenate([p.vertices for p in parts]), np.concatenate([p.faces + o for p, o in zip(parts, offsets)]),
+                           visual=trimesh.visual.texture.TextureVisuals(uv=np.concatenate(uvs), material=trimesh.visual.material.PBRMaterial(
+                               baseColorTexture=Image.fromarray(atlas), baseColorFactor=[255, 255, 255, 255], metallicFactor=first.metallicFactor,
+                               roughnessFactor=first.roughnessFactor, doubleSided=all(p.visual.material.doubleSided for p in parts))), process=False)
+
+
 def floor_box(vertices):
     """Oriented model box in the report floor frame (Z up), as a Blender-style dimension readout: the footprint's
     minimum-area rectangle (cv2.minAreaRect, exact for the vertex set) times the vertical range. bottomNative is the
@@ -343,13 +365,7 @@ def _build(root, staging):
             if all(p.visual.material.doubleSided for p in parts):
                 mesh.visual.material.doubleSided = True
         if len(parts) > 1 and all(p.visual.kind == 'texture' and getattr(p.visual.material, 'baseColorTexture', None) is not None for p in parts):
-            # Packing several photo-textured sheets invents a metallic-roughness texture and drops double-sidedness; keep the
-            # packed colour atlas only, with the sheets' own factors (one-chart photo textures are double-sided).
-            first = parts[0].visual.material
-            mesh.visual.material = trimesh.visual.material.PBRMaterial(
-                baseColorTexture=mesh.visual.material.baseColorTexture, baseColorFactor=[255, 255, 255, 255],
-                metallicFactor=first.metallicFactor, roughnessFactor=first.roughnessFactor,
-                doubleSided=all(p.visual.material.doubleSided for p in parts))
+            mesh = textured_union(parts)
         if not np.isfinite(mesh.vertices).all() or not len(mesh.faces):
             raise ValueError(f"{item['id']}: invalid mesh")
         if not suffix:
