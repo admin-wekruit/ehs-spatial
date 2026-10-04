@@ -5,6 +5,7 @@ web/checks/photo-revision-check.mjs (Chromium, software WebGL) on the published 
 and returns its record and screenshots.
 
 modal run modal_apps/workcell_browser_check.py --commit 7d0ebb9 --folder workcell-photo-direct --out NEW_DIR
+modal run modal_apps/workcell_browser_check.py --url LIVE_REPORT_URL --object-id ENTITY_ID [--expected TEXT] --out NEW_DIR
 """
 import io
 import json
@@ -25,20 +26,26 @@ app = modal.App('workcell-browser-check')
 image = (modal.Image.from_registry(f'mcr.microsoft.com/playwright:v{PLAYWRIGHT}-noble', add_python='3.11')
          .apt_install('git')
          .run_commands(f'mkdir -p /check && cd /check && npm init -y >/dev/null && npm install --silent playwright@{PLAYWRIGHT}')
-         .add_local_file(REPO / 'web/checks/photo-revision-check.mjs', '/check/photo-revision-check.mjs'))
+         .add_local_file(REPO / 'web/checks/photo-revision-check.mjs', '/check/photo-revision-check.mjs')
+         .add_local_file(REPO / 'web/checks/four-view-layer-check.mjs', '/check/four-view-layer-check.mjs'))
 
 
 @app.function(image=image, cpu=4, memory=8 * 1024, timeout=1800, retries=0, min_containers=0)
-def check(commit: str, folder: str):
+def check(commit: str, folder: str, url: str = '', object_id: str = '', expected: str = ''):
+    """A packaged folder at one Pages commit, or (with url) a live four-view report and one of its objects."""
     started = time.monotonic()
-    site = Path('/site')
-    clone = ['git', 'clone', '--filter=blob:none', '--no-checkout', SITE, str(site)]
-    subprocess.run(clone, check=True, capture_output=True)
-    subprocess.run(['git', '-C', str(site), 'sparse-checkout', 'set', folder], check=True, capture_output=True)
-    subprocess.run(['git', '-C', str(site), 'checkout', commit], check=True, capture_output=True)
-    head = subprocess.run(['git', '-C', str(site), 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()
     out = Path('/out'); out.mkdir()
-    result = subprocess.run(['node', '/check/photo-revision-check.mjs', str(site / folder), str(out)], capture_output=True, text=True,
+    if url:
+        head, command = url, ['node', '/check/four-view-layer-check.mjs', url, object_id, str(out), expected]
+    else:
+        site = Path('/site')
+        clone = ['git', 'clone', '--filter=blob:none', '--no-checkout', SITE, str(site)]
+        subprocess.run(clone, check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(site), 'sparse-checkout', 'set', folder], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(site), 'checkout', commit], check=True, capture_output=True)
+        head = subprocess.run(['git', '-C', str(site), 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()
+        command = ['node', '/check/photo-revision-check.mjs', str(site / folder), str(out)]
+    result = subprocess.run(command, capture_output=True, text=True,
                             env={**os.environ, 'PLAYWRIGHT_BROWSERS_PATH': os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '/ms-playwright'),
                                  'PLAYWRIGHT_FROM': '/check/package.json'}, timeout=1500)
     archive = io.BytesIO()
@@ -51,13 +58,15 @@ def check(commit: str, folder: str):
 
 
 @app.local_entrypoint()
-def main(commit: str, folder: str, out: str):
+def main(out: str, commit: str = '', folder: str = '', url: str = '', object_id: str = '', expected: str = ''):
     destination = Path(out)
     if destination.exists():
         raise ValueError('Choose a fresh output directory')
+    if not (url and object_id) and not (commit and folder):
+        raise ValueError('Give --commit and --folder, or --url and --object-id')
     destination.mkdir(parents=True)
     start = time.monotonic()
-    result = check.remote(commit, folder)
+    result = check.remote(commit, folder, url, object_id, expected)
     with tarfile.open(fileobj=io.BytesIO(result.pop('archive')), mode='r:gz') as bundle:
         bundle.extractall(destination, filter='data')
     ledger = {'mode': 'ephemeral modal run', 'hardware': '4 CPU, 8 GiB, no GPU', 'status': 'completed' if result['returncode'] == 0 else 'failed',

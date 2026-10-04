@@ -33,6 +33,7 @@ import { ModelEvidence } from "./ModelEvidence";
 import { IdentityReview } from "./IdentityReview";
 import { AgentPanel } from "./AgentPanel";
 import { Extent, ReportScene } from "./ReportScene";
+import { applyMeasurementLayer, loadMeasurementLayer, type MeasurementLayer } from "./measurement-layer";
 import { ReportObjectFindings } from "./ReportObjectFindings";
 import { ReportReview, type AssessmentSummary } from "./ReportReview";
 import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "./scene-semantics";
@@ -171,7 +172,8 @@ export function WorkcellReport({
   const { t } = useI18n();
   const readOnly = !!PUBLICATION_ID;
   const [detail, setDetail] = useState<ProjectDetail>(),
-    [publication, setPublication] = useState<Publication>();
+    [publication, setPublication] = useState<Publication>(),
+    [layer, setLayer] = useState<MeasurementLayer | null>(null);
   const [error, setError] = useState<unknown>(),
     [canManage, setCanManage] = useState(false),
     [busy, setBusy] = useState(false),
@@ -215,6 +217,7 @@ export function WorkcellReport({
     setNotice("");
     setDetail(undefined);
     setPublication(undefined);
+    setLayer(null);
     setJobs([]);
     setHistory([]);
     setNewestPublication(undefined);
@@ -247,11 +250,12 @@ export function WorkcellReport({
       }
       const d: ProjectDetail = view ? {project:view.project, branch:view.branch, branches:view.branches, revision:view.publication.snapshot.revision}
         : await request<ProjectDetail>("/api/projects/" + pid);
-      const revision =
+      const measured = pub ? await loadMeasurementLayer(pub.id) : null;
+      const revision = applyMeasurementLayer(
         pub?.snapshot.revision ||
         (requestedRevision
           ? await request<Revision>("/api/revisions/" + requestedRevision)
-          : d.revision);
+          : d.revision), measured);
       if (!live) return;
       if (pub) {
         const reader = publicationReaderURL(revision.document.schemaVersion, location.href);
@@ -267,6 +271,7 @@ export function WorkcellReport({
       if (!live) return;
       setDetail(next);
       setPublication(pub);
+      setLayer(measured?.revisionId === revision.id ? measured : null);
       setReportEdits(view?.edits || []);
       setCanManage(can);
       appliedHead.current = revision.id;
@@ -825,6 +830,12 @@ export function WorkcellReport({
           inspector={<>
             {!(reviewMode && agentOpen) && <div className="report-selection-details">
               {entity ? <>
+                {layer?.facts?.[entity.id] && <section className="report-measurement-layer" data-measurement-facts={entity.id}>
+                  <h4>照片测量 · 多视角</h4>
+                  <dl>{layer.facts[entity.id].map((fact, i) => <div key={i} data-fact-kind={fact.kind}><dt>{fact.label}</dt><dd>{fact.text}</dd></div>)}</dl>
+                  {layer.models?.[entity.id] && <p>{layer.models[entity.id].note}</p>}
+                  <p>尺度：1 原生单位 = {(layer.scale.nativeToMeters * 100).toFixed(1)} cm（{layer.scale.source}）。模型估计，未经现场实测验证。</p>
+                </section>}
                 <ObjectFacts entity={entity} document={doc} /><ModelEvidence entity={entity} onCommit={canWrite ? operations => apply(operations) : undefined}
                   onReview={canWrite ? () => reviewModel(entity.id) : undefined}
                   disabled={busy || jobs.some(task => task.kind === "review_models" && ["pending_dispatch", "queued", "running"].includes(task.status) && Array.isArray(task.inputs.entityIds) && task.inputs.entityIds.includes(entity.id))} />
