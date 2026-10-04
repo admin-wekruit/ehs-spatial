@@ -18,6 +18,8 @@ export type SceneMeasurement = {
   surfacePicks?: SurfacePick[];
   references: { entityId: string; representationId: string; assetId: string | null; assetSha256: string | null; placementState: string | null; qualityStatus: string | null }[];
   lines: { points: number[][]; color: string }[]; labelPoint: number[];
+  /** Extra labels drawn like the main one (e.g. length / width / height / clearance of a selected model). */
+  labels?: { point: number[]; text: string }[];
   quality: { areaNative2?: number; angularErrorDeg?: number | null; angularSpreadDeg?: number; rmsResidualNative?: number; classification?: string; surfaceId?: string; surfaceFits?: { areaFraction: number; rmsResidualNative: number }[]; deviationFromVerticalDeg?: number; groundReference?: { normal?: number[] | null }; regionFraction?: number };
 };
 export type BendAnalysis = { revisionId: string; algorithm: string; items: BendOutcome[] };

@@ -131,6 +131,17 @@ try {
     record.checks.push({ step: 'structured spatial question', revision: report.revision.id, question: '左右光幕谁更高？', answer: text });
   }
   await ask(main);
+  // Click an object: a Blender-style readout (oriented box, length / width / height, clearance) in the panel and in 3D.
+  const boxed = main.objects.find(item => item.id === 'robot' && item.modelBoxFloor) ?? main.objects.find(item => item.modelBoxFloor);
+  if (boxed) {
+    const b = boxed.modelBoxFloor;
+    await page.locator(`[data-entity-id="${boxed.id}"] > button`).first().click();
+    assert.equal(await page.locator('[data-model-box-size]').first().textContent(), `${cm(main, b.lengthNative)} × ${cm(main, b.widthNative)} × ${cm(main, b.heightNative)}`);
+    assert.equal(await page.locator('[data-model-box-bottom]').first().textContent(), cm(main, b.bottomNative));
+    await page.locator('[data-pane="spatial"] .native-stage svg text').filter({ hasText: `长 ${cm(main, b.lengthNative)}` }).waitFor({ timeout: 120000 });
+    record.checks.push({ step: 'click an object: model box size and clearance in panel and 3D', object: boxed.id, size: [b.lengthNative, b.widthNative, b.heightNative], bottomNative: b.bottomNative });
+    await page.locator('[data-pane="spatial"]').first().screenshot({ path: path.join(out, 'main-model-box.png') });
+  }
   record.revisions.main = { id: main.revision.id, documentSha256: main.revision.documentSha256, glb: await downloadGLB(main, 'main') };
   // 4. Switch to the candidate revision (when one is published); the same object now reads the candidate model.
   if (candidate) {

@@ -204,6 +204,22 @@ def build(root, endpoints=None):
     return result
 
 
+def floor_box(vertices):
+    """Oriented model box in the report floor frame (Z up), as a Blender-style dimension readout: the footprint's
+    minimum-area rectangle (cv2.minAreaRect, exact for the vertex set) times the vertical range. bottomNative is the
+    model's lowest point above the floor, i.e. its ground clearance; values are model extents, not surveyed sizes."""
+    import cv2
+    v = np.asarray(vertices, float)
+    (cx, cy), (a, b), angle = cv2.minAreaRect(v[:, :2].astype(np.float32))
+    footprint = cv2.boxPoints(((cx, cy), (a, b), angle)).astype(float)  # corners in order around the rectangle
+    bottom, top = float(v[:, 2].min()), float(v[:, 2].max())
+    corners = [[*xy, bottom] for xy in footprint] + [[*xy, top] for xy in footprint]
+    return {'lengthNative': round(float(max(a, b)), 6), 'widthNative': round(float(min(a, b)), 6),
+            'heightNative': round(top - bottom, 6), 'bottomNative': round(bottom, 6), 'topNative': round(top, 6),
+            'cornersNative': np.round(corners, 6).tolist(),
+            'method': 'oriented footprint rectangle x vertical range of the displayed model in the floor frame'}
+
+
 def _build(root, staging):
     from scripts.workcell_photo_oneshot import CAPTURE, _array, _frame, scene_photos
     count, reference = scene_photos(root)
@@ -328,6 +344,8 @@ def _build(root, staging):
                 mesh.visual.material.doubleSided = True
         if not np.isfinite(mesh.vertices).all() or not len(mesh.faces):
             raise ValueError(f"{item['id']}: invalid mesh")
+        if not suffix:
+            item['modelBoxFloor'] = floor_box(mesh.vertices)
         center = mesh.bounds.mean(0)
         mesh.apply_translation(-center)
         name = f"entity-{item['id']}{suffix}.glb"
