@@ -30,6 +30,18 @@ try {
   await page.waitForTimeout(10000); // the selected model draws after its asset arrives
   await page.screenshot({ path: path.join(out, 'four-view.png') });
   await details.screenshot({ path: path.join(out, 'details.png') });
+  record.bends = await page.locator('.report-bend-analysis').allInnerTexts();
+  // The selected object's own model pane, in its top and front orthographic views.
+  const preview = page.locator('.report-model-preview').first();
+  for (const [label, file] of [['俯视', 'preview-top.png'], ['正视', 'preview-front.png']]) {
+    const button = preview.getByRole('button', { name: label, exact: true });
+    if (await button.count()) {
+      await button.click();
+      await preview.getByText('正在载入空间资产').waitFor({ state: 'hidden', timeout: 120000 }).catch(() => {});
+      await page.waitForTimeout(3000); await preview.screenshot({ path: path.join(out, file) });
+    }
+  }
+  record.layerRequests = layer;  // again: the layer's meshes arrive after the facts
   record.errors = errors;
   record.passed = true;
 } finally {

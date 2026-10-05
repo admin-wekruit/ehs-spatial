@@ -1,4 +1,5 @@
 import type { Representation, Revision, Transform } from "./types";
+import type { BendOutcome } from "./SpatialMeasurements";
 
 /** A static measurement layer published next to a frozen report: the frame's reference-object scale, a corrected ground plane,
  * reference-object models built from their specification, and per-object facts measured from the photos. It applies to exactly
@@ -15,12 +16,15 @@ export type MeasurementLayer = {
   /** Extra mesh assets published next to the page (url relative to it), registered in the document under their ids. */
   assets?: (Record<string, unknown> & { id: string; url: string })[];
   facts?: Record<string, LayerFact[]>;
+  /** Fold angles measured from the photos, shown like saved bends; each references the layer model it measured. */
+  bends?: BendOutcome[];
 };
 
-/** The report's asset resolver, with the layer's own files served from the website and everything else unchanged. */
-export function withLayerAssets<T extends { resolveAsset: (id: string) => Promise<string> }>(resources: T, layer: MeasurementLayer | null): T {
+/** The report's resources with the layer's own files served from the website and its measured bends; everything else unchanged. */
+export function withLayerAssets<T extends { resolveAsset: (id: string) => Promise<string>; layerBends?: BendOutcome[] }>(resources: T, layer: MeasurementLayer | null): T {
   const urls = new Map((layer?.assets || []).map(asset => [asset.id, new URL(asset.url, location.href).href]));
-  return urls.size ? { ...resources, resolveAsset: async (id: string) => urls.get(id) ?? resources.resolveAsset(id) } : resources;
+  if (!urls.size && !layer?.bends?.length) return resources;
+  return { ...resources, layerBends: layer?.bends, resolveAsset: async (id: string) => urls.get(id) ?? resources.resolveAsset(id) };
 }
 
 export async function loadMeasurementLayer(publicationId: string): Promise<MeasurementLayer | null> {

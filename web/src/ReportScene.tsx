@@ -253,7 +253,7 @@ export function ReportScene({
     [modelLoads, setModelLoads] = useState<{ revisionId: string; states: RepresentationLoadState[] } | null>(null),
     [expandedEntities, setExpandedEntities] = useState<Set<string>>(() => new Set());
   const [comparing, setComparing] = useState(matchedComparison && (!initialView || initialView === "compare")), [wipe, setWipe] = useState(50);
-  const { analysisAvailable, bendAnalysis: savedBendAnalysis, inclinationAnalysis: savedInclinationAnalysis } = useSceneResources();
+  const { analysisAvailable, bendAnalysis: savedBendAnalysis, inclinationAnalysis: savedInclinationAnalysis, layerBends } = useSceneResources();
   const document = revision.document,
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
@@ -283,13 +283,16 @@ export function ReportScene({
     return ()=>controller.abort();
   },[revision.id]);
   const bendAnalysis = analysisAvailable ? remoteBendAnalysis : savedBendAnalysis, inclinationAnalysis = analysisAvailable ? remoteInclinationAnalysis : savedInclinationAnalysis;
-  const inclinationRows=inclinationAnalysis?.revisionId===revision.id?inclinationAnalysis.items:[];
+  // A saved analysis measured one model: once an entity shows another model (e.g. a measurement layer's), its old results no longer apply.
+  const measuresShownModel = (result?: SceneMeasurement) => !result || result.references.every(ref => activeModel(document.entities.find(entity => entity.id === ref.entityId) || {} as Entity)?.id === ref.representationId);
+  const inclinationRows=(inclinationAnalysis?.revisionId===revision.id?inclinationAnalysis.items:[]).map(row=>({...row,surfaces:row.surfaces.filter(surface=>measuresShownModel(surface.result))}));
   const incompleteInclinations=inclinationRows.filter(row=>row.status==="failed" || row.status==="partial").length;
   const allSurfaces=inclinationRows.flatMap(row=>row.surfaces.map(surface=>({entityId:row.entityId,surface,key:row.entityId+":"+surface.surfaceId})));
   const visibleSurfaces=allSurfaces.filter(row=>allPlanes || row.surface.classification==="non_vertical" || (row.surface.classification==="direction_unverified" && row.surface.deviationFromVerticalDeg>Math.max(row.surface.angularSpreadDeg,0.000001)));
   const activeSurface=allSurfaces.find(row=>row.key===surfaceKey && row.entityId===selected?.id)?.surface;
   useEffect(()=>{ if(activeSurface)setMeasurement(activeSurface.result); },[activeSurface]);
-  const bendRows = bendAnalysis?.revisionId === revision.id ? bendAnalysis.items : [];
+  const bendRows = [...(bendAnalysis?.revisionId === revision.id ? bendAnalysis.items : []).filter(row => measuresShownModel(row.result) && !layerBends?.some(layerRow => layerRow.entityId === row.entityId)),
+    ...(layerBends || []).filter(row => row.result?.revisionId === revision.id && measuresShownModel(row.result))];
   const incompleteBends = bendRows.filter(row => row.status === "failed").length;
   const detectedBends = bendRows.filter(row => row.status === "measured" && row.result);
   const savedBend = bendRows.find(row => row.entityId === selected?.id);
