@@ -838,7 +838,7 @@ export function WorkcellReport({
                   <h4>照片测量 · 多视角</h4>
                   <dl>{layer.facts[entity.id].map((fact, i) => <div key={i} data-fact-kind={fact.kind}><dt>{fact.label}</dt><dd>{fact.text}</dd></div>)}</dl>
                   {layer.models?.[entity.id] && <p>{layer.models[entity.id].note}</p>}
-                  <p>尺度：1 原生单位 = {(layer.scale.nativeToMeters * 100).toFixed(1)} cm（{layer.scale.source}）。模型估计，未经现场实测验证。</p>
+                  <p>尺度：1 原生单位 = {(layer.scale.nativeToMeters * 100).toFixed(1)} cm{layer.scale.uncertaintyRelative ? `（±${(layer.scale.uncertaintyRelative * 100).toFixed(1)}%，各特征单独定尺度的分散）` : ""}（{layer.scale.source}）。模型估计，未经现场实测验证。</p>
                 </section>}
                 <ObjectFacts entity={entity} document={doc} /><ModelEvidence entity={entity} onCommit={canWrite ? operations => apply(operations) : undefined}
                   onReview={canWrite ? () => reviewModel(entity.id) : undefined}

@@ -191,6 +191,95 @@ def verdict(row, scale_tolerance=.03):
     return 'ok'
 
 
+def load_report(view: bytes, photos: dict, layer_url: str, api: str):
+    """A published four-view report as arrays: cameras, photos, and each object's displayed model and photo masks.
+
+    The measurement layer applies only to the revision it names (its models replace the imported ones, its scale and ground
+    win). Masks are the report's per-photo polygons, not eroded. `floor` = (unit normal, offset) with cameras on the + side."""
+    import io, json, urllib.parse, urllib.request
+    get = lambda url: urllib.request.urlopen(url, timeout=120).read()
+    view = json.loads(view); doc = view['publication']['snapshot']['revision']['document']
+    layer = json.loads(get(layer_url)) if layer_url else None
+    if layer and layer.get('revisionId') not in (None, view['publication']['sceneRevisionId']):
+        layer = None
+    page = layer_url.rsplit('/measurement-layer/', 1)[0] + '/' if layer else ''
+    assets = {a['id']: a for a in doc['assets']}
+    layer_assets = {a['id']: a for a in (layer or {}).get('assets', [])}
+    cache = {}
+
+    def asset_bytes(asset_id):
+        if asset_id not in cache:
+            if asset_id in layer_assets:
+                cache[asset_id] = get(urllib.parse.urljoin(page, layer_assets[asset_id]['url']))
+            else:
+                url = json.loads(get(f'{api}/api/assets/{asset_id}'))['url']
+                cache[asset_id] = get(url if url.startswith('http') else api + url)
+        return cache[asset_id]
+
+    def mesh(entity, rep):
+        transform = entity.get('currentModelTransform') if rep is None or rep.get('id') == entity.get('activeModelRepresentationId') else None
+        transform = transform or rep['transform']
+        if rep['kind'] == 'primitive':
+            V, F = primitive_mesh(rep['primitive'])
+        else:
+            meta = layer_assets.get(rep['assetId']) or assets[rep['assetId']]
+            fmt = meta.get('format') or (meta.get('metadata') or {}).get('format')
+            if fmt == 'panoptes-mesh-v1':
+                V, F = read_packed(asset_bytes(rep['assetId']), meta.get('byteLayout') or meta['metadata']['byteLayout'])
+            elif fmt == 'glb':  # as the viewer: one node when the representation names it, else every mesh in the file
+                import trimesh
+                scene = trimesh.load(io.BytesIO(asset_bytes(rep['assetId'])), file_type='glb', force='scene')
+                if rep.get('node'):
+                    matrix, geometry = scene.graph[rep['node']]; part = scene.geometry[geometry].copy(); part.apply_transform(matrix)
+                else:
+                    part = scene.dump(concatenate=True)
+                V, F = np.asarray(part.vertices, float), np.asarray(part.faces, np.int64)
+            else:
+                raise ValueError(f'unsupported_format:{fmt}')
+        return placed(V, transform), F
+
+    cams = [camera(c) for c in doc['cameras']]
+    gray = []
+    for c in cams:
+        g = cv2.imdecode(np.frombuffer(photos[c['imageId']], np.uint8), cv2.IMREAD_GRAYSCALE).astype(np.float32)
+        assert g.shape == (c['h'], c['w']), (g.shape, c['h'], c['w'])
+        gray.append(g)
+    index = {c['imageId']: k for k, c in enumerate(cams)}
+    observations = {o['id']: o for o in doc['observations']}
+    objects, skipped = [], []
+    for e in doc['entities']:
+        if e.get('sourceContext') or e.get('visible') is False or not e.get('activeModelRepresentationId'):
+            continue
+        rep = next(r for r in e['representations'] if r['id'] == e['activeModelRepresentationId'])
+        if rep['kind'] not in ('generated_mesh', 'primitive'):
+            continue
+        try:
+            original = mesh(e, rep)
+            over = (layer or {}).get('models', {}).get(e['id'])
+            displayed = mesh({**e, 'currentModelTransform': over['representation']['transform']}, over['representation']) if over else original
+        except Exception as error:  # noqa: BLE001 - reported per object
+            skipped.append(dict(entityId=e['id'], label=e.get('label'), reason=str(error)[:200])); continue
+        masks = {}
+        for oid in e.get('observationRefs') or []:
+            o = observations.get(oid)
+            if o and o['imageId'] in index and o.get('originalPixelPolygons'):
+                k = index[o['imageId']]; m = polygon_mask(o['originalPixelPolygons'], (cams[k]['h'], cams[k]['w']))
+                masks[k] = masks[k] | m if k in masks else m
+        objects.append(dict(id=e['id'], label=((layer or {}).get('labels') or {}).get(e['id'], e.get('label')), kind=rep['kind'],
+                            mesh=displayed, original=original, masks=masks))
+    frame = doc['coordinateFrames'][0]
+    S = (layer or {}).get('scale', {}).get('nativeToMeters') or (frame.get('scale') or {}).get('nativeToMeters') or 1
+    ground = (layer or {}).get('ground') or frame.get('ground')
+    floor = None
+    if ground:
+        n = np.array(ground['plane'][:3], float); d = float(ground['plane'][3]); k = np.linalg.norm(n); n, d = n / k, d / k
+        if np.median([n @ c['C'] + d for c in cams]) < 0:
+            n, d = -n, -d
+        floor = (n, d)
+    return dict(doc=doc, layer=layer, cams=cams, gray=gray, images=[cv2.GaussianBlur(g, (0, 0), 1.0) for g in gray], objects=objects,
+                skipped=skipped, S=float(S), floor=floor, index=index)
+
+
 def _check():
     """Synthetic check: a textured plane seen by three cameras; a copy placed 10 % too far must come back at scale ~0.91."""
     rng = np.random.default_rng(0)

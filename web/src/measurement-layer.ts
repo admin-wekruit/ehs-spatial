@@ -11,7 +11,8 @@ export type MeasurementLayer = {
   publicationId: string;
   revisionId: string;
   coordinateFrameId: string;
-  scale: { nativeToMeters: number; status: "operator_anchored"; source: string };
+  /** uncertaintyRelative: half the spread of the per-feature scales (e.g. red head only vs yellow body only) over the joint scale. */
+  scale: { nativeToMeters: number; status: "operator_anchored"; source: string; uncertaintyRelative?: number };
   ground?: { normal: [number, number, number]; offset: number; plane: [number, number, number, number]; source: string };
   models?: Record<string, { representation: Representation; note: string }>;
   /** Extra mesh assets published next to the page (url relative to it), registered in the document under their ids. */
