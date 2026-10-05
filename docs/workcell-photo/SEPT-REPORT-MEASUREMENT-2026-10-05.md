@@ -63,3 +63,29 @@
 
 规则不变：只用 Modal 临时运行做重计算，不在本机渲染；不打印凭证；不打开 `.platform/imports/`（发布脚本由用户授权运行）；
 磁盘 ≥ 8 GB；不改历史证据。
+
+## 5. 三份报告 = 9 月（090）+ 030（2026-10-05）
+
+- **9 月报告就是 090 工位的报告**：它的照片 1 = 新照片 image_03（重采样），照片 3 = image_04（像素相关 1.0），照片 2 是另一张 090
+  侧面照。只用新照片 3、4 的"090 报告"会比它少一个视角，所以 090 不另建。
+- **030 四视图报告（新）**：发布 `48194650-eff9-4aed-b864-1e7d554768a3`（修订 `f94720c0`，v2 场景，急停尺度 1 原生单位 = 1.0906 m），
+  与 9 月报告同一发布服务 `panoptes-publications-estop`，网页 `report/app.html#/reports/48194650-eff9-4aed-b864-1e7d554768a3`。
+  被取代的同项目发布：`a767df9e`（尺度 v1 1.0991）、`baf04d75`（v2 1.0838），仅在平台库里，服务目录只含最新一份。
+- 流水线与 9 月相同（serving 分支 `codex/candidate-model-evaluation` 4b40f31，9 月代码首次入库 67d1537）：
+  1. `scripts/research/prepare_capture_evidence.py freeze`（518 规范网格）→ `modal_apps/pi3x_geometry.py`（Pi3X 联合，Modal A100，$0.08）
+     → `prepare_capture_evidence.py geometry`（导入器的 content 规则）；
+  2. 掩码：10 月同照片的 SAM3 原图分辨率实例（料车用其规范掩码按记录的像素映射回原图），复核图后按相机 1 的左右重命名；
+     两视角质心距离验证配对（围栏两视角是不同板，只留照片 1）；`objects` / `floor`（产品运行缓存的地面掩码）；
+  3. RecGen 8 个物体（`generate_lucida_assets.py`，Modal A100，GPU 977 s ≈ $0.7）；
+  4. 组装（`modal_apps/assemble_scene.py`，Modal CPU）：优化后轮廓 IoU 料车 0.75/0.86、护板 0.64/0.74、光幕 0.73/0.87 与 0.46/0.57、
+     防撞柱 0.90/0.75 与 0.71、围栏 0.94、机器人 0.69/0.64；
+  5. `scripts/research/build_capture_report.py`（公共场景 + 报告文档）→ 平台 `.platform/publish-cell030-20261005.py`
+     （导入 `--geometry-root` → `migrateScene` v2 + `setCalibration` → 发布 → 导出）→ 加入单独服务目录 → 预处理 → 部署。
+- 急停尺度（v3，用户 2026-10-05："考量边界要考虑对称和平滑；线是断开的"）：照片 2（照片 1 截断）。按投影的同轴圆柱拟合——一根轴
+  （方向来自该处的竖直消失点）、每段两条笔直且关于轴对称的侧边，沿整条侧边累积梯度，再沿线平均剖面做台阶拟合，两侧按 1/模糊²
+  加权取同一半宽。红钮帽檐 56.83 px、黄色本体 118.47 px、灰色底座 120.83 px——灰色底座最宽，即"max 直径 8 cm"。尺度由红钮帽檐
+  4 cm + 灰色底座 8 cm 联合：1.0906，最大偏差 3.1%。此前逐行颜色阈值的边会断、会歪（v1 镜像、v2 只取锐利行），已废弃。
+  同一通用拟合在 9 月照片 2、3 上有一侧失败，9 月尺度暂不改；两份报告的特征（9 月：红钮 + 黄色）待逐张核对后统一。
+- 两处平台兼容：Modal 里 trimesh 4.4.9 写的点云 GLB 多一个根节点（导入器只认单节点，已用 5.1.0 重编码、点与颜色逐值一致，原件保留）；
+  CUDA bf16 下 Pi3X 相机 1 旋转偏离正交 3.9e-6（平台限 1e-6，已投影到最近旋转，最大改动 1.8e-6，原件保留）。
+- 证据：`research-notes/cell030-sept-pipeline-2026-10-05/`；运行目录 `panoptes-serving/outputs/candidate-evaluation/bor1-030-01`。
