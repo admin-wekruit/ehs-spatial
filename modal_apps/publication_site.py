@@ -22,8 +22,9 @@ import modal
 ROOT = Path(__file__).resolve().parents[1]
 catalog = Path(os.environ.get("PANOPTES_PUBLICATION_CATALOG", ROOT / ".platform/publication-catalog"))
 prepared = Path(os.environ.get("PANOPTES_PUBLICATION_HTTP", ROOT / ".platform/publication-http"))
-app = modal.App("panoptes-publications")
-feedback_data = modal.Volume.from_name("panoptes-publication-feedback", create_if_missing=True)
+# A separately deployed catalog (e.g. one new report) takes its own app and feedback volume, leaving the main service untouched.
+app = modal.App(os.environ.get("PANOPTES_PUBLICATION_APP", "panoptes-publications"))
+feedback_data = modal.Volume.from_name(os.environ.get("PANOPTES_PUBLICATION_FEEDBACK_VOLUME", "panoptes-publication-feedback"), create_if_missing=True)
 feedback_config = {key: os.environ.get(key, "") for key in (
     "PANOPTES_FEEDBACK_MODEL", "PANOPTES_FEEDBACK_TOTAL_BUDGET_USD", "PANOPTES_FEEDBACK_CALL_RESERVATION_USD")}
 for key in ("PANOPTES_FEEDBACK_TOTAL_BUDGET_USD", "PANOPTES_FEEDBACK_CALL_RESERVATION_USD"):
