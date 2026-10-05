@@ -16,6 +16,8 @@ export type MeasurementLayer = {
   /** Extra mesh assets published next to the page (url relative to it), registered in the document under their ids. */
   assets?: (Record<string, unknown> & { id: string; url: string })[];
   facts?: Record<string, LayerFact[]>;
+  /** Display names for entities whose imported label is a working name (e.g. English evidence labels). */
+  labels?: Record<string, string>;
   /** Fold angles measured from the photos, shown like saved bends; each references the layer model it measured. */
   bends?: BendOutcome[];
 };
@@ -45,6 +47,8 @@ export function applyMeasurementLayer(revision: Revision, layer: MeasurementLaye
     ground: layer.ground ? { ...(frame.ground || {}), normal: layer.ground.normal, plane: layer.ground.plane, offset: layer.ground.offset, source: layer.ground.source } : frame.ground,
   });
   const entities = document.entities.map(entity => {
+    const label = layer.labels?.[entity.id];
+    if (label) entity = { ...entity, label };
     const model = layer.models?.[entity.id];
     if (!model || model.representation.coordinateFrameId !== layer.coordinateFrameId) return entity;
     const representation = model.representation;
