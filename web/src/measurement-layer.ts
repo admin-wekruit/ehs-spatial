@@ -5,6 +5,7 @@ import type { BendOutcome } from "./SpatialMeasurements";
  * reference-object models built from their specification, and per-object facts measured from the photos. It applies to exactly
  * the revision it names; any other revision is shown unchanged. */
 export type LayerFact = { label: string; text: string; kind: string; method?: string };
+export type LayerConfidence = { level: "high" | "medium" | "low" | "unverified"; label: string; missing?: string[]; reasons?: string[] };
 export type MeasurementLayer = {
   schemaVersion: 1;
   publicationId: string;
@@ -16,6 +17,8 @@ export type MeasurementLayer = {
   /** Extra mesh assets published next to the page (url relative to it), registered in the document under their ids. */
   assets?: (Record<string, unknown> & { id: string; url: string })[];
   facts?: Record<string, LayerFact[]>;
+  /** Per-object confidence from the generic checks, with what is missing to raise it. */
+  confidence?: Record<string, LayerConfidence>;
   /** Display names for entities whose imported label is a working name (e.g. English evidence labels). */
   labels?: Record<string, string>;
   /** Fold angles measured from the photos, shown like saved bends; each references the layer model it measured. */
@@ -23,10 +26,10 @@ export type MeasurementLayer = {
 };
 
 /** The report's resources with the layer's own files served from the website and its measured bends; everything else unchanged. */
-export function withLayerAssets<T extends { resolveAsset: (id: string) => Promise<string>; layerBends?: BendOutcome[] }>(resources: T, layer: MeasurementLayer | null): T {
+export function withLayerAssets<T extends { resolveAsset: (id: string) => Promise<string>; layerBends?: BendOutcome[]; layerConfidence?: Record<string, LayerConfidence> }>(resources: T, layer: MeasurementLayer | null): T {
   const urls = new Map((layer?.assets || []).map(asset => [asset.id, new URL(asset.url, location.href).href]));
-  if (!urls.size && !layer?.bends?.length) return resources;
-  return { ...resources, layerBends: layer?.bends, resolveAsset: async (id: string) => urls.get(id) ?? resources.resolveAsset(id) };
+  if (!urls.size && !layer?.bends?.length && !layer?.confidence) return resources;
+  return { ...resources, layerBends: layer?.bends, layerConfidence: layer?.confidence, resolveAsset: async (id: string) => urls.get(id) ?? resources.resolveAsset(id) };
 }
 
 export async function loadMeasurementLayer(publicationId: string): Promise<MeasurementLayer | null> {

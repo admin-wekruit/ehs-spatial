@@ -332,3 +332,12 @@ span.report-memory-actor { cursor: default; }
 .visits-dot { flex: 0 0 10px; height: 10px; border-radius: 50%; }
 .visits-delta { margin: 0 0 2px 16px; }
 .visits-evidence img { display: block; width: 100%; height: auto; margin: 4px 0; border: 1px solid #cfd8d1; }
+
+.report-scene-object-confidence { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; }
+.report-scene-object-confidence > span:first-child { color: #405f4b; font-weight: 600; }
+.report-scene-object-confidence b { padding: 0 6px; border-radius: 8px; font-weight: 600; }
+.report-scene-object-confidence small { flex-basis: 100%; color: #6b5b2e; }
+.report-scene-object-confidence[data-confidence="high"] b { background: #dcefe2; color: #1d5c34; }
+.report-scene-object-confidence[data-confidence="medium"] b { background: #f6ecd2; color: #7a5a12; }
+.report-scene-object-confidence[data-confidence="low"] b { background: #f7dcd8; color: #8a2a1e; }
+.report-scene-object-confidence[data-confidence="unverified"] b { background: #e6e8ea; color: #4a525a; }
