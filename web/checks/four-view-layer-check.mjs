@@ -20,7 +20,14 @@ try {
   page.on('response', response => { if (response.url().includes('/measurement-layer/')) layer.push([response.url(), response.status()]); });
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
   const facts = page.locator(`[data-measurement-facts="${objectId}"]`);
-  await facts.waitFor({ state: 'visible', timeout: 240000 });
+  try {
+    await facts.waitFor({ state: 'visible', timeout: 240000 });
+  } catch (error) {  // keep what the page did show
+    record.finalUrl = page.url(); record.errors = errors; record.layerRequests = layer;
+    record.details = (await page.locator('.report-selection-details').allInnerTexts()).join('\n').slice(0, 4000);
+    await page.screenshot({ path: path.join(out, 'timeout.png') });
+    throw error;
+  }
   record.finalUrl = page.url();
   record.layerRequests = layer;
   record.facts = await facts.innerText();
