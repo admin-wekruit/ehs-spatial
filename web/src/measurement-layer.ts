@@ -12,8 +12,16 @@ export type MeasurementLayer = {
   scale: { nativeToMeters: number; status: "operator_anchored"; source: string };
   ground?: { normal: [number, number, number]; offset: number; plane: [number, number, number, number]; source: string };
   models?: Record<string, { representation: Representation; note: string }>;
+  /** Extra mesh assets published next to the page (url relative to it), registered in the document under their ids. */
+  assets?: (Record<string, unknown> & { id: string; url: string })[];
   facts?: Record<string, LayerFact[]>;
 };
+
+/** The report's asset resolver, with the layer's own files served from the website and everything else unchanged. */
+export function withLayerAssets<T extends { resolveAsset: (id: string) => Promise<string> }>(resources: T, layer: MeasurementLayer | null): T {
+  const urls = new Map((layer?.assets || []).map(asset => [asset.id, new URL(asset.url, location.href).href]));
+  return urls.size ? { ...resources, resolveAsset: async (id: string) => urls.get(id) ?? resources.resolveAsset(id) } : resources;
+}
 
 export async function loadMeasurementLayer(publicationId: string): Promise<MeasurementLayer | null> {
   try {
@@ -43,5 +51,8 @@ export function applyMeasurementLayer(revision: Revision, layer: MeasurementLaye
       currentModelTransform: representation.transform as Transform,
     };
   });
-  return { ...revision, document: { ...document, coordinateFrames, entities } };
+  const added = new Set((layer.assets || []).map(asset => asset.id));
+  const assets = [...document.assets.filter(asset => !added.has(asset.id)),
+    ...(layer.assets || []).map(({ url: _url, ...asset }) => asset as unknown as (typeof document.assets)[number])];
+  return { ...revision, document: { ...document, coordinateFrames, entities, assets } };
 }

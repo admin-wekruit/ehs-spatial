@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   type IdentitySuggestion,
@@ -33,7 +33,8 @@ import { ModelEvidence } from "./ModelEvidence";
 import { IdentityReview } from "./IdentityReview";
 import { AgentPanel } from "./AgentPanel";
 import { Extent, ReportScene } from "./ReportScene";
-import { applyMeasurementLayer, loadMeasurementLayer, type MeasurementLayer } from "./measurement-layer";
+import { applyMeasurementLayer, loadMeasurementLayer, withLayerAssets, type MeasurementLayer } from "./measurement-layer";
+import { SceneResources, useSceneResources } from "./SceneResources";
 import { ReportObjectFindings } from "./ReportObjectFindings";
 import { ReportReview, type AssessmentSummary } from "./ReportReview";
 import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "./scene-semantics";
@@ -174,6 +175,8 @@ export function WorkcellReport({
   const [detail, setDetail] = useState<ProjectDetail>(),
     [publication, setPublication] = useState<Publication>(),
     [layer, setLayer] = useState<MeasurementLayer | null>(null);
+  const baseResources = useSceneResources(),
+    resources = useMemo(() => withLayerAssets(baseResources, layer), [baseResources, layer]);
   const [error, setError] = useState<unknown>(),
     [canManage, setCanManage] = useState(false),
     [busy, setBusy] = useState(false),
@@ -709,6 +712,7 @@ export function WorkcellReport({
   const exactEvents: ReportEditSummary[] = publication ? reportEdits :
     events.filter(e => e.revisionId === revision.id).map(e => ({...e, operationTypes:e.operations.map(operation => operation.type)}));
   return (
+    <SceneResources.Provider value={resources}>
     <article
       className={"workcell-report" + (reviewMode ? " is-reviewing" : "")}
     >
@@ -1148,6 +1152,7 @@ export function WorkcellReport({
         </button>
       </footer>
     </article>
+    </SceneResources.Provider>
   );
 }
 export function ObjectFacts({
