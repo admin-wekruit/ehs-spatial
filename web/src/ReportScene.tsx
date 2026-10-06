@@ -288,7 +288,7 @@ export function Extent({ entity, document }: { entity: Entity; document: SceneDo
 
 export function ReportScene({
   revision, selection, onSelect, imageId, cameraId, onCamera,
-  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false, measurementOverride, measurementScale, initialView, viewRequest, boxLayer = null,
+  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, variantNotice, matchedComparison = false, measurementOverride, measurementScale, initialView, viewRequest, boxLayer = null,
 }: {
   /** The report's measurement layer: its boxes are drawn in the 3D scene (the selected one in full, low-confidence ones outlined). */
   boxLayer?: MeasurementLayer | null;
@@ -309,6 +309,8 @@ export function ReportScene({
   onOpenSourceCad?: () => void;
   inspector?: ReactNode | ((surface: InclinationSurface | undefined) => ReactNode);
   newerReport?: { href: string; title: string };
+  /** A comparison measurement layer is shown instead of the report's own; link back to the original. */
+  variantNotice?: { label: string; href: string };
   objectListRequest?: number;
   onFeedback?: (entityId: string) => void;
   onClearSelection?: () => void;
@@ -592,6 +594,7 @@ export function ReportScene({
         <label className="report-scene-check"><input type="checkbox" checked={allPlanes} onChange={e=>{setAllPlanes(e.target.checked);setSurfaceKey("");setMeasurement(null);}} />{language === "zh" ? "全部已测平面" : "All measured planes"}</label>
         <span>{language === "zh" ? "默认显示非竖直平面估计。与地面倾角：水平 0°，竖直 90°；偏离竖直 = 90° − 倾角。" : "Showing estimated nonvertical planes. Ground inclination: horizontal 0°, vertical 90°; deviation from vertical = 90° − inclination."}</span>
       </div>}
+      {variantNotice && <div className="report-scene-history-notice" role="status" data-layer-variant><span>{variantNotice.label}</span><a href={variantNotice.href}>{t("sceneOriginalReport")} ↗</a></div>}
       {newerReport && <div className="report-scene-history-notice" role="status"><span>{t("sceneHistoricalReport")}</span><a href={newerReport.href} title={newerReport.title}>{t("sceneLatestReport")} ↗</a></div>}
       {fullscreenError && <p className="report-scene-notice" role="status">{t("sceneFullscreenUnavailable")}</p>}
       <nav className="report-scene-section-tabs" aria-label={t("sceneWorkspace")}>

@@ -18,6 +18,10 @@ export type MeasurementLayer = {
   /** Extra mesh assets published next to the page (url relative to it), registered in the document under their ids. */
   assets?: (Record<string, unknown> & { id: string; url: string })[];
   facts?: Record<string, LayerFact[]>;
+  /** Per object: every stage from photos to the shown model and its measurements, with a sheet image (url relative to the page). */
+  pipelines?: Record<string, { url?: string; caption?: string; stages: { label: string; text: string }[] }>;
+  /** A comparison layer published next to the report's own (`<publicationId>.<id>.json`, opened with ?layer=<id>); never replaces it. */
+  variant?: { id: string; label: string };
   /** Per-object confidence from the generic checks, with what is missing to raise it. */
   confidence?: Record<string, LayerConfidence>;
   /** Display names for entities whose imported label is a working name (e.g. English evidence labels). */
@@ -96,9 +100,10 @@ export function withLayerAssets<T extends { resolveAsset: (id: string) => Promis
   return { ...resources, layerBends: layer?.bends, layerConfidence: layer?.confidence, resolveAsset: async (id: string) => urls.get(id) ?? resources.resolveAsset(id) };
 }
 
-export async function loadMeasurementLayer(publicationId: string): Promise<MeasurementLayer | null> {
+export async function loadMeasurementLayer(publicationId: string, variant?: string | null): Promise<MeasurementLayer | null> {
+  const suffix = variant && /^[a-z0-9-]{1,32}$/.test(variant) ? `.${variant}` : "";
   try {
-    const response = await fetch(`./measurement-layer/${encodeURIComponent(publicationId)}.json`, { cache: "no-cache" });
+    const response = await fetch(`./measurement-layer/${encodeURIComponent(publicationId)}${suffix}.json`, { cache: "no-cache" });
     return response.ok ? (await response.json()) as MeasurementLayer : null;
   } catch {
     return null;  // ponytail: no layer published for this report; show it as frozen
