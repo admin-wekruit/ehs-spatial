@@ -818,6 +818,7 @@ export function WorkcellReport({
         {draw && <p className="report-notice">{t("reportDrawHint")}</p>}
         <ReportScene
           revision={revision}
+          boxLayer={layer}
           newerReport={newerReport}
           selection={selection}
           onSelect={select}

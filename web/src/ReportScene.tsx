@@ -22,6 +22,7 @@ import {
   type Vec,
 } from "./viewer/native-math";
 import type { Camera, Entity, Revision, Selection, SceneDocument, RepresentationLoadState } from "./types";
+import { boxDimNames, boxFaceNames, boxGeometry, boxLevels, validBox, type BoxDimName, type BoxFaceName, type BoxLevel, type LayerBox, type MeasurementLayer } from "./measurement-layer";
 import "./report-scene.css";
 
 type Pane = "photo" | "spatial" | "cad" | "plan";
@@ -200,6 +201,79 @@ function PhotoAxes({
   );
 }
 
+// Box faces are hatched in their confidence colour (the weaker the evidence, the denser the hatch); a highlighted box (the layer's
+// low-confidence flag: retake photos) is outlined in pink (faint when not selected), others in teal (selected) or grey.
+const levelHatch: Record<BoxLevel, [string, number]> = { high: ["rgba(92,201,140,.22)", 2], medium: ["rgba(240,180,60,.4)", 4], low: ["rgba(245,130,47,.45)", 5], unverified: ["rgba(235,70,70,.5)", 7] };
+const boxEdge = { highlight: "#ff3fa4", faintHighlight: "rgba(255,63,164,.45)", selected: "#14a38b", other: "#8aa39a", floor: "rgba(255,255,255,.85)" };
+const levelNames: Record<BoxLevel, [string, string]> = { high: ["高", "High"], medium: ["中", "Medium"], low: ["低", "Low"], unverified: ["未验证", "Unverified"] };
+const faceNames: Record<BoxFaceName, [string, string]> = { front: ["前面", "Front"], back: ["后面", "Back"], left: ["左面", "Left"], right: ["右面", "Right"], top: ["顶面", "Top"], bottom: ["底面", "Bottom"] };
+const dimNames: Record<BoxDimName, [string, string]> = { L: ["长", "Length"], W: ["宽（进深）", "Width (depth)"], H: ["高", "Height"], bottom: ["离地", "Clearance"] };
+const statusNames: Record<string, [string, string]> = { seen: ["可见", "seen"], occluded: ["被遮挡", "occluded"], out_of_frame: ["不在画面内", "out of frame"], not_facing: ["未朝向相机", "not facing a camera"] };
+const cm = (metres: number) => { const v = metres * 100; return Math.abs(v) < 100 ? v.toFixed(1) : v.toFixed(0); };
+
+type BoxFrame = { nativeToMeters: number; ground?: { normal: number[]; offset: number } | null };
+/** The viewer draws a line or label carrying `facing` only while that face turns towards its camera (no depth test in the overlay),
+ * and leaves every `layerBox` one out of model-preview captures. */
+type Facing = { at: number[]; normal: number[] };
+type BoxLine = SceneMeasurement["lines"][number] & { layerBox: true; facing?: Facing };
+type BoxLabel = { point: number[]; text: string; layerBox: true; facing?: Facing };
+/** One layer box in the viewer's measurement overlay. The selected box: its outline, its faces hatched in their confidence colours
+ * and named at their centres (front-facing ones only), L × W × H and 离地 over the unified floor. Any other shown box: the outline. */
+function boxOverlay(box: LayerBox, frame: BoxFrame, selected: boolean, title: string, zh: boolean, out: { lines: BoxLine[]; labels: BoxLabel[] }) {
+  const g = boxGeometry(box, frame.nativeToMeters, frame.ground);
+  if (!g) return;
+  const edge = box.highlight ? selected ? boxEdge.highlight : boxEdge.faintHighlight : selected ? boxEdge.selected : boxEdge.other;
+  for (let i = 0; i < 8; i++) for (let k = 0; k < 3; k++) if (!(i & 1 << k)) out.lines.push({ points: [g.corners[i], g.corners[i | 1 << k]], color: edge, layerBox: true });
+  if (!selected) return;
+  // one label for size and clearance at the bottom (by the floor tick), so the top is left to the top face's name
+  const lifted = !!g.floor && !box.floorContact;
+  if (lifted) out.lines.push({ points: [g.floor!, g.bottomCenter], color: boxEdge.floor, layerBox: true });
+  out.labels.push({ point: lifted ? g.floor!.map((v, k) => (v + g.bottomCenter[k]) / 2) : g.bottomCenter, layerBox: true,
+    text: `${title ? `${title} · ` : ""}${zh ? "长×宽×高" : "L×W×H"} ${[box.dims.L, box.dims.W, box.dims.H].map(d => cm(d.valueM)).join("×")} cm · ${box.floorContact ? (zh ? "贴地" : "on floor") : `${zh ? "离地" : "clearance"} ${cm(box.dims.bottom.valueM)} cm`}` });
+  for (const name of boxFaceNames) {
+    const level = box.faces[name]?.confidence ?? "unverified", [color, count] = levelHatch[level], [a, b, c, d] = g.faces[name].map(i => g.corners[i]);
+    const facing = { at: [0, 1, 2].map(k => (a[k] + b[k] + c[k] + d[k]) / 4), normal: box.faceNormals[name] };
+    const at = (x: number, y: number) => [0, 1, 2].map(k => a[k] + x * (b[k] - a[k]) + y * (d[k] - a[k]));
+    for (let i = 1; i <= count; i++) { const t = 2 * i / (count + 1); out.lines.push({ points: t <= 1 ? [at(t, 0), at(0, t)] : [at(1, t - 1), at(t - 1, 1)], color, layerBox: true, facing }); }
+    out.labels.push({ point: facing.at, text: `${faceNames[name][zh ? 0 : 1]}·${levelNames[level][zh ? 0 : 1]}`, layerBox: true, facing });
+  }
+}
+
+/** The shown measurement with the layer boxes added to its overlay (or the boxes alone); unchanged when there is nothing to add.
+ * Shown: the selected box in full, highlighted boxes outlined, and with showAll every box outlined: then the selected box's label
+ * carries its name and the viewer names only the hovered object (labels 'hover'), so names never pile up. */
+function withBoxes(measurement: SceneMeasurement | null, layer: MeasurementLayer | null, boxes: [string, LayerBox][], frame: BoxFrame | null, selected: Entity | null | undefined, showAll: boolean, zh: boolean): SceneMeasurement | null {
+  if (!layer || !frame || !boxes.length || measurement && measurement.coordinateFrameId !== layer.coordinateFrameId) return measurement;
+  const out = { lines: [] as BoxLine[], labels: [] as BoxLabel[] };
+  for (const [id, box] of boxes) if (showAll || box.highlight || id === selected?.id) boxOverlay(box, frame, id === selected?.id, showAll ? selected?.label || box.label : "", zh, out);
+  if (!out.lines.length) return measurement;
+  if (measurement) return { ...measurement, lines: [...measurement.lines, ...out.lines], labels: [...(measurement.labels || []), ...out.labels] };
+  const [first, ...labels] = out.labels;  // the first is the size label: never a face's, so the viewer always shows it
+  return { revisionId: layer.revisionId, kind: "layer_boxes", coordinateFrameId: layer.coordinateFrameId, source: "measurement_layer", value: 0, unit: "native", method: "layer-boxes",
+    references: [], lines: out.lines, labelPoint: first?.point ?? out.lines[0].points[0], displayLabel: first?.text ?? "", labels, quality: {} };
+}
+
+/** 长 / 宽（进深）/ 高 / 离地 with σ and confidence, why the object is highlighted, which photos see each face and what to retake. */
+export function LayerBoxPanel({ box, entityId }: { box: LayerBox; entityId: string }) {
+  const { language } = useI18n(), zh = language === "zh", pick = (pair: readonly [string, string]) => pair[zh ? 0 : 1];
+  const reasons = box.highlightReasons || [], needs = boxFaceNames.flatMap(name => box.faces[name]?.need ? [[name, box.faces[name]!.need!] as const] : []);
+  return <section className="report-box-panel" data-layer-box={entityId} data-confidence={box.confidence} data-highlight={box.highlight || undefined}>
+    <h4>{zh ? "尺寸与离地 · 统一地面" : "Size and clearance · unified floor"}<span data-confidence={box.confidence}>{zh ? "置信度 " : "Confidence "}{pick(levelNames[box.confidence])}</span></h4>
+    {box.highlight && <p className="report-box-recapture">{zh ? "低置信度（需补拍）" : "Low confidence (retake photos)"}</p>}
+    {reasons.length > 0 && <ul className="report-box-reasons">{reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>}
+    <table className="report-box-dims"><tbody>{boxDimNames.map(k => { const d = box.dims[k]; return <tr key={k} data-dim={k} data-confidence={d.confidence}>
+      <th>{pick(dimNames[k])}</th><td className="report-numeric">{cm(d.valueM)} ± {d.sigmaCm === null ? "—" : d.sigmaCm.toFixed(1)} cm{k === "bottom" && box.floorContact ? (zh ? "（贴地）" : " (on the floor)") : ""}</td><td>{pick(levelNames[d.confidence])}</td></tr>; })}</tbody></table>
+    {box.snapNote && <p className="report-box-snap">{box.snapNote}</p>}
+    <small className="report-numeric">{zh ? "顶部离地" : "Top above floor"} {cm(box.topM)} cm</small>
+    <table className="report-box-faces"><thead><tr><th>{zh ? "面" : "Face"}</th><th>{zh ? "照片" : "Photos"}</th><th>{zh ? "状态" : "Status"}</th><th>{zh ? "置信度" : "Confidence"}</th></tr></thead>
+      <tbody>{boxFaceNames.map(name => { const face = box.faces[name], level = face?.confidence ?? "unverified"; return <tr key={name} data-confidence={level}>
+        <th>{pick(faceNames[name])}</th><td className="report-numeric">{face?.photos.length ? face.photos.join(", ") : "—"}</td>
+        <td>{face ? statusNames[face.status] ? pick(statusNames[face.status]) : face.status : "—"}</td><td>{pick(levelNames[level])}</td></tr>; })}</tbody></table>
+    {needs.length > 0 && <div className="report-box-need"><strong>{zh ? "补拍提示" : "Photos to retake"}</strong><ul>{needs.map(([name, need]) => <li key={name}><b>{pick(faceNames[name])}</b> {need}</li>)}</ul></div>}
+    {box.method && <small>{box.method}</small>}
+  </section>;
+}
+
 export function Extent({ entity, document }: { entity: Entity; document: SceneDocument }) {
   const { t } = useI18n(), d = sourceDimensions(entity), scale = sourceScale(document, entity),
     groundDimensions = [d.widthNative, d.depthNative, d.groundHeight],
@@ -214,8 +288,10 @@ export function Extent({ entity, document }: { entity: Entity; document: SceneDo
 
 export function ReportScene({
   revision, selection, onSelect, imageId, cameraId, onCamera,
-  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false, measurementOverride, measurementScale, initialView, viewRequest,
+  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, matchedComparison = false, measurementOverride, measurementScale, initialView, viewRequest, boxLayer = null,
 }: {
+  /** The report's measurement layer: its boxes are drawn in the 3D scene (the selected one in full, low-confidence ones outlined). */
+  boxLayer?: MeasurementLayer | null;
   matchedComparison?: boolean;
   initialView?: "photo" | "point_cloud" | "model" | "compare";
   /** A later explicit request (e.g. from a semantic result) to show one view; nonce makes repeats distinct. */
@@ -259,6 +335,15 @@ export function ReportScene({
   const camera = cameraForImage(document, imageId);
   const [cloudWithModels, setCloudWithModels] = useState(!matchedComparison);
   const hasSplats = !!splatAnnotation(document), [splats, setSplats] = useState(true);
+  const [allBoxes, setAllBoxes] = useState(false), zh = language === "zh";
+  // The one unified floor is the frame's ground (a layer's own ground is already applied to it): a box whose up axis is not that
+  // floor's normal, or with a malformed field, is left out.
+  const boxFrame: BoxFrame | null = boxLayer?.revisionId === revision.id ? {
+    nativeToMeters: boxLayer.scale.nativeToMeters,
+    ground: document.coordinateFrames.find(frame => frame.id === boxLayer.coordinateFrameId)?.ground as BoxFrame["ground"],
+  } : null;
+  const boxes = boxFrame ? Object.entries(boxLayer!.boxes || {}).filter((entry): entry is [string, LayerBox] => validBox(entry[1]) && !!boxGeometry(entry[1], boxFrame.nativeToMeters, boxFrame.ground)) : [];
+  const boxById = new Map(boxes), highlightCount = boxes.filter(([, box]) => box.highlight).length;
   const hasMotion = document.entities.some(entity => (entity as any).motion === "dynamic"), [part, setPart] = useState<"all" | "static" | "dynamic">("all");
   const hasSkeleton = document.entities.some(entity => (entity.representations || []).some(rep => (rep as any).sourceKind === "moving_object_skeleton")), [skeleton, setSkeleton] = useState(false);
   const hasVideo = !!videoReplay(document), [videoMode, setVideoMode] = useState(true), showVideo = hasVideo && videoMode && !draw;  // drawing a missed object needs the still keyframe
@@ -484,6 +569,7 @@ export function ReportScene({
           </select></label>}
           {hasSkeleton && part !== "static" && <label className="report-scene-check"><input type="checkbox" checked={skeleton} onChange={(e) => setSkeleton(e.target.checked)} />{language === "zh" ? "骨架（代替人物表面）" : "Skeleton (instead of surfaces)"}</label>}
           <label className="report-scene-check"><input type="checkbox" checked={allBounds} onChange={(e) => setAllBounds(e.target.checked)} />{t("sceneShowBorders")}</label>
+          {boxes.length > 0 && <label className="report-scene-check"><input type="checkbox" checked={allBoxes} onChange={(e) => setAllBoxes(e.target.checked)} />{zh ? "显示全部尺寸框" : "Show all size boxes"}</label>}
           <label className="report-scene-check"><input type="checkbox" checked={showPath} onChange={(e) => setShowPath(e.target.checked)} />{t("sceneShowCameraPath")}</label>
           {selected && onClearSelection && <button onClick={onClearSelection}>{t("sceneClearSelection")}</button>}
           <button className="report-scene-fullscreen" onClick={fullscreen} aria-pressed={isFullscreen} aria-label={t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}>⛶ <span>{t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}</span></button>
@@ -533,7 +619,8 @@ export function ReportScene({
                 family = modelPreviewEntities(document, entity.id),
                 familyModels = family.filter(member => activeModel(member) && entityGeometryForLayer(member, { ...geometryOptions, layer: "model" })),
                 modelStatus = referenceSurfaces.includes(entity) ? "observed_reference_surface" : family.some(member => activeModel(member)?.sourceValidity === "stale") ? "identityModelStale" : family.some(modelFrameMismatch) ? "sceneModelWrongFrame" : !familyModels.length ? "reportMissingGeometry" : familyModels.some(member => modelState(member)?.state === "error") ? "sceneModelLoadFailed" : familyModels.every(member => modelState(member)?.state === "ready") ? composite ? "sceneCompositeEvidence" : "sceneModelLoaded" : "sceneModelLoading";
-              return <div key={entity.id} className="report-scene-object-row" data-entity-id={entity.id} data-parent-entity-id={entity.parentEntityId || undefined} style={{ marginLeft: depth * 12 }}><button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
+              const recapture = !!boxById.get(entity.id)?.highlight;
+              return <div key={entity.id} className="report-scene-object-row" data-entity-id={entity.id} data-parent-entity-id={entity.parentEntityId || undefined} data-box-recapture={recapture || undefined} style={{ marginLeft: depth * 12 }}><button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
                 <strong><b className="report-scene-object-number">{objectNumbers.get(entity.id)}</b>{entity.label || entity.id}</strong>
                 <span className="report-scene-object-source">{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
                 <span className="report-scene-object-evidence">{t(evidence.photoKey)}{observations.length > 0 && ` · ${observations.length} ${t("observations")}`}</span>
@@ -541,6 +628,7 @@ export function ReportScene({
                 <span className="report-scene-object-model" data-model-state={modelStatus}><span>{t("model")}</span>{t(modelStatus)}{composite && modelStatus !== "sceneCompositeEvidence" && <> · {t("sceneCompositeEvidence")}</>}{candidate && <em>{t("sceneCandidate")}</em>}</span>
                 {layerConfidence?.[entity.id] && <span className="report-scene-object-confidence" data-confidence={layerConfidence[entity.id].level} title={(layerConfidence[entity.id].reasons || []).join("；")}><span>{language === "zh" ? "置信度" : "Confidence"}</span><b>{layerConfidence[entity.id].label}</b>{layerConfidence[entity.id].missing?.[0] && <small>{layerConfidence[entity.id].missing![0]}</small>}</span>}
                 <span className="report-scene-object-extent"><span>{t("reportObservedExtent")}</span><Extent entity={entity} document={document} /></span>
+                {recapture && <span className="report-scene-object-recapture">{zh ? "低置信度（需补拍）" : "Low confidence (retake photos)"}</span>}
               </button>{children.has(entity.id) && <button aria-expanded={expandedEntities.has(entity.id)} aria-label={`${t("sceneModelParts")} · ${entity.label || entity.id}`} onClick={() => setExpandedEntities(current => { const next = new Set(current);if (next.has(entity.id)) next.delete(entity.id);else next.add(entity.id);return next; })}>{expandedEntities.has(entity.id) ? "▾" : "▸"} {children.get(entity.id)!.length} {t("sceneModelParts")}</button>}{onFeedback && <button className="report-object-feedback" aria-label={`${t("sceneFeedback")} · ${entity.label || entity.id}`} onClick={() => { selectEntity(entity.id); onFeedback(entity.id); setMobileSection("inspector"); }}>{t("sceneFeedback")} ↗</button>}</div>;
             })}
             {!filtered.length && <p className="report-scene-list-empty">{t(objects.length ? "sceneNoMatches" : "sceneNoObjects")}</p>}
@@ -604,8 +692,11 @@ export function ReportScene({
                   {pane === "spatial" && <>{pickingPoints && <div className="cad-measure-guide" role="status">{language === "zh" ? `第 ${measurePoints.length+1}/${pointCount} 点：点击要测量的模型表面，拖动可旋转。` : `Point ${measurePoints.length+1}/${pointCount}: click the model surface to measure; drag to rotate.`}{pointError && <strong>{language === "zh" ? " 未点到模型表面，请重选。" : " No model surface hit. Try again."}</strong>} <button onClick={()=>startPointPicking(false)}>{language === "zh" ? "取消取点" : "Cancel picking"}</button></div>}<SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
                     modelPreview={previewRequest} onModelPreview={(key, image) => { if (key === currentPreviewKey.current) setModelPreview({ key, image }); }}
                     onAssetStates={(revisionId, states) => setModelLoads({ revisionId, states })} onMeasurementPoint={pickMeasurementPoint}
-                    layers={{ groundDatum: matchedComparison || localMeasurementActive, measurementScale, pickingPoints, measurePoints, measureVertexIndex: pointCount === 2 ? 0 : 1, measurement: layer === "model" || layer === "point_cloud" && measurement?.method === "conditional-endpoint-comparison" ? measurement : null, modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud" || layer === "model" && cloudWithModels && hasPointCloud, allBounds, showBounds: allBounds, cameraPath: showPath, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations, part, skeleton, splats: hasSplats && splats }} />
-                    {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
+                    layers={{ groundDatum: matchedComparison || localMeasurementActive, measurementScale, pickingPoints, measurePoints, measureVertexIndex: pointCount === 2 ? 0 : 1, measurement: withBoxes(layer === "model" || layer === "point_cloud" && measurement?.method === "conditional-endpoint-comparison" ? measurement : null, boxLayer, boxes, boxFrame, selected, allBoxes, zh), labels: allBoxes && !allBounds && "hover", modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud" || layer === "model" && cloudWithModels && hasPointCloud, allBounds, showBounds: allBounds, cameraPath: showPath, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations, part, skeleton, splats: hasSplats && splats }} />
+                    {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}
+                    {boxes.length > 0 && <div className="report-box-legend" role="note" data-highlight-count={highlightCount}><span>{zh ? "面置信度" : "Face confidence"}</span>
+                      {boxLevels.map(level => <i key={level} data-confidence={level}>{levelNames[level][zh ? 0 : 1]}</i>)}
+                      <b data-active={highlightCount > 0 || undefined}>{zh ? "粉框 = 低置信度（需补拍）" : "Pink box = low confidence (retake photos)"} · {highlightCount}</b></div>}</>}
                   {pane === "cad" && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
                   {pane === "cad" && !availability.planEmpty && <CadView key={revision.id + cadLayer} document={document} selectedId={selection.entityId} onSelect={selectPlanEntity} geometryOptions={planOptions} measurement={cadLayer === "model" ? measurement : null} region={cadLayer === "model" ? measureRegion : null} drawingRegion={drawingRegion} onRegion={region => { setMeasureRegion(region); setDrawingRegion(false); setMobileSection("inspector"); }} showPath={showPath} />}
                   {pane === "plan" && <div className="report-model-preview" data-model-entity={selected?.id || ""} data-preview-layer={layer}>
@@ -618,7 +709,7 @@ export function ReportScene({
                           axisEntityId: selectedComposite ? undefined : selected.id, showAxes: !selectedComposite, showBounds: false, editable: false, showCandidates: true,
                           modelOnly: layer === "model", generated_mesh: layer === "model", primitive: layer === "model", observed_surface: layer === "observed_surface", point_cloud: layer === "point_cloud",
                           observationEntityId: selected.id, observationId: selection.observationId, imageId, observations: document.observations,
-                          measurement: layer === "model" && measurement?.references.every(ref => selectedFamily.some(entity => entity.id === ref.entityId)) ? measurement : null }} /> : previewImage ? <img src={previewImage} alt={`${selected.label || selected.id} · ${t(viewNames.plan)} · ${t(previewMode)}`} /> : <p role="status">{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selectedModelFailed ? layer === "model" ? "sceneModelLoadFailed" : "sceneEvidenceLoadFailed" : layer === "model" ? "loadingModel" : "sceneEvidenceLoading")}</p>}</div>
+                          measurement: withBoxes(layer === "model" && measurement?.references.every(ref => selectedFamily.some(entity => entity.id === ref.entityId)) ? measurement : null, boxLayer, boxes.filter(([id]) => id === selected.id), boxFrame, selected, false, zh) }} /> : previewImage ? <img src={previewImage} alt={`${selected.label || selected.id} · ${t(viewNames.plan)} · ${t(previewMode)}`} /> : <p role="status">{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selectedModelFailed ? layer === "model" ? "sceneModelLoadFailed" : "sceneEvidenceLoadFailed" : layer === "model" ? "loadingModel" : "sceneEvidenceLoading")}</p>}</div>
                       <footer><strong>{selected.label || selected.id}</strong><span>{selectedComposite ? <>{t("sceneCompositeEvidence")} · {selectedComposite.targets.map(entity => `${objectNumbers.get(entity.id)} ${entity.label || entity.id}`).join(" + ")} · {t("sceneCompositeEvidenceMeaning")}</> : selectedReference ? <>{t("observed_reference_surface")} · {t("sceneObservedCoverage")}</> : layer === "model" ? t(selectedModels.every(entity => activeModel(entity)?.placementState === "confirmed") ? "identityPlacementConfirmed" : "identityPlacementUnconfirmed") : <>{t(layer)} · {t("scenePhotoNumber")} {images.findIndex(image => image.imageId === imageId) + 1}{selection.observationId && <> · {t("sceneObservation")} {selection.observationId.slice(0, 8)}</>} · {t("sceneObservedCoverage")}</>}</span><button onClick={() => chooseView("spatial")}>{t(layer === "model" ? "sceneOpenModelScene" : "sceneOpenEvidenceScene")} ↗</button></footer>
                     </> : <div className="report-scene-plan-empty" role="status"><strong>{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selected ? layer === "model" ? "sceneObjectModelMissing" : "sceneEvidenceMissing" : layer === "model" ? "sceneSelectModel" : "sceneSelectEvidence")}</strong><p>{t(selectedModelWrongFrame ? "sceneModelWrongFrameMeaning" : selected ? layer === "model" ? "sceneObjectModelMissingMeaning" : "sceneEvidenceMissingMeaning" : "sceneSelectModelMeaning")}</p></div>}
                   </div>}
@@ -638,7 +729,7 @@ export function ReportScene({
           <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>
           <div className="report-scene-inspector-content">{selected && (selected as any).motionSummary && <section className="report-motion-summary">
             <h4>{language === "zh" ? "怎么走动的" : "How it moved"}</h4><p>{(selected as any).motionSummary.text}</p>
-            <small>{language === "zh" ? "依据：每个采样视图可见表面的中心投到地面；只用于回答“去了哪、多快、停在哪”，不是逐关节测量。" : "From the visible surface centre per sampled view, on the floor plane."}</small></section>}{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} geometryKey={measurementGeometryKey} analysisAvailable={analysisAvailable} measurementScale={measurementScale} onLocalResult={setLocalMeasurement} savedBend={savedBend} savedSurface={activeSurface} inclinationOutcome={inclinationRows.find(r=>r.entityId===selected.id)} onClearSurface={()=>setSurfaceKey("")} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{(typeof inspector === "function" ? inspector(activeSurface) : inspector) ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
+            <small>{language === "zh" ? "依据：每个采样视图可见表面的中心投到地面；只用于回答“去了哪、多快、停在哪”，不是逐关节测量。" : "From the visible surface centre per sampled view, on the floor plane."}</small></section>}{selected && boxById.has(selected.id) && <LayerBoxPanel box={boxById.get(selected.id)!} entityId={selected.id} />}{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} geometryKey={measurementGeometryKey} analysisAvailable={analysisAvailable} measurementScale={measurementScale} onLocalResult={setLocalMeasurement} savedBend={savedBend} savedSurface={activeSurface} inclinationOutcome={inclinationRows.find(r=>r.entityId===selected.id)} onClearSurface={()=>setSurfaceKey("")} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{(typeof inspector === "function" ? inspector(activeSurface) : inspector) ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
         </aside>
       </div>
     </section>

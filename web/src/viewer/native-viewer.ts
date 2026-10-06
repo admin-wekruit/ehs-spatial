@@ -265,14 +265,17 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     }
     const measurement=layers.measurement;
     if(measurement?.revisionId===revisionId&&measurement.coordinateFrameId===frameId){
-      for(const path of measurement.lines)for(let i=1;i<path.points.length;i++)line(project(path.points[i-1]),project(path.points[i]),path.color,2.5);
+      // A line or label with `facing` (a face's centre and outward normal) is drawn only while that face turns towards the eye: the
+      // overlay has no depth test, so a box's hidden faces would show through it.
+      const front=(f:any)=>!f||dot(f.normal,camera!.orthographic?add(camera!.eye,scale(camera!.target,-1)):add(camera!.eye,scale(f.at,-1)))>0;
+      for(const path of measurement.lines)if(front(path.facing))for(let i=1;i<path.points.length;i++)line(project(path.points[i-1]),project(path.points[i]),path.color,2.5);
       // ponytail: greedy screen-space placement, labels never overlap; a label that collides moves down one line at a time.
       const placed:number[][]=[];
       const label=(point:number[],content:string)=>{const p=project(point);if(!p)return;const w=Array.from(content).reduce((s,ch)=>s+(ch.charCodeAt(0)>255?17:9.5),0),h=21;let x=p[0]+8,y=p[1]-8;
         for(let i=0;i<12&&placed.some(([ax,ay,aw,ah])=>x<ax+aw&&ax<x+w&&y-h<ay&&ay-ah<y);i++)y+=h;placed.push([x,y,w,h]);
         const text=document.createElementNS(svg.namespaceURI,'text');text.textContent=content;for(const[k,v]of Object.entries({x,y,fill:'#fff',stroke:'#182a31','stroke-width':3,'paint-order':'stroke','font-size':17,'font-weight':700}))text.setAttribute(k,String(v));svg.append(text);if(overlay){overlay.font='700 20px sans-serif';overlay.lineWidth=4;overlay.strokeStyle='#fff';overlay.strokeText(content,x,y);overlay.fillStyle='#182a31';overlay.fillText(content,x,y);}};
       label(measurement.labelPoint,measurement.displayLabel ?? (Number(measurement.value.toPrecision(4))+(measurement.unit==='deg'?'°':'')));
-      for(const extra of measurement.labels??[])label(extra.point,extra.text);  // e.g. Blender-style box dimensions
+      for(const extra of measurement.labels??[])if(front(extra.facing))label(extra.point,extra.text);  // e.g. Blender-style box dimensions
     }
     if(!captureCanvas)for(const [i,pick] of (layers.measurePoints||[]).entries()){
       if(pick.coordinateFrameId!==frameId)continue;const p=project(pick.point);if(!p)continue;
@@ -293,8 +296,9 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
         if(Number.isFinite(layers.time)&&path[0].time!==null){let now=0;for(let i=1;i<path.length;i++)if(Math.abs(path[i].time!-layers.time)<Math.abs(path[now].time!-layers.time))now=i;marker(screen[now],'#ffb020',7);}
       }
     }
-    // r5b integrate: no boxes: the hovered and the selected object's name only, above its model on screen
-    if(layers.showBounds===false&&layers.labels&&!captureCanvas)for(const id of new Set([selection.entityId,hoverId])){if(!id||!entity(id))continue;const on=selectedGeometry(id).corners.map(project).filter(Boolean) as Vec[];if(!on.length)continue;
+    // r5b integrate: no boxes: the hovered and the selected object's name only, above its model on screen (labels 'hover': the
+    // hovered one only, when the selected one's name is already in the measurement labels)
+    if(layers.showBounds===false&&layers.labels&&!captureCanvas)for(const id of new Set([layers.labels==='hover'?null:selection.entityId,hoverId])){if(!id||!entity(id))continue;const on=selectedGeometry(id).corners.map(project).filter(Boolean) as Vec[];if(!on.length)continue;
       const el=document.createElementNS(svg.namespaceURI,'text');el.textContent=entity(id)?.label||'';for(const[k,v]of Object.entries({x:Math.min(...on.map(p=>p[0])),y:Math.min(...on.map(p=>p[1]))-4,fill:id===selection.entityId?'#7ae6cf':'#e4ece7',stroke:'#111b21','stroke-width':3,'paint-order':'stroke','font-size':13}))el.setAttribute(k,String(v));svg.append(el);}
     if(layers.showBounds===false&&!layers.showAxes)return;
     const ids=layers.showBounds===false?[]:layers.allBounds?doc.entities.filter((e:any)=>!e.sourceContext).map((e:any)=>e.id):[selection.entityId];for(const id of ids){if(!id)continue;const ps=selectedGeometry(id).corners;if(!ps.length)continue;const box=ps.map(project);for(let i=0;i<8;i++)for(let k=0;k<3;k++)if(!(i&(1<<k)))line(box[i],box[i|(1<<k)],id===selection.entityId?'#7ae6cf':'#607e89');
@@ -348,7 +352,9 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
       // before yielding so object previews cannot change scene navigation.
       captureSize={w:640,h:640,cw:640,ch:640};
       // Studio shading lifts display shadows only; mesh colors/materials remain unchanged.
-      layers={...layers,measurement:modeled&&layers.measurement?.references.every((ref:any)=>family.some(e=>e.id===ref.entityId))?layers.measurement:null,studio:true,modelOnly:modeled,entityId:undefined,entityIds:family.map(e=>e.id),representationIds:models.map(({rep})=>rep.id),observationEntityId:entityId,observationId:source.observationId,observations:doc.observations,imageId:source.imageId??layers.imageId,axisEntityId:composite?undefined:entityId,showAxes:!composite,observed_surface:source.layer==='observed_surface',point_cloud:source.layer==='point_cloud',generated_mesh:modeled,primitive:modeled,showCandidates:true,showBounds:false,editable:false};
+      // The measurement-layer boxes stay out of the capture: only a measurement of this family is drawn into it.
+      const shown=layers.measurement,measured=!shown||shown.source==='measurement_layer'?null:{...shown,lines:shown.lines.filter((l:any)=>!l.layerBox),labels:shown.labels?.filter((l:any)=>!l.layerBox)};
+      layers={...layers,measurement:modeled&&measured?.references.every((ref:any)=>family.some(e=>e.id===ref.entityId))?measured:null,studio:true,modelOnly:modeled,entityId:undefined,entityIds:family.map(e=>e.id),representationIds:models.map(({rep})=>rep.id),observationEntityId:entityId,observationId:source.observationId,observations:doc.observations,imageId:source.imageId??layers.imageId,axisEntityId:composite?undefined:entityId,showAxes:!composite,observed_surface:source.layer==='observed_surface',point_cloud:source.layer==='point_cloud',generated_mesh:modeled,primitive:modeled,showCandidates:true,showBounds:false,editable:false};
       selection={};dimensions();camera=fittedCamera(mode,models.length===1?models[0]:undefined);const captureCanvas=document.createElement('canvas');if(!captureCanvas.getContext('2d'))throw Error('canvas_2d_unavailable');draw(false,captureCanvas);return captureCanvas.toDataURL('image/png');
     }finally{
       camera=saved.camera;layers=saved.layers;selection=saved.selection;radius=saved.radius;center=saved.center;captureSize=null;
