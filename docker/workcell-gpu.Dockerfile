@@ -2,19 +2,23 @@
 # each the exact environment of its Modal image:
 #   /opt/pi3x = serving modal_apps/pi3x_geometry.py (Pi3X joint geometry, torch 2.5.1 cu124; Pi3 code /vendor/pi3 @ 9fa3ddb)
 #   /opt/sam3 = modal_apps/workcell_mask_transfer.py (SAM 3 via transformers 5.17.0, torch 2.14.0 cu13); runs
-#               scripts/workcell_sam_worker.py (text prompts: objects, floor) and the box-prompt mask transfer
+#               scripts/workcell_sam_worker.py (text prompts: objects, floor), the box-prompt mask transfer, and the tiled
+#               text-prompt apps modal_apps/workcell_estop_mask.py (e-stop) and workcell_part_masks.py (object parts)
 #   /opt/moge = modal_apps/workcell_moge_check.py (MoGe-3 metric depth, torch 2.13.0 cu13, FlexGEMM on Triton)
 # CUDA: the runtime libraries come inside the torch wheels (cu124 and cu13). The host needs an NVIDIA driver that supports
 # CUDA 13 (>= 580) and the NVIDIA Container Toolkit; Ampere or newer (A100 / L40S / RTX 6000 Ada; bf16 autocast). gcc is for
 # Triton's JIT (MoGe-3).
 # Pins = `pip freeze` of the cached Modal image(s) named below, read on 2026-10-05 (modal_apps/onprem_image_proof.py records the
-# image's own freeze again at proof time), installed with --no-deps; then the modal client 1.5.4, used only as a library by
-# scripts/onprem/run_stage.py (no account, token or network). Weights are never in an image: scripts/onprem/fetch_weights.py.
-# Build context SRC = a directory holding this repository as workcell/ and panoptes-serving as serving/.
+# image's own freeze again at proof time), installed with --no-deps. No modal client: scripts/onprem/run_stage.py imports the
+# apps against its stub (scripts/onprem/modal_stub/modal.py), so nothing unpinned is installed. Weights are never in an image:
+# scripts/onprem/fetch_weights.py.
+# Build context SRC = a directory holding this repository as workcell/ and panoptes-serving as serving/: make it with
+# scripts/onprem/stage_context.sh SRC (code only, ~8 MB, with .dockerignore). Base image pinned by digest (index, 2026-10-05).
+# Air-gapped servers: build on a connected machine, then scripts/onprem/airgap.sh save / load (docs/workcell-photo/ONPREM.md).
 #   docker build -f SRC/workcell/docker/workcell-gpu.Dockerfile -t panoptes-workcell-gpu SRC
 #   docker run --rm --gpus all --network none -v /srv/panoptes-weights:/weights -v $PWD/data:/data panoptes-workcell-gpu \
 #       /opt/pi3x/bin/python scripts/onprem/run_stage.py --weights /weights /serving/modal_apps/pi3x_geometry.py --run /data/RUN
-FROM python:3.11.10-slim-bookworm
+FROM python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98cb49db5c7103c90539c56bb30e
 
 ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility
@@ -35,8 +39,7 @@ RUN python -m venv /opt/pi3x && /opt/pi3x/bin/pip install --no-deps \
         protobuf==5.29.2 pydantic==2.9.2 pydantic_core==2.23.4 PyYAML==6.0.3 requests==2.34.2 \
         safetensors==0.4.5 setuptools==65.5.1 sympy==1.13.1 torch==2.5.1 torchvision==0.20.1 \
         tqdm==4.70.1 trimesh==5.1.0 triton==3.1.0 typing_extensions==4.12.2 urllib3==2.8.0 \
-        yarl==1.13.1 \
-    && /opt/pi3x/bin/pip install modal==1.5.4
+        yarl==1.13.1
 
 # workcell-mask-transfer (debian_slim 3.11; torch 2.14.0 transformers 5.17.0 accelerate pillow numpy<2.3 opencv 4.10.0.84)
 RUN python -m venv /opt/sam3 && /opt/sam3/bin/pip install --no-deps \
@@ -53,8 +56,7 @@ RUN python -m venv /opt/sam3 && /opt/sam3/bin/pip install --no-deps \
         pillow==12.3.0 protobuf==5.29.2 psutil==7.2.2 Pygments==2.21.0 PyYAML==6.0.3 \
         regex==2026.9.29 rich==15.0.0 safetensors==0.8.0 setuptools==84.0.0 shellingham==1.5.4 \
         sympy==1.14.0 tokenizers==0.23.2 torch==2.14.0 torchvision==0.29.1 tqdm==4.70.1 \
-        transformers==5.17.0 triton==3.8.0 typer==0.27.2 typing_extensions==4.16.0 yarl==1.13.1 \
-    && /opt/sam3/bin/pip install modal==1.5.4
+        transformers==5.17.0 triton==3.8.0 typer==0.27.2 typing_extensions==4.16.0 yarl==1.13.1
 
 # workcell-moge-check (moge3_app image: debian_slim 3.11 + git build-essential, torch torchvision MoGe huggingface_hub opencv
 # trimesh, then libgl1 libgomp1 libx11-6 + open3d 0.19.0); the unpinned Modal definition resolved to these
@@ -108,8 +110,7 @@ RUN python -m venv /opt/moge && /opt/moge/bin/pip install --no-deps \
         triton==3.7.1 typer==0.27.1 typing-inspection==0.4.4 \
         typing_extensions==4.16.0 urllib3==2.7.0 "utils3d_moge @ git+https://github.com/EasternJournalist/utils3d-moge.git@62f09d58509485564e24d5d9f6aac9ee9ebc0c37" \
         uvicorn==0.52.4 wcwidth==0.9.2 Werkzeug==3.1.9 \
-        widgetsnbextension==4.0.16 yarl==1.13.1 zipp==4.1.1 \
-    && /opt/moge/bin/pip install modal==1.5.4
+        widgetsnbextension==4.0.16 yarl==1.13.1 zipp==4.1.1
 
 # Container paths of the Modal images' add_local_* (so every function body runs unchanged), then only the files the GPU
 # stages use: an unrelated edit elsewhere in the repositories does not invalidate these heavy layers.
@@ -123,6 +124,7 @@ COPY workcell/scripts/workcell_shape_check.py /check/shape_core.py
 COPY workcell/scripts/workcell_sam_worker.py workcell/scripts/workcell_shape_check.py /workcell/scripts/
 COPY workcell/scripts/workcell_checks/transfer.py /workcell/scripts/workcell_checks/transfer.py
 COPY workcell/modal_apps/workcell_moge_check.py workcell/modal_apps/moge3_app.py workcell/modal_apps/workcell_mask_transfer.py /workcell/modal_apps/
+COPY workcell/modal_apps/workcell_estop_mask.py workcell/modal_apps/workcell_part_masks.py /workcell/modal_apps/
 COPY workcell/scripts/onprem /workcell/scripts/onprem
 ENV HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1
 WORKDIR /workcell

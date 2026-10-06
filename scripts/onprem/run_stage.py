@@ -4,45 +4,83 @@
   python scripts/onprem/run_stage.py [...] SCRIPT.py [its own arguments]          (a file without a Modal local entrypoint)
   python scripts/onprem/run_stage.py --self-test
 
-The module is imported as `modal run` imports it. The `modal` pip package is only a library here: no account, token, config or
-network is used (verified with every MODAL_* variable unset and MODAL_CONFIG_PATH pointing at a missing file). Then:
+The module is imported as `modal run` imports it, but `import modal` is scripts/onprem/modal_stub/modal.py (put first on sys.path
+and PYTHONPATH): the images carry no modal client, and no account, token, config or network is ever used. Then:
 - the app's local entrypoint runs unchanged, and every Function.remote / spawn / map / starmap runs the function body here
-  (modal's own Function.local: the raw function, class methods after their @enter);
+  (class methods after their @enter);
 - an image's add_local_file / add_local_dir container paths (`REPO / 'x'` -> '/check/y') resolve to the repository files
   through an import hook; images built from docker/ already hold those paths, then nothing is mapped;
 - a Volume is the local directory at its container mount path: commit / reload are no-ops, read_file and batch_upload use it;
 - --record BUNDLE saves every urllib response the stage reads (index.json + blobs/<sha256>); --offline BUNDLE replays them,
   refuses every other URL and every non-loopback socket / DNS lookup in this process, and sets HF_HUB_OFFLINE=1;
-- --weights DIR (written by fetch_weights.py) links each model to the path its stage expects and sets HF_HOME.
+- --weights DIR (written by fetch_weights.py) gives each model's container path (/cache, /tmp/pi3x, ...) a run-private overlay
+  in a scratch directory (TMPDIR): one symlink per weight entry, so whatever a stage writes there (RecGen's /cache/jobs/<id>,
+  which holds photo data) lands in scratch, never in DIR, and is deleted when the stage ends; sets HF_HOME and HF_HUB_OFFLINE=1;
+- torch.hub.load(..., source='github') is served from the vendored copy in torch.hub's own directory (<hub>/<owner>_<repo>_<ref>)
+  with source='local', and torch.hub downloads other than file:// are refused: no GitHub probe even when the container has a
+  network;
+- PANOPTES_ONPREM=1 is set (stages switch off Modal-only rules, e.g. RecGen's Modal GPU budget gate);
+- every *spend-ledger.json a stage writes (Path.write_text) is recorded as mode 'on-prem in-process' with this machine's
+  hardware (cgroup CPU quota and memory limit, as docker --cpus / --memory set them) and no USD estimate.
+  The stage's own stdout line still shows its Modal list-rate dict.
 """
 from __future__ import annotations
 
 import argparse
 import ast
-import contextlib
+import atexit
 import hashlib
+import importlib.abc
 import importlib.machinery
 import importlib.util
 import inspect
 import io
+import ipaddress
 import json
 import os
 from pathlib import Path
 import runpy
 import shutil
+import signal
 import socket
+import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import urllib.response
 
-LOOPBACK = ('localhost', '127.', '::1', '0.0.0.0')
+STUB = Path(__file__).resolve().parent / 'modal_stub'
+LOOPBACK_NAMES = ('', 'localhost')  # '' = getaddrinfo(None, ...): a local (passive) address
+
+
+def use_stub():
+    """`import modal` -> the on-prem stub, here and in child processes."""
+    loaded = sys.modules.get('modal')
+    if loaded is not None and not getattr(loaded, 'ONPREM_STUB', False):
+        raise RuntimeError('the real modal client is already imported in this process; run_stage.py needs the on-prem stub')
+    if str(STUB) not in sys.path:
+        sys.path.insert(0, str(STUB))
+    paths = os.environ.get('PYTHONPATH', '').split(os.pathsep)
+    if str(STUB) not in paths:
+        os.environ['PYTHONPATH'] = os.pathsep.join([str(STUB), *filter(None, paths)])
+    import modal
+    assert modal.ONPREM_STUB, modal.__file__
+    return modal
 
 
 # ---------------------------------------------------------------- network: record / offline replay
 def _loopback(host) -> bool:
-    host = str(host or '')
-    return host.startswith(LOOPBACK) or host == ''
+    """Exact names and parsed addresses only: 'localhost', '', 127.0.0.0/8, ::1 (also IPv4-mapped), 0.0.0.0 / ::."""
+    host = host.decode() if isinstance(host, bytes) else str(host or '')
+    if host in LOOPBACK_NAMES:
+        return True
+    try:
+        ip = ipaddress.ip_address(host.strip('[]').split('%')[0])
+    except ValueError:
+        return False
+    ip = getattr(ip, 'ipv4_mapped', None) or ip
+    return ip.is_loopback or ip.is_unspecified
 
 
 def block_network():
@@ -119,98 +157,199 @@ def replay_urls(bundle: Path):
     return served
 
 
-# ---------------------------------------------------------------- weights cache (fetch_weights.py manifest)
-def link_weights(cache: Path) -> dict:
+# ---------------------------------------------------------------- weights (fetch_weights.py manifest): run-private overlays
+OVERLAYS: list = []  # (container path, overlay dir) made by this process
+
+
+def _entries(cache: Path, model: dict) -> set:
+    """Top-level names under the model's directory that hold its manifest files (only verified weights are exposed)."""
+    extras = model.get('extras', {})
+    return {Path(extras[rel] if rel in extras else Path(model['snapshot'], rel)).relative_to(model['path']).parts[0]
+            for rel in model['files']}
+
+
+def link_weights(cache: Path, scratch: Path | None = None) -> dict:
+    """Each model with a container path ('link') -> symlink to a fresh overlay directory scratch/<model> holding one symlink per
+    weight entry. The stage reads the weights unchanged; new files it writes there stay in scratch (deleted by cleanup())."""
     manifest = json.loads((cache / 'manifest.json').read_text())
     os.environ.setdefault('HF_HOME', str(cache / manifest.get('hfHome', 'hf')))
     os.environ.setdefault('HF_HUB_CACHE', str(Path(os.environ['HF_HOME']) / 'hub'))
+    if not OVERLAYS:
+        atexit.register(cleanup)  # also for callers other than main()
     done = {}
     for name, model in manifest['models'].items():
-        link = model.get('link')
-        if not link:
+        if not model.get('link'):
             continue
-        target, path = cache / model['path'], Path(link)
-        if path.is_symlink() and Path(os.readlink(path)) == target:
-            pass
+        target, path = cache / model['path'], Path(model['link'])
+        if path.is_symlink():
+            current = Path(os.readlink(path))
+            if current.exists() and current.parent.name.startswith('onprem-run-'):
+                raise RuntimeError(f'onprem: {path} -> {current} belongs to another run_stage.py (or a crashed one: it may hold '
+                                   f'job copies with photo data; delete {current.parent} and {path})')
+            path.unlink()  # an older direct link to the weights, or a dangling one
         elif path.exists():  # a real directory a deployment mounted there itself: leave it
-            print(f'onprem: {link} exists, not linking {name}', file=sys.stderr)
+            print(f'onprem: {path} exists, not linking {name}', file=sys.stderr)
             continue
-        else:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.symlink_to(target, target_is_directory=True)
-        done[name] = f'{link} -> {target}'
+        scratch = scratch or Path(tempfile.mkdtemp(prefix='onprem-run-'))
+        overlay = scratch / name
+        overlay.mkdir(parents=True)
+        for entry in sorted(_entries(cache, model)):
+            (overlay / entry).symlink_to(target / entry)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.symlink_to(overlay, target_is_directory=True)
+        OVERLAYS.append((path, overlay))
+        done[name] = f'{path} -> {overlay} ({len(list(overlay.iterdir()))} entries of {target})'
     return done
 
 
-# ---------------------------------------------------------------- modal: in-process execution
-class _Done:
-    def __init__(self, value):
-        self.value = value
-
-    def get(self, timeout=None):
-        return self.value
-
-    def __iter__(self):
-        return iter(self.value)
-
-
-def patch_modal(volume_paths: dict):
-    """Function calls run here; volumes are the local directories at their container mount paths."""
-    import warnings
-    import modal
-    warnings.filterwarnings('ignore', message='.*executing locally and will not have access to the mounted Volume')
-
-    def remote(self, *args, **kwargs):
-        return self.local(*args, **kwargs)
-
-    modal.Function.remote = remote
-    modal.Function.spawn = lambda self, *a, **k: _Done(self.local(*a, **k))
-    modal.Function.map = lambda self, *iters, **k: (self.local(*args) for args in zip(*iters))
-    modal.Function.starmap = lambda self, items, **k: (self.local(*args) for args in items)
-    modal.Volume.commit = modal.Volume.reload = lambda self, *a, **k: None
-    modal.App.run = lambda self, *a, **k: contextlib.nullcontext(self)  # driver scripts: `with app.run():` needs no server
-
-    def mount(volume):
-        name = getattr(volume, 'name', None)
-        if name not in volume_paths:  # a driver script imported the app after start-up: read its functions' mounts now
-            volume_paths.update(app_volumes(*[v for m in list(sys.modules.values()) for v in vars(m).values() if type(v).__name__ == 'App']))
-        if name not in volume_paths:
-            raise RuntimeError(f'onprem: volume {name} is not mounted by any function of this app')
-        return Path(volume_paths[name])
-
-    def read_file(self, path, *a, **k):
-        yield (mount(self) / str(path).lstrip('/')).read_bytes()
-
-    class Upload:
-        def __init__(self, root):
-            self.root = root
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def put_file(self, local, remote, *a, **k):
-            dest = self.root / str(remote).lstrip('/'); dest.parent.mkdir(parents=True, exist_ok=True)
-            if hasattr(local, 'read'):
-                dest.write_bytes(local.read())
-            else:
-                shutil.copyfile(local, dest)
-
-        def put_directory(self, local, remote, *a, **k):
-            shutil.copytree(local, self.root / str(remote).lstrip('/'), dirs_exist_ok=True)
-
-    modal.Volume.read_file = read_file
-    modal.Volume.batch_upload = lambda self, *a, **k: Upload(mount(self))
+def cleanup():
+    """Remove this process's overlays (their symlinks into the weights are unlinked, never followed) and container links."""
+    while OVERLAYS:
+        path, overlay = OVERLAYS.pop()
+        if path.is_symlink() and Path(os.readlink(path)) == overlay:
+            path.unlink()
+        shutil.rmtree(overlay, ignore_errors=True)
+        try:
+            overlay.parent.rmdir()  # the run's scratch directory, once its last overlay is gone
+        except OSError:
+            pass
 
 
-def app_volumes(*apps) -> dict:
-    """Volume name -> container mount path, from every function of the given apps."""
-    return {getattr(v, '_name', None): str(path) for app in apps for fn in app.registered_functions.values()
-            for path, v in fn.spec.volumes.items()}
+# ---------------------------------------------------------------- torch.hub: vendored code only, no download
+def _pin_hub(hub):
+    if getattr(hub.load, '_onprem', False):
+        return
+    real = hub.load
+
+    def load(repo_or_dir, *args, source='github', **kwargs):
+        if str(source).lower() != 'github':
+            return real(repo_or_dir, *args, source=source, **kwargs)
+        repo, _, ref = str(repo_or_dir).partition(':')
+        owner, _, name = repo.partition('/')
+        for r in ([ref] if ref else ['main', 'master']):  # the directories torch.hub itself would use
+            local = Path(hub.get_dir()) / f"{owner}_{name}_{r.replace('/', '_')}"
+            if local.is_dir():
+                return real(str(local), *args, source='local', **kwargs)
+        raise RuntimeError(f'onprem: torch.hub repository {repo_or_dir} is not vendored under {hub.get_dir()}')
+
+    real_download = hub.download_url_to_file
+
+    def download(url, *args, **kwargs):  # file:// is a local copy (RecGen passes its checkpoint so); anything else is refused
+        if not str(url).startswith('file://'):
+            raise RuntimeError(f'onprem: torch.hub download of {url} refused: put the file in the weights directory '
+                               f'(torch.hub checkpoints: {Path(hub.get_dir()) / "checkpoints"})')
+        return real_download(url, *args, **kwargs)
+
+    load._onprem = True
+    hub.load, hub.download_url_to_file = load, download
 
 
+class _HubPin(importlib.abc.MetaPathFinder):
+    """Patches torch.hub right after it is imported (stages import torch late, inside function bodies)."""
+    def find_spec(self, name, path=None, target=None):
+        if name != 'torch.hub':
+            return None
+        for finder in sys.meta_path:
+            spec = None if finder is self or not hasattr(finder, 'find_spec') else finder.find_spec(name, path, target)
+            if spec is not None:
+                break
+        else:
+            return None
+        real_exec = spec.loader.exec_module
+
+        def exec_module(module):
+            real_exec(module)
+            _pin_hub(module)
+        spec.loader.exec_module = exec_module
+        return spec
+
+
+def pin_torch_hub():
+    if 'torch.hub' in sys.modules:
+        _pin_hub(sys.modules['torch.hub'])
+    elif not any(isinstance(f, _HubPin) for f in sys.meta_path):
+        sys.meta_path.insert(0, _HubPin())
+
+
+# ---------------------------------------------------------------- spend ledgers: no Modal call, no Modal charge
+def cgroup_limits(root=Path('/sys/fs/cgroup'), proc=Path('/proc/self/cgroup')):
+    """(CPUs, memory bytes) of this process's cgroup and its parents - docker --cpus / --memory - or None where unlimited.
+    cgroup v2 (cpu.max, memory.max) and v1 (cpu.cfs_quota_us / cfs_period_us, memory.limit_in_bytes)."""
+    try:
+        lines = [line.split(':', 2) for line in proc.read_text().splitlines()]
+    except OSError:
+        return None, None
+    rel = {c: path.lstrip('/') for _, ctrls, path in lines for c in (ctrls.split(',') if ctrls else [''])}
+
+    def walk(base, path, name):
+        p = Path(path)
+        for d in [p, *p.parents]:
+            try:
+                yield (base / d / name).read_text().split()
+            except OSError:
+                continue
+    cpus, mem = [], []
+    if '' in rel:
+        cpus += [int(q) / int(p) for q, p, *_ in walk(root, rel[''], 'cpu.max') if q != 'max']
+        mem += [int(m[0]) for m in walk(root, rel[''], 'memory.max') if m[0] != 'max']
+    if 'cpu' in rel:
+        quota = [int(q[0]) for q in walk(root / 'cpu', rel['cpu'], 'cpu.cfs_quota_us')]
+        period = [int(p[0]) for p in walk(root / 'cpu', rel['cpu'], 'cpu.cfs_period_us')]
+        cpus += [q / p for q, p in zip(quota, period) if q > 0 and p > 0]
+    if 'memory' in rel:
+        mem += [int(m[0]) for m in walk(root / 'memory', rel['memory'], 'memory.limit_in_bytes') if int(m[0]) < 2 ** 60]
+    return min(cpus, default=None), min(mem, default=None)
+
+
+def local_hardware(root=Path('/sys/fs/cgroup'), proc=Path('/proc/self/cgroup')) -> str:
+    gpus = ''
+    if shutil.which('nvidia-smi'):
+        gpus = subprocess.run(['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'], capture_output=True, text=True).stdout.strip()
+    visible = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count()
+    quota, limit = cgroup_limits(root, proc)
+    cpu = f'{min(visible, quota):g} CPU (cgroup quota; {visible} visible)' if quota and quota < visible else f'{visible} CPU'
+    if limit is None:
+        try:
+            limit = int(next(l for l in Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemTotal')).split()[1]) * 1024
+            memory = f'{limit / 2 ** 30:.1f} GiB'
+        except (OSError, StopIteration):
+            memory = ''
+    else:
+        memory = f'{limit / 2 ** 30:.1f} GiB (cgroup limit)'
+    return ', '.join(filter(None, [gpus.replace('\n', ', '), cpu, memory]))
+
+
+def onprem_ledger(row):
+    """A stage's Modal spend ledger as an on-prem in-process record: every *Usd field None, rate source dropped."""
+    if isinstance(row, list):
+        return [onprem_ledger(v) for v in row]
+    if not isinstance(row, dict):
+        return row
+    return {k: None if 'usd' in k.lower() else 'on-prem in-process' if k == 'mode' else onprem_ledger(v)
+            for k, v in row.items() if k != 'rateSource'}
+
+
+def rewrite_ledgers():
+    real = Path.write_text
+    hardware = local_hardware()
+
+    def write_text(self, data, *args, **kwargs):
+        if self.name.endswith('spend-ledger.json'):
+            try:
+                row = json.loads(data)
+            except ValueError:
+                row = None
+            if isinstance(row, dict):
+                row = onprem_ledger(row)
+                row.update(mode='on-prem in-process', hardware=hardware, modalHardwareProfile=row.get('modalHardwareProfile', row.get('hardware')),
+                           note='run by scripts/onprem/run_stage.py in this process: no Modal call, no Modal charge; seconds are local')
+                data = json.dumps(row, indent=2) + '\n'
+        return real(self, data, *args, **kwargs)
+
+    Path.write_text = write_text
+
+
+# ---------------------------------------------------------------- the app, in-process
 def image_mounts(app_path: Path, repo: Path | None) -> list:
     """(container path, repository path) of every add_local_file / add_local_dir(REPO / 'literal', '/container/path')."""
     out = []
@@ -249,10 +388,11 @@ def map_mounts(pairs: list) -> Path | None:
 
 
 def load_app(path: Path):
+    use_stub()
     path = path.resolve()
     for p in (str(Path.cwd()), str(path.parent.parent), str(path.parent)):  # `modal run` cwd + repo root + module dir
         if p not in sys.path:
-            sys.path.insert(0, p)
+            sys.path.insert(1, p)
     spec = importlib.util.spec_from_file_location(path.stem, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[path.stem] = module
@@ -274,23 +414,21 @@ def entrypoint_args(fn, argv):
 
 
 def run(target: str, argv: list) -> object:
+    use_stub()
     path, _, name = target.partition('::')
     path = Path(path)
     source = path.read_text()
-    if 'local_entrypoint' not in source and 'modal.App' not in source:  # a driver script: run it as __main__ with the patches
-        patch_modal({})
+    if 'local_entrypoint' not in source and 'modal.App' not in source:  # a driver script: run it as __main__
         sys.argv = [str(path), *argv]
-        sys.path.insert(0, str(path.resolve().parent))
+        sys.path.insert(1, str(path.resolve().parent))
         return runpy.run_path(str(path), run_name='__main__')
     module = load_app(path)
     app = next(v for v in vars(module).values() if type(v).__name__ == 'App')
-    patch_modal(app_volumes(app))
     map_mounts(image_mounts(path, Path(module.REPO) if hasattr(module, 'REPO') else None))
     entrypoints = app.registered_entrypoints
     if not entrypoints:
         raise SystemExit(f'{path} has no local entrypoint')
-    entry = entrypoints[name] if name else next(iter(entrypoints.values()))
-    raw = entry.info.raw_f
+    raw = entrypoints[name] if name else next(iter(entrypoints.values()))
     return raw(**entrypoint_args(raw, argv))
 
 
@@ -304,7 +442,10 @@ def main(argv=None):
         opts[flag] = Path(argv.pop(0))
     if not argv:
         raise SystemExit(__doc__)
-    report = dict(target=argv[0], modalCredentials=any(k.startswith('MODAL_TOKEN') for k in os.environ))
+    os.environ['PANOPTES_ONPREM'] = '1'
+    signal.signal(signal.SIGTERM, lambda *a: sys.exit(143))  # docker stop: still remove the overlays (job copies)
+    report = dict(target=argv[0], modalClient=use_stub().__file__, modalCredentials=any(k.startswith('MODAL_TOKEN') for k in os.environ))
+    pin_torch_hub()
     if opts['weights']:
         os.environ['HF_HUB_OFFLINE'] = '1'
         report['weights'] = link_weights(opts['weights'].resolve())
@@ -315,44 +456,98 @@ def main(argv=None):
         served = replay_urls(opts['offline'].resolve())
     elif opts['record']:
         record_urls(opts['record'].resolve())
-    run(argv[0], argv[1:])
+    rewrite_ledgers()
+    try:
+        run(argv[0], argv[1:])
+    finally:
+        cleanup()
     report.update(offline=bool(opts['offline']), hfHubOffline=os.environ.get('HF_HUB_OFFLINE') == '1',
                   urlsServedFromBundle=len(served) if served is not None else None)
     print('onprem-run ' + json.dumps(report))
 
 
+HUB_CHECK = r'''
+import sys; sys.path.insert(0, sys.argv[1]); sys.path.insert(0, sys.argv[2])
+import run_stage; run_stage.pin_torch_hub()
+import torch.hub as hub
+assert hub.load('acme/tools', 'm', 1, k=2) == (hub.get_dir() + '/acme_tools_main', 'local', 'm', (1,), {'k': 2})
+assert hub.load('acme/tools:v1', 'm')[0].endswith('acme_tools_v1') and hub.load('/x/y', 'm', source='local')[:2] == ('/x/y', 'local')
+assert hub.load_state_dict_from_url('file:///weights/w.pth') == 'copied file:///weights/w.pth'
+for bad in (lambda: hub.load('other/repo', 'm'), lambda: hub.load_state_dict_from_url('https://dl.example/w.pth')):
+    try:
+        bad(); raise AssertionError('not refused')
+    except RuntimeError as e:
+        assert 'onprem' in str(e), e
+print('hub ok')
+'''
+FAKE_TORCH_HUB = '''import os
+def get_dir(): return os.environ['FAKE_HUB']
+def load(repo_or_dir, model, *args, source='github', trust_repo=None, force_reload=False, verbose=True, skip_validation=False, **kwargs):
+    if source == 'github': raise AssertionError('would probe GitHub')
+    return (repo_or_dir, source, model, args, kwargs)
+def download_url_to_file(url, dst, hash_prefix=None, progress=True): return 'copied ' + url
+def load_state_dict_from_url(url, model_dir=None, **kw): return download_url_to_file(url, '/dev/null')
+'''
+
+
 def _check():
-    """Synthetic app: a mounted helper module, a volume, an entrypoint calling .remote; record then replay one URL offline."""
+    """Synthetic apps under the stub: entrypoint, .remote/.map/.spawn, an @app.cls with @enter, a mounted helper module, a volume;
+    record then replay one URL offline; weights overlay (job copies outside the weights, removed at the end); torch.hub pin;
+    loopback parsing; cgroup CPU / memory limits."""
     import http.server
     import threading
     env_ok = not any(k.startswith('MODAL_TOKEN') for k in os.environ)
+    real_write = Path.write_text
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         (tmp / 'scripts').mkdir(); (tmp / 'apps').mkdir(); (tmp / 'vol').mkdir()
         (tmp / 'scripts/helper.py').write_text('def twice(x):\n    return 2 * x\n')
         (tmp / 'apps/demo.py').write_text(f'''
 from pathlib import Path
-import json, modal
+import json, os, modal
+assert modal.ONPREM_STUB
 REPO = Path(__file__).resolve().parents[1]
 app = modal.App('onprem-selftest')
-image = modal.Image.debian_slim().add_local_file(REPO / 'scripts/helper.py', '/onprem-selftest-mount/helper.py')
+image = modal.Image.debian_slim().pip_install('x').add_local_file(REPO / 'scripts/helper.py', '/onprem-selftest-mount/helper.py')
 vol = modal.Volume.from_name('onprem-selftest-vol')
-@app.function(image=image, volumes={{{json.dumps(str(tmp / 'vol'))}: vol}})
+@app.function(image=image, volumes={{{json.dumps(str(tmp / 'vol'))}: vol}}, secrets=[modal.Secret.from_name('s')])
 def work(x: int) -> int:
     import sys; sys.path.insert(0, '/onprem-selftest-mount'); import helper
     vol.reload(); Path({json.dumps(str(tmp / 'vol'))}, 'out.txt').write_text(str(helper.twice(x))); vol.commit()
     return helper.twice(x)
+@app.cls(image=image, gpu='A100')
+class Model:
+    loads = 0
+    @modal.enter()
+    def load(self):
+        type(self).loads += 1; self.k = 3
+    @modal.method()
+    def mul(self, x):
+        return self.k * x
 @app.local_entrypoint()
 def main(x: int, label: str = 'a', loud: bool = False):
+    assert os.environ['PANOPTES_ONPREM'] == '1'
     with app.run():
         assert work.remote(x) == 2 * x and list(work.map([1, 2])) == [2, 4] and work.spawn(3).get() == 6
+        m = Model(); assert m.mul.remote(2) == 6 and list(m.mul.map([1, 2])) == [3, 6] and m.loads == 1
     print('demo', label, loud, b''.join(vol.read_file('out.txt')).decode())
+    Path({json.dumps(str(tmp / 'vol'))}, 'spend-ledger.json').write_text(json.dumps({{'mode': 'ephemeral modal run', 'hardware': 'A100-80GB',
+        'functionSeconds': 2.0, 'estimateUsd': 0.01, 'actualBilledUsd': None, 'rateSource': 'https://modal.com/pricing',
+        'calls': [{{'mode': 'ephemeral modal run', 'callEstimateUsd': 0.02}}]}}))
 ''')
         out = io.StringIO()
         from contextlib import redirect_stdout
-        with redirect_stdout(out):
-            run(str(tmp / 'apps/demo.py'), ['--x', '5', '--label', 'b', '--loud'])
-        assert out.getvalue().strip() == 'demo b True 6', out.getvalue()
+        try:
+            with redirect_stdout(out):
+                main([str(tmp / 'apps/demo.py'), '--x', '5', '--label', 'b', '--loud'])
+        finally:
+            Path.write_text = real_write
+        assert out.getvalue().splitlines()[0] == 'demo b True 6', out.getvalue()
+        assert sys.modules['modal'].ONPREM_STUB and str(STUB) in os.environ['PYTHONPATH']
+        ledger = json.loads((tmp / 'vol/spend-ledger.json').read_text())
+        assert ledger['mode'] == ledger['calls'][0]['mode'] == 'on-prem in-process' and ledger['modalHardwareProfile'] == 'A100-80GB', ledger
+        assert ledger['estimateUsd'] is None and ledger['calls'][0]['callEstimateUsd'] is None and 'rateSource' not in ledger, ledger
+        assert ledger['functionSeconds'] == 2.0 and 'CPU' in ledger['hardware'], ledger
         # record from a loopback HTTP server, then replay with it stopped and the network blocked
         (tmp / 'www').mkdir(); (tmp / 'www/layer.json').write_text('{"ok": 1}')
         handler = lambda *a, **k: http.server.SimpleHTTPRequestHandler(*a, directory=str(tmp / 'www'), **k)
@@ -369,14 +564,60 @@ def main(x: int, label: str = 'a', loud: bool = False):
         try:
             assert json.loads(urllib.request.urlopen(url).read()) == {'ok': 1}
             for bad in (lambda: urllib.request.urlopen('https://example.com/x'),
-                        lambda: socket.create_connection(('93.184.216.34', 80), timeout=2)):
+                        lambda: socket.create_connection(('93.184.216.34', 80), timeout=2),
+                        lambda: socket.getaddrinfo('localhost.example.com', 80)):
                 try:
                     bad(); raise AssertionError('network was not refused')
                 except (OSError, urllib.error.URLError) as error:
                     assert 'onprem offline' in str(error), error
         finally:
             urllib.request.urlopen = real; socket.socket.connect, socket.socket.connect_ex, socket.getaddrinfo = saved
-    print('run_stage self-test passed: entrypoint + .remote/.map/.spawn in-process, image mount, volume, record/replay offline;',
+        for host, ok in (('localhost', True), ('', True), (None, True), ('127.0.0.1', True), ('127.8.9.1', True), ('::1', True),
+                         ('[::1]', True), ('::ffff:127.0.0.1', True), ('0.0.0.0', True), (b'127.0.0.1', True),
+                         ('localhost.evil.example', False), ('127.example.com', False), ('::1.evil', False), ('10.0.0.1', False),
+                         ('huggingface.co', False), ('0.0.0.0.example', False)):
+            assert _loopback(host) == ok, (host, ok)
+        # weights overlay: the stage's job copy lands in scratch, never in the weights; all of it is gone after cleanup()
+        cache, link = tmp / 'weights', tmp / 'container/cache'
+        (cache / 'recgen/weights').mkdir(parents=True); (cache / 'recgen/weights/w.bin').write_bytes(b'w')
+        (cache / 'recgen/stage.json').write_text('{}'); (cache / 'recgen/jobs-from-an-old-run').mkdir()
+        (cache / 'manifest.json').write_text(json.dumps({'hfHome': 'hf', 'models': {'recgen': {
+            'path': 'recgen', 'link': str(link), 'snapshot': 'recgen/weights', 'files': {'w.bin': {}, 'stage.json': {}},
+            'extras': {'stage.json': 'recgen/stage.json'}}, 'plain': {'path': 'hf/hub', 'snapshot': 'hf/hub/x', 'files': {}}}}))
+        link.parent.mkdir(); link.symlink_to(cache / 'recgen')  # an older direct link is replaced
+        done = link_weights(cache)
+        assert list(done) == ['recgen'] and sorted(p.name for p in link.iterdir()) == ['stage.json', 'weights'], done
+        assert (link / 'weights/w.bin').read_bytes() == b'w'
+        (link / 'jobs/abc').mkdir(parents=True); (link / 'jobs/abc/input.npz').write_bytes(b'photo')
+        overlay = Path(os.readlink(link))
+        assert (overlay / 'jobs/abc/input.npz').is_file() and not (cache / 'recgen/jobs').exists()
+        try:
+            link_weights(cache); raise AssertionError('a live overlay was taken over')
+        except RuntimeError as error:
+            assert 'another run_stage' in str(error), error
+        cleanup()
+        assert not link.exists() and not link.is_symlink() and not overlay.parent.exists()
+        assert (cache / 'recgen/weights/w.bin').read_bytes() == b'w' and not (cache / 'recgen/jobs').exists()
+        link.symlink_to(tmp / 'missing'); link_weights(cache); cleanup()  # a dangling link (crash) is replaced
+        # torch.hub pin, in a child process with a fake torch package
+        (tmp / 'fake/torch').mkdir(parents=True); (tmp / 'fake/torch/__init__.py').write_text('from . import hub\n')
+        (tmp / 'fake/torch/hub.py').write_text(FAKE_TORCH_HUB); (tmp / 'hub/acme_tools_main').mkdir(parents=True); (tmp / 'hub/acme_tools_v1').mkdir()
+        p = subprocess.run([sys.executable, '-c', HUB_CHECK, str(Path(__file__).resolve().parent), str(tmp / 'fake')],
+                           env={**os.environ, 'FAKE_HUB': str(tmp / 'hub')}, capture_output=True, text=True)
+        assert p.returncode == 0 and 'hub ok' in p.stdout, p.stderr
+        # cgroup limits: v2 quota 2.5 CPUs and 4 GiB on a parent cgroup, v1 quota, unlimited
+        cg = tmp / 'cg'; (cg / 'a/b').mkdir(parents=True); (tmp / 'p2').write_text('0::/a/b\n')
+        (cg / 'a/cpu.max').write_text('250000 100000\n'); (cg / 'a/b/cpu.max').write_text('max 100000\n'); (cg / 'a/b/memory.max').write_text(f'{4 * 2 ** 30}\n')
+        assert cgroup_limits(cg, tmp / 'p2') == (2.5, 4 * 2 ** 30)
+        (cg / 'cpu/docker/x').mkdir(parents=True); (tmp / 'p1').write_text('5:cpu,cpuacct:/docker/x\n4:memory:/docker/x\n')
+        (cg / 'cpu/docker/x/cpu.cfs_quota_us').write_text('400000'); (cg / 'cpu/docker/x/cpu.cfs_period_us').write_text('100000')
+        (cg / 'memory/docker/x').mkdir(parents=True); (cg / 'memory/docker/x/memory.limit_in_bytes').write_text(str(2 ** 63 - 4096))
+        assert cgroup_limits(cg, tmp / 'p1') == (4.0, None) and cgroup_limits(cg, tmp / 'none') == (None, None)
+        assert 'CPU' in local_hardware(cg, tmp / 'p2')
+    print('run_stage self-test passed: modal stub (entrypoint, .remote/.map/.spawn, @app.cls + @enter, image mount, volume),',
+          'record/replay offline, loopback by parsed address, weights overlay (job copy outside the weights, removed),',
+          'torch.hub vendored + network downloads refused (file:// allowed), cgroup CPU/memory limits, spend ledger -> on-prem',
+          'in-process without USD;',
           'modal credentials in env:', not env_ok)
 
 

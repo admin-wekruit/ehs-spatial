@@ -170,13 +170,21 @@ def check_entity(entity_id, P, N, own, others, cams, images, masks, scales, nati
                 shiftedControl=control, curve=[(r['scale'], r['ncc']) for r in rows])
 
 
-def verdict(row, scale_tolerance=.03):
+def verdict(row, scale_tolerance=.03, coverage=.05, min_finite=.6):
     """ok / depth_off / ambiguous (another depth fits about as well) / inconclusive (texture cannot localise depth).
 
     Judged on the agreement-versus-depth curve: a usable surface has one clear peak well above the curve's floor; wire grids
-    and see-through panels give flat or many-peaked curves. Rises at the ends of the scanned range are not peaks."""
+    and see-through panels give flat or many-peaked curves. Rises at the ends of the scanned range are not peaks.
+    'inconclusive' first, whatever the peak, when the curve cannot support a verdict:
+    - no agreement measured at the model's own depth (NaN at, or within scale_tolerance of, scale 1);
+    - finite points missing on either side: none at scale <= 1 - coverage or none at >= 1 + coverage;
+    - fewer than min_finite (60 %) of the scanned points finite."""
     curve = [(s, c) for s, c in row['curve'] if not math.isnan(c)]
-    if len(curve) < 3 or math.isnan(row['nccAtBest']):
+    at_model = [row['nccAtModel']] + [c for s, c in row['curve'] if abs(s - 1) <= scale_tolerance + 1e-9]
+    if len(curve) < 3 or math.isnan(row['nccAtBest']) or any(math.isnan(c) for c in at_model):
+        return 'inconclusive'
+    if (min(s for s, _ in curve) > 1 - coverage + 1e-9 or max(s for s, _ in curve) < 1 + coverage - 1e-9
+            or len(curve) < min_finite * len(row['curve'])):
         return 'inconclusive'
     best, peak = row['bestScale'], row['nccAtBest']
     row['curveContrast'] = contrast = peak - min(c for _, c in curve)
@@ -302,6 +310,23 @@ def _check():
     assert abs(row['bestScale'] - 1 / 1.1) < .015, row['bestScale']
     assert row['nccAtBest'] > .8 and row['nccAtBest'] - row['nccAtModel'] > .3, row
     assert verdict(row) == 'depth_off'
+    # a clear peak elsewhere, but no measurement at the model's own depth: never 'ok' (NaN comparisons are all False)
+    ss = np.round(np.linspace(.75, 1.25, 51), 4)
+    for peak_at in (.9, 1.0):
+        cv = [float(.9 - 30 * (s - peak_at) ** 2) for s in ss]
+        ok_row = dict(curve=list(zip(ss, cv)), nccAtModel=cv[25], bestScale=float(ss[int(np.argmax(cv))]), nccAtBest=max(cv))
+        assert verdict(dict(ok_row)) == ('depth_off' if peak_at < 1 else 'ok'), verdict(dict(ok_row))
+        for gap in ([25], [24, 25, 26], [27]):  # NaN at 1, around 1, and only near 1 (1.02)
+            c2 = [float('nan') if i in gap else c for i, c in enumerate(cv)]; valid = [(s, c) for s, c in zip(ss, c2) if not math.isnan(c)]
+            bad = dict(curve=list(zip(ss, c2)), nccAtModel=c2[25], bestScale=float(max(valid, key=lambda t: t[1])[0]), nccAtBest=max(c for _, c in valid))
+            assert verdict(bad) == 'inconclusive', (peak_at, gap, verdict(bad))
+        # coverage: finite only on one side of 1, or within +-0.04, or < 60 % of the scan -> inconclusive; 60 % both sides -> kept
+        for keep, want in ((lambda s: s <= 1.04, 'inconclusive'), (lambda s: s >= .96, 'inconclusive'),
+                           (lambda s: abs(s - 1) <= .04, 'inconclusive'), (lambda s: abs(s - 1) <= .14, 'inconclusive'),
+                           (lambda s: abs(s - 1) <= .151, verdict(dict(ok_row)))):
+            c3 = [c if keep(s) else float('nan') for s, c in zip(ss, cv)]; valid = [(s, c) for s, c in zip(ss, c3) if not math.isnan(c)]
+            cut = dict(curve=list(zip(ss, c3)), nccAtModel=c3[25], bestScale=float(max(valid, key=lambda t: t[1])[0]), nccAtBest=max(c for _, c in valid))
+            assert verdict(cut) == want, (peak_at, len(valid), verdict(cut), want)
     print('shape check self-test passed: best scale', row['bestScale'], 'ncc', round(row['nccAtModel'], 2), '->', round(row['nccAtBest'], 2))
 
 

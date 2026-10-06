@@ -341,7 +341,7 @@ function AgentConversation({
         identitySubmission.current = identitySuggestion;
         chat.current.submitUserMessage({text: identitySuggestion.reason});
       }}>{t("identitySuggestionSubmit")}</button></div>}
-      {createElement("deep-chat", { ref: chat, className: "deep-chat", auxiliaryStyle: "#container { height: 100%; width: 100%; }" })}
+      {createElement("deep-chat", { ref: chat, className: "deep-chat", style: { fontFamily: "inherit" }, auxiliaryStyle: "#container { height: 100%; width: 100%; }" })}
       {working && <p role="status">{t("running")}</p>}
       <ErrorNotice error={error} />
       {feedbackPublicationId && !historyReady && !!error && <button disabled={working} onClick={() => loadPublicHistory()}>{t("retry")}</button>}

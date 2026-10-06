@@ -1,17 +1,23 @@
 # Panoptes workcell photo pipeline - CPU stages, on-prem (no Modal, no SaaS API, no internet at run time).
 #   /opt/checks   = modal_apps/workcell_view_checks.py image (floor / lines / plane_stereo / transfer checks, Python 3.11.10);
-#                   also modal_apps/workcell_shape_check.py (its Modal image resolved scipy 1.17.1 instead of 1.14.1: only difference)
+#                   also modal_apps/workcell_shape_check.py (its Modal image resolved scipy 1.17.1 instead of 1.14.1: only difference),
+#                   modal_apps/workcell_clearance_b.py (/check/clearance_b.py = scripts/workcell_clearance_b.py),
+#                   scripts/workcell_estop_scale.py and scripts/workcell_layer_build.py (configs/workcell-layers in /workcell/configs)
 #   /opt/assemble = serving modal_apps/assemble_scene.py image (scene assembly; capture freeze/evidence and the public scene
-#                   build use the same packages), Python 3.12.6
+#                   build use the same packages), Python 3.12.6, plus shapely 2.1.2 (ehs_spatial.geometry imports it:
+#                   prepare_capture_evidence.py floor and scripts/onprem/floor_masks.py)
 # Pins = `pip freeze` of the cached Modal image(s) named below, read on 2026-10-05 (modal_apps/onprem_image_proof.py records the
-# image's own freeze again at proof time), installed with --no-deps; then the modal client 1.5.4, used only as a library by
-# scripts/onprem/run_stage.py (no account, token or network). Weights are never in an image: scripts/onprem/fetch_weights.py.
-# Build context SRC = a directory holding this repository as workcell/ and panoptes-serving as serving/.
+# image's own freeze again at proof time), installed with --no-deps. No modal client: scripts/onprem/run_stage.py imports the
+# apps against its stub (scripts/onprem/modal_stub/modal.py), so nothing unpinned is installed. Weights are never in an image:
+# scripts/onprem/fetch_weights.py.
+# Build context SRC = a directory holding this repository as workcell/ and panoptes-serving as serving/: make it with
+# scripts/onprem/stage_context.sh SRC (code only, ~8 MB, with .dockerignore). Base image pinned by digest (index, 2026-10-05).
+# Air-gapped servers: build on a connected machine, then scripts/onprem/airgap.sh save / load (docs/workcell-photo/ONPREM.md).
 #   docker build -f SRC/workcell/docker/workcell-cpu.Dockerfile -t panoptes-workcell-cpu SRC
 #   docker run --rm --network none panoptes-workcell-cpu                      # self-tests
 #   docker run --rm --network none -v $PWD/data:/data panoptes-workcell-cpu /opt/checks/bin/python scripts/onprem/run_stage.py \
 #       --offline /data/bundle modal_apps/workcell_view_checks.py --checks floor --view /data/view.json ... --out /data/floor
-FROM python:3.11.10-slim-bookworm
+FROM python:3.11.10-slim-bookworm@sha256:840e180ebcc6e5c8efab209c43f5e40fd2af98cb49db5c7103c90539c56bb30e
 
 ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 UV_PYTHON_INSTALL_DIR=/opt/uv-python
@@ -38,8 +44,7 @@ RUN python -m venv /opt/checks && /opt/checks/bin/pip install --no-deps \
         scipy==1.14.1 setuptools==65.5.1 six==1.17.0 stack-data==0.6.3 threadpoolctl==3.7.0 \
         tqdm==4.70.1 traitlets==5.16.1 trimesh==4.4.9 typing-inspection==0.4.4 typing_extensions==4.16.0 \
         urllib3==2.8.0 wcwidth==0.9.2 Werkzeug==3.1.9 widgetsnbextension==4.0.16 yarl==1.13.1 \
-        zipp==4.1.1 \
-    && /opt/checks/bin/pip install modal==1.5.4
+        zipp==4.1.1
 
 # assemble-scene (debian_slim 3.12 + libgl1 libgomp1 libglib2.0-0 libx11-6; numpy 2.1.3 opencv 4.10.0.84 open3d 0.19.0 pillow 11.0.0 scipy 1.14.1 trimesh 4.4.9)
 RUN pip install uv==0.5.14 && uv python install 3.12.6 && uv venv --python 3.12.6 /opt/assemble \
@@ -63,13 +68,15 @@ RUN pip install uv==0.5.14 && uv python install 3.12.6 && uv venv --python 3.12.
         tqdm==4.70.1 traitlets==5.16.1 trimesh==4.4.9 typing-inspection==0.4.4 typing_extensions==4.16.0 \
         urllib3==2.8.0 wcwidth==0.9.2 Werkzeug==3.1.9 widgetsnbextension==4.0.16 yarl==1.13.1 \
         zipp==4.1.1 \
-    && uv pip install --python /opt/assemble/bin/python modal==1.5.4
+    && uv pip install --python /opt/assemble/bin/python --no-deps shapely==2.1.2
 
 # Container paths of the Modal images' add_local_* (so every function body runs unchanged), then the repositories.
 COPY workcell/scripts/workcell_shape_check.py /check/shape_core.py
 COPY workcell/scripts/workcell_checks /check/workcell_checks
+COPY workcell/scripts/workcell_clearance_b.py /check/clearance_b.py
 COPY workcell/scripts /workcell/scripts
 COPY workcell/modal_apps /workcell/modal_apps
+COPY workcell/configs /workcell/configs
 COPY serving/scripts /serving/scripts
 COPY serving/modal_apps /serving/modal_apps
 COPY serving/ehs_spatial /serving/ehs_spatial

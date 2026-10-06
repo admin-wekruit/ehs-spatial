@@ -1,0 +1,19 @@
+# The on-prem images build from a context SRC holding this repository as workcell/ and panoptes-serving as serving/
+# (docker/*.Dockerfile). scripts/onprem/stage_context.sh copies this file to SRC/.dockerignore; if you assemble SRC yourself,
+# copy it there (Docker reads .dockerignore at the context root). Only the code the Dockerfiles COPY is sent to the daemon:
+# never outputs/ (24 GB in panoptes-serving), .venv/, node_modules/, runs, weights or .git.
+*
+!workcell/docker
+!workcell/scripts
+!workcell/modal_apps
+!workcell/configs
+!serving/scripts
+!serving/modal_apps
+!serving/ehs_spatial
+**/__pycache__
+**/*.pyc
+**/.venv
+**/node_modules
+**/outputs
+**/.git
+**/.DS_Store

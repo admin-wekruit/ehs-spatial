@@ -1,7 +1,10 @@
 """Method B clearance heights (light-curtain housing bottoms, fence panel bottom edges) for a published four-view report.
 
-Code: research-notes/workcell-clearance-b-2026-10-05/clearance_b.py (run(ctx, opts)); ctx = scripts/workcell_shape_check.py
+Code: scripts/workcell_clearance_b.py (run(ctx, opts); moved unchanged from research-notes/workcell-clearance-b-2026-10-05/
+clearance_b.py, sha256 9277ecb9...); ctx = scripts/workcell_shape_check.py
 load_report plus the RGB photos and the run's Pi3X point maps (geometry/frames/frame_000k). Ephemeral CPU run, nothing deployed.
+On-prem: python scripts/onprem/run_stage.py [--offline BUNDLE] modal_apps/workcell_clearance_b.py <the same flags> (CPU image
+/opt/checks holds /check/clearance_b.py).
 
 modal run modal_apps/workcell_clearance_b.py --view VIEW.json --photos-dir DIR --photo IMAGE_ID=FILE,... --layer-url URL \
     --api ORIGIN --run-dir RUN --targets ID=post,ID=panel,... --out NEW_DIR
@@ -14,7 +17,6 @@ import time
 import modal
 
 REPO = Path(__file__).resolve().parents[1]
-NOTE = Path('/Users/adam/Desktop/panoptes-public/research-notes/workcell-clearance-b-2026-10-05/clearance_b.py')
 RATE = 8 * .0000131 + 16 * .00000222  # 8 CPU, 16 GiB list rate (USD/s); not an invoice
 
 app = modal.App('workcell-clearance-b')
@@ -22,7 +24,7 @@ image = (modal.Image.debian_slim(python_version='3.11')
          .apt_install('libgl1', 'libgomp1', 'libx11-6')
          .pip_install('numpy<2.3', 'opencv-python-headless==4.10.0.84', 'open3d==0.19.0', 'trimesh==4.4.9', 'scipy==1.14.1')
          .add_local_file(REPO / 'scripts/workcell_shape_check.py', '/check/shape_core.py')
-         .add_local_file(NOTE, '/check/clearance_b.py'))
+         .add_local_file(REPO / 'scripts/workcell_clearance_b.py', '/check/clearance_b.py'))
 
 
 @app.function(image=image, cpu=8, memory=16 * 1024, timeout=1800, retries=0, min_containers=0)
@@ -71,8 +73,6 @@ def main(view: str, photos_dir: str, photo: str, layer_url: str, api: str, run_d
     start = time.monotonic()
     res, files = run.remote(Path(view).read_bytes(), photos, layer_url, api, buf.getvalue(), opts)
     destination.mkdir(parents=True)
-    (destination / 'spend-ledger.json').write_text(json.dumps({'functionSeconds': res['containerSeconds'], 'callSeconds': time.monotonic() - start,
-                                                               'estimateUsd': RATE * res['containerSeconds']}) + '\n')
     for name, data in files.items():
         (destination / name).write_bytes(data)
     (destination / 'results.json').write_text(json.dumps(res, indent=1, ensure_ascii=False, default=lambda o: o.tolist() if hasattr(o, 'tolist') else str(o)) + '\n')

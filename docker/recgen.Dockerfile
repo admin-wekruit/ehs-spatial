@@ -1,18 +1,24 @@
 # RecGen object models, on-prem: the image of panoptes-serving modal_apps/lucida_assets.py (gpu_image) as a Dockerfile, with
 # the resolved pins of the cached Modal image. RecGen code fe3c931 (TRI-ML/recgen), DINOv2 code 7764ea0; weights TRI-ML/RecGen
-# @ bc0df7d + DINOv2 ViT-L/14 reg4 via scripts/onprem/fetch_weights.py --models recgen (cache DIR/recgen, mounted at /cache).
+# @ bc0df7d + DINOv2 ViT-L/14 reg4 via scripts/onprem/fetch_weights.py --models recgen (DIR/recgen; run_stage.py --weights DIR
+# gives /cache a run-private overlay of it, so the job copies RecGen writes to /cache/jobs (photo data) stay out of DIR and are
+# deleted when the stage ends).
 # LICENCE: RecGen code is Toyota Research Institute non-commercial and its weights CC-BY-NC-4.0 - an on-prem build is not a
 # licence to use them commercially.
 # (The vendored upstream Dockerfile, outputs/candidate-evaluation/lucida-replica-01/generation/vendor-recgen/Dockerfile, uses
 # Python 3.11, torch 2.4.1, unpinned spconv/flash-attn and training extras; the reports were made with this image instead.)
 # Pins = `pip freeze` of the cached Modal image(s) named below, read on 2026-10-05 (modal_apps/onprem_image_proof.py records the
-# image's own freeze again at proof time), installed with --no-deps; then the modal client 1.5.4, used only as a library by
-# scripts/onprem/run_stage.py (no account, token or network). Weights are never in an image: scripts/onprem/fetch_weights.py.
-# Build context SRC = a directory holding this repository as workcell/ and panoptes-serving as serving/.
+# image's own freeze again at proof time), installed with --no-deps. No modal client: scripts/onprem/run_stage.py imports the
+# apps against its stub (scripts/onprem/modal_stub/modal.py), so nothing unpinned is installed. Weights are never in an image:
+# scripts/onprem/fetch_weights.py.
+# Build context SRC = a directory holding this repository as workcell/ and panoptes-serving as serving/: make it with
+# scripts/onprem/stage_context.sh SRC (code only, ~8 MB, with .dockerignore). Base image pinned by digest (index, 2026-10-05).
+# Air-gapped servers: build on a connected machine, then scripts/onprem/airgap.sh save / load (docs/workcell-photo/ONPREM.md).
 #   docker build -f SRC/workcell/docker/recgen.Dockerfile -t panoptes-recgen SRC
-#   docker run --rm --gpus all --network none -v /srv/panoptes-weights/recgen:/cache panoptes-recgen \
-#       python /workcell/scripts/onprem/run_stage.py /serving/modal_apps/lucida_assets.py --mode check --output-dir /cache/check
-FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
+#   docker run --rm --gpus all --network none -v /srv/panoptes-weights:/weights -v $PWD/data:/data panoptes-recgen \
+#       python /workcell/scripts/onprem/run_stage.py --weights /weights /serving/modal_apps/lucida_assets.py --mode check \
+#       --output-dir /data/check
+FROM nvidia/cuda:12.1.1-devel-ubuntu22.04@sha256:7012e535a47883527d402da998384c30b936140c05e2537158c80b8143ee7425
 
 ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1 TORCH_CUDA_ARCH_LIST=8.0 MAX_JOBS=4 ATTN_BACKEND=xformers \
     PYTHONPATH=/opt/recgen SPCONV_ALGO=native HF_HUB_DISABLE_TELEMETRY=1 HF_HUB_OFFLINE=1 \
@@ -41,8 +47,7 @@ RUN uv pip install --python /opt/recgen-py/bin/python --no-deps --index-strategy
 RUN git clone https://github.com/TRI-ML/recgen.git /opt/recgen && git -C /opt/recgen checkout --detach fe3c9315b439c50ada8b60c12b469d739fd722db \
     && git clone https://github.com/facebookresearch/dinov2.git /opt/dinov2 && git -C /opt/dinov2 checkout --detach 7764ea0f912e53c92e82eb78a2a1631e92725fc8 \
     && uv pip install --python /opt/recgen-py/bin/python --no-deps -e /opt/recgen \
-    && python -c 'import xformers.ops as xops; assert xops.fmha.BlockDiagonalMask; from recgen_inference import build_recgen, generate; from recgen_inference.recgen_modules.models.structured_latent_vae import SLatMeshDecoder; print("RecGen import ready")' \
-    && uv pip install --python /opt/recgen-py/bin/python modal==1.5.4
+    && python -c 'import xformers.ops as xops; assert xops.fmha.BlockDiagonalMask; from recgen_inference import build_recgen, generate; from recgen_inference.recgen_modules.models.structured_latent_vae import SLatMeshDecoder; print("RecGen import ready")'
 COPY serving/modal_apps/lucida_assets.py /serving/modal_apps/lucida_assets.py
 COPY serving/scripts/research /serving/scripts/research
 COPY workcell/scripts/onprem /workcell/scripts/onprem
