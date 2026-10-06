@@ -1,0 +1,12 @@
+# Allowlist for every build with this checkout as context (containers/onprem/platform.Dockerfile): code and the lock only.
+# Root file on purpose: the legacy builder ignores <Dockerfile>.dockerignore, and .platform/ holds project capabilities and
+# credentials. Keeps .platform/, runs/, outputs/, incoming/, web/, .venv/ and .env out of the build context.
+*
+!pyproject.toml
+!uv.lock
+!ehs_spatial/
+!panoptes_worker/
+!scripts/
+!containers/onprem/serve_publications.py
+**/__pycache__
+**/*.pyc
