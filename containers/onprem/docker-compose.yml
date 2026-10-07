@@ -1,0 +1,78 @@
+# Panoptes serving stack on a customer server (README.md). No service needs internet at run time and nothing is ever pulled:
+# all three images are loaded beforehand (README section 1: postgres/nginx pulled by digest, tagged, saved by tag) and every
+# service has pull_policy: never. NOT YET RUN under Docker Compose (README, "What is not tested").
+#   cd containers/onprem && docker compose up -d
+name: panoptes
+
+services:
+  postgres:
+    image: postgres:16.15-bookworm      # = postgres@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67 (README 1)
+    pull_policy: never
+    environment:
+      POSTGRES_USER: panoptes
+      POSTGRES_DB: panoptes
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password   # network logins only; the platform uses the socket below
+    secrets: [postgres_password]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgsocket:/var/run/postgresql      # initdb's local (socket) rule is trust; the socket is shared only with platform
+    healthcheck:   # over TCP: the image's first-start init runs a temporary socket-only server, which must not count as healthy
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "panoptes", "-d", "panoptes"]
+      interval: 5s
+      retries: 30
+    restart: unless-stopped
+
+  platform:   # import / edit / publish / export (operator API); its startup migrates the schema
+    build: {context: ../.., dockerfile: containers/onprem/platform.Dockerfile}
+    image: panoptes-platform:onprem
+    pull_policy: never
+    user: panoptes
+    environment:
+      PANOPTES_DATABASE_URL: postgresql://panoptes@/panoptes?host=/var/run/postgresql
+    volumes:
+      - pgsocket:/var/run/postgresql
+      - blobs:/data/blobs
+      - ./data/imports:/data/imports                # importer's management capabilities (0600): keep this directory private
+      - ./data/input:/input:ro                      # capture runs to import
+      - ./data/catalog:/catalog                     # exported publications
+      - ./data/publication-http:/publication-http   # prepared bodies for the publication service
+      - ./data/www/measurement-layer:/www/measurement-layer   # scripts/onprem_layer.py installs measurement layers here
+    ports: ["127.0.0.1:8792:8792"]                  # operator only (SSH tunnel); report viewers never reach this API
+    depends_on: {postgres: {condition: service_healthy}}
+    restart: unless-stopped
+
+  publications:   # read-only report API (replaces the Modal publication service), reached only through web's /api/ proxy;
+                  # restart after re-preparing the catalog
+    image: panoptes-platform:onprem
+    pull_policy: never
+    user: panoptes
+    command: ["/app/.venv/bin/uvicorn", "serve_publications:app", "--factory", "--host", "0.0.0.0", "--port", "8793"]
+    environment:
+      PANOPTES_PUBLICATION_CATALOG: /catalog
+      PANOPTES_PUBLICATION_HTTP: /publication-http
+      PANOPTES_PUBLICATION_ORIGINS: ${PANOPTES_WEB_ORIGIN:-}   # empty: same-origin only (the bundle calls /api/ on its own host)
+      PANOPTES_FEEDBACK_DB: /feedback/feedback.sqlite
+    volumes:
+      - ./data/catalog:/catalog:ro
+      - ./data/publication-http:/publication-http:ro
+      - feedback:/feedback
+    restart: unless-stopped
+
+  web:   # report bundle + measurement layers (replaces GitHub Pages) + /api/ -> publications
+    image: nginx:1.30.5-alpine          # = nginx@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94 (README 1)
+    pull_policy: never
+    depends_on: [publications]          # start order only: nginx looks "publications" up per request (nginx.conf resolver)
+    volumes:
+      - ./data/www:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports: ["8080:8080"]
+    restart: unless-stopped
+
+secrets:
+  postgres_password: {file: ./secrets/postgres_password}
+
+volumes:
+  pgdata: {}
+  pgsocket: {}
+  blobs: {}
+  feedback: {}
