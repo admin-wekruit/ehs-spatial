@@ -142,11 +142,11 @@ def publish(cfg, run, scale, title, out):
     # machine with several 1 GB database backends at once (swap filled the disk); one request at a time stays small.
     from fastapi.testclient import TestClient
     from ehs_spatial.platform.api import create_app
-    from ehs_spatial.platform.policy_repository import PostgresPolicyRepository
+    from ehs_spatial.platform.runtime import policy_repository
     from ehs_spatial.platform.policy_service import PolicyService
     import importlib.util
     import io
-    client = TestClient(create_app(repository=repo, blobs=blobs, policy_service=PolicyService(PostgresPolicyRepository(repo), blobs)))
+    client = TestClient(create_app(repository=repo, blobs=blobs, policy_service=PolicyService(policy_repository(repo), blobs)))
     api = 'http://platform.invalid'; export = PLATFORM / '.platform/publication-catalog' / str(publication['id'])
     spec = importlib.util.spec_from_file_location('export_platform_publication', PLATFORM / 'scripts/export_platform_publication.py')
     exporter = importlib.util.module_from_spec(spec); spec.loader.exec_module(exporter)

@@ -27,7 +27,7 @@ RUN useradd --system --uid 10001 --home-dir /data panoptes \
     && chown -R panoptes /data /catalog /publication-http /feedback
 # The venv stays off PATH (commands name /app/.venv/bin/... explicitly); the system python is left as the base image ships it.
 ENV PYTHONPATH=/app HF_HUB_OFFLINE=1 \
-    PANOPTES_BLOB_BACKEND=local PANOPTES_BLOB_ROOT=/data/blobs PANOPTES_EXECUTOR_BACKEND=local
+    PANOPTES_BLOB_ROOT=/data/blobs PANOPTES_EXECUTOR_BACKEND=local
 EXPOSE 8792 8793
 # The platform API migrates its schema at startup (advisory lock). The publication service: serve_publications.py.
 CMD ["/app/.venv/bin/uvicorn", "ehs_spatial.platform.runtime:application", "--factory", "--host", "0.0.0.0", "--port", "8792"]

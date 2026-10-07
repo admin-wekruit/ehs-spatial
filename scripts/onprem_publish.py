@@ -17,7 +17,7 @@ the file is kept as calibration provenance in the revision (scale.sourceRefs[0])
 (camera order), the photo the scale was measured on (comma list for several); it must be exactly the set of photos the
 features name ("... photo N", e.g. "030 photo 2").
 
-Settings come from the environment, as for the platform API: PANOPTES_DATABASE_URL, PANOPTES_BLOB_BACKEND, PANOPTES_BLOB_ROOT
+Settings come from the environment, as for the platform API: PANOPTES_DATABASE_URL (postgres:// or mongodb://), PANOPTES_BLOB_ROOT (directory or s3://bucket/prefix)
 (ehs_spatial.platform.config.PlatformConfig.from_env) and PANOPTES_PLATFORM_API (default http://127.0.0.1:8792; the export
 reads the publication back through the API's public GETs). The project's management capability is created by the importer in
 --imports-dir (0600) and read from there internally; it is never printed or written anywhere else.
