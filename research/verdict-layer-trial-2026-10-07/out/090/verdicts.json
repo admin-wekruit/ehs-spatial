@@ -1,0 +1,495 @@
+{
+ "schema": "panoptes.verdict/0-trial",
+ "scene_id": "090-a9a6e0a0",
+ "rule_pack": "rules.lp v0 2026-10-07",
+ "decision_rule": "guard_band_U_k2",
+ "verdicts": [
+  {
+   "rule": "crush_gap",
+   "rule_text": "机器人 ↔ 固定物 间隙 ≥ 500 mm",
+   "source": "ISO 13854 表 1 / 10218-2（条款待核）",
+   "status": "NEEDS_MEASUREMENT",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "70bf794d-0e00-50a2-9871-abe4d5ad76cc"
+   ],
+   "labels": [
+    "robot",
+    "left fence"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %",
+    "机器人盒 = 照片里的姿态，不是运动包络；真实判定要受限空间"
+   ],
+   "measured_mm": 533,
+   "U_mm": 143,
+   "threshold_mm": 500,
+   "margin_mm": 33,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low",
+    "low"
+   ],
+   "evidence_views": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "crush_gap",
+   "rule_text": "机器人 ↔ 固定物 间隙 ≥ 500 mm",
+   "source": "ISO 13854 表 1 / 10218-2（条款待核）",
+   "status": "PASS",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "9b760eac-397b-5663-a245-843f6b11c350"
+   ],
+   "labels": [
+    "robot",
+    "right bollard"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %",
+    "机器人盒 = 照片里的姿态，不是运动包络；真实判定要受限空间"
+   ],
+   "measured_mm": 3929,
+   "U_mm": 187,
+   "threshold_mm": 500,
+   "margin_mm": 3429,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low",
+    "medium"
+   ],
+   "evidence_views": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "crush_gap",
+   "rule_text": "机器人 ↔ 固定物 间隙 ≥ 500 mm",
+   "source": "ISO 13854 表 1 / 10218-2（条款待核）",
+   "status": "PASS",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "9c5a1063-7e72-51e4-996f-40ed2182181b"
+   ],
+   "labels": [
+    "robot",
+    "left bollard"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %",
+    "机器人盒 = 照片里的姿态，不是运动包络；真实判定要受限空间"
+   ],
+   "measured_mm": 3819,
+   "U_mm": 183,
+   "threshold_mm": 500,
+   "margin_mm": 3319,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low",
+    "medium"
+   ],
+   "evidence_views": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "crush_gap",
+   "rule_text": "机器人 ↔ 固定物 间隙 ≥ 500 mm",
+   "source": "ISO 13854 表 1 / 10218-2（条款待核）",
+   "status": "PASS",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "da08d580-8968-52e0-8782-10e6f5e50988"
+   ],
+   "labels": [
+    "robot",
+    "left light curtain"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %",
+    "机器人盒 = 照片里的姿态，不是运动包络；真实判定要受限空间"
+   ],
+   "measured_mm": 3698,
+   "U_mm": 179,
+   "threshold_mm": 500,
+   "margin_mm": 3198,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low",
+    "medium"
+   ],
+   "evidence_views": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "crush_gap",
+   "rule_text": "机器人 ↔ 固定物 间隙 ≥ 500 mm",
+   "source": "ISO 13854 表 1 / 10218-2（条款待核）",
+   "status": "PASS",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "e17c9fdc-e0bc-5df2-9626-73756bf2995c"
+   ],
+   "labels": [
+    "robot",
+    "right light curtain"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %",
+    "机器人盒 = 照片里的姿态，不是运动包络；真实判定要受限空间"
+   ],
+   "measured_mm": 3718,
+   "U_mm": 179,
+   "threshold_mm": 500,
+   "margin_mm": 3218,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low",
+    "low"
+   ],
+   "evidence_views": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "crush_gap",
+   "rule_text": "机器人 ↔ 固定物 间隙 ≥ 500 mm",
+   "source": "ISO 13854 表 1 / 10218-2（条款待核）",
+   "status": "FAIL",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "ed56fff4-3362-59ae-a09a-bc54bf4515e2"
+   ],
+   "labels": [
+    "robot",
+    "safety guard"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %",
+    "机器人盒 = 照片里的姿态，不是运动包络；真实判定要受限空间"
+   ],
+   "measured_mm": 184,
+   "U_mm": 142,
+   "threshold_mm": 500,
+   "margin_mm": -316,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low",
+    "low"
+   ],
+   "evidence_views": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "crush_gap",
+   "rule_text": "机器人 ↔ 固定物 间隙 ≥ 500 mm",
+   "source": "ISO 13854 表 1 / 10218-2（条款待核）",
+   "status": "PASS",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "f19145c1-e40d-5a5e-9e4e-1b8023d5aa6d"
+   ],
+   "labels": [
+    "robot",
+    "right fence"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %",
+    "机器人盒 = 照片里的姿态，不是运动包络；真实判定要受限空间"
+   ],
+   "measured_mm": 809,
+   "U_mm": 145,
+   "threshold_mm": 500,
+   "margin_mm": 309,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low",
+    "low"
+   ],
+   "evidence_views": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "enclosure",
+   "rule_text": "危险区被防护物闭合包围",
+   "source": "拓扑规则（占用格可达）",
+   "status": "CANNOT_DETERMINE",
+   "subjects": [
+    "hazard_zone"
+   ],
+   "labels": [],
+   "notes": [
+    "外部可达危险区：48 个开口格，方向 ['+e1', '+e2', '-e1', '-e2']（平面基 e1/e2）；照片未覆盖的区域和真实开口在这一层分不开 → 不下结论",
+    "危险区 = 机器人姿态盒的平面占用，不是受限空间（需控制器配置）"
+   ],
+   "openings": 48,
+   "open_directions": [
+    "+e1",
+    "+e2",
+    "-e1",
+    "-e2"
+   ]
+  },
+  {
+   "rule": "fence_height",
+   "rule_text": "围栏高度 ≥ 1400 mm",
+   "source": "ISO 13857:2019 表 2 注",
+   "status": "PASS",
+   "subjects": [
+    "70bf794d-0e00-50a2-9871-abe4d5ad76cc"
+   ],
+   "labels": [
+    "left fence"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %"
+   ],
+   "measured_mm": 2664,
+   "U_mm": 177,
+   "threshold_mm": 1400,
+   "margin_mm": 1264,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low"
+   ],
+   "evidence_views": [
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "fence_height",
+   "rule_text": "围栏高度 ≥ 1400 mm",
+   "source": "ISO 13857:2019 表 2 注",
+   "status": "PASS",
+   "subjects": [
+    "f19145c1-e40d-5a5e-9e4e-1b8023d5aa6d"
+   ],
+   "labels": [
+    "right fence"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %"
+   ],
+   "measured_mm": 2682,
+   "U_mm": 178,
+   "threshold_mm": 1400,
+   "margin_mm": 1282,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low"
+   ],
+   "evidence_views": [
+    1,
+    3
+   ]
+  },
+  {
+   "rule": "floor_gap",
+   "rule_text": "防护离地缝 ≤ 180 mm",
+   "source": "ISO 13857:2019 4.4",
+   "status": "PASS",
+   "subjects": [
+    "70bf794d-0e00-50a2-9871-abe4d5ad76cc"
+   ],
+   "labels": [
+    "left fence"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %"
+   ],
+   "measured_mm": -2,
+   "U_mm": 100,
+   "threshold_mm": 180,
+   "margin_mm": 182,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low"
+   ],
+   "evidence_views": [
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "floor_gap",
+   "rule_text": "防护离地缝 ≤ 180 mm",
+   "source": "ISO 13857:2019 4.4",
+   "status": "FAIL",
+   "subjects": [
+    "ed56fff4-3362-59ae-a09a-bc54bf4515e2"
+   ],
+   "labels": [
+    "safety guard"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %"
+   ],
+   "measured_mm": 422,
+   "U_mm": 101,
+   "threshold_mm": 180,
+   "margin_mm": -242,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low"
+   ],
+   "evidence_views": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "floor_gap",
+   "rule_text": "防护离地缝 ≤ 180 mm",
+   "source": "ISO 13857:2019 4.4",
+   "status": "NEEDS_MEASUREMENT",
+   "subjects": [
+    "f19145c1-e40d-5a5e-9e4e-1b8023d5aa6d"
+   ],
+   "labels": [
+    "right fence"
+   ],
+   "notes": [
+    "该维度无 σ，用默认 5 cm",
+    "尺度无 ±%，用默认 2 %"
+   ],
+   "measured_mm": 84,
+   "U_mm": 100,
+   "threshold_mm": 180,
+   "margin_mm": 96,
+   "uncertainty_flags": [
+    "default_scale_unc",
+    "default_sigma"
+   ],
+   "confidence": [
+    "low"
+   ],
+   "evidence_views": [
+    1,
+    3
+   ]
+  },
+  {
+   "rule": "lc_lowest_beam",
+   "rule_text": "光幕最低光束 ≤ 300 mm",
+   "source": "ISO 13855（2010 数字）",
+   "status": "PASS",
+   "subjects": [
+    "da08d580-8968-52e0-8782-10e6f5e50988"
+   ],
+   "labels": [
+    "left light curtain"
+   ],
+   "notes": [
+    "尺度无 ±%，用默认 2 %"
+   ],
+   "measured_mm": 249,
+   "U_mm": 12,
+   "threshold_mm": 300,
+   "margin_mm": 51,
+   "uncertainty_flags": [
+    "default_scale_unc"
+   ],
+   "confidence": [
+    "medium"
+   ],
+   "evidence_views": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "rule": "lc_lowest_beam",
+   "rule_text": "光幕最低光束 ≤ 300 mm",
+   "source": "ISO 13855（2010 数字）",
+   "status": "PASS",
+   "subjects": [
+    "e17c9fdc-e0bc-5df2-9626-73756bf2995c"
+   ],
+   "labels": [
+    "right light curtain"
+   ],
+   "notes": [
+    "尺度无 ±%，用默认 2 %"
+   ],
+   "measured_mm": 236,
+   "U_mm": 13,
+   "threshold_mm": 300,
+   "margin_mm": 64,
+   "uncertainty_flags": [
+    "default_scale_unc"
+   ],
+   "confidence": [
+    "low"
+   ],
+   "evidence_views": [
+    2
+   ]
+  }
+ ]
+}
