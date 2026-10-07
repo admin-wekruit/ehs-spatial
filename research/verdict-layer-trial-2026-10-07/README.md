@@ -101,3 +101,22 @@ layer 里没有 σ 的维度用默认 5 cm、没有尺度 ±% 用默认 2 %，�
 1. 把 specs 按 RASE（Requirement / Applicability / Selection / Exception）标注，LLM 编译成 `rules.lp` 的规则 + 阈值事实，封闭词表 + 拒绝机制沿用 `scripts/policy_compile.py` 的做法；
 2. 每条规则一正一负合成场景（`eval_pack.py` 的扩展）；
 3. 重建层：给 low 置信度盒也产 σ、给观察到的地面范围、把尺度 ±% 写进 layer（契约里已留字段）。
+
+## 和 Hydra（MIT-SPARK）的关系（2026-10-07 晚，用户问"是不是像 Hydra 那样"）
+
+Hydra（RSS 2022）= 从 RGB-D 视频 + 里程计实时建分层 3D 场景图：mesh → places（自由空间的拓扑图，来自 ESDF 的广义 Voronoi）→ objects（语义 mesh 聚类，带盒）
+→ rooms → buildings，层间有边，带回环优化；数据结构是 **Spark-DSG**（C++/Python，BSD-2），Clio、Khronos、Hydra-Multi 都产它。
+
+**我们采用的**：它的数据结构和分层。`export_spark_dsg.py` 把我们的薄场景图导成 Spark-DSG（`out/<cell>/scene-graph.dsg.json`，`DynamicSceneGraph.load` 能读回）：
+OBJECTS 层 = 我们的对象（OBB 盒、语义类别、置信度 / 高度 / σ / 照片 id 在 metadata），对象间一条边 = 3D 最近距离，其余度量（水平距离、z 重叠、
+视线、reach_over 三元组）放边的 metadata；PLACES 层 = 占用格里未被挡的格（0.5 m），`distance` = 到最近防护物的净空（Hydra places 的同名字段），4 邻接；
+ROOMS 层 = 一个 workcell 节点，是所有 place 的父节点，每个对象挂到最近的 place。090：147 节点 / 407 边；030：171 / 478。
+
+**我们不采用的（现在）**：Hydra 的运行时。它要 RGB-D 流 + 位姿 + 逐帧语义，ROS 部署，为增量 / 回环设计；1–4 张照片用不上，而且我们的对象层
+（SAM 3D 补全 + 组装）比它从 TSDF mesh 聚类出的对象强。
+
+**它给我们的最重要的概念是 places = 观察到的自由空间**：Hydra 的 places 从积分深度的 ESDF 来，天然区分"看过且空"和"没看过"。我们的占用格现在
+`observed = unknown`，这正是包围规则判不了的原因。下一步在重建层按同样思路做：每张照片的深度沿射线做空间雕刻 → 体素 free / occupied / unknown →
+places 层带 observed 标记。
+
+**实时阶段怎么接**：到了视频，直接用 Hydra / Khronos 产 Spark-DSG，判定层读同一种图，规则不改；照片阶段我们自己产同格式的图。这就是之前说的"按增量方式设计"的落点。
