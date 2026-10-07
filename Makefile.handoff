@@ -1,0 +1,27 @@
+# Handoff targets (WP6). WP3's Makefile owns `up GPU=a|b`, `down`, `smoke`, `logs`; integrator: add `include Makefile.handoff` there
+# (or merge the targets). Pipeline machine needs uv; GPU machines need docker compose only.
+UV ?= uv
+ENV_FILE ?= .env
+CELL ?= 090
+ARGS ?=
+
+.PHONY: env check-env check-env-live lint test run
+
+env:            ## copy env.template -> .env once (never overwrites)
+	@test -f $(ENV_FILE) && echo "$(ENV_FILE) exists, leaving it" || { cp env.template $(ENV_FILE); echo "wrote $(ENV_FILE): fill sections 1-4, then make check-env"; }
+
+check-env:      ## validate .env: required keys, backend values, URL forms, no HF_TOKEN; placeholders and missing paths fail (--strict)
+	$(UV) run --no-project python scripts/check_env.py $(ENV_FILE) --strict
+
+check-env-live: ## check-env + GET /healthz through the jump on every *_HTTP_URL(S)
+	$(UV) run --no-project python scripts/check_env.py $(ENV_FILE) --strict --live
+
+lint:           ## ruff (ruff.toml) + shell syntax by shebang
+	$(UV)x --from 'ruff==0.2.1' ruff check .
+	@git ls-files '*.sh' | while read -r f; do if head -1 "$$f" | grep -q zsh; then zsh -n "$$f"; else bash -n "$$f"; fi || exit 1; done; echo "shell syntax ok"
+
+test:           ## offline test suite, fake model backend (what CI runs)
+	PANOPTES_FAKE_MODEL=1 HF_HUB_OFFLINE=1 $(UV) run pytest tests/ -q
+
+run:            ## panoptes run --cell $(CELL) $(ARGS)   e.g. make run CELL=030 ARGS="--from S4"
+	$(UV) run --env-file $(ENV_FILE) panoptes run --cell $(CELL) $(ARGS)

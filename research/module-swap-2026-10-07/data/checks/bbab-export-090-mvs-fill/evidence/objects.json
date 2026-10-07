@@ -1,0 +1,2590 @@
+{
+  "version": 1,
+  "coordinate_system": "mvs-fill native OpenCV world (geometry-backbone-ab export; not the published Pi3X world)",
+  "metric_scale_known": false,
+  "status": "frozen evidence: nine observed workcell objects; seven have three views, both fence assemblies have two",
+  "objects": [
+    {
+      "object_id": "left_post",
+      "label": "left front black bollard",
+      "reference_frame": "frame_0003",
+      "source_inventory_indices": [
+        15,
+        21
+      ],
+      "physical_identity": {
+        "status": "same physical gate-side component confirmed by visual correspondence",
+        "evidence": "fixed left/right gate location and matching detailed geometry; no label-only merge",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.008887298494511848,
+            0.01271387631514285
+          ],
+          [
+            0.008887298494511848,
+            0.0,
+            0.007069424704590944
+          ],
+          [
+            0.01271387631514285,
+            0.007069424704590944,
+            0.0
+          ]
+        ]
+      },
+      "views": [
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/1-Photo-1.jpg",
+          "mask_path": "evidence/objects/left_post/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/left_post/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            311,
+            2442,
+            600,
+            3840
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              311
+            ],
+            [
+              0,
+              1,
+              2442
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_post/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/left_post/frame_0001/points.npy",
+          "colors_path": "evidence/objects/left_post/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 246305,
+          "partial_point_count": 3966,
+          "centroid_native": [
+            -0.201431542634964,
+            0.2548772692680359,
+            0.5590975284576416
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "existing same-capture canonical SAM mask",
+            "source_path": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/inventory/sam/frame_0003__bollard.json",
+            "source_sha256": "4e4213afc21a77a6f78f7499c5d30c0fb46bb4b56c9ce5bdbeea92214f82bcbc",
+            "source_frame": "frame_0003",
+            "source_inv": 15,
+            "source_instance": 0,
+            "source_to_new": "original captures matched after full-image resampling/JPEG; canonical coordinate bounds unchanged",
+            "mask_resolution_limit": "518 canonical grid; native-size mask is nearest-neighbour enlargement"
+          },
+          "sha256": {
+            "points.npy": "c5fc9c70b2a28ef389deaac1e7333574bc51a13f908c4894139c2563a366bc28",
+            "colors.npy": "034b5b6e48a219e72dab64e2f5b95c81ea509b4bee0abcd70ecb12c7e6cd8648"
+          },
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy"
+        },
+        {
+          "frame_id": "frame_0003",
+          "rgb_path": "input/3-Photo-3.jpg",
+          "mask_path": "evidence/objects/left_post/frame_0003/mask.png",
+          "rgba_path": "evidence/objects/left_post/frame_0003/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            454,
+            2534,
+            744,
+            3819
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              454
+            ],
+            [
+              0,
+              1,
+              2534
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_post/frame_0003/canonical_mask.npy",
+          "points_path": "evidence/objects/left_post/frame_0003/points.npy",
+          "colors_path": "evidence/objects/left_post/frame_0003/colors.npy",
+          "K_path": "geometry/frames/frame_0003/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0003/camera_to_world.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 196761,
+          "partial_point_count": 3130,
+          "centroid_native": [
+            -0.19932004809379578,
+            0.2616175413131714,
+            0.5644914507865906
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "existing same-capture canonical SAM mask",
+            "source_path": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/inventory/sam/frame_0004__bollard.json",
+            "source_sha256": "bf3fbd9a0116bf2442e151ab20c68850a159e01685cd945fcd141f9661bcced7",
+            "source_frame": "frame_0004",
+            "source_inv": 21,
+            "source_instance": 0,
+            "source_to_new": "original captures matched after full-image resampling/JPEG; canonical coordinate bounds unchanged",
+            "mask_resolution_limit": "518 canonical grid; native-size mask is nearest-neighbour enlargement"
+          },
+          "sha256": {
+            "points.npy": "93dec9816fe337a564616f8c848da8b1977d29a33dd5af4852932276a5102289",
+            "colors.npy": "9f43b7f66d8c979352c5d68c01205a17fe82d8500d2ade107f99a9a41929794a"
+          },
+          "canonical_rgb_path": "geometry/frames/frame_0003/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0003/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0003/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0003/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0003/conf.npy"
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/2-Photo-2.jpg",
+          "mask_path": "evidence/objects/left_post/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/left_post/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            234,
+            2410,
+            554,
+            3633
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              234
+            ],
+            [
+              0,
+              1,
+              2410
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_post/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/left_post/frame_0002/points.npy",
+          "colors_path": "evidence/objects/left_post/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 183953,
+          "partial_point_count": 2691,
+          "centroid_native": [
+            -0.1926402449607849,
+            0.26325687766075134,
+            0.5628575682640076
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/workcell-details-prompts-results.json",
+            "source_results_sha256": "4cba4897e798666883d58b0b5199be0efdb088d04bdbe6ea09af2b9a97d38305",
+            "candidate": {
+              "mask_path": "evidence/sam2/workcell-details-prompts/frame_0002/left_post/candidate_0.png",
+              "rgba_path": "evidence/sam2/workcell-details-prompts/frame_0002/left_post/candidate_0_rgba.png",
+              "mask_sha256": "cd28026074ee380e65e71ce967b3dfe3fc9178e5ffe24912685861db5c39c6e6",
+              "score": 0.9871388077735901,
+              "pixels": 183953,
+              "bbox_xyxy": [
+                263,
+                2439,
+                525,
+                3604
+              ]
+            },
+            "prompt": {
+              "object_id": "left_post",
+              "box": [
+                251,
+                2421,
+                507,
+                3611
+              ],
+              "points": [
+                [
+                  368,
+                  2989
+                ]
+              ],
+              "point_labels": [
+                1
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "only visible surface; occlusion retained, not filled"
+          },
+          "sha256": {
+            "points.npy": "78c2f0abf321859fa4b84bf32faec303bac6bf2f90532d48ea2abf3d80901a11",
+            "colors.npy": "93d48f22e88f1ab3457f0f9d73ae2a545320af1a806d2f60e186e416a3dcca07"
+          }
+        }
+      ]
+    },
+    {
+      "object_id": "right_post",
+      "label": "right front black bollard",
+      "reference_frame": "frame_0003",
+      "source_inventory_indices": [
+        16,
+        22
+      ],
+      "physical_identity": {
+        "status": "same physical gate-side component confirmed by visual correspondence",
+        "evidence": "fixed left/right gate location and matching detailed geometry; no label-only merge",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.004476579369541991,
+            0.027917171506750348
+          ],
+          [
+            0.004476579369541991,
+            0.0,
+            0.024368823040794997
+          ],
+          [
+            0.027917171506750348,
+            0.024368823040794997,
+            0.0
+          ]
+        ]
+      },
+      "views": [
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/1-Photo-1.jpg",
+          "mask_path": "evidence/objects/right_post/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/right_post/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            2323,
+            2344,
+            2658,
+            3512
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              2323
+            ],
+            [
+              0,
+              1,
+              2344
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_post/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/right_post/frame_0001/points.npy",
+          "colors_path": "evidence/objects/right_post/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 170598,
+          "partial_point_count": 2942,
+          "centroid_native": [
+            0.2631656527519226,
+            0.25383180379867554,
+            0.6892077922821045
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "existing same-capture canonical SAM mask",
+            "source_path": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/inventory/sam/frame_0003__bollard.json",
+            "source_sha256": "4e4213afc21a77a6f78f7499c5d30c0fb46bb4b56c9ce5bdbeea92214f82bcbc",
+            "source_frame": "frame_0003",
+            "source_inv": 16,
+            "source_instance": 1,
+            "source_to_new": "original captures matched after full-image resampling/JPEG; canonical coordinate bounds unchanged",
+            "mask_resolution_limit": "518 canonical grid; native-size mask is nearest-neighbour enlargement"
+          },
+          "sha256": {
+            "points.npy": "a6fd234b9188a25339bea91109f9b40ffddf2534eea86edb286972fc0f0ee98f",
+            "colors.npy": "f586ca8981d4e6b3c4a11c390ed3fd5740d6e4df2f51b3ef0f6e4840209d4cc3"
+          },
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy"
+        },
+        {
+          "frame_id": "frame_0003",
+          "rgb_path": "input/3-Photo-3.jpg",
+          "mask_path": "evidence/objects/right_post/frame_0003/mask.png",
+          "rgba_path": "evidence/objects/right_post/frame_0003/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            2498,
+            2477,
+            2784,
+            3713
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              2498
+            ],
+            [
+              0,
+              1,
+              2477
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_post/frame_0003/canonical_mask.npy",
+          "points_path": "evidence/objects/right_post/frame_0003/points.npy",
+          "colors_path": "evidence/objects/right_post/frame_0003/colors.npy",
+          "K_path": "geometry/frames/frame_0003/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0003/camera_to_world.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 192234,
+          "partial_point_count": 3399,
+          "centroid_native": [
+            0.26676011085510254,
+            0.25156867504119873,
+            0.6877943277359009
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "existing same-capture canonical SAM mask",
+            "source_path": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/inventory/sam/frame_0004__bollard.json",
+            "source_sha256": "bf3fbd9a0116bf2442e151ab20c68850a159e01685cd945fcd141f9661bcced7",
+            "source_frame": "frame_0004",
+            "source_inv": 22,
+            "source_instance": 1,
+            "source_to_new": "original captures matched after full-image resampling/JPEG; canonical coordinate bounds unchanged",
+            "mask_resolution_limit": "518 canonical grid; native-size mask is nearest-neighbour enlargement"
+          },
+          "sha256": {
+            "points.npy": "569e68fd0953127037d747055cdc39bdc61c5ca0a0fafe52962b0085ea1d5bdc",
+            "colors.npy": "d67ac427a9b7e36c0174983cd9d752030aba02081bcb9e005cf74a91f525ce26"
+          },
+          "canonical_rgb_path": "geometry/frames/frame_0003/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0003/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0003/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0003/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0003/conf.npy"
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/2-Photo-2.jpg",
+          "mask_path": "evidence/objects/right_post/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/right_post/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            2381,
+            2570,
+            2677,
+            3840
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              2381
+            ],
+            [
+              0,
+              1,
+              2570
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_post/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/right_post/frame_0002/points.npy",
+          "colors_path": "evidence/objects/right_post/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 241224,
+          "partial_point_count": 3882,
+          "centroid_native": [
+            0.2728782296180725,
+            0.22899195551872253,
+            0.6809605956077576
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/workcell-details-prompts-results.json",
+            "source_results_sha256": "4cba4897e798666883d58b0b5199be0efdb088d04bdbe6ea09af2b9a97d38305",
+            "candidate": {
+              "mask_path": "evidence/sam2/workcell-details-prompts/frame_0002/right_post/candidate_0.png",
+              "rgba_path": "evidence/sam2/workcell-details-prompts/frame_0002/right_post/candidate_0_rgba.png",
+              "mask_sha256": "35d8b17736079431078a69bfb7caf2a3349dbeffa6e8ffa5427f79c2cac86cfe",
+              "score": 0.9912698268890381,
+              "pixels": 241224,
+              "bbox_xyxy": [
+                2412,
+                2601,
+                2646,
+                3840
+              ]
+            },
+            "prompt": {
+              "object_id": "right_post",
+              "box": [
+                2387,
+                2585,
+                2667,
+                3838
+              ],
+              "points": [
+                [
+                  2526,
+                  3305
+                ]
+              ],
+              "point_labels": [
+                1
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "bottom base is cropped by supplied frame2 image boundary"
+          },
+          "sha256": {
+            "points.npy": "731e16fa4f8c723f41421409f7247cb3a37ea313df48e25cd42964a926d8ccaa",
+            "colors.npy": "e50d394a8465677e30be27f417722573d981b8d03cda90aefe6e7e130ab0b315"
+          }
+        }
+      ]
+    },
+    {
+      "object_id": "right_fence",
+      "label": "right front safety fence panel",
+      "reference_frame": "frame_0001",
+      "source_inventory_indices": [
+        13,
+        19
+      ],
+      "physical_identity": {
+        "status": "verified corresponding visible physical object",
+        "evidence": "same gate-side location and visible fixed details; new joint native centroid agreement",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.08323579189979301
+          ],
+          [
+            0.08323579189979301,
+            0.0
+          ]
+        ]
+      },
+      "views": [
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/1-Photo-1.jpg",
+          "mask_path": "evidence/objects/right_fence/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/right_fence/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            1636,
+            384,
+            2721,
+            2945
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              1636
+            ],
+            [
+              0,
+              1,
+              384
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_fence/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/right_fence/frame_0001/points.npy",
+          "colors_path": "evidence/objects/right_fence/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 1706734,
+          "partial_point_count": 29453,
+          "centroid_native": [
+            0.2588149607181549,
+            -0.13212203979492188,
+            0.981028139591217
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "existing same-capture canonical SAM mask",
+            "source_path": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/inventory/sam/frame_0003__safety_fence.json",
+            "source_sha256": "96bc36be283033abf615a5129713bac8f9d2646f5ecd2bc089fedf791aff8335",
+            "source_frame": "frame_0003",
+            "source_inv": 13,
+            "source_instance": 0,
+            "source_to_new": "original captures matched after full-image resampling/JPEG; canonical coordinate bounds unchanged",
+            "mask_resolution_limit": "518 canonical grid; native-size mask is nearest-neighbour enlargement"
+          },
+          "sha256": {
+            "points.npy": "1181957490db063c771d7f1b1ec4448cf5cb9402959cc32e8aa0e00e451321ae",
+            "colors.npy": "cc8e58d274eb4b3611b407b468cd57499af42b91e1f3d97938b911495bd05627"
+          },
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy"
+        },
+        {
+          "frame_id": "frame_0003",
+          "rgb_path": "input/3-Photo-3.jpg",
+          "mask_path": "evidence/objects/right_fence/frame_0003/mask.png",
+          "rgba_path": "evidence/objects/right_fence/frame_0003/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            1958,
+            487,
+            2700,
+            3087
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              1958
+            ],
+            [
+              0,
+              1,
+              487
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_fence/frame_0003/canonical_mask.npy",
+          "points_path": "evidence/objects/right_fence/frame_0003/points.npy",
+          "colors_path": "evidence/objects/right_fence/frame_0003/colors.npy",
+          "K_path": "geometry/frames/frame_0003/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0003/camera_to_world.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 1145471,
+          "partial_point_count": 19353,
+          "centroid_native": [
+            0.2458619475364685,
+            -0.11661457270383835,
+            1.0617742538452148
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "existing same-capture canonical SAM mask",
+            "source_path": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/inventory/sam/frame_0004__safety_fence.json",
+            "source_sha256": "1bd97cb03d757c1b349a819fddf3c160b541bfef694718b3348f64488fc9852b",
+            "source_frame": "frame_0004",
+            "source_inv": 19,
+            "source_instance": 1,
+            "source_to_new": "original captures matched after full-image resampling/JPEG; canonical coordinate bounds unchanged",
+            "mask_resolution_limit": "518 canonical grid; native-size mask is nearest-neighbour enlargement"
+          },
+          "sha256": {
+            "points.npy": "bfd0fe1a0f016b120738e5d2849f2dc19eb14f0dca31346863694bdd6d9eb3ba",
+            "colors.npy": "6b299736734fd605e1fd1bae9522bc49d2f114710e1b83e5642dc7e616172d6b"
+          },
+          "canonical_rgb_path": "geometry/frames/frame_0003/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0003/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0003/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0003/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0003/conf.npy"
+        }
+      ]
+    },
+    {
+      "object_id": "robot",
+      "label": "BOR1 00090 RB01 industrial robot",
+      "reference_frame": "frame_0003",
+      "source_inventory_indices": [],
+      "physical_identity": {
+        "status": "same physical robot confirmed in all three supplied views",
+        "evidence": "all three images show unique readable BOR1 00090 RB01 marking, same joint state and wrist tool; joint geometry centers agree",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.0334601626092046,
+            0.01903708481881641
+          ],
+          [
+            0.0334601626092046,
+            0.0,
+            0.030963248806130446
+          ],
+          [
+            0.01903708481881641,
+            0.030963248806130446,
+            0.0
+          ]
+        ]
+      },
+      "views": [
+        {
+          "frame_id": "frame_0003",
+          "rgb_path": "input/3-Photo-3.jpg",
+          "mask_path": "evidence/objects/robot/frame_0003/mask.png",
+          "rgba_path": "evidence/objects/robot/frame_0003/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            1110,
+            1218,
+            1760,
+            2031
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              1110
+            ],
+            [
+              0,
+              1,
+              1218
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/robot/frame_0003/canonical_mask.npy",
+          "points_path": "evidence/objects/robot/frame_0003/points.npy",
+          "colors_path": "evidence/objects/robot/frame_0003/colors.npy",
+          "K_path": "geometry/frames/frame_0003/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0003/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0003/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0003/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0003/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0003/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0003/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 156274,
+          "partial_point_count": 2800,
+          "centroid_native": [
+            -0.29678934812545776,
+            -0.3359208106994629,
+            1.9178977012634277
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 prompted segmentation; manually inspected candidate",
+            "source_results": "evidence/sam2/reference-prompts-results.json",
+            "source_results_sha256": "b6e2dfa2c2d543dfd7fd545b8cd501014ab65e1fdb33ea359ca4a2ada1b8f85a",
+            "candidate": {
+              "mask_path": "evidence/sam2/reference-prompts/frame_0003/robot/candidate_0.png",
+              "rgba_path": "evidence/sam2/reference-prompts/frame_0003/robot/candidate_0_rgba.png",
+              "mask_sha256": "0ac161895872e226e0f2adbc819972b68e53bf4b51fbc5ab1e96276c582638e7",
+              "score": 0.8322106599807739,
+              "pixels": 156274,
+              "bbox_xyxy": [
+                1129,
+                1237,
+                1741,
+                2012
+              ]
+            },
+            "prompt": {
+              "object_id": "robot",
+              "box": [
+                1060,
+                1180,
+                1780,
+                2040
+              ],
+              "points": [
+                [
+                  1340,
+                  1440
+                ],
+                [
+                  1420,
+                  1660
+                ],
+                [
+                  1420,
+                  1900
+                ],
+                [
+                  1170,
+                  1300
+                ],
+                [
+                  1300,
+                  1990
+                ],
+                [
+                  1830,
+                  1690
+                ],
+                [
+                  1050,
+                  1740
+                ],
+                [
+                  1500,
+                  2170
+                ]
+              ],
+              "point_labels": [
+                1,
+                1,
+                1,
+                1,
+                1,
+                0,
+                0,
+                0
+              ]
+            },
+            "visible_extent": "visible robot arm, motors and cables; occluded base not observed"
+          },
+          "sha256": {
+            "points.npy": "e87db1296349ed27eacdf67a957cc8f240cc58992bd01cd987a68879a0120762",
+            "colors.npy": "02060162be5dc88d0bb63d4591b97bd98c3948c7660e0094621b6fd3647e3653"
+          }
+        },
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/1-Photo-1.jpg",
+          "mask_path": "evidence/objects/robot/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/robot/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            692,
+            990,
+            1303,
+            1879
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              692
+            ],
+            [
+              0,
+              1,
+              990
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/robot/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/robot/frame_0001/points.npy",
+          "colors_path": "evidence/objects/robot/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 191689,
+          "partial_point_count": 3309,
+          "centroid_native": [
+            -0.29441946744918823,
+            -0.338112473487854,
+            1.8845936059951782
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 prompted visible robot segmentation; manually inspected",
+            "source_results": "evidence/sam2/multiview-prompts-results.json",
+            "source_results_sha256": "b4f7b8a4c6da6f880e48204a361bbd38e4936ceea6051f3286ddfb813762d4c5",
+            "candidate": {
+              "mask_path": "evidence/sam2/multiview-prompts/frame_0001/robot/candidate_0.png",
+              "rgba_path": "evidence/sam2/multiview-prompts/frame_0001/robot/candidate_0_rgba.png",
+              "mask_sha256": "6735d06015ca1aa367008eadbc69be3923eb1c6df848e94d74ab998a40acaddb",
+              "score": 0.8357212543487549,
+              "pixels": 191689,
+              "bbox_xyxy": [
+                713,
+                1011,
+                1282,
+                1858
+              ]
+            },
+            "prompt": {
+              "object_id": "robot",
+              "box": [
+                695,
+                1000,
+                1299,
+                1874
+              ],
+              "points": [
+                [
+                  979,
+                  1215
+                ],
+                [
+                  1036,
+                  1522
+                ],
+                [
+                  935,
+                  1756
+                ]
+              ],
+              "point_labels": [
+                1,
+                1,
+                1
+              ],
+              "prompt_coordinates": "original 2880x3840 pixels; visually selected on 1368x1824 display then scaled exactly"
+            },
+            "limitations": "top tool/lines and partly occluded base are incompletely segmented; no hidden-surface evidence"
+          },
+          "sha256": {
+            "points.npy": "9c6ef687ddd8deeff6433f5a5e11acf1e01e7f9024526d8bf918672c86a34988",
+            "colors.npy": "46fd20786ded61bb242195214ce0b5a27b5b01c9c5c67e5f8ba29a5acb118de0"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/2-Photo-2.jpg",
+          "mask_path": "evidence/objects/robot/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/robot/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            1652,
+            1096,
+            2289,
+            1955
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              1652
+            ],
+            [
+              0,
+              1,
+              1096
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/robot/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/robot/frame_0002/points.npy",
+          "colors_path": "evidence/objects/robot/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 187088,
+          "partial_point_count": 3011,
+          "centroid_native": [
+            -0.28216010332107544,
+            -0.34645259380340576,
+            1.911775827407837
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 prompted visible robot segmentation; manually inspected",
+            "source_results": "evidence/sam2/multiview-prompts-results.json",
+            "source_results_sha256": "b4f7b8a4c6da6f880e48204a361bbd38e4936ceea6051f3286ddfb813762d4c5",
+            "candidate": {
+              "mask_path": "evidence/sam2/multiview-prompts/frame_0002/robot/candidate_0.png",
+              "rgba_path": "evidence/sam2/multiview-prompts/frame_0002/robot/candidate_0_rgba.png",
+              "mask_sha256": "479b838a51c3c175e26f945928eb4f51d00a0c394870e9732121956ab9e35e98",
+              "score": 0.8497499823570251,
+              "pixels": 187088,
+              "bbox_xyxy": [
+                1672,
+                1116,
+                2269,
+                1935
+              ]
+            },
+            "prompt": {
+              "object_id": "robot",
+              "box": [
+                1453,
+                1053,
+                2316,
+                1945
+              ],
+              "points": [
+                [
+                  1926,
+                  1267
+                ],
+                [
+                  2002,
+                  1606
+                ],
+                [
+                  1907,
+                  1825
+                ]
+              ],
+              "point_labels": [
+                1,
+                1,
+                1
+              ],
+              "prompt_coordinates": "original 2880x3840 pixels; visually selected on 1368x1824 display then scaled exactly"
+            },
+            "limitations": "top tool/lines and partly occluded base are incompletely segmented; no hidden-surface evidence"
+          },
+          "sha256": {
+            "points.npy": "2aaf2cf849a334463755f88024e51c60bf20b160a5a9293ac65a063ccc750658",
+            "colors.npy": "84264c038278258da3222be768fbb7d49d47d2cac4a262fb7347e033746c029d"
+          }
+        }
+      ]
+    },
+    {
+      "object_id": "left_fence",
+      "label": "left gate safety fence assembly",
+      "reference_frame": "frame_0002",
+      "source_inventory_indices": [],
+      "physical_identity": {
+        "status": "same physical gate-side component confirmed by visual correspondence",
+        "evidence": "fixed left/right gate location and matching detailed geometry; no label-only merge",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.06524551346243258
+          ],
+          [
+            0.06524551346243258,
+            0.0
+          ]
+        ]
+      },
+      "views": [
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/2-Photo-2.jpg",
+          "mask_path": "evidence/objects/left_fence/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/left_fence/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            161,
+            512,
+            1426,
+            2934
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              161
+            ],
+            [
+              0,
+              1,
+              512
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_fence/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/left_fence/frame_0002/points.npy",
+          "colors_path": "evidence/objects/left_fence/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 1483335,
+          "partial_point_count": 24345,
+          "centroid_native": [
+            -0.3871341049671173,
+            -0.18775352835655212,
+            0.916029155254364
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 prompted segmentation; visually accepted whole visible left fence assembly",
+            "source_results": "evidence/sam2/multiview-prompts-results.json",
+            "source_results_sha256": "b4f7b8a4c6da6f880e48204a361bbd38e4936ceea6051f3286ddfb813762d4c5",
+            "candidate": {
+              "mask_path": "evidence/sam2/multiview-prompts/frame_0002/left_fence/candidate_0.png",
+              "rgba_path": "evidence/sam2/multiview-prompts/frame_0002/left_fence/candidate_0_rgba.png",
+              "mask_sha256": "3e6183a1c166b50fb567838871e38ae6277cd37f7f66869a186d94f726f25d61",
+              "score": 0.8873042464256287,
+              "pixels": 1483335,
+              "bbox_xyxy": [
+                219,
+                570,
+                1368,
+                2876
+              ]
+            },
+            "prompt": {
+              "object_id": "left_fence",
+              "box": [
+                194,
+                558,
+                1371,
+                3074
+              ],
+              "points": [
+                [
+                  785,
+                  1160
+                ],
+                [
+                  1059,
+                  964
+                ],
+                [
+                  741,
+                  2084
+                ],
+                [
+                  1204,
+                  2316
+                ],
+                [
+                  1326,
+                  1756
+                ],
+                [
+                  598,
+                  844
+                ],
+                [
+                  712,
+                  2758
+                ],
+                [
+                  373,
+                  2573
+                ],
+                [
+                  347,
+                  1371
+                ],
+                [
+                  109,
+                  1282
+                ]
+              ],
+              "point_labels": [
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                0,
+                0,
+                0
+              ],
+              "prompt_coordinates": "original 2880x3840 pixels; visually selected on 1368x1824 display then scaled exactly"
+            },
+            "limitations": "transparent panel retains visible background texture/depth; attached paper/light curtain excluded; some boundary missing"
+          },
+          "sha256": {
+            "points.npy": "fdde2da1547a82bb9b491eff28ad176b4075af6c3d696c076c5c008a7cb2aedc",
+            "colors.npy": "621eb2c92097ff7390dd96772f711a8185b749181bb7e1dd25a15f45d36b49eb"
+          }
+        },
+        {
+          "frame_id": "frame_0003",
+          "rgb_path": "input/3-Photo-3.jpg",
+          "mask_path": "evidence/objects/left_fence/frame_0003/mask.png",
+          "rgba_path": "evidence/objects/left_fence/frame_0003/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            294,
+            626,
+            947,
+            2929
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              294
+            ],
+            [
+              0,
+              1,
+              626
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_fence/frame_0003/canonical_mask.npy",
+          "points_path": "evidence/objects/left_fence/frame_0003/points.npy",
+          "colors_path": "evidence/objects/left_fence/frame_0003/colors.npy",
+          "K_path": "geometry/frames/frame_0003/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0003/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0003/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0003/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0003/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0003/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0003/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 553412,
+          "partial_point_count": 8055,
+          "centroid_native": [
+            -0.39189156889915466,
+            -0.23719194531440735,
+            0.9583397507667542
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/workcell-details-prompts-results.json",
+            "source_results_sha256": "4cba4897e798666883d58b0b5199be0efdb088d04bdbe6ea09af2b9a97d38305",
+            "candidate": {
+              "mask_path": "evidence/sam2/workcell-details-prompts/frame_0003/left_fence/candidate_0.png",
+              "rgba_path": "evidence/sam2/workcell-details-prompts/frame_0003/left_fence/candidate_0_rgba.png",
+              "mask_sha256": "7da0b4f13911fa8d5bc1250d13d20890acab1479d8f89468e9e4072f6cb7d9fa",
+              "score": 0.9277830719947815,
+              "pixels": 553412,
+              "bbox_xyxy": [
+                349,
+                681,
+                892,
+                2874
+              ]
+            },
+            "prompt": {
+              "object_id": "left_fence",
+              "box": [
+                360,
+                695,
+                905,
+                2926
+              ],
+              "points": [
+                [
+                  627,
+                  987
+                ],
+                [
+                  682,
+                  2053
+                ],
+                [
+                  737,
+                  2613
+                ],
+                [
+                  463,
+                  2316
+                ],
+                [
+                  573,
+                  2737
+                ]
+              ],
+              "point_labels": [
+                1,
+                1,
+                1,
+                0,
+                0
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "transparent pane includes transmitted background texture/depth; paper and light curtain excluded"
+          },
+          "sha256": {
+            "points.npy": "290e95b558f9fc2cf42a578e29861e537fb7bd4c522d06b5683e1e5c0937532d",
+            "colors.npy": "8e007877f8fb77268e62f270a3e9bccb5dce48a2200e3e7097b8512ec3d0d057"
+          }
+        }
+      ]
+    },
+    {
+      "object_id": "cart",
+      "label": "loaded material cart marked 0001 B",
+      "reference_frame": "frame_0003",
+      "source_inventory_indices": [],
+      "physical_identity": {
+        "status": "same loaded physical cart confirmed in all three supplied views",
+        "evidence": "0001 B label, same red triangular tow handle and same loaded metal bracket stacks",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.0260387768063132,
+            0.024361284201193486
+          ],
+          [
+            0.0260387768063132,
+            0.0,
+            0.030011973451883764
+          ],
+          [
+            0.024361284201193486,
+            0.030011973451883764,
+            0.0
+          ]
+        ]
+      },
+      "views": [
+        {
+          "frame_id": "frame_0003",
+          "rgb_path": "input/3-Photo-3.jpg",
+          "mask_path": "evidence/objects/cart/frame_0003/mask.png",
+          "rgba_path": "evidence/objects/cart/frame_0003/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            998,
+            2007,
+            1932,
+            2901
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              998
+            ],
+            [
+              0,
+              1,
+              2007
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/cart/frame_0003/canonical_mask.npy",
+          "points_path": "evidence/objects/cart/frame_0003/points.npy",
+          "colors_path": "evidence/objects/cart/frame_0003/colors.npy",
+          "K_path": "geometry/frames/frame_0003/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0003/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0003/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0003/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0003/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0003/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0003/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 415197,
+          "partial_point_count": 6915,
+          "centroid_native": [
+            -0.11568077653646469,
+            0.17174670100212097,
+            1.141134262084961
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected reference",
+            "source_results": "evidence/sam2/cart-final-prompts-results.json",
+            "source_results_sha256": "78c54c404e0e20ed9f4595557bf458e20bbbd75d69512dafeafb4c8d4415a9e2",
+            "candidate": {
+              "mask_path": "evidence/sam2/cart-final-prompts/frame_0003/cart/candidate_0.png",
+              "rgba_path": "evidence/sam2/cart-final-prompts/frame_0003/cart/candidate_0_rgba.png",
+              "mask_sha256": "12c7c34517db97ebac9db689c896217d6874689148f2b2bb75783fd9315fb291",
+              "score": 0.8523271679878235,
+              "pixels": 415197,
+              "bbox_xyxy": [
+                1020,
+                2029,
+                1910,
+                2879
+              ]
+            },
+            "prompt": {
+              "object_id": "cart",
+              "box": [
+                1010,
+                2050,
+                1920,
+                2900
+              ],
+              "points": [
+                [
+                  1450,
+                  2500
+                ],
+                [
+                  1330,
+                  2155
+                ],
+                [
+                  1530,
+                  2160
+                ],
+                [
+                  1630,
+                  2190
+                ]
+              ],
+              "point_labels": [
+                1,
+                0,
+                0,
+                0
+              ]
+            },
+            "limitations": "small interior holes and residual fragments of fixed yellow-black background seen through handle; main cart/load/wheels isolated; no whole guard included"
+          },
+          "sha256": {
+            "points.npy": "4dd0da3e9597ccacb4f5f23a5d330cdcfc31ede77f94b105245a5909341dbd58",
+            "colors.npy": "3d6ca057f2fccf47129301c0523f964c551ba127d0788405321709d0ed26d8b8"
+          }
+        },
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/1-Photo-1.jpg",
+          "mask_path": "evidence/objects/cart/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/cart/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            672,
+            1889,
+            1635,
+            2797
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              672
+            ],
+            [
+              0,
+              1,
+              1889
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/cart/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/cart/frame_0001/points.npy",
+          "colors_path": "evidence/objects/cart/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 408237,
+          "partial_point_count": 6498,
+          "centroid_native": [
+            -0.11617593467235565,
+            0.16988086700439453,
+            1.1151671409606934
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted visible cart segmentation; manually inspected",
+            "source_results": "evidence/sam2/cart-final-prompts-results.json",
+            "source_results_sha256": "78c54c404e0e20ed9f4595557bf458e20bbbd75d69512dafeafb4c8d4415a9e2",
+            "candidate": {
+              "mask_path": "evidence/sam2/cart-final-prompts/frame_0001/cart/candidate_0.png",
+              "rgba_path": "evidence/sam2/cart-final-prompts/frame_0001/cart/candidate_0_rgba.png",
+              "mask_sha256": "485e42076d8588f27b4838f4923b8c13914ba990f3376792aa0b51df530a6296",
+              "score": 0.7633438110351562,
+              "pixels": 408237,
+              "bbox_xyxy": [
+                695,
+                1912,
+                1612,
+                2774
+              ]
+            },
+            "prompt": {
+              "object_id": "cart",
+              "box": [
+                684,
+                1928,
+                1621,
+                2779
+              ],
+              "points": [
+                [
+                  1187,
+                  2432
+                ],
+                [
+                  1038,
+                  2246
+                ],
+                [
+                  1091,
+                  1918
+                ],
+                [
+                  585,
+                  2189
+                ],
+                [
+                  1684,
+                  2168
+                ]
+              ],
+              "point_labels": [
+                1,
+                1,
+                0,
+                0,
+                0
+              ],
+              "prompt_coordinates": "original 2880x3840 pixels; visually selected on 1368x1824 display then scaled exactly"
+            },
+            "limitations": "partial wheel and thin/material regions missed; tiny visible guard fragments behind handle remain; no full guard included"
+          },
+          "sha256": {
+            "points.npy": "c011d1af62bf19164fa032138c8dbc402e2a5b95369c1c5ed2f7885991a4870c",
+            "colors.npy": "2b1076281245c8030e0499096410684467ecd8f894532e5247435dcc2f76c5ee"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/2-Photo-2.jpg",
+          "mask_path": "evidence/objects/cart/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/cart/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            1235,
+            1947,
+            2234,
+            2914
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              1235
+            ],
+            [
+              0,
+              1,
+              1947
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/cart/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/cart/frame_0002/points.npy",
+          "colors_path": "evidence/objects/cart/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 463063,
+          "partial_point_count": 7197,
+          "centroid_native": [
+            -0.09304063022136688,
+            0.1760787069797516,
+            1.1332520246505737
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted visible cart segmentation; manually inspected",
+            "source_results": "evidence/sam2/cart-final-prompts-results.json",
+            "source_results_sha256": "78c54c404e0e20ed9f4595557bf458e20bbbd75d69512dafeafb4c8d4415a9e2",
+            "candidate": {
+              "mask_path": "evidence/sam2/cart-final-prompts/frame_0002/cart/candidate_0.png",
+              "rgba_path": "evidence/sam2/cart-final-prompts/frame_0002/cart/candidate_0_rgba.png",
+              "mask_sha256": "7b527fb8be4de834173bb916dffe608fd084f3b7a42291b072c309e8ff29f303",
+              "score": 0.7279049754142761,
+              "pixels": 463063,
+              "bbox_xyxy": [
+                1259,
+                1971,
+                2210,
+                2890
+              ]
+            },
+            "prompt": {
+              "object_id": "cart",
+              "box": [
+                1236,
+                1994,
+                2204,
+                2897
+              ],
+              "points": [
+                [
+                  1684,
+                  2520
+                ],
+                [
+                  1838,
+                  2295
+                ],
+                [
+                  1863,
+                  2006
+                ],
+                [
+                  1122,
+                  2274
+                ],
+                [
+                  2337,
+                  2316
+                ]
+              ],
+              "point_labels": [
+                1,
+                1,
+                0,
+                0,
+                0
+              ],
+              "prompt_coordinates": "original 2880x3840 pixels; visually selected on 1368x1824 display then scaled exactly"
+            },
+            "limitations": "partial wheel and thin/material regions missed; tiny visible guard fragments behind handle remain; no full guard included"
+          },
+          "sha256": {
+            "points.npy": "4030f6ca9145afe4f6a26d0c3143af8fa94aa6497a7dbbbb57f28745cc9b50c3",
+            "colors.npy": "ccb5eac71092e8b0e667e932a91e168657138adaa53f4d055de39f5143de464c"
+          }
+        }
+      ]
+    },
+    {
+      "object_id": "guard",
+      "label": "yellow-black folded safety guard behind cart",
+      "reference_frame": "frame_0003",
+      "source_inventory_indices": [],
+      "physical_identity": {
+        "status": "same physical component confirmed in all three supplied views",
+        "evidence": "matching guard stripe/seam/corner details or matching gate-side light-curtain housing and mount; identical fixed gate location; no label-only merge",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.2036753111859744,
+            0.028043620034667954
+          ],
+          [
+            0.2036753111859744,
+            0.0,
+            0.2228269110101416
+          ],
+          [
+            0.028043620034667954,
+            0.2228269110101416,
+            0.0
+          ]
+        ]
+      },
+      "views": [
+        {
+          "frame_id": "frame_0003",
+          "rgb_path": "input/3-Photo-3.jpg",
+          "mask_path": "evidence/objects/guard/frame_0003/mask.png",
+          "rgba_path": "evidence/objects/guard/frame_0003/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            686,
+            1979,
+            2191,
+            2579
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              686
+            ],
+            [
+              0,
+              1,
+              1979
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/guard/frame_0003/canonical_mask.npy",
+          "points_path": "evidence/objects/guard/frame_0003/points.npy",
+          "colors_path": "evidence/objects/guard/frame_0003/colors.npy",
+          "K_path": "geometry/frames/frame_0003/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0003/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0003/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0003/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0003/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0003/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0003/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 310142,
+          "partial_point_count": 5483,
+          "centroid_native": [
+            -0.18657700717449188,
+            0.055255159735679626,
+            1.264133095741272
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/workcell-details-prompts-results.json",
+            "source_results_sha256": "4cba4897e798666883d58b0b5199be0efdb088d04bdbe6ea09af2b9a97d38305",
+            "candidate": {
+              "mask_path": "evidence/sam2/workcell-details-prompts/frame_0003/guard/candidate_0.png",
+              "rgba_path": "evidence/sam2/workcell-details-prompts/frame_0003/guard/candidate_0_rgba.png",
+              "mask_sha256": "eaab88d1d175cb24407a6ab2ea8b203d9ff66102aacff586ae3eda3037cb5953",
+              "score": 0.8846837282180786,
+              "pixels": 310142,
+              "bbox_xyxy": [
+                722,
+                2015,
+                2155,
+                2543
+              ]
+            },
+            "prompt": {
+              "object_id": "guard",
+              "box": [
+                714,
+                1998,
+                2189,
+                2543
+              ],
+              "points": [
+                [
+                  853,
+                  2263
+                ],
+                [
+                  1482,
+                  2065
+                ],
+                [
+                  2084,
+                  2299
+                ],
+                [
+                  1455,
+                  2484
+                ],
+                [
+                  1387,
+                  2286
+                ],
+                [
+                  1701,
+                  2349
+                ]
+              ],
+              "point_labels": [
+                1,
+                1,
+                1,
+                0,
+                0,
+                0
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "only visible surface; occlusion retained, not filled"
+          },
+          "sha256": {
+            "points.npy": "c2e2a5971f882f669dcca68192c46ac26dd376dd5a9b1f696c00ac52ef6fbd89",
+            "colors.npy": "cfeb7122112839130c8448e7bc92d982f85f3c7af3438e447d86fed6f477fc82"
+          }
+        },
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/1-Photo-1.jpg",
+          "mask_path": "evidence/objects/guard/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/guard/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            291,
+            1835,
+            1902,
+            2436
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              291
+            ],
+            [
+              0,
+              1,
+              1835
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/guard/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/guard/frame_0001/points.npy",
+          "colors_path": "evidence/objects/guard/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 388838,
+          "partial_point_count": 6229,
+          "centroid_native": [
+            -0.26985374093055725,
+            0.060429397970438004,
+            1.449933648109436
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/details-multiview-prompts-results.json",
+            "source_results_sha256": "0878fa26abaa8958603f8fb3fb005930ee58676ce39b3c263f902fa8246a18e3",
+            "candidate": {
+              "mask_path": "evidence/sam2/details-multiview-prompts/frame_0001/guard/candidate_0.png",
+              "rgba_path": "evidence/sam2/details-multiview-prompts/frame_0001/guard/candidate_0_rgba.png",
+              "mask_sha256": "451754ba40059125c8d088d6722eb4cb1b2738f108317b4071ce3166e3bd8fbc",
+              "score": 0.8970022201538086,
+              "pixels": 388838,
+              "bbox_xyxy": [
+                329,
+                1873,
+                1864,
+                2398
+              ]
+            },
+            "prompt": {
+              "object_id": "guard",
+              "box": [
+                379,
+                1869,
+                1863,
+                2415
+              ],
+              "points": [
+                [
+                  564,
+                  2105
+                ],
+                [
+                  1173,
+                  1937
+                ],
+                [
+                  1707,
+                  2152
+                ],
+                [
+                  1147,
+                  2373
+                ],
+                [
+                  1042,
+                  2253
+                ],
+                [
+                  1459,
+                  2219
+                ]
+              ],
+              "point_labels": [
+                1,
+                1,
+                1,
+                0,
+                0,
+                0
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "true visible extent only; guard occluded by cart; curtain portions may be occluded by post/sign; small boundary fragments retained"
+          },
+          "sha256": {
+            "points.npy": "7c87d157e0be87fc902f242043b3977d334684201dc3c75eabd165043f83b4a5",
+            "colors.npy": "0b42237dc022d2d748e9501e927b70592b7b90e1e45ad008c3c7c54e87cb76f0"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/2-Photo-2.jpg",
+          "mask_path": "evidence/objects/guard/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/guard/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            930,
+            1900,
+            2529,
+            2524
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              930
+            ],
+            [
+              0,
+              1,
+              1900
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/guard/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/guard/frame_0002/points.npy",
+          "colors_path": "evidence/objects/guard/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 380258,
+          "partial_point_count": 5892,
+          "centroid_native": [
+            -0.1597757488489151,
+            0.05248288810253143,
+            1.256358027458191
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/details-multiview-prompts-results.json",
+            "source_results_sha256": "0878fa26abaa8958603f8fb3fb005930ee58676ce39b3c263f902fa8246a18e3",
+            "candidate": {
+              "mask_path": "evidence/sam2/details-multiview-prompts/frame_0002/guard/candidate_0.png",
+              "rgba_path": "evidence/sam2/details-multiview-prompts/frame_0002/guard/candidate_0_rgba.png",
+              "mask_sha256": "3a5fb01bf1e7f93a033c456b38d5db5b15bed8f7f1bcc14ae72aa928969fee7a",
+              "score": 0.8961677551269531,
+              "pixels": 380258,
+              "bbox_xyxy": [
+                968,
+                1938,
+                2491,
+                2486
+              ]
+            },
+            "prompt": {
+              "object_id": "guard",
+              "box": [
+                964,
+                1937,
+                2484,
+                2488
+              ],
+              "points": [
+                [
+                  1166,
+                  2147
+                ],
+                [
+                  1897,
+                  2002
+                ],
+                [
+                  2400,
+                  2301
+                ],
+                [
+                  1714,
+                  2526
+                ],
+                [
+                  1867,
+                  2295
+                ]
+              ],
+              "point_labels": [
+                1,
+                1,
+                1,
+                0,
+                0
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "true visible extent only; guard occluded by cart; curtain portions may be occluded by post/sign; small boundary fragments retained"
+          },
+          "sha256": {
+            "points.npy": "089b2aa3c01a4ddab3fc31b0d603a495a09b9999bab3a8900bff7606fa6741a3",
+            "colors.npy": "789527ab5be9c8bb71d4f4b45a759877ada5d1dda0eb23bb17f133dd8bc9f956"
+          }
+        }
+      ]
+    },
+    {
+      "object_id": "left_light_curtain",
+      "label": "left yellow safety light curtain housing",
+      "reference_frame": "frame_0003",
+      "source_inventory_indices": [],
+      "physical_identity": {
+        "status": "same physical component confirmed in all three supplied views",
+        "evidence": "matching guard stripe/seam/corner details or matching gate-side light-curtain housing and mount; identical fixed gate location; no label-only merge",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.07645518286002025,
+            0.004417693765327461
+          ],
+          [
+            0.07645518286002025,
+            0.0,
+            0.07406437023866669
+          ],
+          [
+            0.004417693765327461,
+            0.07406437023866669,
+            0.0
+          ]
+        ]
+      },
+      "views": [
+        {
+          "frame_id": "frame_0003",
+          "rgb_path": "input/3-Photo-3.jpg",
+          "mask_path": "evidence/objects/left_light_curtain/frame_0003/mask.png",
+          "rgba_path": "evidence/objects/left_light_curtain/frame_0003/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            339,
+            1309,
+            601,
+            3337
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              339
+            ],
+            [
+              0,
+              1,
+              1309
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_light_curtain/frame_0003/canonical_mask.npy",
+          "points_path": "evidence/objects/left_light_curtain/frame_0003/points.npy",
+          "colors_path": "evidence/objects/left_light_curtain/frame_0003/colors.npy",
+          "K_path": "geometry/frames/frame_0003/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0003/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0003/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0003/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0003/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0003/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0003/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 152204,
+          "partial_point_count": 2365,
+          "centroid_native": [
+            -0.2553507089614868,
+            -0.011201014742255211,
+            0.6038457751274109
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/workcell-details-prompts-results.json",
+            "source_results_sha256": "4cba4897e798666883d58b0b5199be0efdb088d04bdbe6ea09af2b9a97d38305",
+            "candidate": {
+              "mask_path": "evidence/sam2/workcell-details-prompts/frame_0003/left_light_curtain/candidate_0.png",
+              "rgba_path": "evidence/sam2/workcell-details-prompts/frame_0003/left_light_curtain/candidate_0_rgba.png",
+              "mask_sha256": "02fa45cd2c14fdb792f1edd8b366aa0ffab18f6ce54495affd44963cc8ac70ad",
+              "score": 0.9468438029289246,
+              "pixels": 152204,
+              "bbox_xyxy": [
+                387,
+                1357,
+                553,
+                3289
+              ]
+            },
+            "prompt": {
+              "object_id": "left_light_curtain",
+              "box": [
+                396,
+                1349,
+                543,
+                3303
+              ],
+              "points": [
+                [
+                  463,
+                  2295
+                ]
+              ],
+              "point_labels": [
+                1
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "only visible surface; occlusion retained, not filled"
+          },
+          "sha256": {
+            "points.npy": "6a599c7327c6c51aa5a994c02f6be96cef794da15c3ad4e9dafb834966366d4e",
+            "colors.npy": "4a3a286c4df3ee0992d28fc84bbd2ad8ed483cd83eb86a641a84a49a1240074a"
+          }
+        },
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/1-Photo-1.jpg",
+          "mask_path": "evidence/objects/left_light_curtain/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/left_light_curtain/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            135,
+            1000,
+            407,
+            3333
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              135
+            ],
+            [
+              0,
+              1,
+              1000
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_light_curtain/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/left_light_curtain/frame_0001/points.npy",
+          "colors_path": "evidence/objects/left_light_curtain/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 237878,
+          "partial_point_count": 3304,
+          "centroid_native": [
+            -0.25580209493637085,
+            0.06514935195446014,
+            0.6078222990036011
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/details-multiview-prompts-results.json",
+            "source_results_sha256": "0878fa26abaa8958603f8fb3fb005930ee58676ce39b3c263f902fa8246a18e3",
+            "candidate": {
+              "mask_path": "evidence/sam2/details-multiview-prompts/frame_0001/left_light_curtain/candidate_0.png",
+              "rgba_path": "evidence/sam2/details-multiview-prompts/frame_0001/left_light_curtain/candidate_0_rgba.png",
+              "mask_sha256": "536570147fa51250f372c2098091498069a664b6a8b5442457b668b992079dce",
+              "score": 0.9703757166862488,
+              "pixels": 237878,
+              "bbox_xyxy": [
+                191,
+                1056,
+                351,
+                3277
+              ]
+            },
+            "prompt": {
+              "object_id": "left_light_curtain",
+              "box": [
+                192,
+                1051,
+                366,
+                3295
+              ],
+              "points": [
+                [
+                  278,
+                  1952
+                ]
+              ],
+              "point_labels": [
+                1
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "true visible extent only; guard occluded by cart; curtain portions may be occluded by post/sign; small boundary fragments retained"
+          },
+          "sha256": {
+            "points.npy": "1218c1778c3f5ba48a487ce5e5def3755441cd4250239d0309ceb35e4c9d34cf",
+            "colors.npy": "ac48067700d5d61091f4b30dc4f1e73bb023824e81a19c48d7d04738c54973e5"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/2-Photo-2.jpg",
+          "mask_path": "evidence/objects/left_light_curtain/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/left_light_curtain/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            252,
+            1222,
+            566,
+            3154
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              252
+            ],
+            [
+              0,
+              1,
+              1222
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_light_curtain/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/left_light_curtain/frame_0002/points.npy",
+          "colors_path": "evidence/objects/left_light_curtain/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 179809,
+          "partial_point_count": 2237,
+          "centroid_native": [
+            -0.2536846399307251,
+            -0.008882267400622368,
+            0.6072167754173279
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/details-multiview-prompts-results.json",
+            "source_results_sha256": "0878fa26abaa8958603f8fb3fb005930ee58676ce39b3c263f902fa8246a18e3",
+            "candidate": {
+              "mask_path": "evidence/sam2/details-multiview-prompts/frame_0002/left_light_curtain/candidate_0.png",
+              "rgba_path": "evidence/sam2/details-multiview-prompts/frame_0002/left_light_curtain/candidate_0_rgba.png",
+              "mask_sha256": "052f5dcca1a5b5320157860b9ac9ded9f7c5fb90bbb69a84118a18f323573f27",
+              "score": 0.9735605120658875,
+              "pixels": 179809,
+              "bbox_xyxy": [
+                298,
+                1268,
+                520,
+                3108
+              ]
+            },
+            "prompt": {
+              "object_id": "left_light_curtain",
+              "box": [
+                299,
+                1263,
+                526,
+                3114
+              ],
+              "points": [
+                [
+                  421,
+                  2103
+                ]
+              ],
+              "point_labels": [
+                1
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "true visible extent only; guard occluded by cart; curtain portions may be occluded by post/sign; small boundary fragments retained"
+          },
+          "sha256": {
+            "points.npy": "25da967a004cc3b19e0e30c135cbfdea49416e6c456fe899bcd45507a257ec51",
+            "colors.npy": "da0190fafae5f05880591809cd3b1d0a9b76401962201c4b5169c2f7f3282cb6"
+          }
+        }
+      ]
+    },
+    {
+      "object_id": "right_light_curtain",
+      "label": "right yellow safety light curtain housing",
+      "reference_frame": "frame_0003",
+      "source_inventory_indices": [],
+      "physical_identity": {
+        "status": "same physical component confirmed in all three supplied views",
+        "evidence": "matching guard stripe/seam/corner details or matching gate-side light-curtain housing and mount; identical fixed gate location; no label-only merge",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.013196529386114878,
+            0.10829933269125462
+          ],
+          [
+            0.013196529386114878,
+            0.0,
+            0.09609733637663191
+          ],
+          [
+            0.10829933269125462,
+            0.09609733637663191,
+            0.0
+          ]
+        ]
+      },
+      "views": [
+        {
+          "frame_id": "frame_0003",
+          "rgb_path": "input/3-Photo-3.jpg",
+          "mask_path": "evidence/objects/right_light_curtain/frame_0003/mask.png",
+          "rgba_path": "evidence/objects/right_light_curtain/frame_0003/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            2431,
+            1281,
+            2652,
+            3288
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              2431
+            ],
+            [
+              0,
+              1,
+              1281
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_light_curtain/frame_0003/canonical_mask.npy",
+          "points_path": "evidence/objects/right_light_curtain/frame_0003/points.npy",
+          "colors_path": "evidence/objects/right_light_curtain/frame_0003/colors.npy",
+          "K_path": "geometry/frames/frame_0003/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0003/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0003/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0003/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0003/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0003/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0003/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 183205,
+          "partial_point_count": 2289,
+          "centroid_native": [
+            0.2578541934490204,
+            0.07043237239122391,
+            0.7559005618095398
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/workcell-details-prompts-results.json",
+            "source_results_sha256": "4cba4897e798666883d58b0b5199be0efdb088d04bdbe6ea09af2b9a97d38305",
+            "candidate": {
+              "mask_path": "evidence/sam2/workcell-details-prompts/frame_0003/right_light_curtain/candidate_0.png",
+              "rgba_path": "evidence/sam2/workcell-details-prompts/frame_0003/right_light_curtain/candidate_0_rgba.png",
+              "mask_sha256": "58773cc70f8545623596670334bfa9e9d2a1fe9cf3811db53a4ce82b3519ac79",
+              "score": 0.9748600125312805,
+              "pixels": 183205,
+              "bbox_xyxy": [
+                2479,
+                1329,
+                2604,
+                3240
+              ]
+            },
+            "prompt": {
+              "object_id": "right_light_curtain",
+              "box": [
+                2457,
+                1326,
+                2602,
+                3219
+              ],
+              "points": [
+                [
+                  2526,
+                  2189
+                ]
+              ],
+              "point_labels": [
+                1
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "only visible surface; occlusion retained, not filled"
+          },
+          "sha256": {
+            "points.npy": "7d9a39effe58bb346a657ee6143ea9435a8e0eb3818f2f1ed9d36cead11b5448",
+            "colors.npy": "b548234b12596df11ca872aa72ac023eadbd466f3c48fe690d55ab217a3bf290"
+          }
+        },
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/1-Photo-1.jpg",
+          "mask_path": "evidence/objects/right_light_curtain/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/right_light_curtain/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            2239,
+            1174,
+            2570,
+            3103
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              2239
+            ],
+            [
+              0,
+              1,
+              1174
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_light_curtain/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/right_light_curtain/frame_0001/points.npy",
+          "colors_path": "evidence/objects/right_light_curtain/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 197817,
+          "partial_point_count": 2495,
+          "centroid_native": [
+            0.2574029862880707,
+            0.057460103183984756,
+            0.7582806944847107
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/details-multiview-prompts-results.json",
+            "source_results_sha256": "0878fa26abaa8958603f8fb3fb005930ee58676ce39b3c263f902fa8246a18e3",
+            "candidate": {
+              "mask_path": "evidence/sam2/details-multiview-prompts/frame_0001/right_light_curtain/candidate_0.png",
+              "rgba_path": "evidence/sam2/details-multiview-prompts/frame_0001/right_light_curtain/candidate_0_rgba.png",
+              "mask_sha256": "8322e6bb0cebd5f52917779cbdb4bad06cb807cc3f8b0df72aefc1fd884f08a0",
+              "score": 0.9737563133239746,
+              "pixels": 197817,
+              "bbox_xyxy": [
+                2285,
+                1220,
+                2524,
+                3057
+              ]
+            },
+            "prompt": {
+              "object_id": "right_light_curtain",
+              "box": [
+                2291,
+                1217,
+                2522,
+                3032
+              ],
+              "points": [
+                [
+                  2400,
+                  2076
+                ]
+              ],
+              "point_labels": [
+                1
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "true visible extent only; guard occluded by cart; curtain portions may be occluded by post/sign; small boundary fragments retained"
+          },
+          "sha256": {
+            "points.npy": "6b548a83feb15a147d5430cab01a2aef0bf64c9c7fa7f63508172a9c9ed5a96f",
+            "colors.npy": "b0c2b830fe6344a2d5154f87033615fa5700a6f3a48e1995f571034a82285ced"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/2-Photo-2.jpg",
+          "mask_path": "evidence/objects/right_light_curtain/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/right_light_curtain/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            2403,
+            1089,
+            2691,
+            2840
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              2403
+            ],
+            [
+              0,
+              1,
+              1089
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_light_curtain/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/right_light_curtain/frame_0002/points.npy",
+          "colors_path": "evidence/objects/right_light_curtain/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 163806,
+          "partial_point_count": 2581,
+          "centroid_native": [
+            0.26681673526763916,
+            -0.036003220826387405,
+            0.7380152940750122
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "SAM2.1 Hiera large prompted segmentation; manually inspected",
+            "source_results": "evidence/sam2/details-multiview-prompts-results.json",
+            "source_results_sha256": "0878fa26abaa8958603f8fb3fb005930ee58676ce39b3c263f902fa8246a18e3",
+            "candidate": {
+              "mask_path": "evidence/sam2/details-multiview-prompts/frame_0002/right_light_curtain/candidate_0.png",
+              "rgba_path": "evidence/sam2/details-multiview-prompts/frame_0002/right_light_curtain/candidate_0_rgba.png",
+              "mask_sha256": "023e4dc228cb7da261de57fc5f9b5872929b852ffeb246fd02c09f51159c539e",
+              "score": 0.9626708626747131,
+              "pixels": 163806,
+              "bbox_xyxy": [
+                2445,
+                1131,
+                2649,
+                2798
+              ]
+            },
+            "prompt": {
+              "object_id": "right_light_curtain",
+              "box": [
+                2472,
+                1116,
+                2651,
+                2804
+              ],
+              "points": [
+                [
+                  2547,
+                  1859
+                ]
+              ],
+              "point_labels": [
+                1
+              ],
+              "prompt_coordinates": "original 2880x3840; visual display coords scaled by 2880/1368"
+            },
+            "limitations": "true visible extent only; guard occluded by cart; curtain portions may be occluded by post/sign; small boundary fragments retained"
+          },
+          "sha256": {
+            "points.npy": "d82b08d99b8a47bb53dbc4e8e34edc5a04250bb6277ee3e147d884fc75b16f08",
+            "colors.npy": "45053e5f3b0438559deb7955494d7ac631deb38f62f5bd28fe2212bb0b824b89"
+          }
+        }
+      ]
+    }
+  ],
+  "not_observed": "hidden surfaces, true physical scale, and precise transparent-pane depth are not established"
+}

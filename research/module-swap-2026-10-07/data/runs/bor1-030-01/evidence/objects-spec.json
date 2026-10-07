@@ -1,0 +1,186 @@
+{
+ "objects": [
+  {
+   "object_id": "cart",
+   "label": "work cart",
+   "reference_frame": "frame_0001",
+   "views": [
+    {
+     "frame_id": "frame_0001",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/cart/frame_0001.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    },
+    {
+     "frame_id": "frame_0002",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/cart/frame_0002.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "guard",
+   "label": "yellow-black folding guard behind the cart",
+   "reference_frame": "frame_0001",
+   "views": [
+    {
+     "frame_id": "frame_0001",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/guard/frame_0001.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    },
+    {
+     "frame_id": "frame_0002",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/guard/frame_0002.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "left_light_curtain",
+   "label": "yellow light curtain post, left of the entrance (camera 1)",
+   "reference_frame": "frame_0001",
+   "views": [
+    {
+     "frame_id": "frame_0001",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/right_light_curtain/frame_0001.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    },
+    {
+     "frame_id": "frame_0002",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/right_light_curtain/frame_0002.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "left_post",
+   "label": "black bollard, left (camera 1)",
+   "reference_frame": "frame_0001",
+   "views": [
+    {
+     "frame_id": "frame_0001",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/right_post/frame_0001.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    },
+    {
+     "frame_id": "frame_0002",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/right_post/frame_0002.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "right_fence",
+   "label": "safety fence panel right of the entrance (camera 1 only; photo 2 shows a different panel)",
+   "reference_frame": "frame_0001",
+   "views": [
+    {
+     "frame_id": "frame_0001",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/right_fence/frame_0001.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "right_light_curtain",
+   "label": "yellow light curtain post, right of the entrance (camera 1)",
+   "reference_frame": "frame_0001",
+   "views": [
+    {
+     "frame_id": "frame_0001",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/left_light_curtain/frame_0001.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    },
+    {
+     "frame_id": "frame_0002",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/left_light_curtain/frame_0002.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "right_post",
+   "label": "black bollard, right (camera 1)",
+   "reference_frame": "frame_0002",
+   "views": [
+    {
+     "frame_id": "frame_0002",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/left_post/frame_0002.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    }
+   ]
+  },
+  {
+   "object_id": "robot",
+   "label": "industrial robot arm",
+   "reference_frame": "frame_0001",
+   "views": [
+    {
+     "frame_id": "frame_0001",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/robot/frame_0001.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    },
+    {
+     "frame_id": "frame_0002",
+     "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/sam3-masks/robot/frame_0002.png",
+     "provenance": {
+      "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+      "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+      "review": "visual review sheet evidence/sam3-masks/review.jpg"
+     }
+    }
+   ]
+  }
+ ]
+}

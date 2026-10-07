@@ -1,0 +1,18 @@
+# The three one-POST services of docs/BACKENDS.md (sam3 :8801, mapanything :8802, moge :8803) exactly as serving/HANDOFF.md
+# installs them on a GPU box today, containerised: CUDA runtime base, the PyPI torch wheels (bundled CUDA 12.x), then
+# serving/requirements.txt (upstream git heads for MoGe and MapAnything: NOT the audited on-prem pins; the weights download
+# from Hugging Face into the HF_HOME volume at first start, HF_TOKEN for the gated facebook/sam3). One image, three commands
+# (deploy/compose.gpu-{a,b}.yml). Build context SRC = deploy/context.sh SRC:
+#   docker build -f SRC/serving/deploy/Dockerfile.serving -t panoptes-serving:v1 SRC
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu24.04
+ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv git build-essential libgl1 libglib2.0-0 \
+        ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY serving/serving/requirements.txt /tmp/requirements.txt
+RUN python3 -m venv /opt/serving && /opt/serving/bin/pip install torch torchvision \
+    && /opt/serving/bin/pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
+COPY serving/serving /serving/serving
+ENV PATH=/opt/serving/bin:$PATH HF_HOME=/hf-cache
+WORKDIR /serving/serving
+EXPOSE 8801 8802 8803
+CMD ["python", "-m", "uvicorn", "sam3_service:app", "--host", "0.0.0.0", "--port", "8801"]

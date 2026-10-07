@@ -1,0 +1,115 @@
+{
+ "base": "da3-base",
+ "init": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/checks/da3fair-geom/090-da3-base-padded/geometry",
+ "refinement": "ba-f",
+ "report": {
+  "pairs": {
+   "1-2": {
+    "sampled": 10000,
+    "fInliers": 9530,
+    "withDepth": 8477
+   },
+   "1-3": {
+    "sampled": 10000,
+    "fInliers": 9976,
+    "withDepth": 9281
+   },
+   "2-3": {
+    "sampled": 10000,
+    "fInliers": 9944,
+    "withDepth": 8977
+   }
+  },
+  "reprojPxInit": 3.9054196002643544,
+  "ba": [
+   {
+    "pass_": 1,
+    "report": "Ceres Solver Report: Iterations: 148, Initial cost: 5.452478e+04, Final cost: 1.134818e+03, Termination: CONVERGENCE",
+    "usable": true,
+    "termination": "BundleAdjustmentTerminationType.CONVERGENCE",
+    "reprojPx": 2.1564830409109092e+151,
+    "points": 26735,
+    "dropped": 51
+   },
+   {
+    "pass_": 2,
+    "report": "Ceres Solver Report: Iterations: 201, Initial cost: 1.120538e+03, Final cost: 1.120388e+03, Termination: NO_CONVERGENCE",
+    "usable": true,
+    "termination": "BundleAdjustmentTerminationType.NO_CONVERGENCE",
+    "reprojPx": 0.16728908797284633,
+    "points": 26684,
+    "dropped": 0
+   }
+  ],
+  "photos": [
+   {
+    "photo": 1,
+    "observations": 17708,
+    "depthScale": 1.1045133276351213,
+    "depthRatioIqr": [
+     1.0565176961874294,
+     1.2661343887999732
+    ],
+    "depthRatioLogSlope": 0.9789891590348911,
+    "focalBefore": [
+     400.2701110839844,
+     402.27093505859375
+    ],
+    "focalAfter": [
+     375.67356896143576,
+     375.67356896143576
+    ]
+   },
+   {
+    "photo": 2,
+    "observations": 17446,
+    "depthScale": 1.1161963147160345,
+    "depthRatioIqr": [
+     1.0615659383632297,
+     1.2406322000730006
+    ],
+    "depthRatioLogSlope": 1.1481904529168723,
+    "focalBefore": [
+     404.43280029296875,
+     405.2719421386719
+    ],
+    "focalAfter": [
+     376.2405174913625,
+     376.2405174913625
+    ]
+   },
+   {
+    "photo": 3,
+    "observations": 18214,
+    "depthScale": 1.0899923900828223,
+    "depthRatioIqr": [
+     1.044225110662454,
+     1.2148417321430969
+    ],
+    "depthRatioLogSlope": 0.8974806591078079,
+    "focalBefore": [
+     402.99053955078125,
+     405.0249328613281
+    ],
+    "focalAfter": [
+     372.07028135063985,
+     372.07028135063985
+    ]
+   }
+  ],
+  "poseChange": {
+   "0-1": {
+    "rotationDeg": 2.1762391728327586,
+    "baselineDirDeg": 1.7710257012119466
+   },
+   "0-2": {
+    "rotationDeg": 0.3187516361121922,
+    "baselineDirDeg": 0.5146070074508774
+   },
+   "1-2": {
+    "rotationDeg": 1.8890124977879115,
+    "baselineDirDeg": 0.9921776300888578
+   }
+  }
+ }
+}

@@ -1,0 +1,60 @@
+{
+ "nativeToMeters": 3.5616493184162774,
+ "limit": 0.04,
+ "maxDeviation": 0.01512700300068559,
+ "passed": true,
+ "features": [
+  {
+   "photo": "030 photo 2",
+   "feature": "red lip 4 cm",
+   "specM": 0.04,
+   "measuredNative": 0.011063395918870395,
+   "measuredM": 0.03940393653381417,
+   "deviation": -0.014901586654645804
+  },
+  {
+   "photo": "030 photo 2",
+   "feature": "yellow body 8 cm",
+   "specM": 0.08,
+   "measuredNative": 0.022801279120923043,
+   "measuredM": 0.08121016024005485,
+   "deviation": 0.01512700300068559
+  }
+ ],
+ "P3": [
+  0.3102244436740875,
+  0.037268031388521194,
+  0.6157642006874084
+ ],
+ "method": "geometry-backbone-ab-2026-10-06 fair evaluator (fair_ab_modal.analyse -> estop_cylinder.fit, unchanged) on the GPL-free export bbab-export-030-mvs-fill (same e-stop / floor pixels as bbab-export-030-mvs-scipyba): e-stop axis triangulated in the the 030 point map (photo 2 box); red lip 4 cm + yellow body 8 cm sub-pixel symmetric widths per photo; joint = geometric mean of the six feature scales",
+ "floorRule": "maxInlier",
+ "perPhoto": {
+  "030 photo 2": {
+   "widthsPx": {
+    "red lip": 56.425242090362076,
+    "yellow body": 116.29048655608118,
+    "grey cylinder": 118.42407928905963
+   },
+   "depthNative": 0.5671197117071115,
+   "fx": 2892.409099516109,
+   "yellowOverRed": 2.060965664442308,
+   "axisTiltDeg": -1.1172884163306027,
+   "visibleHeightCm": {
+    "flatTop": 8.256327350443085,
+    "domedTop": 8.477581133217406,
+    "mid": 8.366954241830246,
+    "cameraDepressionDeg": 7.324306782025353,
+    "rows": {
+     "far": 2281.757838189602,
+     "near": 2289.8865229040384,
+     "bottom": 2413.3713952253574
+    },
+    "faceSideBoundaryFlatTop": 8.140891919561161,
+    "silhouetteFlatTop": 8.256327350443085,
+    "silhouetteDomedTop": 8.477581133217406
+   }
+  }
+ },
+ "edgeRule": "estop_cylinder.fit (cell030-sept-pipeline-2026-10-05), unchanged",
+ "geometryExport": "bbab-export-030-mvs-fill"
+}

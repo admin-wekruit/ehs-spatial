@@ -1,0 +1,425 @@
+{
+  "experiment": "bbab-export-090-mvs-fill",
+  "created_at_utc": "2026-09-09T17:34:37Z",
+  "status": "input_geometry_and_object_evidence_complete",
+  "frames": [
+    {
+      "frame_id": "frame_0001",
+      "source_upload": "/private/tmp/codex-remote-attachments/01a083aa-a79e-7603-bad1-5bf076ebf93e/F5EC905C-491A-4348-A8BB-D9E9E5AA3AAE/1-Photo-1.jpg",
+      "input": "input/1-Photo-1.jpg",
+      "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+      "bytes": 2979767,
+      "width": 2880,
+      "height": 3840,
+      "decoded_rgb_sha256": "61e0f995288f73d73cf77df802284820fb3279a97d15d2adc55a166685319a67",
+      "canonical": "evidence/canonical/frame_0001.png",
+      "canonical_sha256": "11d142cc6bc881552508cfdf6abc6f1df5fc87996b4b32c5a6b8261ada641eac",
+      "canonical_shape_hw": [
+        518,
+        518
+      ],
+      "content_rect_xyxy": [
+        63,
+        0,
+        455,
+        518
+      ],
+      "alpha": "evidence/canonical/frame_0001_alpha.npy",
+      "alpha_sha256": "b640112c50db7aeb630cbe968a662e5386b2ca281047dd3cfa6f2a46d5a5c453",
+      "input_to_canonical_pixel_centres": [
+        [
+          0.1361111111111111,
+          0.0,
+          62.56805555555555
+        ],
+        [
+          0.0,
+          0.13489583333333333,
+          -0.43255208333333334
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "canonical_to_input_pixel_centres": [
+        [
+          7.346938775510205,
+          0.0,
+          -459.6836734693878
+        ],
+        [
+          0.0,
+          7.413127413127413,
+          3.2065637065637067
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "resampling": "Pillow RGB LANCZOS; resize392x518 then white pad x=63..454",
+      "existing_capture_match": {
+        "frame_id": "frame_0003",
+        "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_03.jpg",
+        "sha256": "0a8d4b8884867bf9f1836193db2fae0350a99e9e6b242eb9e01e20fda7c59438",
+        "rgb_mae_360x480": 0.713022768497467,
+        "rgb_error_p95_360x480": 2.0,
+        "rgb_correlation_360x480": 0.9998125305110384,
+        "old_size": [
+          3024,
+          4032
+        ],
+        "new_size": [
+          2880,
+          3840
+        ],
+        "resize_mae_full_resolution": 2.4535172526041666,
+        "resize_error_p95_full_resolution": 6.0,
+        "status": "same capture after resampling and JPEG recompression; not byte/pixel identical",
+        "coordinate_relation": "full image bounds preserved; pixel-center resize",
+        "manual_visual_confirmation": true
+      },
+      "all_existing_capture_comparisons": [
+        {
+          "frame_id": "frame_0001",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_01.jpg",
+          "sha256": "879ec826854e9f53c8b6e222b2d16d3e12b179ec60f4bf9c072eb5a4eccf38ac",
+          "rgb_mae_360x480": 54.64693832397461,
+          "rgb_error_p95_360x480": 140.0,
+          "rgb_correlation_360x480": 0.26124355760736984
+        },
+        {
+          "frame_id": "frame_0002",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_02.jpg",
+          "sha256": "6cd81ae4ae783c37d0a1129e39acb0d7064c46d9b51524130406642f8c7a3bea",
+          "rgb_mae_360x480": 60.42974090576172,
+          "rgb_error_p95_360x480": 149.0,
+          "rgb_correlation_360x480": 0.06537110043696319
+        },
+        {
+          "frame_id": "frame_0003",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_03.jpg",
+          "sha256": "0a8d4b8884867bf9f1836193db2fae0350a99e9e6b242eb9e01e20fda7c59438",
+          "rgb_mae_360x480": 0.713022768497467,
+          "rgb_error_p95_360x480": 2.0,
+          "rgb_correlation_360x480": 0.9998125305110384,
+          "old_size": [
+            3024,
+            4032
+          ],
+          "new_size": [
+            2880,
+            3840
+          ],
+          "resize_mae_full_resolution": 2.4535172526041666,
+          "resize_error_p95_full_resolution": 6.0,
+          "status": "same capture after resampling and JPEG recompression; not byte/pixel identical",
+          "coordinate_relation": "full image bounds preserved; pixel-center resize",
+          "manual_visual_confirmation": true
+        },
+        {
+          "frame_id": "frame_0004",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_04.jpg",
+          "sha256": "e73931b6cdf68775ddafbc949c392c0ea2908f4dec671a4935e4c09361ae66ec",
+          "rgb_mae_360x480": 52.810184478759766,
+          "rgb_error_p95_360x480": 145.0,
+          "rgb_correlation_360x480": 0.20770459790023285
+        }
+      ]
+    },
+    {
+      "frame_id": "frame_0002",
+      "source_upload": "/private/tmp/codex-remote-attachments/01a083aa-a79e-7603-bad1-5bf076ebf93e/F5EC905C-491A-4348-A8BB-D9E9E5AA3AAE/2-Photo-2.jpg",
+      "input": "input/2-Photo-2.jpg",
+      "sha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107",
+      "bytes": 2863809,
+      "width": 2880,
+      "height": 3840,
+      "decoded_rgb_sha256": "66bbf3888b732c144b56f01e8d1697befc2360ce405d479ffbac415ebbf0fa26",
+      "canonical": "evidence/canonical/frame_0002.png",
+      "canonical_sha256": "40a00c0101ee77ba11dc6106f4703f718c32662cf8e815f9cfa0ce57acc16cf1",
+      "canonical_shape_hw": [
+        518,
+        518
+      ],
+      "content_rect_xyxy": [
+        63,
+        0,
+        455,
+        518
+      ],
+      "alpha": "evidence/canonical/frame_0002_alpha.npy",
+      "alpha_sha256": "b640112c50db7aeb630cbe968a662e5386b2ca281047dd3cfa6f2a46d5a5c453",
+      "input_to_canonical_pixel_centres": [
+        [
+          0.1361111111111111,
+          0.0,
+          62.56805555555555
+        ],
+        [
+          0.0,
+          0.13489583333333333,
+          -0.43255208333333334
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "canonical_to_input_pixel_centres": [
+        [
+          7.346938775510205,
+          0.0,
+          -459.6836734693878
+        ],
+        [
+          0.0,
+          7.413127413127413,
+          3.2065637065637067
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "resampling": "Pillow RGB LANCZOS; resize392x518 then white pad x=63..454",
+      "existing_capture_match": null,
+      "all_existing_capture_comparisons": [
+        {
+          "frame_id": "frame_0001",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_01.jpg",
+          "sha256": "879ec826854e9f53c8b6e222b2d16d3e12b179ec60f4bf9c072eb5a4eccf38ac",
+          "rgb_mae_360x480": 58.243865966796875,
+          "rgb_error_p95_360x480": 149.0,
+          "rgb_correlation_360x480": 0.16653560229913691
+        },
+        {
+          "frame_id": "frame_0002",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_02.jpg",
+          "sha256": "6cd81ae4ae783c37d0a1129e39acb0d7064c46d9b51524130406642f8c7a3bea",
+          "rgb_mae_360x480": 58.993003845214844,
+          "rgb_error_p95_360x480": 151.0,
+          "rgb_correlation_360x480": 0.1094923851468238
+        },
+        {
+          "frame_id": "frame_0003",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_03.jpg",
+          "sha256": "0a8d4b8884867bf9f1836193db2fae0350a99e9e6b242eb9e01e20fda7c59438",
+          "rgb_mae_360x480": 54.68824005126953,
+          "rgb_error_p95_360x480": 145.0,
+          "rgb_correlation_360x480": 0.18861605487626495
+        },
+        {
+          "frame_id": "frame_0004",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_04.jpg",
+          "sha256": "e73931b6cdf68775ddafbc949c392c0ea2908f4dec671a4935e4c09361ae66ec",
+          "rgb_mae_360x480": 51.772254943847656,
+          "rgb_error_p95_360x480": 146.0,
+          "rgb_correlation_360x480": 0.23464849682151026
+        }
+      ]
+    },
+    {
+      "frame_id": "frame_0003",
+      "source_upload": "/private/tmp/codex-remote-attachments/01a083aa-a79e-7603-bad1-5bf076ebf93e/F5EC905C-491A-4348-A8BB-D9E9E5AA3AAE/3-Photo-3.jpg",
+      "input": "input/3-Photo-3.jpg",
+      "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+      "bytes": 2863473,
+      "width": 2880,
+      "height": 3840,
+      "decoded_rgb_sha256": "84245a8faab8671735be57c9ff8a9fd131889464838bff70efc74eafb6173ce5",
+      "canonical": "evidence/canonical/frame_0003.png",
+      "canonical_sha256": "43897bc05f5faea2dad6c9d5806b2faeb1a4a4b744341fc647df16dad2d582a3",
+      "canonical_shape_hw": [
+        518,
+        518
+      ],
+      "content_rect_xyxy": [
+        63,
+        0,
+        455,
+        518
+      ],
+      "alpha": "evidence/canonical/frame_0003_alpha.npy",
+      "alpha_sha256": "b640112c50db7aeb630cbe968a662e5386b2ca281047dd3cfa6f2a46d5a5c453",
+      "input_to_canonical_pixel_centres": [
+        [
+          0.1361111111111111,
+          0.0,
+          62.56805555555555
+        ],
+        [
+          0.0,
+          0.13489583333333333,
+          -0.43255208333333334
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "canonical_to_input_pixel_centres": [
+        [
+          7.346938775510205,
+          0.0,
+          -459.6836734693878
+        ],
+        [
+          0.0,
+          7.413127413127413,
+          3.2065637065637067
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "resampling": "Pillow RGB LANCZOS; resize392x518 then white pad x=63..454",
+      "existing_capture_match": {
+        "frame_id": "frame_0004",
+        "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_04.jpg",
+        "sha256": "e73931b6cdf68775ddafbc949c392c0ea2908f4dec671a4935e4c09361ae66ec",
+        "rgb_mae_360x480": 0.7090856432914734,
+        "rgb_error_p95_360x480": 2.0,
+        "rgb_correlation_360x480": 0.9998341857641073,
+        "old_size": [
+          3024,
+          4032
+        ],
+        "new_size": [
+          2880,
+          3840
+        ],
+        "resize_mae_full_resolution": 2.1814479347511573,
+        "resize_error_p95_full_resolution": 6.0,
+        "status": "same capture after resampling and JPEG recompression; not byte/pixel identical",
+        "coordinate_relation": "full image bounds preserved; pixel-center resize",
+        "manual_visual_confirmation": true
+      },
+      "all_existing_capture_comparisons": [
+        {
+          "frame_id": "frame_0001",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_01.jpg",
+          "sha256": "879ec826854e9f53c8b6e222b2d16d3e12b179ec60f4bf9c072eb5a4eccf38ac",
+          "rgb_mae_360x480": 56.65415954589844,
+          "rgb_error_p95_360x480": 149.0,
+          "rgb_correlation_360x480": 0.1891475347228107
+        },
+        {
+          "frame_id": "frame_0002",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_02.jpg",
+          "sha256": "6cd81ae4ae783c37d0a1129e39acb0d7064c46d9b51524130406642f8c7a3bea",
+          "rgb_mae_360x480": 59.73597717285156,
+          "rgb_error_p95_360x480": 150.0,
+          "rgb_correlation_360x480": 0.0663304066825756
+        },
+        {
+          "frame_id": "frame_0003",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_03.jpg",
+          "sha256": "0a8d4b8884867bf9f1836193db2fae0350a99e9e6b242eb9e01e20fda7c59438",
+          "rgb_mae_360x480": 52.99416732788086,
+          "rgb_error_p95_360x480": 145.0,
+          "rgb_correlation_360x480": 0.207040532205629
+        },
+        {
+          "frame_id": "frame_0004",
+          "image": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/input/image_04.jpg",
+          "sha256": "e73931b6cdf68775ddafbc949c392c0ea2908f4dec671a4935e4c09361ae66ec",
+          "rgb_mae_360x480": 0.7090856432914734,
+          "rgb_error_p95_360x480": 2.0,
+          "rgb_correlation_360x480": 0.9998341857641073,
+          "old_size": [
+            3024,
+            4032
+          ],
+          "new_size": [
+            2880,
+            3840
+          ],
+          "resize_mae_full_resolution": 2.1814479347511573,
+          "resize_error_p95_full_resolution": 6.0,
+          "status": "same capture after resampling and JPEG recompression; not byte/pixel identical",
+          "coordinate_relation": "full image bounds preserved; pixel-center resize",
+          "manual_visual_confirmation": true
+        }
+      ]
+    }
+  ],
+  "source_inventory": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/inventory/inventory.json",
+  "source_inventory_sha256": "1f8d0e682341618acd66efdd7fea551867550450a9ed19b76da01f146ba041d9",
+  "geometry": {
+    "status": "complete",
+    "path": "geometry",
+    "model": "mvs-fill",
+    "input_frames": [
+      "frame_0001",
+      "frame_0002",
+      "frame_0003"
+    ],
+    "coordinate_system": "mvs-fill native OpenCV world (geometry-backbone-ab export; not the published Pi3X world)",
+    "metric_scale_known": false,
+    "frames": [
+      {
+        "frame_id": "frame_0001",
+        "valid_content_points": 132178,
+        "canonical_pixels": 268324,
+        "files": {
+          "camera_to_world.npy": "664dbaae8b1c6cbc3ed9a7a056db2439c33673d70effcc25f0bb098c00198667",
+          "canonical.png": "11d142cc6bc881552508cfdf6abc6f1df5fc87996b4b32c5a6b8261ada641eac",
+          "conf.npy": "fe6e06ee0afae41792684400b1819a5b3d3c083bb1dc705a707847a6a9b90785",
+          "content_valid_mask.npy": "865ab9dfe8f2bb3014911e6348db0725aad2f68599a050f21f94f684d6ce4603",
+          "intrinsics.npy": "60b92765d8b983b52a8e62ac52628182652d94f06cf7e7b3ebef4ffa83508c66",
+          "pts3d.npy": "4b0a5874eba00246300a0c92d5dd113384c4d62dd4d463fbe0337d589bef9175",
+          "valid_mask.npy": "865ab9dfe8f2bb3014911e6348db0725aad2f68599a050f21f94f684d6ce4603"
+        }
+      },
+      {
+        "frame_id": "frame_0002",
+        "valid_content_points": 123759,
+        "canonical_pixels": 268324,
+        "files": {
+          "camera_to_world.npy": "6e089f48341c8af3ae32e611afe527d209d8511501cc658c26a7364fcd6a8674",
+          "canonical.png": "40a00c0101ee77ba11dc6106f4703f718c32662cf8e815f9cfa0ce57acc16cf1",
+          "conf.npy": "c419ce58bae6fb898c8b9842f380debf121656c3b04634ccba914d8101b0632c",
+          "content_valid_mask.npy": "eca6c9188f2753e7f1c3b142de5ad4a02fa4e926b53199fd777a1b7923399523",
+          "intrinsics.npy": "d54c44b0d5e2f4be3a77969793a3945272877187876f6e25fc861331d4cb2413",
+          "pts3d.npy": "59c3afdea05ca5ae77145fd9088c8f115c63d386bdcd03ce995fce8cdc07ef0d",
+          "valid_mask.npy": "eca6c9188f2753e7f1c3b142de5ad4a02fa4e926b53199fd777a1b7923399523"
+        }
+      },
+      {
+        "frame_id": "frame_0003",
+        "valid_content_points": 136747,
+        "canonical_pixels": 268324,
+        "files": {
+          "camera_to_world.npy": "c4201a2fc1c2f646f4465cd994265e567f30e314c644721393ff5655d58cbd14",
+          "canonical.png": "43897bc05f5faea2dad6c9d5806b2faeb1a4a4b744341fc647df16dad2d582a3",
+          "conf.npy": "11c438c4a53191a5dc1c49285f8deb62a6d62f753fc0e18335b17200fa24829f",
+          "content_valid_mask.npy": "197e0b3fe4420eeadaa306ed1887e18c026af43bdf609c9dce71f758b8fd8546",
+          "intrinsics.npy": "d12defcc98220cc2dad91d1720bbdd936a29661ef7ff6353671a4028f310f5ac",
+          "pts3d.npy": "033450f57beb2e7a8aad05efdeb563bedf110302970eaebb24924b7c831a681b",
+          "valid_mask.npy": "197e0b3fe4420eeadaa306ed1887e18c026af43bdf609c9dce71f758b8fd8546"
+        }
+      }
+    ],
+    "content_valid_rule": "native valid & declared alpha & finite & nonzero points & conf>=0.1",
+    "candidate": "licence-clean MVS (da3-base scipy BA-f cameras, RoMa outdoor dense warp, midpoint triangulation) + MoGe-3 in-mask fill (per object/photo Huber affine on MVS)"
+  },
+  "script_sha256": "40ebafbc9ccaaaee8e9dbef3006b1f08f2bd920c24bc9cc1ef3d4ddd2c7ef010",
+  "privacy": "frozen original photographs and Pi3X/SAM2.1 inference local on MPS; prior private Modal SAM3 call returned no result and was cancelled; object generation separately private GPU only",
+  "evidence": {
+    "objects": "evidence/objects.json",
+    "objects_sha256": "6f87d830ac0c9a3dc9a4c77d530286a7629ead9aa2df758395927950805eb978",
+    "floor": "evidence/floor.json",
+    "floor_sha256": "3546ed6186d26e38723604714158b77f8746d20da24702ab8e57219b7a4831a3",
+    "exportedFrom": "/Users/adam/Desktop/panoptes-public/panoptes-serving/outputs/candidate-evaluation/lucida-replica-01",
+    "exportedBy": "/Users/adam/Desktop/panoptes-public/research-notes/geometry-backbone-ab-2026-10-06/backbone_ab_modal.py"
+  }
+}

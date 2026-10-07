@@ -1,0 +1,59 @@
+# GPU stack A (docs/ENTERPRISE-PLAN-2026-10-07.md §6: sam3d ~20 GB + sam3 ~4 GB on one A100): serving/registry.yaml gpu: a.
+#   make up GPU=a       = docker compose --env-file .env -f deploy/compose.gpu-a.yml up -d sam3d sam3
+# .env: PANOPTES_SERVICE_API_KEY, WEIGHTS (the fetch_weights*.py cache directory, mounted read-only at /weights), optional
+# PANOPTES_SERVICE_MAX_QUEUE / PANOPTES_SERVICE_CACHE_DIR / PANOPTES_RESULT_BUCKET + AWS_*, GPU_A_DEVICE (default 0), HF_TOKEN
+# (sam3's first start downloads facebook/sam3 into the hf-cache volume; gated: accept the licence on Hugging Face first).
+# Images: make images GPU=a (deploy/Dockerfile.sam3d on the ehs-spatial sam3d image; deploy/Dockerfile.serving for sam3).
+name: panoptes-gpu-a
+
+x-gpu: &gpu
+  env_file: ../.env   # relative to this file: the repo's .env
+  restart: unless-stopped
+  pull_policy: never
+  ipc: host
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ["${GPU_A_DEVICE:-0}"]
+            capabilities: [gpu]
+
+services:
+  sam3d:   # POST /v1/sam3d, /v1/sam3d/jobs (docs/BACKENDS-v1.md)
+    <<: *gpu
+    image: ${SAM3D_IMAGE:-panoptes-sam3d-service}:${PANOPTES_VERSION:-v1}
+    ports: ["${SAM3D_PORT:-8805}:8805"]
+    environment:
+      PANOPTES_WEIGHTS_DIR: /weights
+      PANOPTES_WORKCELL: /workcell
+      PANOPTES_SERVICE_CACHE_DIR: /cache
+    volumes:
+      - "${WEIGHTS:?set WEIGHTS=/srv/panoptes-weights in .env}:/weights:ro"
+      - sam3d-cache:/cache
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py", "8805"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 900s   # weights SHA-256 check (13 GB) + model load
+
+  sam3:    # POST /sam3 (docs/BACKENDS.md, unchanged)
+    <<: *gpu
+    image: ${SERVING_IMAGE:-panoptes-serving}:${PANOPTES_VERSION:-v1}
+    command: ["python", "-m", "uvicorn", "sam3_service:app", "--host", "0.0.0.0", "--port", "8801"]
+    ports: ["${SAM3_PORT:-8801}:8801"]
+    environment:
+      HF_HOME: /hf-cache
+    volumes:
+      - hf-cache:/hf-cache
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py", "8801", "--no-key"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 900s
+
+volumes:
+  sam3d-cache: {}
+  hf-cache: {}

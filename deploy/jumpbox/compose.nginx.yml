@@ -1,0 +1,19 @@
+# nginx + TLS on the jump VM in front of the GPU services (recommended; the socat units stay as rollback). One location per
+# service (nginx.conf); X-API-Key passes through untouched. gpu-a / gpu-b are the GPU VMs (one host with two cards: same IP twice).
+#   cd deploy/jumpbox && cp jumpbox.env.example .env   # GPU_A_IP / GPU_B_IP
+#   mkdir certs && openssl req -x509 -newkey rsa:2048 -nodes -days 825 -subj /CN=10.21.72.251 \
+#     -addext subjectAltName=IP:10.21.72.251 -keyout certs/jump.key -out certs/jump.crt        # or the customer's CA-issued pair
+#   docker compose -f compose.nginx.yml up -d
+#   curl -s --cacert certs/jump.crt -H "X-API-Key: $PANOPTES_SERVICE_API_KEY" https://10.21.72.251:8443/sam3d/healthz
+name: panoptes-jump
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports: ["8443:8443"]
+    extra_hosts:
+      - "gpu-a:${GPU_A_IP:-172.184.217.34}"
+      - "gpu-b:${GPU_B_IP:-172.184.217.34}"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    restart: unless-stopped

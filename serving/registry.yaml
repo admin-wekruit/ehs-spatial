@@ -1,0 +1,141 @@
+# Model registry of the Panoptes model services (docs/BACKENDS-v1.md, docs/ENTERPRISE-PLAN-2026-10-07.md §2.1).
+# One entry per model: service file, port, image, the GPU stack it runs on (a | b = deploy/compose.gpu-{a,b}.yml), weights
+# (HF repo, revision, where the fetch_weights*.py cache puts them under ${WEIGHTS}, the manifest, the pinned SHA-256 of every
+# file the service loads = what /v1/info reports and what the service re-hashes at start), licence, VRAM.
+# Read by serving/registry.py: the services' /v1/info and start-up weight check, and `make up GPU=a|b` (which services to start).
+# Pins = ehs-spatial scripts/onprem/fetch_weights*.py and serving scripts/candidate_geometry_backend.py (2026-10-07).
+models:
+  sam3d:
+    service: serving/sam3d_service.py
+    port: 8805
+    gpu: a
+    image: panoptes-sam3d-service          # deploy/Dockerfile.sam3d (FROM the ehs-spatial docker/sam3d.Dockerfile image)
+    model_id: facebook/sam-3d-objects
+    model_revision: 2e73555018d2741ccd486e56c24fac41155a1dc6
+    code_revision: f91db411c50efee93d8db7aeb323885650f6f722   # facebookresearch/sam-3d-objects + modal_apps/sam3d_mesh_only.patch
+    licence: SAM License (Meta, custom; no ITAR / military / nuclear / espionage use; redistribute with the licence text)
+    vram_gb: 20
+    seed_policy: seed in request; cuDNN deterministic on
+    weights:
+      - name: sam3d
+        fetch: scripts/onprem/fetch_weights_sam3d.py
+        repo: facebook/sam-3d-objects
+        revision: 2e73555018d2741ccd486e56c24fac41155a1dc6
+        manifest: manifest.json
+        path: hf/hub/models--facebook--sam-3d-objects/snapshots/2e73555018d2741ccd486e56c24fac41155a1dc6
+        sha256:
+          checkpoints/ss_generator.ckpt: 225f40479e4cff4f39d6fa14c55be3abad1475bf55b61af3bec1e19ed2f6c146
+          checkpoints/slat_generator.ckpt: 91529bde8e7daa12d09618a66c319e3a5a6398db6b23b958cedcb1c3f28faabb
+          checkpoints/ss_decoder.ckpt: 6dac1cd7b7fda5a38e0614fadae441f1794f80e39ea2981f1ac8aff0a7e99340
+          checkpoints/slat_decoder_mesh.ckpt: 85907b37b67d8ce5b099a96629bdcfbd873eb407dee6b3aa9a75deb15038db33
+      - name: sam3d_dinov2
+        fetch: scripts/onprem/fetch_weights_sam3d.py
+        repo: https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_reg4_pretrain.pth
+        revision: 7764ea0f912e53c92e82eb78a2a1631e92725fc8   # facebookresearch/dinov2 code vendored in the image
+        manifest: manifest.json
+        path: sam3d/torch-hub/checkpoints
+        sha256:
+          dinov2_vitl14_reg4_pretrain.pth: 36e4deffbaef061a2576705b0c36f93621e2ae20bf6274694821b0b492551b51
+
+  geometry-mvs:
+    service: serving/geometry_mvs_service.py
+    port: 8804
+    gpu: b
+    image: panoptes-geometry-service       # deploy/Dockerfile.geometry (the da3 + geometry + workcell-gpu/moge venvs)
+    model_id: geometry-mvs (depth-anything/DA3-BASE start + RoMa v1 outdoor matches + Ruicheng/moge-3-vitl depth; numpy LM BA-f)
+    model_revision: da3-base@f4a6c9b3c95e41c82048423d3493a81ec3fa810e roma@77f8d68803526dcddfd9b7a46bc76125bdc25f15 moge3@184008f877d7ad1ad4c2cd2182a9bd1f63d0e5be
+    code_revision: 2413cd62c291f22a7e7f6a3a474efc3435d06900   # ehs-spatial main: modal_apps/geometry_clean_ab.py, bundle_adjust.py, moge3_app.py
+    licence: DA3-BASE Apache-2.0; RoMa MIT (outdoor weights MIT inferred, MegaDepth-trained); DINOv2 Apache-2.0; MoGe-3 MIT
+    vram_gb: 12
+    seed_policy: no seed in the request; torch.manual_seed(0) before RoMa, DA3 and MoGe-3 inference-only (as the research stages)
+    weights:
+      - name: da3-base
+        fetch: scripts/onprem/fetch_weights_geometry.py
+        repo: depth-anything/DA3-BASE
+        revision: f4a6c9b3c95e41c82048423d3493a81ec3fa810e
+        manifest: manifest.json
+        path: local/da3-base
+        sha256:
+          model.safetensors: e01067dc1659613083d9145a9a2547ccdbe6ccbbf83c4fe7b3e8a4e2bdae78b5
+          config.json: 5e34115ebc17bd2d8d43033c5f72e9446ac8833fd61d3fa160b7e67e0bb5b7b5
+      - name: roma_outdoor
+        fetch: scripts/onprem/fetch_weights_geometry.py
+        repo: https://github.com/Parskatt/storage/releases/download/roma/roma_outdoor.pth
+        revision: 77f8d68803526dcddfd9b7a46bc76125bdc25f15   # Parskatt/RoMa code (romatch) vendored in the image
+        manifest: manifest.json
+        path: roma/outdoor
+        sha256:
+          roma_outdoor.pth: c7a45c80d41ad788a63c641d1b686d7cb3f297f40097c6f4e75039889e5cc8ba
+      - name: roma_dinov2
+        fetch: scripts/onprem/fetch_weights_geometry.py
+        repo: https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_pretrain.pth
+        revision: 77f8d68803526dcddfd9b7a46bc76125bdc25f15
+        manifest: manifest.json
+        path: roma/dinov2
+        sha256:
+          dinov2_vitl14_pretrain.pth: d5383ea8f4877b2472eb973e0fd72d557c7da5d3611bd527ceeb1d7162cbf428
+      - name: moge3
+        fetch: scripts/onprem/fetch_weights_geometry.py
+        repo: Ruicheng/moge-3-vitl
+        revision: 184008f877d7ad1ad4c2cd2182a9bd1f63d0e5be
+        manifest: manifest.json
+        path: hf/hub/models--Ruicheng--moge-3-vitl/snapshots/184008f877d7ad1ad4c2cd2182a9bd1f63d0e5be
+        sha256:
+          model.pt: 9b41b7b9f65ad80aab7ad686f5e9cc0d1fd33f1964022618dfbcd52fc1fb7925
+
+  # The three one-POST services of docs/BACKENDS.md (contract unchanged; no /v1 routes): deploy/Dockerfile.serving, weights
+  # from Hugging Face at first start into the HF_HOME volume (serving/HANDOFF.md), so no SHA-256 pins are checked here.
+  sam3:
+    service: serving/sam3_service.py
+    port: 8801
+    gpu: a
+    image: panoptes-serving
+    model_id: facebook/sam3
+    model_revision: 3c879f39826c281e95690f02c7821c4de09afae7   # fetch_weights.py pin; sam3_service.py loads the repo's default branch
+    code_revision: null
+    licence: SAM License (Meta, custom; gated repo, accept on Hugging Face)
+    vram_gb: 4
+    seed_policy: none (deterministic forward pass)
+    weights:
+      - name: sam3
+        repo: facebook/sam3
+        revision: 3c879f39826c281e95690f02c7821c4de09afae7
+        manifest: null
+        path: hf-cache
+        sha256: {}
+  mapanything:
+    service: serving/mapanything_service.py
+    port: 8802
+    gpu: b
+    image: panoptes-serving
+    model_id: facebook/map-anything
+    model_revision: null                   # unpinned today (mapanything_service.py loads the repo's default branch)
+    code_revision: null
+    licence: Apache-2.0 (map-anything-apache)
+    vram_gb: 6
+    seed_policy: none (deterministic forward pass)
+    weights:
+      - name: mapanything
+        repo: facebook/map-anything
+        revision: null
+        manifest: null
+        path: hf-cache
+        sha256: {}
+  moge:
+    service: serving/moge_service.py
+    port: 8803
+    gpu: b
+    image: panoptes-serving
+    model_id: Ruicheng/moge-3-vitl
+    model_revision: 184008f877d7ad1ad4c2cd2182a9bd1f63d0e5be   # fetch_weights.py pin; moge_service.py loads the repo's default branch
+    code_revision: null
+    licence: MIT
+    vram_gb: 4
+    seed_policy: none (deterministic forward pass)
+    weights:
+      - name: moge3
+        repo: Ruicheng/moge-3-vitl
+        revision: 184008f877d7ad1ad4c2cd2182a9bd1f63d0e5be
+        manifest: null
+        path: hf-cache
+        sha256: {}

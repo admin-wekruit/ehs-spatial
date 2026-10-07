@@ -1,0 +1,79 @@
+{
+ "base": "da3-base",
+ "init": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/checks/da3fair-geom/030-da3-base-padded/geometry",
+ "refinement": "ba-f",
+ "report": {
+  "pairs": {
+   "1-2": {
+    "sampled": 10000,
+    "fInliers": 9148,
+    "withDepth": 7716
+   }
+  },
+  "reprojPxInit": 4.662558643482059,
+  "ba": [
+   {
+    "pass_": 1,
+    "report": "Ceres Solver Report: Iterations: 64, Initial cost: 1.836834e+04, Final cost: 3.396033e+02, Termination: CONVERGENCE",
+    "usable": true,
+    "termination": "BundleAdjustmentTerminationType.CONVERGENCE",
+    "reprojPx": 0.16208313129021448,
+    "points": 7716,
+    "dropped": 0
+   },
+   {
+    "pass_": 2,
+    "report": "Ceres Solver Report: Iterations: 1, Initial cost: 3.396033e+02, Final cost: 3.396033e+02, Termination: CONVERGENCE",
+    "usable": true,
+    "termination": "BundleAdjustmentTerminationType.CONVERGENCE",
+    "reprojPx": 0.16208313129021448,
+    "points": 7716,
+    "dropped": 0
+   }
+  ],
+  "photos": [
+   {
+    "photo": 1,
+    "observations": 7716,
+    "depthScale": 1.1064671044451782,
+    "depthRatioIqr": [
+     1.056262380844555,
+     1.1727669394322031
+    ],
+    "depthRatioLogSlope": 0.5251091893167578,
+    "focalBefore": [
+     419.3728942871094,
+     420.16339111328125
+    ],
+    "focalAfter": [
+     381.2249161548277,
+     381.2249161548277
+    ]
+   },
+   {
+    "photo": 2,
+    "observations": 7716,
+    "depthScale": 1.0826942074572388,
+    "depthRatioIqr": [
+     1.0452272935454991,
+     1.1501354070268377
+    ],
+    "depthRatioLogSlope": 0.36777540982753476,
+    "focalBefore": [
+     422.9613952636719,
+     421.5048522949219
+    ],
+    "focalAfter": [
+     374.9419203117179,
+     374.9419203117179
+    ]
+   }
+  ],
+  "poseChange": {
+   "0-1": {
+    "rotationDeg": 2.651923308329494,
+    "baselineDirDeg": 1.040327114372249
+   }
+  }
+ }
+}

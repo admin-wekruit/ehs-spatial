@@ -1,0 +1,22 @@
+{
+  "status": "passed",
+  "object_count": 9,
+  "checked_views_including_floor": 27,
+  "checks": "input/geometry/object SHA; pixel affine; no padding or zero sentinel; native K/c2w reprojection; exact alpha/partial-point/RGB correspondence; no old dynamic inventory reuse",
+  "frames": [
+    {
+      "frame_id": "frame_0001",
+      "native_reprojection_p95_pixels": 0.8696753649678359
+    },
+    {
+      "frame_id": "frame_0002",
+      "native_reprojection_p95_pixels": 0.7712006891793524
+    },
+    {
+      "frame_id": "frame_0003",
+      "native_reprojection_p95_pixels": 0.6195556068315079
+    }
+  ],
+  "objects_sha256": "a2b58084e48adf758cf1ac3609d1a2e564bac139768688e6308da5bb25432760",
+  "floor_sha256": "83809689ab54b04df4b40737bead374aa50b6eeb8cae94180ba77bf7443d8ced"
+}

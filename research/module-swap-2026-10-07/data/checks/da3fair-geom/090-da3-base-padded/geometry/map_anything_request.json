@@ -1,0 +1,17 @@
+{
+  "model_identifier": "vufinder/map-anything:bb68c254a65d3ce6b173909181d2dfbd044300b3ebca25ab63f07aa7eb1eebff",
+  "input": {
+    "normals": false,
+    "to_base64": true,
+    "return_pcd": true,
+    "return_mesh": false,
+    "point_scales": false,
+    "keys_to_exclude": "",
+    "alpha_blend_onto": "white",
+    "inputs": [
+      "/tmp/in/090/padded/frame_0001.png",
+      "/tmp/in/090/padded/frame_0002.png",
+      "/tmp/in/090/padded/frame_0003.png"
+    ]
+  }
+}

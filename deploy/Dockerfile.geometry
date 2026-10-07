@@ -1,0 +1,48 @@
+# geometry-mvs service (serving/geometry_mvs_service.py, :8804): the GPU half of the licence-clean geometry route = three pinned
+# on-prem environments in one image, each copied unchanged from the audited ehs-spatial image that proved it (all three share the
+# python:3.11.10-slim-bookworm base by digest, so their venvs relocate as they are):
+#   /opt/da3      + /vendor/depth-anything-3   docker/da3.Dockerfile      (this image's base)   DA3-BASE start geometry (cu124)
+#   /opt/geometry + /vendor/romatch            docker/geometry.Dockerfile (geometry-requirements.txt, --require-hashes)
+#                                                                          RoMa matches + numpy LM bundle adjustment
+#   /opt/moge                                  docker/workcell-gpu.Dockerfile                   MoGe-3 (torch 2.13 cu13: driver >= 580)
+# The service process runs in /opt/service (serving/requirements-v1.txt) and runs each stage as a subprocess in its venv
+# (serving/geometry_mvs_stage.py); no model stays resident between jobs. /opt/geometry is ehs-spatial's CPU torch build (its
+# licence-clean choice: no NVIDIA EULA wheel); RoMa then runs on the CPU (fp32, ~160 s for three photos) unless that venv is
+# rebuilt with the cu124 torch wheels, in which case PANOPTES_ROMA_DEVICE=cuda gives the fp16-autocast warps of the research runs.
+#
+# Build context SRC = deploy/context.sh SRC; the three bases first (ehs-spatial's own commands), then this:
+#   docker build -f SRC/workcell/docker/da3.Dockerfile      -t panoptes-workcell-da3 SRC
+#   docker build -f SRC/workcell/docker/geometry.Dockerfile -t panoptes-workcell-geometry SRC
+#   docker build -f SRC/workcell/docker/workcell-gpu.Dockerfile -t panoptes-workcell-gpu SRC
+#   docker build -f SRC/serving/deploy/Dockerfile.geometry --build-arg CODE_SHA=$(git rev-parse HEAD) -t panoptes-geometry-service:v1 SRC
+# or `make images GPU=b`. Weights: scripts/onprem/fetch_weights_geometry.py --cache $WEIGHTS (da3-base, roma_outdoor, roma_dinov2,
+# moge3) once, mounted at /weights; the service re-hashes them against serving/registry.yaml at start.
+ARG DA3_BASE=panoptes-workcell-da3
+ARG GEOMETRY_BASE=panoptes-workcell-geometry
+ARG GPU_BASE=panoptes-workcell-gpu
+FROM ${GEOMETRY_BASE} AS geometry
+FROM ${GPU_BASE} AS gpu
+FROM ${DA3_BASE}
+ARG CODE_SHA=unknown
+# gcc for Triton's JIT (MoGe-3's FlexGEMM), as workcell-gpu.Dockerfile installs it
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+COPY --from=geometry /opt/geometry /opt/geometry
+COPY --from=geometry /vendor/romatch /vendor/romatch
+COPY --from=geometry /licences /licences
+COPY --from=gpu /opt/moge /opt/moge
+# the function bodies (ehs-spatial modal_apps) and the on-prem runner with its modal stub; the DA3 runner is in /serving/scripts
+COPY workcell/modal_apps/geometry_clean_ab.py workcell/modal_apps/bundle_adjust.py workcell/modal_apps/moge3_app.py /workcell/modal_apps/
+COPY workcell/scripts/onprem /workcell/scripts/onprem
+COPY serving/serving /serving/serving
+RUN python -m venv /opt/service && /opt/service/bin/pip install -r /serving/serving/requirements-v1.txt \
+    && /opt/geometry/bin/python -c "import cv2, romatch, scipy, torch" \
+    && /opt/moge/bin/python -c "import moge.model.v3, cv2, torch" \
+    && /opt/da3/bin/python -c "import safetensors, torch"
+ENV PATH=/opt/service/bin:$PATH PANOPTES_WORKCELL=/workcell PANOPTES_SERVING=/serving PANOPTES_WEIGHTS_DIR=/weights \
+    PANOPTES_DA3_PYTHON=/opt/da3/bin/python PANOPTES_DA3_VENDOR=/vendor/depth-anything-3 \
+    PANOPTES_GEOMETRY_PYTHON=/opt/geometry/bin/python PANOPTES_MOGE_PYTHON=/opt/moge/bin/python PANOPTES_ROMA_DEVICE=auto \
+    PANOPTES_CODE_SHA=${CODE_SHA} HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 PYTHONUNBUFFERED=1
+WORKDIR /serving/serving
+EXPOSE 8804
+HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=3 CMD ["python", "healthcheck.py", "8804"]
+CMD ["python", "-m", "uvicorn", "geometry_mvs_service:app", "--host", "0.0.0.0", "--port", "8804"]

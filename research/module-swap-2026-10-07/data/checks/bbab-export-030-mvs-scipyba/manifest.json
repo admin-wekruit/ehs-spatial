@@ -1,0 +1,186 @@
+{
+  "experiment": "bbab-export-030-mvs-scipyba",
+  "created_at_utc": "2026-10-05T15:37:45Z",
+  "status": "geometry_complete",
+  "frames": [
+    {
+      "frame_id": "frame_0001",
+      "source_upload": "runs/user-bor1-02/input/image_01.jpg",
+      "input": "input/image_01.jpg",
+      "sha256": "879ec826854e9f53c8b6e222b2d16d3e12b179ec60f4bf9c072eb5a4eccf38ac",
+      "bytes": 4994078,
+      "width": 3024,
+      "height": 4032,
+      "decoded_rgb_sha256": "953ad16f57673688d471a6792986a50f151ad9b1f2384f90c4b421500ababfcc",
+      "canonical": "evidence/canonical/frame_0001.png",
+      "canonical_sha256": "2ad7f9e2bd42b0f897b4d548c2a6ebac76bf5ad7ad53f95119db0144a4c54d8a",
+      "canonical_shape_hw": [
+        518,
+        518
+      ],
+      "content_rect_xyxy": [
+        63,
+        0,
+        455,
+        518
+      ],
+      "alpha": "evidence/canonical/frame_0001_alpha.npy",
+      "alpha_sha256": "b640112c50db7aeb630cbe968a662e5386b2ca281047dd3cfa6f2a46d5a5c453",
+      "input_to_canonical_pixel_centres": [
+        [
+          0.12962962962962962,
+          0.0,
+          62.56481481481482
+        ],
+        [
+          0.0,
+          0.1284722222222222,
+          -0.4357638888888889
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "canonical_to_input_pixel_centres": [
+        [
+          7.714285714285714,
+          0.0,
+          -482.64285714285717
+        ],
+        [
+          0.0,
+          7.783783783783784,
+          3.391891891891892
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "resampling": "Pillow RGB LANCZOS; resize392x518 then white pad x=63..454",
+      "existing_capture_match": null
+    },
+    {
+      "frame_id": "frame_0002",
+      "source_upload": "runs/user-bor1-02/input/image_02.jpg",
+      "input": "input/image_02.jpg",
+      "sha256": "6cd81ae4ae783c37d0a1129e39acb0d7064c46d9b51524130406642f8c7a3bea",
+      "bytes": 5065705,
+      "width": 3024,
+      "height": 4032,
+      "decoded_rgb_sha256": "8f38b5fbd012244d6d7c639ac1ed377452deec3418b509675d57faa88270da15",
+      "canonical": "evidence/canonical/frame_0002.png",
+      "canonical_sha256": "e72b1cbe25979f795397932ad296b3ba5b98a09d5e1667c836651f158a5d354e",
+      "canonical_shape_hw": [
+        518,
+        518
+      ],
+      "content_rect_xyxy": [
+        63,
+        0,
+        455,
+        518
+      ],
+      "alpha": "evidence/canonical/frame_0002_alpha.npy",
+      "alpha_sha256": "b640112c50db7aeb630cbe968a662e5386b2ca281047dd3cfa6f2a46d5a5c453",
+      "input_to_canonical_pixel_centres": [
+        [
+          0.12962962962962962,
+          0.0,
+          62.56481481481482
+        ],
+        [
+          0.0,
+          0.1284722222222222,
+          -0.4357638888888889
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "canonical_to_input_pixel_centres": [
+        [
+          7.714285714285714,
+          0.0,
+          -482.64285714285717
+        ],
+        [
+          0.0,
+          7.783783783783784,
+          3.391891891891892
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "resampling": "Pillow RGB LANCZOS; resize392x518 then white pad x=63..454",
+      "existing_capture_match": null
+    }
+  ],
+  "geometry": {
+    "status": "complete",
+    "path": "geometry",
+    "model": "mvs-scipyba",
+    "input_frames": [
+      "frame_0001",
+      "frame_0002"
+    ],
+    "coordinate_system": "mvs-scipyba native OpenCV world (geometry-backbone-ab export; not the published Pi3X world)",
+    "metric_scale_known": false,
+    "frames": [
+      {
+        "frame_id": "frame_0001",
+        "valid_content_points": 59700,
+        "canonical_pixels": 268324,
+        "files": {
+          "camera_to_world.npy": "caf3cb23d4e2795b023b8badb8a27892b9a33ec16fa79a71e9bdeac3d7d9547b",
+          "canonical.png": "2ad7f9e2bd42b0f897b4d548c2a6ebac76bf5ad7ad53f95119db0144a4c54d8a",
+          "conf.npy": "ab2bc6cbb8f4bef6081ce59516a760b6f337f2217456caaae1ddb0005ad518b3",
+          "content_valid_mask.npy": "10250c1bac4656f8433bd3333d786245486dd38e0cfa3bdad48504ed2110c51c",
+          "intrinsics.npy": "dad464a49520d24f2b6a9d9209ffce1cb290b0537e4b04135e4b76ca10ef29ea",
+          "pts3d.npy": "85eb179a715de65d02b759665658f35f484d019e9502b9f4d7964d0c456c128a",
+          "valid_mask.npy": "10250c1bac4656f8433bd3333d786245486dd38e0cfa3bdad48504ed2110c51c"
+        }
+      },
+      {
+        "frame_id": "frame_0002",
+        "valid_content_points": 46673,
+        "canonical_pixels": 268324,
+        "files": {
+          "camera_to_world.npy": "28cd1e9b391788efdd5f46ea3850b01090c54fcc0c6731e73b1272e7feeab4a6",
+          "canonical.png": "e72b1cbe25979f795397932ad296b3ba5b98a09d5e1667c836651f158a5d354e",
+          "conf.npy": "b20601a4f4f17218b4771fe0bb05462fe1f6cf255e4f065bff95ee22dcc28f16",
+          "content_valid_mask.npy": "5d161c3deec65d5cbd1a6944ffdc1f83e3266c73995320ef95dd36a27e94cad1",
+          "intrinsics.npy": "45fc18aab8222004bbb07b90da7e2358086a882bb871201896c96d48d259515b",
+          "pts3d.npy": "24b4ba5462b08625e76fb4eab59a7f6392bdfe527a050ca0837719718c275ebd",
+          "valid_mask.npy": "5d161c3deec65d5cbd1a6944ffdc1f83e3266c73995320ef95dd36a27e94cad1"
+        }
+      }
+    ],
+    "content_valid_rule": "native valid & declared alpha & finite & nonzero points & conf>=0.1",
+    "candidate": "licence-clean MVS (da3-base scipy BA-f cameras, RoMa outdoor dense warp, midpoint triangulation)"
+  },
+  "script_sha256": "f2ccb9d829877fd69d0e7cc5be79a422ef1a09caf46ceb0e19d59375a03a033d",
+  "privacy": "private photographs; geometry and generation on private ephemeral Modal functions",
+  "evidence": {
+    "objects": "evidence/objects.json",
+    "objects_sha256": "756167d316d31f82c7dc8cf97bbc77b42351723e61699881eb50dc425d8c463c",
+    "floor": "evidence/floor.json",
+    "floor_sha256": "e4421f091bad795a8b54a4f040344fb6d460c0af6d668ea42dd05273d79301fc",
+    "exportedFrom": "/Users/adam/Desktop/panoptes-public/panoptes-serving/outputs/candidate-evaluation/bor1-030-01",
+    "exportedBy": "/Users/adam/Desktop/panoptes-public/research-notes/geometry-backbone-ab-2026-10-06/backbone_ab_modal.py"
+  },
+  "exportNote": {
+    "ba": "ba_scipy.refine (scipy.optimize.least_squares): no pycolmap / SuiteSparse",
+    "geometry": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/checks/scipyba-geom/030-mvs-scipyba-padded/geometry",
+    "imageSpaceFiles": "49 links replaced by real copies of the source run files (input/, masks, rgba crops)",
+    "inherited": "created_at_utc, script_sha256 and privacy are the source run's"
+  }
+}

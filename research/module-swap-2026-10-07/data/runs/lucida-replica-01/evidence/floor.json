@@ -1,0 +1,166 @@
+{
+  "plane_native": [
+    -0.4769218862056732,
+    -0.605158269405365,
+    -0.6374394297599792,
+    1.322803020477295
+  ],
+  "up_native": [
+    -0.4769218862056732,
+    -0.605158269405365,
+    -0.6374394297599792
+  ],
+  "coordinate_system": "new joint Pi3X native world",
+  "metric_scale_known": false,
+  "fit": "existing ehs_spatial.geometry._ransac_floor_plane then SVD on its inliers",
+  "distance_threshold_native": 0.007878116331994534,
+  "total_observed_points": 35487,
+  "inlier_points": 35430,
+  "all_point_residual_median_native": 0.0017518997192382812,
+  "all_point_residual_p95_native": 0.004893159959465265,
+  "inlier_residual_p95_native": 0.00487324595451355,
+  "camera_signed_heights_native": [
+    1.2103846073150635,
+    1.2036008834838867,
+    1.2178680896759033
+  ],
+  "points_path": "evidence/floor_points.npy",
+  "colors_path": "evidence/floor_colors.npy",
+  "views": [
+    {
+      "frame_id": "frame_0001",
+      "rgb_path": "input/1-Photo-1.jpg",
+      "mask_path": "evidence/objects/observed_floor/frame_0001/mask.png",
+      "rgba_path": "evidence/objects/observed_floor/frame_0001/rgba.png",
+      "rgba_crop_xyxy_in_input": [
+        520,
+        2771,
+        2441,
+        3582
+      ],
+      "rgba_pixel_to_input": [
+        [
+          1,
+          0,
+          520
+        ],
+        [
+          0,
+          1,
+          2771
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "canonical_mask_path": "evidence/objects/observed_floor/frame_0001/canonical_mask.npy",
+      "points_path": "evidence/objects/observed_floor/frame_0001/points.npy",
+      "colors_path": "evidence/objects/observed_floor/frame_0001/colors.npy",
+      "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+      "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+      "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+      "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+      "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+      "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+      "conf_path": "geometry/frames/frame_0001/conf.npy",
+      "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+      "mask_pixels": 1001381,
+      "partial_point_count": 18395,
+      "centroid_native": [
+        0.38442671298980713,
+        0.9116780757904053,
+        0.9375183582305908
+      ],
+      "observed_only": true,
+      "provenance": {
+        "type": "same-capture cached SAM floor intersected with visible interior floor ROI",
+        "source_path": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/inventory/sam/frame_0003__floor.json",
+        "source_sha256": "6b65df8388d2d40799b67fd115b7057743579635b3b7e542210bede881d6fd5f",
+        "canonical_roi_xyxy": [
+          140,
+          380,
+          389,
+          477
+        ],
+        "source_frame": "frame_0003"
+      },
+      "sha256": {
+        "points.npy": "58f09a6ccc8fb603068c42ab3794c4733631f730d35fe2cdc594162616e5865a",
+        "rgba.png": "b2d388077929a20126d5ecafe1d32b911c8e65cbc12b783de8ccd954106d2ac2",
+        "colors.npy": "116accb87a3098ba9cc62c749e58ddc9de244bdc6ccb2f92e078c6f6619e589d",
+        "mask.png": "ebd2724908f63cc0e74fb6c722cc3daa2127d4e01960d9759ac105ef6c5792d8",
+        "canonical_mask.npy": "483313d93af067e78747bb83916e035b470c907f4559afad24f2822e694b75bd"
+      }
+    },
+    {
+      "frame_id": "frame_0003",
+      "rgb_path": "input/3-Photo-3.jpg",
+      "mask_path": "evidence/objects/observed_floor/frame_0003/mask.png",
+      "rgba_path": "evidence/objects/observed_floor/frame_0003/rgba.png",
+      "rgba_crop_xyxy_in_input": [
+        669,
+        2810,
+        2520,
+        3587
+      ],
+      "rgba_pixel_to_input": [
+        [
+          1,
+          0,
+          669
+        ],
+        [
+          0,
+          1,
+          2810
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "canonical_mask_path": "evidence/objects/observed_floor/frame_0003/canonical_mask.npy",
+      "points_path": "evidence/objects/observed_floor/frame_0003/points.npy",
+      "colors_path": "evidence/objects/observed_floor/frame_0003/colors.npy",
+      "K_path": "geometry/frames/frame_0003/intrinsics.npy",
+      "c2w_path": "geometry/frames/frame_0003/camera_to_world.npy",
+      "canonical_rgb_path": "geometry/frames/frame_0003/canonical.png",
+      "pointmap_path": "geometry/frames/frame_0003/pts3d.npy",
+      "valid_path": "geometry/frames/frame_0003/valid_mask.npy",
+      "content_valid_path": "geometry/frames/frame_0003/content_valid_mask.npy",
+      "conf_path": "geometry/frames/frame_0003/conf.npy",
+      "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+      "mask_pixels": 930527,
+      "partial_point_count": 17092,
+      "centroid_native": [
+        0.2952898144721985,
+        1.0126678943634033,
+        0.8911558389663696
+      ],
+      "observed_only": true,
+      "provenance": {
+        "type": "same-capture cached SAM floor intersected with visible interior floor ROI",
+        "source_path": "/Users/adam/Desktop/Tesla/ehs-spatial/runs/user-bor1-02/inventory/sam/frame_0004__floor.json",
+        "source_sha256": "3be37ef36a07a811f0b5886a2c4ed26ffd9c64eaeb9fa16849dd67c138fcaa00",
+        "canonical_roi_xyxy": [
+          160,
+          385,
+          400,
+          478
+        ],
+        "source_frame": "frame_0004"
+      },
+      "sha256": {
+        "points.npy": "9182b565981f768c4308cbbe788c966ee155b092f0204c1138defed6a9b4ecce",
+        "rgba.png": "d424f2a231c246df71a17859f7c7a109fa4cf87582d92203d57868ef5882e03a",
+        "colors.npy": "c08a2fc00df04abe0ce2587f2c21d2627d6ffe827f3d3703b14e21d7c7bd1152",
+        "mask.png": "687fa33ea254c739ba46931f8ca1c6dde789ce9344cacc1b8ca2e776f96012d4",
+        "canonical_mask.npy": "a8f2f4e1ac28b18f3e97134b83f97b13f42e60fef3a14b75b108f634c0c8291f"
+      }
+    }
+  ],
+  "evidence_type": "observed partial geometry only; not a generated asset"
+}

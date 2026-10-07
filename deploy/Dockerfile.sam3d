@@ -1,0 +1,23 @@
+# SAM 3D Objects service (serving/sam3d_service.py, :8805) on top of the audited on-prem SAM 3D image.
+# The pinned environment (python 3.11.10, torch 2.5.1 cu121, pytorch3d, kaolin, flash-attn, sam3d_objects f91db411 + the mesh-only
+# patch, DINOv2 code as the torch.hub cache, every pip pin, the modal stub) is ehs-spatial docker/sam3d.Dockerfile, built once and
+# used here unchanged: no second copy of its ~250 pins to drift. Its /opt/sam3d venv already carries the service's runtime
+# (fastapi 0.141.1, uvicorn 0.54.0, pydantic 2.11.10, numpy 1.26.4, pillow 11.3.0, PyYAML 6.0.3, boto3 1.43.102).
+#
+# Build context SRC = deploy/context.sh SRC (ehs-spatial's stage_context.sh layout: SRC/workcell = ehs-spatial, SRC/serving = this
+# repo, SRC/.dockerignore = ehs-spatial's whitelist + serving/serving and serving/deploy):
+#   docker build -f SRC/workcell/docker/sam3d.Dockerfile -t panoptes-sam3d SRC                         (base: internet, ~1 h)
+#   docker build -f SRC/serving/deploy/Dockerfile.sam3d --build-arg CODE_SHA=$(git rev-parse HEAD) \
+#       -t panoptes-sam3d-service:v1 SRC                                                               (this layer: seconds)
+# or `make images GPU=a`. Weights: scripts/onprem/fetch_weights_sam3d.py --cache $WEIGHTS once (online), mounted at /weights;
+# the service re-hashes them against serving/registry.yaml at start. GPU >= 32 GB, driver >= 525, NVIDIA Container Toolkit.
+ARG BASE=panoptes-sam3d
+FROM ${BASE}
+ARG CODE_SHA=unknown
+COPY serving/serving /serving/serving
+ENV PANOPTES_WORKCELL=/workcell PANOPTES_WEIGHTS_DIR=/weights PANOPTES_CODE_SHA=${CODE_SHA} \
+    HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 PYTHONUNBUFFERED=1
+WORKDIR /serving/serving
+EXPOSE 8805
+HEALTHCHECK --interval=30s --timeout=10s --start-period=900s --retries=3 CMD ["python", "healthcheck.py", "8805"]
+CMD ["python", "-m", "uvicorn", "sam3d_service:app", "--host", "0.0.0.0", "--port", "8805"]

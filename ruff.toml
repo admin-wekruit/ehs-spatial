@@ -1,0 +1,15 @@
+# Minimal lint for CI (.github/workflows/ci.yml, `make lint`): syntax errors, undefined names, broken comparisons/prints.
+# Style rules are deliberately off: the research notes under research/ are frozen, byte-identical to the published scripts.
+target-version = "py312"
+line-length = 160
+extend-exclude = ["research/module-swap-2026-10-07/data", ".venv", "uv.lock"]
+
+[lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[lint.per-file-ignores]
+# main's own scripts, unchanged by the 2026-10-07 consolidation: loop-carried names (`peak`, `cap_moved` are bound by the previous
+# "whole" iteration before the "sliding" one reads them) and `del claims` after a lambda that already ran. Runtime-correct; left as is.
+"scripts/live_map.py" = ["F821"]
+"scripts/texture_fused_mesh.py" = ["F821"]
+"scripts/import_report_evidence.py" = ["F823"]
