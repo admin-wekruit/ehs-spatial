@@ -1,16 +1,17 @@
-// Run: PLAYWRIGHT_FROM=/qa/package.json node checks/four-view-layer-check.mjs URL OBJECT_ID [OUT_DIR] [EXPECTED_SIZE_TEXT]
+// Run: PLAYWRIGHT_FROM=/qa/package.json node checks/four-view-layer-check.mjs URL OBJECT_ID [OUT_DIR] [EXPECTED_SIZE_TEXT] [zh|en]
 // A live four-view report with a measurement layer: open one object, record its model size readout and the layer's
 // photo-measured facts, and require the expected size text when one is given (e.g. the reference e-stop "0.080 × 0.080 × 0.100").
+// With en the page opens in English (the viewer's saved language), as after picking English at the top right.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 const { chromium } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
-const [url, objectId, outArg, expected] = process.argv.slice(2);
+const [url, objectId, outArg, expected, language = 'zh'] = process.argv.slice(2);
 const out = path.resolve(outArg || '/tmp/four-view-layer-check');
 fs.mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--enable-gpu', '--enable-unsafe-swiftshader'] });
-const record = { url, objectId, expected: expected || null };
+const record = { url, objectId, expected: expected || null, language };
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
   await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
@@ -18,6 +19,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   page.on('response', response => { if (response.url().includes('/measurement-layer/')) layer.push([response.url(), response.status()]); });
+  if (language === 'en') await page.addInitScript(() => localStorage.setItem('panoptes.language', 'en'));
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
   const facts = page.locator(`[data-measurement-facts="${objectId}"]`);
   try {
@@ -40,7 +42,7 @@ try {
   record.bends = await page.locator('.report-bend-analysis').allInnerTexts();
   // The selected object's own model pane, in its top and front orthographic views.
   const preview = page.locator('.report-model-preview').first();
-  for (const [label, file] of [['俯视', 'preview-top.png'], ['正视', 'preview-front.png']]) {
+  for (const [label, file] of language === 'en' ? [['Top', 'preview-top.png'], ['Front', 'preview-front.png']] : [['俯视', 'preview-top.png'], ['正视', 'preview-front.png']]) {
     const button = preview.getByRole('button', { name: label, exact: true });
     if (await button.count()) {
       await button.click();

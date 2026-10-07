@@ -33,7 +33,7 @@ import { ModelEvidence } from "./ModelEvidence";
 import { IdentityReview } from "./IdentityReview";
 import { AgentPanel } from "./AgentPanel";
 import { Extent, ReportScene } from "./ReportScene";
-import { applyMeasurementLayer, loadMeasurementLayer, withLayerAssets, type MeasurementLayer } from "./measurement-layer";
+import { applyMeasurementLayer, layerText, loadMeasurementLayer, withEnglishLabels, withLayerAssets, type MeasurementLayer } from "./measurement-layer";
 import { SceneResources, useSceneResources } from "./SceneResources";
 import { ReportObjectFindings } from "./ReportObjectFindings";
 import { ReportReview, type AssessmentSummary } from "./ReportReview";
@@ -170,13 +170,14 @@ export function WorkcellReport({
   requestedRevision?: string | null;
   historical?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const readOnly = !!PUBLICATION_ID;
   const [detail, setDetail] = useState<ProjectDetail>(),
     [publication, setPublication] = useState<Publication>(),
     [layer, setLayer] = useState<MeasurementLayer | null>(null);
   const baseResources = useSceneResources(),
-    resources = useMemo(() => withLayerAssets(baseResources, layer), [baseResources, layer]);
+    resources = useMemo(() => withLayerAssets(baseResources, layer), [baseResources, layer]),
+    shownRevision = useMemo(() => detail && withEnglishLabels(detail.revision, layer, language), [detail, layer, language]);
   const [error, setError] = useState<unknown>(),
     [canManage, setCanManage] = useState(false),
     [busy, setBusy] = useState(false),
@@ -688,9 +689,10 @@ export function WorkcellReport({
         {!error && <p role="status">{t("loading")}</p>}
       </div>
     );
-  const { revision, project } = detail,
+  const { project } = detail, revision = shownRevision!,
     doc = revision.document;
   const entity = doc.entities.find((e) => e.id === selection.entityId);
+  const pipeline = entity && layer?.pipelines?.[entity.id], pipelineCaption = pipeline && layerText(language, pipeline.caption, pipeline.captionEn);
   const currentJobs = jobs.filter(
     (j) =>
       j.baseRevisionId === revision.id || j.resultRevisionId === revision.id,
@@ -820,7 +822,7 @@ export function WorkcellReport({
           revision={revision}
           boxLayer={layer}
           newerReport={newerReport}
-          variantNotice={layer?.variant ? {label: layer.variant.label, href: (() => { const u = new URL(location.href); u.searchParams.delete("layer"); return u.href; })()} : undefined}
+          variantNotice={layer?.variant ? {label: layerText(language, layer.variant.label, layer.variant.labelEn), href: (() => { const u = new URL(location.href); u.searchParams.delete("layer"); return u.href; })()} : undefined}
           selection={selection}
           onSelect={select}
           imageId={imageId}
@@ -837,17 +839,17 @@ export function WorkcellReport({
             {!(reviewMode && agentOpen) && <div className="report-selection-details">
               {entity ? <>
                 {layer?.facts?.[entity.id] && <section className="report-measurement-layer" data-measurement-facts={entity.id}>
-                  <h4>照片测量 · 多视角</h4>
-                  <dl>{layer.facts[entity.id].map((fact, i) => <div key={i} data-fact-kind={fact.kind}><dt>{fact.label}</dt><dd>{fact.text}</dd></div>)}</dl>
-                  {layer.models?.[entity.id] && <p>{layer.models[entity.id].note}</p>}
-                  <p>尺度：1 原生单位 = {(layer.scale.nativeToMeters * 100).toFixed(1)} cm{layer.scale.uncertaintyRelative ? `（±${(layer.scale.uncertaintyRelative * 100).toFixed(1)}%，各特征单独定尺度的分散）` : ""}（{layer.scale.source}）。模型估计，未经现场实测验证。</p>
+                  <h4>{t("layerFactsTitle")}</h4>
+                  <dl>{layer.facts[entity.id].map((fact, i) => <div key={i} data-fact-kind={fact.kind}><dt>{layerText(language, fact.label, fact.labelEn)}</dt><dd>{layerText(language, fact.text, fact.textEn)}</dd></div>)}</dl>
+                  {layer.models?.[entity.id] && <p>{layerText(language, layer.models[entity.id].note, layer.models[entity.id].noteEn)}</p>}
+                  <p>{t("layerScale").replace("{cm}", (layer.scale.nativeToMeters * 100).toFixed(1))}{layer.scale.uncertaintyRelative ? t("layerScaleSpread").replace("{pct}", (layer.scale.uncertaintyRelative * 100).toFixed(1)) : ""}{t("layerScaleSource").replace("{source}", () => layer.scale.source)}</p>
                 </section>}
-                {layer?.pipelines?.[entity.id] && <section className="report-object-pipeline" data-object-pipeline={entity.id}>
-                  <h4>完整流程（照片 → 模型 → 测量）</h4>
-                  <ol>{layer.pipelines[entity.id].stages.map((stage, i) => <li key={i}><b>{stage.label}</b><span>{stage.text}</span></li>)}</ol>
-                  {layer.pipelines[entity.id].url && <a href={new URL(layer.pipelines[entity.id].url!, location.href).href} target="_blank" rel="noreferrer">
-                    <img src={new URL(layer.pipelines[entity.id].url!, location.href).href} alt={layer.pipelines[entity.id].caption || "流程图"} loading="lazy" />
-                    <small>{layer.pipelines[entity.id].caption || "点开看大图"}</small>
+                {pipeline && <section className="report-object-pipeline" data-object-pipeline={entity.id}>
+                  <h4>{t("layerPipelineTitle")}</h4>
+                  <ol>{pipeline.stages.map((stage, i) => <li key={i}><b>{layerText(language, stage.label, stage.labelEn)}</b><span>{layerText(language, stage.text, stage.textEn)}</span></li>)}</ol>
+                  {pipeline.url && <a href={new URL(pipeline.url, location.href).href} target="_blank" rel="noreferrer">
+                    <img src={new URL(pipeline.url, location.href).href} alt={pipelineCaption || t("layerPipelineSheet")} loading="lazy" />
+                    <small>{pipelineCaption || t("layerPipelineOpen")}</small>
                   </a>}
                 </section>}
                 <ObjectFacts entity={entity} document={doc} /><ModelEvidence entity={entity} onCommit={canWrite ? operations => apply(operations) : undefined}

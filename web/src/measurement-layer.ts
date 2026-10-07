@@ -1,11 +1,15 @@
 import type { Representation, Revision, Transform } from "./types";
 import type { BendOutcome } from "./SpatialMeasurements";
+import type { Language } from "./i18n";
 
 /** A static measurement layer published next to a frozen report: the frame's reference-object scale, a corrected ground plane,
  * reference-object models built from their specification, and per-object facts measured from the photos. It applies to exactly
- * the revision it names; any other revision is shown unchanged. */
-export type LayerFact = { label: string; text: string; kind: string; method?: string };
-export type LayerConfidence = { level: "high" | "medium" | "low" | "unverified"; label: string; missing?: string[]; reasons?: string[] };
+ * the revision it names; any other revision is shown unchanged. Each Chinese text may carry an English sibling, the same name
+ * with "En" appended; the viewer shows it in English mode and falls back to the Chinese text without it (layerText). */
+export type LayerFact = { label: string; labelEn?: string; text: string; textEn?: string; kind: string; method?: string };
+export type LayerConfidence = { level: "high" | "medium" | "low" | "unverified"; label: string; labelEn?: string; missing?: string[]; missingEn?: string[]; reasons?: string[]; reasonsEn?: string[] };
+/** A layer text in the viewer's language: its English sibling in English mode when the layer has one, else the Chinese text. */
+export const layerText = <T>(language: Language, zh: T, en?: T | null): T => language === "en" && en != null ? en : zh;
 export type MeasurementLayer = {
   schemaVersion: 1;
   publicationId: string;
@@ -14,18 +18,19 @@ export type MeasurementLayer = {
   /** uncertaintyRelative: half the spread of the per-feature scales (e.g. red head only vs yellow body only) over the joint scale. */
   scale: { nativeToMeters: number; status: "operator_anchored"; source: string; uncertaintyRelative?: number };
   ground?: { normal: [number, number, number]; offset: number; plane: [number, number, number, number]; source: string };
-  models?: Record<string, { representation: Representation; note: string }>;
+  models?: Record<string, { representation: Representation; note: string; noteEn?: string }>;
   /** Extra mesh assets published next to the page (url relative to it), registered in the document under their ids. */
   assets?: (Record<string, unknown> & { id: string; url: string })[];
   facts?: Record<string, LayerFact[]>;
   /** Per object: every stage from photos to the shown model and its measurements, with a sheet image (url relative to the page). */
-  pipelines?: Record<string, { url?: string; caption?: string; stages: { label: string; text: string }[] }>;
+  pipelines?: Record<string, { url?: string; caption?: string; captionEn?: string; stages: { label: string; labelEn?: string; text: string; textEn?: string }[] }>;
   /** A comparison layer published next to the report's own (`<publicationId>.<id>.json`, opened with ?layer=<id>); never replaces it. */
-  variant?: { id: string; label: string };
+  variant?: { id: string; label: string; labelEn?: string };
   /** Per-object confidence from the generic checks, with what is missing to raise it. */
   confidence?: Record<string, LayerConfidence>;
   /** Display names for entities whose imported label is a working name (e.g. English evidence labels). */
   labels?: Record<string, string>;
+  labelsEn?: Record<string, string>;
   /** Fold angles measured from the photos, shown like saved bends; each references the layer model it measured. */
   bends?: BendOutcome[];
   /** Per-object measured boxes over the one unified floor, with which photos see each face. */
@@ -35,7 +40,7 @@ export type MeasurementLayer = {
 export type BoxLevel = "high" | "medium" | "low" | "unverified";
 export type BoxFaceName = "front" | "back" | "left" | "right" | "top" | "bottom";
 export type BoxDimName = "L" | "W" | "H" | "bottom";
-export type BoxFace = { photos: number[]; status: string; confidence: BoxLevel; need: string | null };
+export type BoxFace = { photos: number[]; status: string; confidence: BoxLevel; need: string | null; needEn?: string | null };
 export type BoxDim = { valueM: number; sigmaCm: number | null; confidence: BoxLevel };
 type V3 = [number, number, number];
 /** One object's measured box over the one unified floor, as the layer publishes it. axes = [l, w, u] unit native vectors (u = the
@@ -43,9 +48,9 @@ type V3 = [number, number, number];
  * floor. Face names, dimensions and the highlight (shown as low confidence, retake photos) are the layer's; the viewer only draws. */
 export type LayerBox = {
   label: string; centerNative: V3; axes: [V3, V3, V3]; faceNormals: Record<BoxFaceName, V3>; sizeM: V3;
-  bottomM: number; topM: number; floorContact: boolean; snapNote?: string | null;
+  bottomM: number; topM: number; floorContact: boolean; snapNote?: string | null; snapNoteEn?: string | null;
   dims: Record<BoxDimName, BoxDim>; faces: Partial<Record<BoxFaceName, BoxFace>>;
-  highlight: boolean; highlightReasons?: string[]; confidence: BoxLevel; method?: string;
+  highlight: boolean; highlightReasons?: string[]; highlightReasonsEn?: string[]; confidence: BoxLevel; method?: string;
 };
 export const boxFaceNames: BoxFaceName[] = ["front", "back", "left", "right", "top", "bottom"];
 export const boxDimNames: BoxDimName[] = ["L", "W", "H", "bottom"];
@@ -54,6 +59,8 @@ export const boxLevels: BoxLevel[] = ["high", "medium", "low", "unverified"];
 const isLevel = (value: unknown): value is BoxLevel => boxLevels.includes(value as BoxLevel);
 const vec = (value: unknown, n: number): value is number[] => Array.isArray(value) && value.length === n && value.every(Number.isFinite);
 const isUnit = (value: unknown) => vec(value, 3) && Math.abs(Math.hypot(...value) - 1) < 1e-3;
+const optText = (value: unknown) => value == null || typeof value === "string";
+const optTexts = (value: unknown) => value == null || Array.isArray(value) && value.every(item => typeof item === "string");
 const dot3 = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const along = (p: number[], d: number[], s: number): V3 => [p[0] + d[0] * s, p[1] + d[1] * s, p[2] + d[2] * s];
 /** The box axis (0 l, 1 w, 2 u) a face's layer normal lies along and whether it is the positive side; null when it lies along none. */
@@ -68,10 +75,10 @@ export function validBox(box: unknown): box is LayerBox {
   if (!b || typeof b !== "object" || !vec(b.centerNative, 3) || !Array.isArray(b.axes) || b.axes.length !== 3 || !b.axes.every(isUnit) ||
     !vec(b.sizeM, 3) || !b.sizeM.every(v => v >= 0) || !Number.isFinite(b.bottomM) || !Number.isFinite(b.topM) || b.bottomM > b.topM ||
     typeof b.floorContact !== "boolean" || typeof b.highlight !== "boolean" || !isLevel(b.confidence) ||
-    b.snapNote != null && typeof b.snapNote !== "string" || b.highlightReasons != null && !(Array.isArray(b.highlightReasons) && b.highlightReasons.every(r => typeof r === "string")) ||
+    ![b.snapNote, b.snapNoteEn].every(optText) || ![b.highlightReasons, b.highlightReasonsEn].every(optTexts) ||
     !b.dims || typeof b.dims !== "object" || !b.faces || typeof b.faces !== "object" || !b.faceNormals || typeof b.faceNormals !== "object") return false;
   const dimsOk = boxDimNames.every(k => { const d = b.dims[k]; return !!d && Number.isFinite(d.valueM) && (d.sigmaCm === null || Number.isFinite(d.sigmaCm) && d.sigmaCm >= 0) && isLevel(d.confidence); });
-  const facesOk = boxFaceNames.every(name => { const f = b.faces[name]; return f === undefined || !!f && Array.isArray(f.photos) && f.photos.every(Number.isFinite) && typeof f.status === "string" && isLevel(f.confidence) && (f.need == null || typeof f.need === "string"); });
+  const facesOk = boxFaceNames.every(name => { const f = b.faces[name]; return f === undefined || !!f && Array.isArray(f.photos) && f.photos.every(Number.isFinite) && typeof f.status === "string" && isLevel(f.confidence) && optText(f.need) && optText(f.needEn); });
   // six unit normals, each along a box axis, on six different sides
   const sides = boxFaceNames.map(name => isUnit(b.faceNormals[name]) ? faceSide(b, name) : null);
   return dimsOk && facesOk && sides.every(Boolean) && new Set(sides.map(side => side!.join())).size === 6 && sides[4]!.join() === "2,true";  // top is +u
@@ -98,6 +105,15 @@ export function withLayerAssets<T extends { resolveAsset: (id: string) => Promis
   const urls = new Map((layer?.assets || []).map(asset => [asset.id, new URL(asset.url, location.href).href]));
   if (!urls.size && !layer?.bends?.length && !layer?.confidence) return resources;
   return { ...resources, layerBends: layer?.bends, layerConfidence: layer?.confidence, resolveAsset: async (id: string) => urls.get(id) ?? resources.resolveAsset(id) };
+}
+
+/** The revision with the layer's English entity names in English mode. The load already applied its Chinese names (labels);
+ * an entity without an English one keeps that. Unchanged in Chinese mode or for a revision the layer does not name. */
+export function withEnglishLabels(revision: Revision, layer: MeasurementLayer | null, language: Language): Revision {
+  const en = language === "en" && layer?.revisionId === revision.id ? layer.labelsEn : undefined;
+  if (!en) return revision;
+  const entities = revision.document.entities.map(entity => { const label = layerText(language, entity.label, en[entity.id]); return label === entity.label ? entity : { ...entity, label }; });
+  return { ...revision, document: { ...revision.document, entities } };
 }
 
 export async function loadMeasurementLayer(publicationId: string, variant?: string | null): Promise<MeasurementLayer | null> {

@@ -22,7 +22,7 @@ import {
   type Vec,
 } from "./viewer/native-math";
 import type { Camera, Entity, Revision, Selection, SceneDocument, RepresentationLoadState } from "./types";
-import { boxDimNames, boxFaceNames, boxGeometry, boxLevels, validBox, type BoxDimName, type BoxFaceName, type BoxLevel, type LayerBox, type MeasurementLayer } from "./measurement-layer";
+import { boxDimNames, boxFaceNames, boxGeometry, boxLevels, layerText, validBox, type BoxDimName, type BoxFaceName, type BoxLevel, type LayerBox, type MeasurementLayer } from "./measurement-layer";
 import "./report-scene.css";
 
 type Pane = "photo" | "spatial" | "cad" | "plan";
@@ -256,14 +256,15 @@ function withBoxes(measurement: SceneMeasurement | null, layer: MeasurementLayer
 /** 长 / 宽（进深）/ 高 / 离地 with σ and confidence, why the object is highlighted, which photos see each face and what to retake. */
 export function LayerBoxPanel({ box, entityId }: { box: LayerBox; entityId: string }) {
   const { language } = useI18n(), zh = language === "zh", pick = (pair: readonly [string, string]) => pair[zh ? 0 : 1];
-  const reasons = box.highlightReasons || [], needs = boxFaceNames.flatMap(name => box.faces[name]?.need ? [[name, box.faces[name]!.need!] as const] : []);
+  const reasons = layerText(language, box.highlightReasons, box.highlightReasonsEn) || [], snapNote = layerText(language, box.snapNote, box.snapNoteEn);
+  const needs = boxFaceNames.flatMap(name => { const face = box.faces[name], need = face && layerText(language, face.need, face.needEn); return need ? [[name, need] as const] : []; });
   return <section className="report-box-panel" data-layer-box={entityId} data-confidence={box.confidence} data-highlight={box.highlight || undefined}>
     <h4>{zh ? "尺寸与离地 · 统一地面" : "Size and clearance · unified floor"}<span data-confidence={box.confidence}>{zh ? "置信度 " : "Confidence "}{pick(levelNames[box.confidence])}</span></h4>
     {box.highlight && <p className="report-box-recapture">{zh ? "低置信度（需补拍）" : "Low confidence (retake photos)"}</p>}
     {reasons.length > 0 && <ul className="report-box-reasons">{reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>}
     <table className="report-box-dims"><tbody>{boxDimNames.map(k => { const d = box.dims[k]; return <tr key={k} data-dim={k} data-confidence={d.confidence}>
       <th>{pick(dimNames[k])}</th><td className="report-numeric">{cm(d.valueM)} ± {d.sigmaCm === null ? "—" : d.sigmaCm.toFixed(1)} cm{k === "bottom" && box.floorContact ? (zh ? "（贴地）" : " (on the floor)") : ""}</td><td>{pick(levelNames[d.confidence])}</td></tr>; })}</tbody></table>
-    {box.snapNote && <p className="report-box-snap">{box.snapNote}</p>}
+    {snapNote && <p className="report-box-snap">{snapNote}</p>}
     <small className="report-numeric">{zh ? "顶部离地" : "Top above floor"} {cm(box.topM)} cm</small>
     <table className="report-box-faces"><thead><tr><th>{zh ? "面" : "Face"}</th><th>{zh ? "照片" : "Photos"}</th><th>{zh ? "状态" : "Status"}</th><th>{zh ? "置信度" : "Confidence"}</th></tr></thead>
       <tbody>{boxFaceNames.map(name => { const face = box.faces[name], level = face?.confidence ?? "unverified"; return <tr key={name} data-confidence={level}>
@@ -622,14 +623,15 @@ export function ReportScene({
                 family = modelPreviewEntities(document, entity.id),
                 familyModels = family.filter(member => activeModel(member) && entityGeometryForLayer(member, { ...geometryOptions, layer: "model" })),
                 modelStatus = referenceSurfaces.includes(entity) ? "observed_reference_surface" : family.some(member => activeModel(member)?.sourceValidity === "stale") ? "identityModelStale" : family.some(modelFrameMismatch) ? "sceneModelWrongFrame" : !familyModels.length ? "reportMissingGeometry" : familyModels.some(member => modelState(member)?.state === "error") ? "sceneModelLoadFailed" : familyModels.every(member => modelState(member)?.state === "ready") ? composite ? "sceneCompositeEvidence" : "sceneModelLoaded" : "sceneModelLoading";
-              const recapture = !!boxById.get(entity.id)?.highlight;
+              const recapture = !!boxById.get(entity.id)?.highlight, confidence = layerConfidence?.[entity.id],
+                confidenceMissing = confidence && layerText(language, confidence.missing, confidence.missingEn);
               return <div key={entity.id} className="report-scene-object-row" data-entity-id={entity.id} data-parent-entity-id={entity.parentEntityId || undefined} data-box-recapture={recapture || undefined} style={{ marginLeft: depth * 12 }}><button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
                 <strong><b className="report-scene-object-number">{objectNumbers.get(entity.id)}</b>{entity.label || entity.id}</strong>
                 <span className="report-scene-object-source">{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
                 <span className="report-scene-object-evidence">{t(evidence.photoKey)}{observations.length > 0 && ` · ${observations.length} ${t("observations")}`}</span>
                 {evidence.identityKey && <span className="report-scene-object-identity"><span>{t("entityIdentity")}</span>{t(evidence.identityKey)}</span>}
                 <span className="report-scene-object-model" data-model-state={modelStatus}><span>{t("model")}</span>{t(modelStatus)}{composite && modelStatus !== "sceneCompositeEvidence" && <> · {t("sceneCompositeEvidence")}</>}{candidate && <em>{t("sceneCandidate")}</em>}</span>
-                {layerConfidence?.[entity.id] && <span className="report-scene-object-confidence" data-confidence={layerConfidence[entity.id].level} title={(layerConfidence[entity.id].reasons || []).join("；")}><span>{language === "zh" ? "置信度" : "Confidence"}</span><b>{layerConfidence[entity.id].label}</b>{layerConfidence[entity.id].missing?.[0] && <small>{layerConfidence[entity.id].missing![0]}</small>}</span>}
+                {confidence && <span className="report-scene-object-confidence" data-confidence={confidence.level} title={(layerText(language, confidence.reasons, confidence.reasonsEn) || []).join(zh ? "；" : "; ")}><span>{zh ? "置信度" : "Confidence"}</span><b>{layerText(language, confidence.label, confidence.labelEn)}</b>{confidenceMissing?.[0] && <small>{confidenceMissing[0]}</small>}</span>}
                 <span className="report-scene-object-extent"><span>{t("reportObservedExtent")}</span><Extent entity={entity} document={document} /></span>
                 {recapture && <span className="report-scene-object-recapture">{zh ? "低置信度（需补拍）" : "Low confidence (retake photos)"}</span>}
               </button>{children.has(entity.id) && <button aria-expanded={expandedEntities.has(entity.id)} aria-label={`${t("sceneModelParts")} · ${entity.label || entity.id}`} onClick={() => setExpandedEntities(current => { const next = new Set(current);if (next.has(entity.id)) next.delete(entity.id);else next.add(entity.id);return next; })}>{expandedEntities.has(entity.id) ? "▾" : "▸"} {children.get(entity.id)!.length} {t("sceneModelParts")}</button>}{onFeedback && <button className="report-object-feedback" aria-label={`${t("sceneFeedback")} · ${entity.label || entity.id}`} onClick={() => { selectEntity(entity.id); onFeedback(entity.id); setMobileSection("inspector"); }}>{t("sceneFeedback")} ↗</button>}</div>;

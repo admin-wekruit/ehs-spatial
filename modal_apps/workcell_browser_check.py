@@ -5,7 +5,7 @@ web/checks/photo-revision-check.mjs (Chromium, software WebGL) on the published 
 and returns its record and screenshots.
 
 modal run modal_apps/workcell_browser_check.py --commit 7d0ebb9 --folder workcell-photo-direct --out NEW_DIR
-modal run modal_apps/workcell_browser_check.py --url LIVE_REPORT_URL --object-id ENTITY_ID [--expected TEXT] --out NEW_DIR
+modal run modal_apps/workcell_browser_check.py --url LIVE_REPORT_URL --object-id ENTITY_ID [--expected TEXT] [--language en] --out NEW_DIR
 """
 import io
 import json
@@ -31,12 +31,12 @@ image = (modal.Image.from_registry(f'mcr.microsoft.com/playwright:v{PLAYWRIGHT}-
 
 
 @app.function(image=image, cpu=4, memory=8 * 1024, timeout=1800, retries=0, min_containers=0)
-def check(commit: str, folder: str, url: str = '', object_id: str = '', expected: str = ''):
+def check(commit: str, folder: str, url: str = '', object_id: str = '', expected: str = '', language: str = 'zh'):
     """A packaged folder at one Pages commit, or (with url) a live four-view report and one of its objects."""
     started = time.monotonic()
     out = Path('/out'); out.mkdir()
     if url:
-        head, command = url, ['node', '/check/four-view-layer-check.mjs', url, object_id, str(out), expected]
+        head, command = url, ['node', '/check/four-view-layer-check.mjs', url, object_id, str(out), expected, language]
     else:
         site = Path('/site')
         clone = ['git', 'clone', '--filter=blob:none', '--no-checkout', SITE, str(site)]
@@ -58,7 +58,7 @@ def check(commit: str, folder: str, url: str = '', object_id: str = '', expected
 
 
 @app.local_entrypoint()
-def main(out: str, commit: str = '', folder: str = '', url: str = '', object_id: str = '', expected: str = ''):
+def main(out: str, commit: str = '', folder: str = '', url: str = '', object_id: str = '', expected: str = '', language: str = 'zh'):
     destination = Path(out)
     if destination.exists():
         raise ValueError('Choose a fresh output directory')
@@ -66,7 +66,7 @@ def main(out: str, commit: str = '', folder: str = '', url: str = '', object_id:
         raise ValueError('Give --commit and --folder, or --url and --object-id')
     destination.mkdir(parents=True)
     start = time.monotonic()
-    result = check.remote(commit, folder, url, object_id, expected)
+    result = check.remote(commit, folder, url, object_id, expected, language)
     with tarfile.open(fileobj=io.BytesIO(result.pop('archive')), mode='r:gz') as bundle:
         bundle.extractall(destination, filter='data')
     ledger = {'mode': 'ephemeral modal run', 'hardware': '4 CPU, 8 GiB, no GPU', 'status': 'completed' if result['returncode'] == 0 else 'failed',
