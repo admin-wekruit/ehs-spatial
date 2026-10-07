@@ -8,9 +8,29 @@
 换一种重建输出 = 换一个 adapter，引擎和规则不动；改一条规则 = 改 `rules.lp`，重建不动。
 
 ```
-measurement-layer/<id>.json ──adapter_measurement_layer.py──▶ out/scene-<cell>.json   (契约 panoptes.verdict.scene/0)
-out/scene-<cell>.json ──relations.py（两两盒距离、平面占用格）──▶ 事实 ──rules.lp (clingo)──▶ out/<cell>/verdicts.{json,md}
+measurement-layer/<id>.json ──adapter_measurement_layer.py──▶ out/scene-<cell>.json          (契约 panoptes.verdict.scene/0：节点)
+out/scene-<cell>.json ──scene_graph.py（relations.py 的几何）──▶ out/<cell>/scene-graph.json   (薄 3D 场景图：节点 + 类型化 3D 边 + 占用格层)
+out/<cell>/scene-graph.json ──engine.py（只读图，不算几何）──▶ rules.lp (clingo) ──▶ out/<cell>/verdicts.{json,md}
+                              ──viz.py / viz3d.py──▶ out/<cell>/scene-graph.png（平面）、scene-graph-3d.png（立体）
 ```
+
+**薄 3D 场景图（`scene_graph.py`，2026-10-07 晚加）**：节点 = 对象 + floor；边都带 3D 端点 p/q、值 (mm)、U (mm, k=2)、来源照片 id：
+
+| 边 | 含义 | 给哪条规则 |
+|---|---|---|
+| `min_distance_3d` | 两个有向盒表面最近点的 3D 距离（重叠 = 0） | 挤压 / 夹困间隙 |
+| `horizontal_gap` | 平面 footprint 间距 | ISO 13857 表 2 的 c |
+| `floor_gap` | 对象底 → 地面（竖向） | 离地缝、光幕最低光束 |
+| `z_overlap` | 两个高度区间的重叠长度；0 = 一个整体在另一个之上 | 防护是否覆盖危险高度 |
+| `above` | a 整体在 b 之上且 footprint 相交（堆叠 / 悬挑） | 堆叠规则 |
+| `reach_over` | 危险顶高 a、防护顶高 b、水平距离 c 三元组 | ISO 13857 表 2 查表 |
+| `line_of_sight` | 两最近点连线是否被第三个盒挡住（blocked_by） | 急停可见 / 可达 |
+| `plan_occupancy` 层 | 占用格：blocked / hazard / outside，`observed = null` | 包围（拓扑） |
+
+090：10 节点、132 边；030：9 节点、102 边。引擎改成只读图（不再自己算几何）。新增 `reach_over` 规则：三个输入齐了但表 2 的查表值
+没对正文核，所以出 **NEEDS_INPUT**（不猜表）。判定计数变成 090：10 PASS / 2 FAIL / 2 NEEDS_MEASUREMENT / 1 CANNOT_DETERMINE / 7 NEEDS_INPUT；
+030：9 / 1 / 1 / 1 / 6。立体图里能看到：机器人盒离地 0.92 m（臂在底座上，底座没建模 → 机器人盒不是运动包络的又一个证据）、
+围栏 2.7 m 直立、光幕 0.25 m 起、护板悬在 0.42 / 0.32 m。
 
 **跑法**（隔离环境：clingo 5.8.2、numpy、scipy、shapely；不装进项目 venv）
 ```

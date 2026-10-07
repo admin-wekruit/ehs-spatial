@@ -31,9 +31,15 @@ status(R, S, needs_meas) :- meas(R, S, V, U), thr(R, T), dir(R, ge), V - U <  T,
 status(R, S, pass)       :- meas(R, S, V, U), thr(R, T), dir(R, le), V + U <= T.
 status(R, S, fail)       :- meas(R, S, V, U), thr(R, T), dir(R, le), V - U >  T.
 status(R, S, needs_meas) :- meas(R, S, V, U), thr(R, T), dir(R, le), V + U >  T, V - U <= T.
-status(R, S, cannot_determine) :- subject(R, S), not meas(R, S, _, _).
+status(R, S, cannot_determine) :- subject(R, S), not meas(R, S, _, _), R != reach_over.
 margin(R, S, V - T) :- meas(R, S, V, _), thr(R, T), dir(R, ge).
 margin(R, S, T - V) :- meas(R, S, V, _), thr(R, T), dir(R, le).
+
+% Reach over a protective structure (ISO 13857 Table 2): inputs a (hazard top), b (structure top), c (horizontal gap) come from the
+% scene graph's reach_over edges. The table itself is not encoded until verified against the purchased text: the engine reports the
+% three inputs and asks for the lookup (needs_input) instead of guessing.
+subject(reach_over, (H, S)) :- reach_over(H, S, _, _, _, _).
+status(reach_over, (H, S), needs_input) :- reach_over(H, S, _, _, _, _).
 
 % Enclosure (topology): the outside reaches a hazard cell through cells no blocker covers.
 reach(C)  :- outside(C), not blocked(C).

@@ -1,6 +1,7 @@
 {
  "schema": "panoptes.verdict/0-trial",
  "scene_id": "030-fafdeb6b",
+ "scene_graph": "out/030/scene-graph.json",
  "rule_pack": "rules.lp v0 2026-10-07",
  "decision_rule": "guard_band_U_k2",
  "verdicts": [
@@ -224,7 +225,7 @@
    ],
    "labels": [],
    "notes": [
-    "外部可达危险区：50 个开口格，方向 ['+e1', '+e2', '-e1', '-e2']（平面基 e1/e2）；照片未覆盖的区域和真实开口在这一层分不开 → 不下结论",
+    "外部可达危险区：50 个开口格，方向 ['+e1', '+e2', '-e1', '-e2']；观察范围未提供（not provided by the reconstruction layer; cells outside footprints are unknown, not empty）→ 不下结论",
     "危险区 = 机器人姿态盒的平面占用，不是受限空间（需控制器配置）"
    ],
    "openings": 50,
@@ -381,6 +382,240 @@
    "evidence_views": [
     1,
     2
+   ]
+  },
+  {
+   "rule": "reach_over",
+   "rule_text": "越过防护够到：a 危险高 / b 防护高 / c 水平距离",
+   "source": "ISO 13857:2019 表 2（查表值待对正文核）",
+   "status": "NEEDS_INPUT",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "0d84459c-3591-55ef-966e-b1b17475f94b"
+   ],
+   "labels": [
+    "robot",
+    "right fence"
+   ],
+   "notes": [
+    "三个输入齐了；表 2 的查表值和低 / 高风险的选择待对购买正文核 → 不发判定"
+   ],
+   "inputs": {
+    "a_hazard_top_mm": [
+     3853,
+     209
+    ],
+    "b_structure_top_mm": [
+     2697,
+     178
+    ],
+    "c_horizontal_mm": [
+     1802,
+     159
+    ]
+   },
+   "evidence_views": [
+    1,
+    2
+   ],
+   "confidence": [
+    "unverified",
+    "low"
+   ]
+  },
+  {
+   "rule": "reach_over",
+   "rule_text": "越过防护够到：a 危险高 / b 防护高 / c 水平距离",
+   "source": "ISO 13857:2019 表 2（查表值待对正文核）",
+   "status": "NEEDS_INPUT",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "1ed52346-0777-5939-b935-d5e48f44b333"
+   ],
+   "labels": [
+    "robot",
+    "safety guard"
+   ],
+   "notes": [
+    "三个输入齐了；表 2 的查表值和低 / 高风险的选择待对购买正文核 → 不发判定"
+   ],
+   "inputs": {
+    "a_hazard_top_mm": [
+     3853,
+     209
+    ],
+    "b_structure_top_mm": [
+     1001,
+     147
+    ],
+    "c_horizontal_mm": [
+     2215,
+     167
+    ]
+   },
+   "evidence_views": [
+    1,
+    2
+   ],
+   "confidence": [
+    "unverified",
+    "low"
+   ]
+  },
+  {
+   "rule": "reach_over",
+   "rule_text": "越过防护够到：a 危险高 / b 防护高 / c 水平距离",
+   "source": "ISO 13857:2019 表 2（查表值待对正文核）",
+   "status": "NEEDS_INPUT",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "4339d261-6523-5a1f-afa5-9fbc3f834fc6"
+   ],
+   "labels": [
+    "robot",
+    "right light curtain"
+   ],
+   "notes": [
+    "三个输入齐了；表 2 的查表值和低 / 高风险的选择待对购买正文核 → 不发判定"
+   ],
+   "inputs": {
+    "a_hazard_top_mm": [
+     3853,
+     209
+    ],
+    "b_structure_top_mm": [
+     1874,
+     75
+    ],
+    "c_horizontal_mm": [
+     4546,
+     208
+    ]
+   },
+   "evidence_views": [
+    1,
+    2
+   ],
+   "confidence": [
+    "unverified",
+    "medium"
+   ]
+  },
+  {
+   "rule": "reach_over",
+   "rule_text": "越过防护够到：a 危险高 / b 防护高 / c 水平距离",
+   "source": "ISO 13857:2019 表 2（查表值待对正文核）",
+   "status": "NEEDS_INPUT",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "738b8922-a8b0-5f80-997f-8b4148b1f1ab"
+   ],
+   "labels": [
+    "robot",
+    "right bollard"
+   ],
+   "notes": [
+    "三个输入齐了；表 2 的查表值和低 / 高风险的选择待对购买正文核 → 不发判定"
+   ],
+   "inputs": {
+    "a_hazard_top_mm": [
+     3853,
+     209
+    ],
+    "b_structure_top_mm": [
+     960,
+     231
+    ],
+    "c_horizontal_mm": [
+     5184,
+     230
+    ]
+   },
+   "evidence_views": [
+    1,
+    2
+   ],
+   "confidence": [
+    "unverified",
+    "unverified"
+   ]
+  },
+  {
+   "rule": "reach_over",
+   "rule_text": "越过防护够到：a 危险高 / b 防护高 / c 水平距离",
+   "source": "ISO 13857:2019 表 2（查表值待对正文核）",
+   "status": "NEEDS_INPUT",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "b3806b16-7f37-541b-8650-468598d7ed5f"
+   ],
+   "labels": [
+    "robot",
+    "left bollard"
+   ],
+   "notes": [
+    "三个输入齐了；表 2 的查表值和低 / 高风险的选择待对购买正文核 → 不发判定"
+   ],
+   "inputs": {
+    "a_hazard_top_mm": [
+     3853,
+     209
+    ],
+    "b_structure_top_mm": [
+     919,
+     39
+    ],
+    "c_horizontal_mm": [
+     4929,
+     221
+    ]
+   },
+   "evidence_views": [
+    1,
+    2
+   ],
+   "confidence": [
+    "unverified",
+    "low"
+   ]
+  },
+  {
+   "rule": "reach_over",
+   "rule_text": "越过防护够到：a 危险高 / b 防护高 / c 水平距离",
+   "source": "ISO 13857:2019 表 2（查表值待对正文核）",
+   "status": "NEEDS_INPUT",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "bf0b0ae8-19fb-562e-a80c-7fabea0895a5"
+   ],
+   "labels": [
+    "robot",
+    "left light curtain"
+   ],
+   "notes": [
+    "三个输入齐了；表 2 的查表值和低 / 高风险的选择待对购买正文核 → 不发判定"
+   ],
+   "inputs": {
+    "a_hazard_top_mm": [
+     3853,
+     209
+    ],
+    "b_structure_top_mm": [
+     1888,
+     77
+    ],
+    "c_horizontal_mm": [
+     4728,
+     214
+    ]
+   },
+   "evidence_views": [
+    1,
+    2
+   ],
+   "confidence": [
+    "unverified",
+    "medium"
    ]
   }
  ]
