@@ -1,6 +1,6 @@
 {
  "about": "Cell 090 report (publication 4b58dbd2) rebuilt on the licence-clean MVS geometry (research-notes/geometry-backbone-ab-2026-10-06). Every displayed entity of the old report, by its old entity id prefix; 'run' = an object of the source run (its masks); 'part_of' = a source partition of that object (split by its own masks); 'method': sam3d (SAM 3D Objects from every photo with a mask, compare.py gates, measured box fallback), plane (mask rays on a plane fitted to the object's MVS points; planeFrom parent = its parent's points, for a transparent sheet whose own mask shows what is behind it), floor_plane (mask rays on the report floor, +lift m), estop (specification cylinder at the triangulated e-stop), part (faces of the parent's displayed model inside this part's masks).",
- "experiment": "mvs090-clean-02",
+ "experiment": "mvs090-clean-03",
  "sourceRun": "lucida-replica-01",
  "publicationId": "4b58dbd2-3846-47f2-af97-57eaa108753c",
  "entities": [

@@ -69,7 +69,14 @@ Output: boxes = the CONTRACT records (objects only); research = the same with th
 R1 per photo, unrounded; gradeCaps: what capture_plan needs to regrade) and the parts (named part boxes stay research only: the
 part's own mask pixels, not clipped to the object's mask).
 Generic: no object-type rules; parts are click inputs (opts partMasks {entityId: {part: {photoIndex0: polygons}}}, from
-modal_apps/workcell_part_masks.py). opts: api (Pi3X maps), partMasks, draw (bool, box overlays), only (entity id prefixes).
+modal_apps/workcell_part_masks.py). opts: api (point maps), partMasks, draw (bool, box overlays), only (entity id prefixes),
+neutralPrior (entity ids shown as their measured box: the prior is neutral, a square footprint whose depth equals the visible
+width, never the rejected candidate's shape).
+Dominant plane: when one near-vertical plane holds >= 50 % of the object's own mask points (within 5 cm, RANSAC), the yaw is that
+plane's (a fence's long axis), not the silhouettes' near-tie. Pinned: a horizontal size (L or W) whose box leaves > 10 % of the
+object's own mask points outside it by > 3 cm is not pinned, whatever the silhouettes say (a rectangle fitted to a round post):
+it keeps the prior size and is at most low (so W is 'high' only when it is really pinned). research.pointContainment reports it.
+English: highlightReasonsEn, snapNoteEn and faces[f].needEn next to the Chinese texts.
 Runs in the Modal check container (modal_apps/workcell_view_checks.py --checks box_faces) or on-prem; no arguments = self-test."""
 import math
 import sys
@@ -102,6 +109,9 @@ LOW_EDGE_M, CROUCH_M, CROUCH_DEG, NAME_TIE = .5, (.4, .8), 15., .05
 GEOMETRY_WORDS = ('深度', '摆放', '位置', '模型最低点', '模型底部', '模型下部')  # the layer's words for depth / placement / model-bottom items
 ZH = dict(front='前面', back='后面', left='左面', right='右面', top='顶面', bottom='底面')
 DIM_ZH, LEVEL_ZH = dict(L='长度', W='进深', H='高度', bottom='离地高度'), dict(high='高', medium='中', low='低', unverified='未验证')
+DIM_EN = dict(L='length', W='depth', H='height', bottom='clearance')
+PLANE_TOL_M, PLANE_MAJORITY, PLANE_VERTICAL = .05, .5, .5  # one plane holds most of the points: >= 50 % within 5 cm (two-view MVS noise at 3-6 m; 5 % of the extent if less), |n . up| < 0.5
+CONTAIN_TOL_M, CONTAIN_OUT = .03, .10  # a box contains its own mask's points: <= 10 % outside it by > 3 cm along a horizontal axis
 CROUCH = ('；下沿离地 < 0.5 m：至少 1 张蹲下拍（手机离地 0.5–0.6 m，镜头放平，下沿在屏幕上不低于下面那条三分线）',
           '; the lower edge is below 0.5 m: crouch for at least one (phone 0.5-0.6 m above the floor, lens level, the edge not below the lower third line)')
 
@@ -188,6 +198,37 @@ def grade_box(px, dirs, dims, low=(), unpinned=()):
     cap = lambda g, c: min(g, 'low', key=GRADES.index) if c else g
     face = {f: (lambda r: (cap(r[0], f in low),) + r[1:])(face_grade(px[f], dirs[f])) for f in px}
     return face, {d: cap(dim_grade(*(face[f][0] for f in fs)), bool(set(fs) & set(unpinned))) for d, fs in dims.items()}
+
+
+def dominant_plane(P, tol, seed=7, iterations=300):
+    """RANSAC plane (unit normal n, offset d with n.X + d = 0) through the most points within tol, SVD refit on them, and that
+    inlier fraction; None below 50 points."""
+    if len(P) < 50:
+        return None
+    rng = np.random.default_rng(seed); best = None
+    for _ in range(iterations):
+        a, b, c = P[rng.choice(len(P), 3, replace=False)]; nn = np.cross(b - a, c - a)
+        if np.linalg.norm(nn) < 1e-12:
+            continue
+        nn /= np.linalg.norm(nn); inl = np.abs((P - a) @ nn) < tol
+        if best is None or inl.sum() > best.sum():
+            best = inl
+    c = P[best].mean(0); nn = np.linalg.svd(P[best] - c, full_matrices=False)[2][-1]
+    return nn, float(-nn @ c), float((np.abs(P @ nn - nn @ c) < tol).mean())
+
+
+def plane_yaw(t, P):
+    """The box yaw from the object's dominant plane, when one near-vertical plane holds most of its points (PLANE_*: within 5 cm,
+    or 5 % of the object's horizontal extent when that is less: a small box's two faces are not one plane), else None."""
+    if len(P) < 50:
+        return None, None
+    flat = np.c_[(P - t.O) @ t.e1, (P - t.O) @ t.e2]
+    extent = float(np.linalg.norm(np.percentile(flat, 95, 0) - np.percentile(flat, 5, 0)))
+    pl = dominant_plane(P, min(PLANE_TOL_M / t.S, .05 * extent))
+    if pl is None or pl[2] < PLANE_MAJORITY or abs(float(pl[0] @ t.n)) >= PLANE_VERTICAL:
+        return None, pl
+    d = np.cross(t.n, pl[0])  # the plane's horizontal direction
+    return math.atan2(float(d @ t.e2), float(d @ t.e1)) % (math.pi / 2), pl
 
 
 def basis(n):
@@ -337,7 +378,7 @@ class Target:
         self.floor_masks, self.others, self.prior_pts, self.shape_pts = floor_masks, others, prior_pts, shape_pts
         n, d = ctx['floor']; self.n, self.O, self.S = n, -d * n, ctx['S']; self.e1, self.e2 = basis(n)
         self.views = [View(k, ctx['cams'][k], regions[k], rests.get(k), regions[k] & contested[k]) for k in sorted(regions)]
-        self.masked = set(regions)  # photos with a usable mask (the rest may still see it: 'add a mask', not 'take a photo')
+        self.masked = set(regions); self.neutral = False; self.own_pts = np.zeros((0, 3))  # photos with a usable mask (the rest may still see it: 'add a mask', not 'take a photo')
 
     def set_yaw(self, theta):
         """Axes, prior extents, bound and footprint at this yaw; returns (prior, bound)."""
@@ -345,7 +386,14 @@ class Target:
         prior = extents(coords(self.prior_pts, self.O, self.ax), *((2, 98) if self.part else (.5, 99.5)))
         size = prior[1::2] - prior[0::2]; R = np.maximum(BOUND_M / S, BOUND_REL * size)
         bound = prior + np.repeat(R, 2) * np.tile([-1, 1], 3); bound[4] = max(bound[4], -BELOW_FLOOR_M / S)
-        self.fp = footprint(coords(self.shape_pts, self.O, self.ax), prior) if self.shape_pts is not None else SQUARE
+        if self.neutral:  # a measured-box stand-in: a neutral prior, never the rejected candidate's shape or depth: a square
+            cdir = np.mean([v.cam['C'] for v in self.views], 0) - self.prior_pts.mean(0)  # footprint whose depth (the axis
+            k = int(abs(cdir @ self.ax[1]) > abs(cdir @ self.ax[0]))  # facing the cameras) equals the visible width
+            mid, half = (prior[2 * k] + prior[2 * k + 1]) / 2, (prior[2 * (1 - k) + 1] - prior[2 * (1 - k)]) / 2
+            prior = prior.copy(); prior[2 * k], prior[2 * k + 1] = mid - half, mid + half
+            size = prior[1::2] - prior[0::2]; R = np.maximum(BOUND_M / S, BOUND_REL * size)
+            bound = prior + np.repeat(R, 2) * np.tile([-1, 1], 3); bound[4] = max(bound[4], -BELOW_FLOOR_M / S)
+        self.fp = SQUARE if self.neutral else footprint(coords(self.shape_pts, self.O, self.ax), prior) if self.shape_pts is not None else SQUARE
         self.wts = weights(self.fp)
         return prior, bound
 
@@ -651,7 +699,7 @@ def contact(t, low):
 
 def fit_target(t, parent_theta=None):
     """Yaw, prior, fit, refit with the occlusion of the fitted box. Returns (x, prior, bound, info) or None."""
-    info = {}; pts = np.vstack([lift(t, v.k, v.region_full) for v in t.views] + [np.zeros((0, 3))])
+    info = {}; pts = np.vstack([lift(t, v.k, v.region_full) for v in t.views] + [np.zeros((0, 3))]); t.own_pts = pts
     if t.part:
         lifted = np.vstack([model_lift(t, v.k, v.region_full) for v in t.views] + [np.zeros((0, 3))])
         t.prior_pts = np.vstack([lifted, pts]); info['priorSource'] = f'part pixels on the model ({len(lifted)}) + Pi3X ({len(pts)})'
@@ -660,8 +708,12 @@ def fit_target(t, parent_theta=None):
     if len(t.prior_pts) < 10:
         return None
     flat = lambda P: np.c_[(P - t.O) @ t.e1, (P - t.O) @ t.e2]
+    th_plane, pl = plane_yaw(t, pts) if parent_theta is None else (None, None)
+    info['dominantPlane'] = None if pl is None else dict(inlierFraction=round(pl[2], 3), tiltDeg=round(math.degrees(math.acos(min(1., abs(float(pl[0] @ t.n))))), 1))
     if parent_theta is not None:
         cands = {'object': parent_theta}
+    elif th_plane is not None:  # one plane holds most of the object's points: its yaw, not the silhouettes' near-tie
+        cands = {'plane': th_plane}
     else:
         cdir = np.mean([v.cam['C'] - t.prior_pts.mean(0) for v in t.views], axis=0)
         cands = {'model': minrect_yaw(flat(t.prior_pts)), 'pi3x': minrect_yaw(flat(pts)) if len(pts) >= 30 else None,
@@ -695,6 +747,17 @@ def fit_target(t, parent_theta=None):
     return x, prior, bound, info
 
 
+def containment(t, x):
+    """The object's own mask points (point maps, eroded masks, off the floor) against box x: the share outside it by more than
+    CONTAIN_TOL_M along each horizontal axis, and the share inside the box grown by it (all axes)."""
+    P = t.own_pts
+    if len(P) < 30:
+        return dict(n=int(len(P)), outsideL=0., outsideW=0., inside=None)
+    c = coords(P, t.O, t.ax); tol = CONTAIN_TOL_M / t.S
+    out = [(c[:, i] < x[2 * i] - tol) | (c[:, i] > x[2 * i + 1] + tol) for i in range(3)]
+    return dict(n=int(len(P)), outsideL=float(out[0].mean()), outsideW=float(out[1].mean()), inside=float((~(out[0] | out[1] | out[2])).mean()))
+
+
 def coverage(t, x):
     """Per photo, the fraction of the region mask (uncontested) inside the projected shape."""
     X = prism(x, t.fp, t.O, t.ax); out = {}
@@ -721,8 +784,12 @@ def describe(t, x, prior, bound, info, label, layer=None):
                      f' (photos {", ".join(str(k + 1) for k in cov_ph)}; cap < {100 * COVER_CAP:.0f} % in one)' + ('; fit rejected (< 50 %)' if rejected else '') +
                      '; the displayed model\'s box kept, every dimension at most low, sigma null')
     cov = covariance(rows)
+    contain = containment(t, x)
     if not capped:  # no collapse: a face the photos do not pin keeps the prior size (both faces: the prior faces); the other
         U = {f for f in range(6) if not spx[f] or math.sqrt(cov[f, f]) >= LOOSE_CM}  # faces keep their fit (a refit would make
+        for a, frac in ((0, contain['outsideL']), (2, contain['outsideW'])):  # the box contradicts its own points along this axis:
+            if frac > CONTAIN_OUT:  # the silhouettes did not pin it (a round object fitted by a rectangle): the prior size
+                U |= {a, a + 1}; notes.append(f'{100 * frac:.0f} % of the mask points lie outside the box along axis {a // 2} by > {100 * CONTAIN_TOL_M:.0f} cm: that size is unpinned')
         if U:  # them absorb a wrong prior)
             x = x.copy()
             for a, b in ((0, 1), (2, 3), (4, 5)):
@@ -733,6 +800,7 @@ def describe(t, x, prior, bound, info, label, layer=None):
                 elif b in U:
                     x[b] = x[a] + (prior[b] - prior[a])
             ev, why, spx, low, rows = evidence(t, x); cov = covariance(rows)
+    contain = containment(t, x)
     vis, nm = seen(t, x), name_faces(t, x); name = {f: k for k, f in nm.items()}; nomask = unmasked(t, x)
     nomask[4] = sorted({p for g in range(4) for p in nomask[g]})  # the lower edge is seen with the side faces
     bottom = cm(x[4]); sank = bottom < -CONTACT_M * 100
@@ -770,24 +838,29 @@ def describe(t, x, prior, bound, info, label, layer=None):
         snapped = round(bottom, 2); x = x.copy()  # object then moves up whole), record what was replaced
         x[5] = x[5] if x[5] > .01 / t.S else x[5] - x[4]; x[4] = 0.
         snap_note = '贴地：盒子未移动' if abs(snapped) < .05 else f'贴地：盒子{"下" if snapped > 0 else "上"}移 {abs(snapped):.1f} cm'
+    snap_en = None if snap_note is None else 'on the floor: box not moved' if abs(snapped) < .05 else f'on the floor: box moved {"down" if snapped > 0 else "up"} {abs(snapped):.1f} cm'
     N = normals(t.ax); ext = lambda y, f: abs(cm(y[f | 1] - y[f & ~1])) / 100
     size = [round(ext(x, nm['right']), 4), round(ext(x, nm['front']), 4), round(ext(x, 4), 4)]
     dims = {d: dict(valueM=v, sigmaCm=dsig[d], confidence=dimc[d]) for d, v in zip(('L', 'W', 'H', 'bottom'), size + [round(cm(x[4]) / 100, 4)])}
-    reasons = [cap[0]] if cap else []
+    reasons, reasons_en = ([cap[0]], [cap[1]]) if cap else ([], [])
     reasons += [f'{DIM_ZH[d]}{"置信度低" if dimc[d] == "low" else "未验证"}' for d in ('L', 'H', 'bottom') if dimc[d] in ('low', 'unverified')]
-    lay = []
+    reasons_en += [f'{DIM_EN[d]} {"low confidence" if dimc[d] == "low" else "unverified"}' for d in ('L', 'H', 'bottom') if dimc[d] in ('low', 'unverified')]
+    lay, lay_en = [], []
     if layer:
         if layer.get('level') in ('low', 'unverified'):
-            lay.append(f'图层置信度{LEVEL_ZH[layer["level"]]}')
-        lay += [f'图层：{m}' for m in layer.get('missing') or [] if any(w in m for w in GEOMETRY_WORDS)]
+            lay.append(f'图层置信度{LEVEL_ZH[layer["level"]]}'); lay_en.append(f'layer confidence {layer["level"]}')
+        en_missing = dict(zip(layer.get('missing') or [], layer.get('missingEn') or []))
+        for m in layer.get('missing') or []:
+            if any(w in m for w in GEOMETRY_WORDS):
+                lay.append(f'图层：{m}'); lay_en.append(f'layer: {en_missing.get(m, m)}')
     highlight = bool(lay) or any(dimc[d] in ('low', 'unverified') for d in ('L', 'H', 'bottom'))
     order = ['front', 'back', 'left', 'right', 'bottom', 'top']
     rec = dict(label=label, centerNative=[round(float(c), 6) for c in corners(x, t.O, t.ax).mean(0)],
                axes=[[round(float(c), 6) for c in a] for a in (N[nm['right']], N[nm['back']], t.n)],
                faceNormals={k: [round(float(c), 6) for c in N[nm[k]]] for k in order},
-               sizeM=size, bottomM=dims['bottom']['valueM'], topM=round(cm(x[5]) / 100, 4), floorContact=bool(fl), snapNote=snap_note, dims=dims,
-               faces={k: dict(photos=vis[nm[k]][0], status=vis[nm[k]][1], confidence=gr[nm[k]], need=need[nm[k]][0]) for k in order},
-               highlight=highlight, highlightReasons=(reasons + lay) if highlight else [],
+               sizeM=size, bottomM=dims['bottom']['valueM'], topM=round(cm(x[5]) / 100, 4), floorContact=bool(fl), snapNote=snap_note, snapNoteEn=snap_en, dims=dims,
+               faces={k: dict(photos=vis[nm[k]][0], status=vis[nm[k]][1], confidence=gr[nm[k]], need=need[nm[k]][0], needEn=need[nm[k]][1]) for k in order},
+               highlight=highlight, highlightReasons=(reasons + lay) if highlight else [], highlightReasonsEn=(reasons_en + lay_en) if highlight else [],
                confidence=min((dimc[d] for d in ('L', 'H', 'bottom')), key=GRADES.index),
                method=f"silhouette L1 fit of a gravity-aligned box (model footprint inside, {info['footprintVertices']} vertices) in "
                       f"{len(t.views)} photo(s) ({', '.join(str(v.k + 1) for v in t.views)}), occlusion-aware; yaw {info['yawSource']}; "
@@ -803,7 +876,10 @@ def describe(t, x, prior, bound, info, label, layer=None):
                                     knownOutlinePx={str(k + 1): round(s, 1) for k, s in sorted(spx[f].items())}, statusByPhoto=vis[f][2],
                                     unmaskedPhotos=nomask[f], sigmaCm=sig[f], movedFromPriorCm=round(cm(x[f] - prior[f]) * (1 if f % 2 else -1), 2),
                                     needEn=need[f][1]) for f in range(6)},
-        yawDeg=info['yawDeg'], yawCandidates=info['yawCandidates'],
+        yawDeg=info['yawDeg'], yawCandidates=info['yawCandidates'], yawSource=info['yawSource'], dominantPlane=info.get('dominantPlane'),
+        pointContainment=dict(n=contain['n'], outsideL=round(contain['outsideL'], 3), outsideW=round(contain['outsideW'], 3),
+                              inside=None if contain['inside'] is None else round(contain['inside'], 3), tolCm=100 * CONTAIN_TOL_M),
+        priorSource=info['priorSource'],
         priorSizeM=[round(ext(prior, nm['right']), 4), round(ext(prior, nm['front']), 4), round(ext(prior, 4), 4)], priorBottomM=round(cm(prior[4]) / 100, 4),
         fitResidualPx=round(resid, 2), residualPxByPhoto={str(k + 1): round(r, 2) for k, r in res.items()},
         maskCoverageByPhoto={str(k + 1): round(c, 3) for k, c in cov_ph.items()}, fitRejected=rejected, notes=notes)
@@ -870,6 +946,7 @@ def run(ctx, opts):
         others = {k: cv2.dilate(m.astype(np.uint8), kernel) > 0 for k, m in raw.items()}
         V, F = o['mesh']; model_pts = wsc.sample_surface(V, F, 20000, rng)[0]
         t = Target(ctx, o, gid, None, regions, {}, frames, scene, fm, others, raw, model_pts, model_pts)
+        t.neutral = o['id'] in set(opts.get('neutralPrior') or [])  # shown as a measured box: refit from a neutral prior
         res = fit_target(t)
         if res is None:
             skipped.append(dict(entityId=o['id'], reason='no_prior_or_views')); continue
@@ -941,9 +1018,10 @@ def _check():
                floorMasks={k: masks[k][2] for k in range(3)}, index={})
     out = run(ctx, dict(draw=False)); res, rs = out['boxes'], out['research']
     po, pa, bo, cu = res['post'], res['panel'], res['bollard'], res['cube']
-    keys = {'label', 'centerNative', 'axes', 'faceNormals', 'sizeM', 'bottomM', 'topM', 'floorContact', 'snapNote', 'dims', 'faces',
-            'highlight', 'highlightReasons', 'confidence', 'method'}
-    assert all(set(r) == keys and set(r['faces']['top']) == {'photos', 'status', 'confidence', 'need'} for r in res.values()), [set(r) ^ keys for r in res.values()]
+    keys = {'label', 'centerNative', 'axes', 'faceNormals', 'sizeM', 'bottomM', 'topM', 'floorContact', 'snapNote', 'snapNoteEn', 'dims', 'faces',
+            'highlight', 'highlightReasons', 'highlightReasonsEn', 'confidence', 'method'}
+    assert all(set(r) == keys and set(r['faces']['top']) == {'photos', 'status', 'confidence', 'need', 'needEn'} for r in res.values()), [set(r) ^ keys for r in res.values()]
+    assert all(len(r['highlightReasons']) == len(r['highlightReasonsEn']) for r in res.values())
     assert po['floorContact'] and po['bottomM'] == 0 and abs(rs['post']['snappedCm']) < 1.5 and po['snapNote'].startswith('贴地'), po
     assert all(abs(a - .1) < .012 for a in po['sizeM'][:2]) and abs(po['sizeM'][2] - .9) < .012, po['sizeM']
     assert abs(pa['bottomM'] - .24) < .01 and not pa['floorContact'] and pa['snapNote'] is None and abs(pa['sizeM'][0] - 1.2) < .015 and abs(pa['topM'] - 1.0) < .01, pa
@@ -959,7 +1037,15 @@ def _check():
     assert cu['highlightReasons'][0].startswith('掩码与盒子不符（') and cu['highlightReasons'][0].endswith('）：尺寸取模型'), cu['highlightReasons']
     assert ('px' in cu['highlightReasons'][0]) != ('覆盖' in cu['highlightReasons'][0]), cu['highlightReasons']  # px mismatch or coverage, never both
     assert not any(r['capped'] for k, r in rs.items() if k != 'cube'), {k: r['notes'] for k, r in rs.items()}
-    print('box_faces self-test passed: post', po['sizeM'], po['snapNote'], '| panel', pa['sizeM'], 'bottom', pa['bottomM'], 'W', pa['dims']['W'],
+    # the round bollard shown as a thin measured box (a stand-in, 12 x 2 cm): the neutral prior and the containment rule give a
+    # square footprint (depth >= the visible width), never the thin box, and its depth is not 'high'
+    thin = cl._box((.74, 2.39, 0), (.86, 2.41, .8))
+    objs2 = [dict(o, mesh=thin) if o['id'] == 'bollard' else o for o in objs]
+    b2 = run(dict(ctx, objects=objs2), dict(draw=False, neutralPrior=['bollard']))
+    tb = b2['boxes']['bollard']
+    assert min(tb['sizeM'][:2]) >= .10 and tb['dims']['W']['confidence'] != 'high', (tb['sizeM'], tb['dims'], b2['research']['bollard']['notes'])
+    assert b2['research']['bollard']['pointContainment']['outsideW'] <= .10, b2['research']['bollard']['pointContainment']
+    print('box_faces self-test passed: thin stand-in ->', tb['sizeM'], tb['dims']['W'], '| post', po['sizeM'], po['snapNote'], '| panel', pa['sizeM'], 'bottom', pa['bottomM'], 'W', pa['dims']['W'],
           '| cube', cu['sizeM'], cu['highlightReasons'][0],
           '| bollard', bo['sizeM'], bo['faces']['front']['need'], '| panel faces', {k: v['confidence'] for k, v in pa['faces'].items()},
           '| highlight', {k: r['highlightReasons'] for k, r in res.items()})

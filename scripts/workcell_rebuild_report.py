@@ -50,6 +50,9 @@ box_faces, lower_edge, obvious_errors, workcell_fix_obvious, workcell_smooth_mod
             near-face edge on the new point maps, per-object pipelines (every stage; the compare.py sheet for SAM 3D objects,
             copied to --pages as pipeline-<id8>.jpg), and layer model patches (--patches: smoothing / obvious-error fixes,
             {models, assets} files; their .bin files copied to --pages).
+  filter    --config C --geometry GEOM_RUN --scale S --out NEW_GEOM_RUN
+            visibility_filter: the geometry run without samples that break visibility in another photo, its published cloud
+            cropped to the workcell scope (filter-record.json); evidence then runs on NEW_GEOM_RUN
   selftest                       synthetic checks of fit_plane, box_mesh and partition
   coverage  --run NEW_RUN       per object view: mask pixels and point-map samples inside the mask
 """
@@ -79,6 +82,9 @@ def platform_module(rel):
     import importlib.util
     if str(PLATFORM) not in sys.path:
         sys.path.append(str(PLATFORM))
+    import ehs_spatial  # the serving package may own the name: its path gains the platform's (for ehs_spatial.platform)
+    if str(PLATFORM / 'ehs_spatial') not in list(ehs_spatial.__path__):
+        ehs_spatial.__path__.append(str(PLATFORM / 'ehs_spatial'))
     spec = importlib.util.spec_from_file_location(Path(rel).stem, PLATFORM / rel)
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     return module
@@ -214,6 +220,348 @@ def evidence(config, geometry, view_path, out):
     manifest['status'] = 'input_geometry_and_object_evidence_complete'
     save(out / 'manifest.json', manifest)
     coverage(out)
+
+
+def camera_z(P, c2w):
+    return (P - c2w[:3, 3]) @ c2w[:3, :3][:, 2]
+
+
+def visibility_filter(src, out, scale_path, cfg, window=9, core=3, rel=.10, abs_m=.10, core_min=5, scope_margin_m=1.0, top_margin_m=.5, passes=5, area=0, area_min=10, area_frac=.9, moge_dir=None, planes_path=None, alias_m=.05):
+    """A copy of the geometry run src (manifest, evidence/canonical, evidence/floor.json, geometry/) whose point maps break no
+    visibility, and whose published cloud is cropped to the workcell scope.
+    Visibility: a sample X of photo A is a false match when another photo B should see it but sees something farther behind:
+    X projects inside B's content, B has >= core_min of the core x core samples there, and every B sample in the window x window
+    neighbourhood (valid ones) lies farther than z_B(X) (1 + rel) + abs_m; repeated on the remaining samples until no photo drops one (<= passes: a dropped
+    false match no longer hides the surface behind it). Such samples are dropped everywhere (pts3d 0, valid and
+    conf 0): the overlay, the object evidence, the boxes, the gates and the SAM 3D inputs. A thin object B misses (a hole at the
+    pixel) is never dropped: B must positively see the farther surface there.
+    Scope: samples outside the box (floor frame, horizontal p2-p98 of every in-scope object's evidence points + scope_margin_m,
+    heights -0.3 m .. top + top_margin_m) get conf 0: the content selection (conf >= 0.1) leaves them out of the published cloud and
+    of the object evidence; the native cloud, the valid masks and pts3d keep them (free-space and occlusion checks still see the
+    background). Writes out/filter-record.json."""
+    import cv2
+    src, out = Path(src), Path(out)
+    if out.exists():
+        raise ValueError('choose a fresh directory')
+    S = json.loads(Path(scale_path).read_text())['nativeToMeters']
+    for rel_path in ('manifest.json', 'evidence/canonical', 'evidence/floor.json', 'geometry'):
+        (out / rel_path).parent.mkdir(parents=True, exist_ok=True)
+        if (src / rel_path).is_dir():
+            shutil.copytree(src / rel_path, out / rel_path)
+        else:
+            shutil.copyfile(src / rel_path, out / rel_path)
+    manifest = json.loads((out / 'manifest.json').read_text())
+    fids = [f['frame_id'] for f in manifest['frames']]
+    F = {}
+    for f in manifest['frames']:
+        g = out / 'geometry/frames' / f['frame_id']
+        P = np.load(g / 'pts3d.npy').astype(np.float64); c2w = np.load(g / 'camera_to_world.npy').astype(float); K = np.load(g / 'intrinsics.npy').astype(float)
+        F[f['frame_id']] = dict(P=P, c2w=c2w, K=K, content=np.load(g / 'content_valid_mask.npy').astype(bool), alpha=np.load(out / f['alpha']).astype(bool))
+        if moge_dir:  # what photo B sees where its MVS map has holes: its MoGe-3 depth, aligned tile by tile to its own MVS samples
+            mg = np.load(Path(moge_dir) / f"moge-{f['frame_id']}.npz"); pm = mg['points'][..., 2].astype(float); x0 = f['content_rect_xyxy'][0]
+            zm = np.full(P.shape[:2], np.nan); zm[:, x0:x0 + pm.shape[1]] = np.where(mg['mask'] & np.isfinite(pm) & (pm > 0), pm, np.nan)
+            F[f['frame_id']]['moge'] = zm
+    F0 = {a: F[a]['content'].copy() for a in fids}
+    record = {'params': dict(window=window, core=core, rel=rel, absM=abs_m, coreMin=core_min, scopeMarginM=scope_margin_m, maxPasses=passes, area=area, areaMin=area_min, areaFrac=area_frac, moge=bool(moge_dir)), 'frames': {}, 'passes': []}
+    for _ in range(passes):  # until no photo drops a sample: a removed false match no longer hides the surface behind it
+        for a in fids:
+            A = F[a]; z = np.where(A['content'], camera_z(A['P'], A['c2w']), np.inf).astype(np.float32)
+            seen = A['content'].copy()
+            if 'moge' in A:
+                zf = moge_local(z, A['content'], A['moge']); fill = ~A['content'] & np.isfinite(zf) & A['alpha']
+                z = np.where(fill, zf, z).astype(np.float32); seen |= fill
+            A['z'] = z; A['zmin'] = cv2.erode(z, np.ones((window, window), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=np.inf)
+            A['ncore'] = cv2.boxFilter(seen.astype(np.float32), -1, (core, core), normalize=False, borderType=cv2.BORDER_CONSTANT)
+            A['narea'] = cv2.boxFilter(A['content'].astype(np.float32), -1, (max(area, 1),) * 2, normalize=False, borderType=cv2.BORDER_CONSTANT)
+        new = {}
+        for a in fids:
+            A = F[a]; ys, xs = np.nonzero(A['content']); X = A['P'][ys, xs]; bad = np.zeros(len(X), bool)
+            for b in fids:
+                if b == a:
+                    continue
+                B = F[b]; cam = (X - B['c2w'][:3, 3]) @ B['c2w'][:3, :3]; zx = cam[:, 2]
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    u = np.round(B['K'][0, 0] * cam[:, 0] / zx + B['K'][0, 2]); v = np.round(B['K'][1, 1] * cam[:, 1] / zx + B['K'][1, 2])
+                H, W = B['z'].shape
+                ok = (zx > 0) & np.isfinite(u) & np.isfinite(v) & (u >= 0) & (v >= 0) & (u < W) & (v < H)
+                ui, vi = u[ok].astype(int), v[ok].astype(int)
+                gap = zx[ok] * (1 + rel) + abs_m / S
+                hit = B['alpha'][vi, ui] & (B['ncore'][vi, ui] >= core_min) & (B['zmin'][vi, ui] > gap)
+                if area:  # or: B's samples around it are sparse but almost all lie behind it (>= area_min of them, >= area_frac)
+                    far = area_count(B, vi, ui, gap, area)
+                    hit |= B['alpha'][vi, ui] & (B['narea'][vi, ui] >= area_min) & (far >= area_frac * B['narea'][vi, ui])
+                bad[np.nonzero(ok)[0][hit]] = True
+            new[a] = (ys[bad], xs[bad])
+        for a in fids:
+            F[a]['content'][new[a]] = False
+        record['passes'].append({a: int(len(new[a][0])) for a in fids})
+        if not any(len(v[0]) for v in new.values()):
+            break
+    record['grown'] = grow_false_planes(src, F, F0, S, fids)  # the rest of a false surface the other photos could not test
+    if planes_path:  # an independently measured plane (three-view facets) overrules the two-view samples inside its object's mask
+        record['planeAliases'] = plane_aliases(src, F, S, json.loads(Path(planes_path).read_text()), alias_m)
+    drop = {a: np.nonzero(F0[a] & ~F[a]['content']) for a in fids}
+    for a in fids:
+        record['frames'][a] = dict(samples=int(F0[a].sum()), dropped=int(len(drop[a][0])))
+        F[a]['content'] = F0[a]  # the scope crop below works on the original samples
+    # the scope: every in-scope object's evidence points (the source run), robust extents in the floor frame
+    floor = json.loads((out / 'evidence/floor.json').read_text()); up = np.asarray(floor['up_native'], float); up /= np.linalg.norm(up)
+    n, d = np.asarray(floor['plane_native'][:3], float), float(floor['plane_native'][3]); scale_n = np.linalg.norm(n); n, d = n / scale_n, d / scale_n
+    n, d = (n, d) if n @ up > 0 else (-n, -d)
+    e1 = np.cross(up, [1., 0, 0]); e1 /= np.linalg.norm(e1); e2 = np.cross(up, e1)
+    context = {e['id'] for e in cfg['entities'] if e.get('context')}
+    lo, hi, top = np.full(2, np.inf), np.full(2, -np.inf), -np.inf
+    for o in json.loads((src / 'evidence/objects.json').read_text())['objects'] if (src / 'evidence/objects.json').exists() else []:
+        if o['object_id'] in context:
+            continue
+        Q = [np.load(src / v['points_path']) for v in o['views'] if v.get('partial_point_count')]
+        Q = np.concatenate(Q) if Q else np.zeros((0, 3))
+        if len(Q) < 50:
+            continue
+        flat = np.c_[Q @ e1, Q @ e2]; lo = np.minimum(lo, np.percentile(flat, 2, 0)); hi = np.maximum(hi, np.percentile(flat, 98, 0))
+        top = max(top, float(np.percentile((Q @ n + d) * S, 98)))
+    m = scope_margin_m / S
+    scope = dict(e1=e1.tolist(), e2=e2.tolist(), up=n.tolist(), offset=d, lo=(lo - m).tolist(), hi=(hi + m).tolist(), heightM=[-.3, top + top_margin_m])
+    record['scope'] = scope
+    for f in manifest['frames']:
+        fid = f['frame_id']; g = out / 'geometry/frames' / fid; A = F[fid]
+        P = np.load(g / 'pts3d.npy'); valid = np.load(g / 'valid_mask.npy'); conf = np.load(g / 'conf.npy')
+        ys, xs = drop[fid]; P[ys, xs] = 0; valid[ys, xs] = False; conf[ys, xs] = 0
+        Q = A['P']; flat = np.stack([Q @ e1, Q @ e2], -1); h = (Q @ n + d) * S
+        inside = (flat >= np.asarray(scope['lo'])).all(-1) & (flat <= np.asarray(scope['hi'])).all(-1) & (h >= scope['heightM'][0]) & (h <= scope['heightM'][1])
+        crop = A['content'] & ~inside; crop[ys, xs] = False
+        conf = np.where(crop, 0, conf).astype(conf.dtype)
+        np.save(g / 'pts3d.npy', P); np.save(g / 'valid_mask.npy', valid); np.save(g / 'conf.npy', conf)
+        record['frames'][fid].update(outOfScope=int(crop.sum()), content=int((A['content'] & inside).sum() - len(ys)))
+    # per object: what the visibility filter took from its masks (the source run's canonical masks)
+    record['objects'] = {}
+    for o in json.loads((src / 'evidence/objects.json').read_text())['objects'] if (src / 'evidence/objects.json').exists() else []:
+        row = {}
+        for v in o['views']:
+            mk = np.load(src / v['canonical_mask_path']).astype(bool); fid = v['frame_id']; dm = np.zeros(mk.shape, bool); dm[drop[fid]] = True
+            row[fid] = [int((mk & F[fid]['content']).sum()), int((mk & dm).sum())]
+        record['objects'][o['object_id']] = row
+    save(out / 'filter-record.json', record)
+    print(json.dumps({k: v for k, v in record['frames'].items()}), '\n', json.dumps({o: {f: f'{b}/{a}' for f, (a, b) in r.items()} for o, r in record['objects'].items()}))
+
+
+def project_quad(K, c2w, corners, shape):
+    """Canonical-grid mask of a world quad seen by a camera (None when a corner is behind it)."""
+    import cv2
+    cam = (np.asarray(corners, float) - c2w[:3, 3]) @ c2w[:3, :3]
+    if (cam[:, 2] <= 1e-6).any():
+        return None
+    uv = cam[:, :2] / cam[:, 2:] @ K[:2, :2].T + K[:2, 2]; m = np.zeros(shape, np.uint8)
+    cv2.fillPoly(m, [np.round(uv).astype(np.int32)], 1)
+    return m > 0
+
+
+def plane_aliases(src, F, S, planes, alias_m):
+    """Samples inside an object's mask whose pixel some confirmed plane of that object covers (its measured quad, projected), but
+    that lie off every covering plane by more than alias_m along their ray (in front of an opaque measured face, or behind it):
+    false matches. planes: {'objects': {object id: [{normal, offset (n . X = offset), corners}]}}. Updates F[*]['content']."""
+    out = {}
+    for o in json.loads((Path(src) / 'evidence/objects.json').read_text())['objects']:
+        pl = planes.get('objects', {}).get(o['object_id'])
+        if not pl:
+            continue
+        for v in o['views']:
+            A = F[v['frame_id']]; mk = np.load(Path(src) / v['canonical_mask_path']).astype(bool) & A['content']
+            C = A['c2w'][:3, 3]; covered = np.zeros(mk.shape, bool); on = np.zeros(mk.shape, bool)
+            ys, xs = np.nonzero(mk); X = A['P'][ys, xs]; r = np.linalg.norm(X - C, axis=1); D = (X - C) / r[:, None]
+            for p in pl:
+                q = project_quad(A['K'], A['c2w'], p['corners'], mk.shape)
+                if q is None:
+                    continue
+                n = np.asarray(p['normal'], float); cos = D @ n
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    t = (p['offset'] - n @ C) / cos
+                cov = q[ys, xs] & np.isfinite(t) & (t > 0)
+                covered[ys[cov], xs[cov]] = True
+                ok = cov & (np.abs(r - t) <= alias_m / S); on[ys[ok], xs[ok]] = True
+            alias = covered & ~on
+            A['content'] &= ~alias
+            out[f"{o['object_id']}/{v['frame_id']}"] = dict(samples=int(mk.sum()), covered=int(covered.sum()), dropped=int(alias.sum()))
+    return out
+
+
+def grow_false_planes(src, F, F0, S, fids, min_seeds=100, min_frac=.10, tol_m=.02, plane_frac=.7, reach=2):
+    """Visibility drops that form one plane inside one object's mask are one false match (e.g. repeating stripes matched at the
+    wrong depth); its samples the other photos could not test (holes there) are the same false surface. Per object mask and photo:
+    with >= min_seeds dropped samples and >= min_frac of the mask's samples, a RANSAC plane through the dropped ones (>= plane_frac
+    of them within tol_m) grows over the mask's remaining samples on that plane (within tol_m) that touch the dropped set (image
+    neighbours within reach px), until it stops. Updates F[*]['content']; returns what it dropped."""
+    import cv2
+    out = {}
+    objects = json.loads((Path(src) / 'evidence/objects.json').read_text())['objects'] if (Path(src) / 'evidence/objects.json').exists() else []
+    for o in objects:
+        for v in o['views']:
+            a = v['frame_id']; A = F[a]; mk = np.load(Path(src) / v['canonical_mask_path']).astype(bool)
+            dropped = mk & F0[a] & ~A['content']; n_mask = int((mk & F0[a]).sum())
+            if dropped.sum() < min_seeds or dropped.sum() < min_frac * n_mask:
+                continue
+            Q = A['P'][dropped]; tol = tol_m / S; rng = np.random.default_rng(7); best = None
+            for _ in range(300):
+                p0, p1, p2 = Q[rng.choice(len(Q), 3, replace=False)]; nn = np.cross(p1 - p0, p2 - p0)
+                if np.linalg.norm(nn) < 1e-12:
+                    continue
+                nn /= np.linalg.norm(nn); inl = np.abs((Q - p0) @ nn) < tol
+                if best is None or inl.sum() > best[0].sum():
+                    best = (inl, nn, p0)
+            if best is None or best[0].mean() < plane_frac:
+                continue
+            c = Q[best[0]].mean(0); nn = np.linalg.svd(Q[best[0]] - c, full_matrices=False)[2][-1]
+            on = mk & A['content'] & (np.abs((A['P'] - c) @ nn) < tol)
+            region, kernel, grown = dropped.copy(), np.ones((2 * reach + 1,) * 2, np.uint8), np.zeros(mk.shape, bool)
+            while True:
+                add = on & ~grown & (cv2.dilate(region.astype(np.uint8), kernel) > 0)
+                if not add.any():
+                    break
+                grown |= add; region |= add
+            A['content'] &= ~grown
+            out[f"{o['object_id']}/{a}"] = dict(seeds=int(dropped.sum()), planeInliers=round(float(best[0].mean()), 3), grown=int(grown.sum()))
+    return out
+
+
+def moge_local(z, valid, zm, tile=24, support=72, min_n=40, max_rel=.05):
+    """Dense depth from MoGe-3 aligned to the MVS samples tile by tile: per tile, z = s zm + t (Huber) on the valid MVS samples of
+    the support window around it (doubled until >= min_n); a tile whose fit residual (MAD) exceeds max_rel of its median depth, or
+    without enough samples, stays empty (inf)."""
+    H, W = z.shape; out = np.full((H, W), np.inf)
+    for y0 in range(0, H, tile):
+        for x0 in range(0, W, tile):
+            tz = zm[y0:y0 + tile, x0:x0 + tile]
+            if not np.isfinite(tz).any():
+                continue
+            for sup in (support, 2 * support, 4 * support):
+                h = (sup - tile) // 2; sl = (slice(max(0, y0 - h), y0 + tile + h), slice(max(0, x0 - h), x0 + tile + h))
+                ok = valid[sl] & np.isfinite(zm[sl]) & np.isfinite(z[sl])
+                if ok.sum() >= min_n:
+                    break
+            if ok.sum() < min_n:
+                continue
+            (sc, tc), mad = huber_fit(zm[sl][ok], z[sl][ok].astype(float))
+            if mad > max_rel * float(np.median(z[sl][ok])):
+                continue
+            out[y0:y0 + tile, x0:x0 + tile] = np.where(np.isfinite(tz), sc * tz + tc, np.inf)
+    return np.where(out > 0, out, np.inf)
+
+
+def area_count(B, vi, ui, gap, area):
+    """Per query pixel (vi, ui): how many of B's samples in the area x area window lie farther than gap (per query)."""
+    h = area // 2; H, W = B['z'].shape; zp = np.pad(B['z'], h, constant_values=np.inf); out = np.zeros(len(vi), np.int32)
+    for dy in range(-h, h + 1):
+        row = zp[vi + h + dy]
+        for dx in range(-h, h + 1):
+            zz = row[np.arange(len(vi)), ui + h + dx]
+            out += (np.isfinite(zz) & (zz > gap)).astype(np.int32)
+    return out
+
+
+def huber_fit(x, y, iters=20, k=1.345):
+    """y ~ s x + t, Huber IRLS (scale from MAD); review-coverage-gaps/moge_fill_eval.py."""
+    A = np.c_[x, np.ones_like(x)]; w = np.ones_like(x)
+    for _ in range(iters):
+        p = np.linalg.lstsq(A * w[:, None] ** .5, y * w ** .5, rcond=None)[0]
+        r = y - A @ p; sig = 1.4826 * np.median(np.abs(r)) + 1e-9; u = np.abs(r) / (k * sig); w = np.where(u <= 1, 1, 1 / u)
+    return p, float(1.4826 * np.median(np.abs(y - A @ p)))
+
+
+def related_ids(cfg, oid):
+    """The object, its parts and its parent: their masks overlap by design (a part lies inside its parent's mask)."""
+    ent = {e['id']: e for e in cfg['entities']}
+    return {oid} | {e['id'] for e in cfg['entities'] if e.get('parent') == oid} | ({ent[oid]['parent']} if ent.get(oid, {}).get('parent') else set())
+
+
+def median_depth(run, view):
+    """Median camera z of a view's own point-map samples (None without any)."""
+    P = np.load(run / view['points_path'])
+    if not len(P):
+        return None
+    c2w = np.load(run / 'geometry/frames' / view['frame_id'] / 'camera_to_world.npy').astype(float)
+    return float(np.median(camera_z(P, c2w)))
+
+
+def other_masks(run, cfg, objects, oid, fid, canonical):
+    """Union of the masks, in photo fid, of every unrelated object IN FRONT of this one (its own samples' median depth nearer):
+    a pixel two masks claim belongs to the nearer object (a light curtain in front of a fence keeps its pixels; the fence loses
+    them). Original resolution, or the canonical grid."""
+    own = next(v for v in objects[oid]['views'] if v['frame_id'] == fid); z0 = median_depth(run, own); out = None
+    for o in objects.values():
+        if o['object_id'] in related_ids(cfg, oid):
+            continue
+        for v in o['views']:
+            if v['frame_id'] != fid:
+                continue
+            z = median_depth(run, v)
+            if z0 is not None and (z is None or z >= z0):
+                continue
+            m = np.load(run / v['canonical_mask_path']).astype(bool) if canonical else np.asarray(Image.open(run / v['mask_path'])) > 0
+            out = m if out is None else out | m
+    return out
+
+
+def sam3d_input(run, cfg, objects, oid, fid, moge_dir, factor=2, min_fit=30, max_rel=.05):
+    """SAM 3D's inputs from photo fid (completion_ab.sam3d_inputs, unchanged grids and camera) with three generic changes:
+    the mask is the object's own minus every unrelated object's mask in front of it (their pixels never colour or shape it); the depth is the
+    visibility-filtered MVS map; inside the object's own mask, MVS holes take MoGe-3 depth (MIT) aligned per object and photo
+    by a robust affine fit z_mvs = s z_moge + t (Huber) on the mask's own MVS samples (a 10-80 px ring around it when the mask
+    holds < min_fit; a slope outside 1/3-3x the photo's own MoGe -> MVS slope keeps the photo's slope and fits the offset; a fit
+    residual (MAD) above max_rel of the depth leaves the holes empty). Outside the mask (the floor, the rest of the photo) the depth stays MVS only."""
+    import cv2
+    sys.path.insert(0, str(SERVING / 'scripts/research'))
+    from generate_lucida_assets import camera_depth
+    obj = objects[oid]; view = next(v for v in obj['views'] if v['frame_id'] == fid)
+    manifest = json.loads((run / 'manifest.json').read_text()); frame = next(f for f in manifest['frames'] if f['frame_id'] == fid)
+    assert digest(run / frame['input']) == frame['sha256']
+    photo = Image.open(run / frame['input']).convert('RGB'); W, H = photo.size; w, h = W // factor, H // factor
+    rgb = np.asarray(photo.resize((w, h), Image.Resampling.BOX))
+    own = np.asarray(Image.open(run / view['mask_path'])) > 0
+    others = other_masks(run, cfg, objects, oid, fid, False)
+    own_free = own & ~others if others is not None else own
+    mask = cv2.resize(own_free.astype(np.float32), (w, h), interpolation=cv2.INTER_AREA) >= .5
+    g = run / 'geometry/frames' / fid
+    points, c2w, K = np.load(g / 'pts3d.npy'), np.load(g / 'camera_to_world.npy'), np.load(g / 'intrinsics.npy').astype(np.float64)
+    conf = np.load(g / 'conf.npy'); valid = np.load(g / 'content_valid_mask.npy').astype(bool) & np.isfinite(conf) & (conf >= .1)
+    depth, keep = camera_depth(points, c2w, valid)
+    cm = np.load(run / view['canonical_mask_path']).astype(bool)
+    oc = other_masks(run, cfg, objects, oid, fid, True)
+    cm = cm & ~oc if oc is not None else cm
+    mg = np.load(Path(moge_dir) / f'moge-{fid}.npz'); x0 = frame['content_rect_xyxy'][0]; pm = mg['points'][..., 2].astype(float)
+    zm = np.full(depth.shape, np.nan); zm[:, x0:x0 + pm.shape[1]] = np.where(mg['mask'] & np.isfinite(pm) & (pm > 0), pm, np.nan)
+    fitset = cm & keep & np.isfinite(zm); ring = 0
+    for r in (10, 20, 40, 80):
+        if fitset.sum() >= min_fit:
+            break
+        ring = r; grown = cv2.dilate(cm.astype(np.uint8), np.ones((2 * r + 1,) * 2, np.uint8)).astype(bool)
+        fitset = grown & keep & np.isfinite(zm)
+    hole = cm & ~keep & np.isfinite(zm)
+    fill = dict(holePx=int(hole.sum()), fitPx=int(fitset.sum()), ringPx=ring)
+    filled = depth.copy()
+    if fitset.sum() >= min_fit and hole.any():
+        allv = keep & np.isfinite(zm); (sg, tg), _ = huber_fit(zm[allv], depth[allv].astype(float))  # the photo's own MoGe -> MVS map
+        (s, t), mad = huber_fit(zm[fitset], depth[fitset].astype(float))
+        if not sg / 3 <= s <= sg * 3:  # an implausible local slope (a flat or noisy patch): the photo's slope, the object's offset
+            s = sg; t = float(np.median(depth[fitset] - sg * zm[fitset])); mad = float(1.4826 * np.median(np.abs(depth[fitset] - sg * zm[fitset] - t)))
+            fill['slope'] = 'photo'
+        fill.update(s=round(float(s), 5), t=round(float(t), 5), madNative=round(mad, 5), photoSlope=round(float(sg), 5))
+        if mad <= max_rel * float(np.median(depth[fitset])):  # else the fill is not trusted: the holes stay holes
+            z_new = s * zm[hole] + t; ok = z_new > 0; filled[np.nonzero(hole)[0][ok], np.nonzero(hole)[1][ok]] = z_new[ok]
+            fill['filledPx'] = int(ok.sum())
+    A = np.asarray(frame['input_to_canonical_pixel_centres'], float)
+    v, u = np.indices((h, w), dtype=np.float64)
+    uf, vf = factor * u + (factor - 1) / 2, factor * v + (factor - 1) / 2
+    cx = np.floor(A[0, 0] * uf + A[0, 2] + .5).astype(int); cy = np.floor(A[1, 1] * vf + A[1, 2] + .5).astype(int)
+    inside = (cx >= 0) & (cy >= 0) & (cx < depth.shape[1]) & (cy < depth.shape[0])
+    z = np.full((h, w), np.nan, np.float32); z[inside] = filled[cy[inside], cx[inside]]; z[z <= 0] = np.nan
+    z_mvs = np.full((h, w), np.nan, np.float32); z_mvs[inside] = depth[cy[inside], cx[inside]]; z_mvs[z_mvs <= 0] = np.nan
+    Kf = np.linalg.inv(A) @ K; Ks = np.diag([1 / factor, 1 / factor, 1.]) @ Kf; Ks[:2, 2] = (Kf[:2, 2] - (factor - 1) / 2) / factor
+    pointmap = np.stack([-(u - Ks[0, 2]) / Ks[0, 0] * z, -(v - Ks[1, 2]) / Ks[1, 1] * z, z], -1).astype(np.float32)
+    meta = {'frame_id': fid, 'grid_hw': [h, w], 'factor': factor, 'K': Ks.tolist(), 'mask_pixels': int(mask.sum()),
+            'mask_depth_pixels': int((mask & np.isfinite(z)).sum()), 'mask_mvs_pixels': int((mask & np.isfinite(z_mvs)).sum()),
+            'others_removed_pixels': int((own & ~own_free).sum()), 'fill': fill,
+            'inputs': 'own mask minus unrelated objects; visibility-filtered MVS depth; MoGe-3 fill inside the own mask'}
+    return rgb, mask, pointmap, meta
 
 
 def original_camera(run, frame_id):
@@ -465,12 +813,119 @@ def sub_mesh(V, F, C, keep):
     return V[used], remap[F[keep]], C[used]
 
 
-def compose(config, run, completion, choices_path, scale_path, label, boxes_path=None):
+def up_frame(up, axis):
+    """Columns x, y, z of a right-handed frame with z = up and x = axis made horizontal."""
+    z = np.asarray(up, float) / np.linalg.norm(up); x = np.asarray(axis, float) - (np.asarray(axis, float) @ z) * z; x /= np.linalg.norm(x)
+    return np.column_stack([x, np.cross(z, x), z])
+
+
+def horizontal_axis(Vw, up):
+    """The horizontal principal axis of world points."""
+    flat = Vw - np.outer(Vw @ up, up); flat = flat - flat.mean(0)
+    return np.linalg.eigh(flat.T @ flat)[1][:, -1]
+
+
+def local_frame(Vw, up, axis=None):
+    """A representation frame with local +Z = up (the floor normal toward the cameras), +X = axis (the measured box's left->right
+    axis, else the horizontal principal axis), origin = the centre of the local bounds: the viewer's 宽 x 深 x 高 readout (local
+    bounds x, y, z) is then width x depth x height. Returns (local vertices, 4x4 rigid transform)."""
+    R = up_frame(up, horizontal_axis(Vw, up) if axis is None else axis); L = Vw @ R; c = R @ ((L.min(0) + L.max(0)) / 2)
+    T = np.eye(4); T[:3, :3] = R; T[:3, 3] = c
+    return (Vw - c) @ R, T
+
+
+def median_colour(run, cfg, objects, oid):
+    """The median colour of the object's own mask pixels in its photos (canonical images, other objects in front left out)."""
+    rgb = []
+    for v in objects[oid]['views']:
+        m = np.load(run / v['canonical_mask_path']).astype(bool); oc = other_masks(run, cfg, objects, oid, v['frame_id'], True)
+        m = m & ~oc if oc is not None else m
+        rgb.append(np.asarray(Image.open(run / 'geometry/frames' / v['frame_id'] / 'canonical.png').convert('RGB'))[m])
+    rgb = np.concatenate(rgb) if rgb else np.zeros((0, 3))
+    return np.median(rgb, 0).astype(np.uint8) if len(rgb) else np.array([158, 158, 153], np.uint8)
+
+
+def own_points(run, obj):
+    P = [np.load(run / v['points_path']) for v in obj['views'] if v.get('partial_point_count')]
+    return np.concatenate(P) if P else np.zeros((0, 3))
+
+
+def own_points_box(run, obj, n, d, n2m, lo=2, hi=98):
+    """A box from the object's own mask samples (p2-p98 along its horizontal axes and above the floor): the yaw of its dominant
+    plane when one near-vertical plane holds most of them (box_faces.dominant_plane), else their principal axis. None < 200."""
+    sys.path.insert(0, str(HERE))
+    from workcell_checks.box_faces import dominant_plane, PLANE_TOL_M, PLANE_MAJORITY, PLANE_VERTICAL
+    P = own_points(run, obj)
+    if len(P) < 200:
+        return None
+    flat = P - np.outer(P @ n, n); extent = float(np.linalg.norm(np.percentile(flat, 95, 0) - np.percentile(flat, 5, 0)))
+    pl = dominant_plane(P, min(PLANE_TOL_M / n2m, .05 * extent))
+    axis = np.cross(n, pl[0]) if pl and pl[2] >= PLANE_MAJORITY and abs(float(pl[0] @ n)) < PLANE_VERTICAL else horizontal_axis(P, n)
+    R = up_frame(n, axis); L = P @ R; q = np.percentile(L, [lo, hi], 0); h = (P @ n + d) * n2m
+    c = R @ np.r_[(q[0, :2] + q[1, :2]) / 2, ((q[0, 2] + q[1, 2]) / 2)]
+    return {'axes': [R[:, 0].tolist(), R[:, 1].tolist(), n.tolist()], 'centerNative': c.tolist(),
+            'sizeM': [float((q[1, 0] - q[0, 0]) * n2m), float((q[1, 1] - q[0, 1]) * n2m), float(np.percentile(h, hi) - np.percentile(h, lo))],
+            'bottomM': float(np.percentile(h, lo)), 'topM': float(np.percentile(h, hi)), 'points': int(len(P))}
+
+
+def support_check(Vw, n, d, n2m, observed_cells, cell, others, margin_m=.05):
+    """Lowest point above the floor (p0.5), the share of the model's floor footprint (2 cm cells of its horizontal hull) that
+    some photo shows as floor, and which other displayed models stand under it (a vertex inside the footprint grown by margin_m,
+    between the floor and its bottom): a model off the floor with neither has an unobserved support."""
+    import cv2
+    h = (Vw @ n + d) * n2m; e1 = np.cross(n, [1., 0, 0]); e1 /= np.linalg.norm(e1); e2 = np.cross(n, e1)
+    xy = np.c_[Vw @ e1, Vw @ e2] / cell; lo = np.floor(xy.min(0)).astype(int); idx = np.floor(xy).astype(int) - lo
+    grid = np.zeros((idx[:, 1].max() + 1, idx[:, 0].max() + 1), np.uint8)
+    cv2.fillConvexPoly(grid, cv2.convexHull(idx.astype(np.int32).reshape(-1, 1, 2)), 1)
+    j, i = np.nonzero(grid); cells = {(int(a + lo[0]), int(b + lo[1])) for a, b in zip(i, j)}
+    bottom = float(np.percentile(h, .5)); grown = cv2.dilate(grid, np.ones((2 * int(np.ceil(margin_m / n2m / cell)) + 1,) * 2, np.uint8)); under = []
+    for oid, W in others.items():
+        q = np.floor(np.c_[W @ e1, W @ e2] / cell).astype(int) - lo; hw = (W @ n + d) * n2m
+        ok = (q[:, 0] >= 0) & (q[:, 1] >= 0) & (q[:, 0] < grid.shape[1]) & (q[:, 1] < grid.shape[0]) & (hw > .02) & (hw < bottom + margin_m)
+        if ok.any() and grown[q[ok, 1], q[ok, 0]].sum() >= 20:
+            under.append(oid)
+    return dict(lowestCm=round(bottom * 100, 1), footprintCells=len(cells), footprintObserved=round(len(cells & observed_cells) / max(1, len(cells)), 3),
+                modelsUnder=under, unobserved=bool(bottom > .15 and len(cells & observed_cells) < .2 * len(cells) and not under))
+
+
+def confirmed_anchor(run, views, V, F, planes, n2m, samples=200000):
+    """1-DOF anchor of a model piece onto an independently measured plane (three-view facets): of the confirmed planes given, the
+    one whose quad covers the most of the piece's mask pixels where the piece is drawn; the piece moves along that plane's normal
+    by the median of n . (ray-plane point - the piece's first hit) over those pixels. Returns (shift vector, record) or (None, None)."""
+    import trimesh
+    pts = trimesh.sample.sample_surface(trimesh.Trimesh(V, F, process=False), samples, seed=0)[0]; best = None
+    for p in planes:
+        n = np.asarray(p['normal'], float); d = []
+        for view in views:
+            g = run / 'geometry/frames' / view['frame_id']
+            K, c2w = np.load(g / 'intrinsics.npy').astype(float), np.load(g / 'camera_to_world.npy').astype(float)
+            mk = np.load(run / view['canonical_mask_path']).astype(bool); q = project_quad(K, c2w, p['corners'], mk.shape)
+            if q is None:
+                continue
+            cam = (pts - c2w[:3, 3]) @ c2w[:3, :3]; cam = cam[cam[:, 2] > 1e-6]
+            u = np.round(cam[:, 0] / cam[:, 2] * K[0, 0] + K[0, 2]).astype(int); v = np.round(cam[:, 1] / cam[:, 2] * K[1, 1] + K[1, 2]).astype(int)
+            ok = (u >= 0) & (v >= 0) & (u < mk.shape[1]) & (v < mk.shape[0]); zb = np.full(mk.shape, np.inf); np.minimum.at(zb, (v[ok], u[ok]), cam[ok, 2])
+            ys, xs = np.nonzero(mk & q & np.isfinite(zb))
+            if not len(ys):
+                continue
+            ray = np.c_[(xs - K[0, 2]) / K[0, 0], (ys - K[1, 2]) / K[1, 1], np.ones(len(xs))] @ c2w[:3, :3].T; C = c2w[:3, 3]
+            Y = C + ray * zb[ys, xs][:, None]; t = (p['offset'] - n @ C) / (ray @ n); Xp = C + ray * t[:, None]
+            d.append((Xp - Y) @ n)
+        d = np.concatenate(d) if d else np.zeros(0)
+        if len(d) >= 50 and (best is None or len(d) > best[1]):
+            best = (p, len(d), float(np.median(d)))
+    if best is None:
+        return None, None
+    p, k, shift = best
+    return np.asarray(p['normal'], float) * shift, dict(plane=p['name'], pixels=k, shiftCm=round(100 * shift * n2m, 1))
+
+
+def compose(config, run, completion, choices_path, scale_path, label, boxes_path=None, planes_path=None):
     import trimesh
     cfg = json.loads(Path(config).read_text()); run = Path(run).resolve(); completion = Path(completion).resolve()
     scale = json.loads(Path(scale_path).read_text()); n2m = scale['nativeToMeters']
     env = {'AB_RUN': str(run), 'AB_OUT': str(completion), 'CMP_NOTES': str(Path(choices_path).parent), 'CMP_REFERENCE': 'none',
-           'CMP_BOXES': str(boxes_path) if boxes_path else 'none', 'CMP_SCALE': str(scale_path)}
+           'CMP_BOXES': str(boxes_path) if boxes_path else 'none', 'CMP_SCALE': str(scale_path), 'CMP_PLANE_ANCHOR': '1'}
     C = research_module('completion-ab-090-2026-10-06/compare.py', env)
     BL = research_module('completion-ab-090-2026-10-06/build_layer.py', env)
     sys.path.insert(0, str(SERVING / 'scripts/research'))
@@ -480,38 +935,61 @@ def compose(config, run, completion, choices_path, scale_path, label, boxes_path
     objects = {o['object_id']: o for o in json.loads((run / 'evidence/objects.json').read_text())['objects']}
     surf = json.loads((run / 'surfaces/record.json').read_text())
     floor = json.loads((run / 'evidence/floor.json').read_text()); plane = np.asarray(floor['plane_native'], float)
+    fn, fd = plane[:3] / np.linalg.norm(plane[:3]), plane[3] / np.linalg.norm(plane[:3])
+    if fn @ np.asarray(floor['up_native'], float) < 0:
+        fn, fd = -fn, -fd  # up = toward the cameras
     boxes = json.loads(Path(boxes_path).read_text()) if boxes_path else None
+    confirmed = json.loads(Path(planes_path).read_text()) if planes_path else None
+    eid_of = (boxes or {}).get('objectIds', {})
     out = run / 'result'
     if out.exists():
         shutil.rmtree(out)
     (out / 'images').mkdir(parents=True)
     meshes, entries, unavailable, built = {}, [], [], {}
+
+    def points_box(oid, why):  # the object's own samples as its box: shown, flagged low
+        b = own_points_box(run, objects[oid], fn, fd, n2m)
+        if b is None:
+            return False
+        V, F = box_mesh(b, n2m, (fn, fd)); col = median_colour(run, cfg, objects, oid)
+        meshes[oid] = (V, F, np.tile(col, (len(V), 1)), np.eye(4)); info.update(shownAs='own-points box', ownBox=b, fallbackReason=why, colour=col.tolist())
+        return True
     for ent in cfg['entities']:  # parents before their parts (config order)
         oid, method = ent['id'], ent['method']
         info = {'method': method}
         if method == 'sam3d':
             ch = choices.get(oid)
             if ch is None:
-                unavailable.append({'id': oid, 'reason': 'no SAM 3D candidate assembled (too few point-map samples in its masks)'}); continue
+                unavailable.append({'id': oid, 'reason': 'no SAM 3D candidate assembled (too few point-map samples in its masks)',
+                                    'reasonEn': 'no SAM 3D candidate assembled (too few point-map samples in its masks)'}); continue
             variant = ch['variant']; c = C.comparison(variant, oid)
             T = np.asarray(c['final_object_to_world'], float)
             d = np.load(completion / variant / f'{oid}.npz')
             world = C.world_mesh(variant, oid, c)
             fixed, notes = C.floor_fix(world, oid)
+            fixed, more, _, shift = C.plane_anchor(fixed, oid)
+            notes = notes + more
             _, near = cKDTree(world.vertices).query(fixed.vertices)
             Vw, Fw, Cw = BL.decimate(np.asarray(fixed.vertices), np.asarray(fixed.faces), d['colors'][near])
-            Vw = (Vw - T[:3, 3]) @ np.linalg.inv(T[:3, :3]).T  # back to the model's own frame: the assembled pose stays its transform
-            info.update(variant=variant, decision=ch['decision'], floorFix=notes, generationPhoto=ch.get('generationPhoto'))
-            eid = (boxes or {}).get('objectIds', {}).get(oid)
+            info.update(variant=variant, decision=ch['decision'], floorFix=notes, generationPhoto=ch.get('generationPhoto'), anchorCm=shift)
+            eid = eid_of.get(oid)
             measured = bool(eid and eid in boxes['boxes'] and not boxes['research'][eid].get('capped'))  # a capped box is the model's own
+            photo_fail = any(g.startswith('轮廓不符') for g in ch['sam3dFixed']['gates'])
             if ch['decision'].startswith('用测量盒') and measured:
-                V, F = box_mesh(boxes['boxes'][eid], n2m, (plane[:3] / np.linalg.norm(plane[:3]), plane[3] / np.linalg.norm(plane[:3])))
-                meshes[oid] = (V, F, np.tile([158, 158, 153], (len(V), 1)), np.eye(4)); info['shownAs'] = 'measured box'
-            elif ch['decision'].startswith('用测量盒') and boxes and any(g.startswith('轮廓不符') for g in ch['sam3dFixed']['gates']):
-                unavailable.append({'id': oid, 'reason': '没有可信模型：SAM 3D 候选都与照片轮廓不符（' + '；'.join(ch['sam3dFixed']['gates'])
-                                    + '），盒子拟合被限制（只是模型自己的盒子），不能代替'}); continue
+                inside = (boxes['research'][eid].get('pointContainment') or {}).get('inside')
+                if inside is None or inside >= .9:  # a box shown as the model contains >= 90 % of its own mask's samples
+                    V, F = box_mesh(boxes['boxes'][eid], n2m, (fn, fd)); col = median_colour(run, cfg, objects, oid)
+                    meshes[oid] = (V, F, np.tile(col, (len(V), 1)), np.eye(4)); info.update(shownAs='measured box', containment=inside, colour=col.tolist())
+                elif not points_box(oid, f'measured box holds only {100 * inside:.0f} % of its own mask samples'):
+                    unavailable.append({'id': oid, 'reason': f'测量盒只含 {100 * inside:.0f}% 的自身点，点也不够：不显示模型',
+                                        'reasonEn': f'the measured box holds only {100 * inside:.0f} % of its own samples and there are too few samples: no model'}); continue
+            elif ch['decision'].startswith('用测量盒') and boxes and photo_fail:
+                if not points_box(oid, 'every SAM 3D candidate fails the photo fit and the box fit is capped'):
+                    unavailable.append({'id': oid, 'reason': '没有可信模型：SAM 3D 候选都与照片轮廓不符（' + '；'.join(ch['sam3dFixed']['gates'])
+                                        + '），盒子拟合被限制（只是模型自己的盒子），自身点也不够，不能代替',
+                                        'reasonEn': 'no trustworthy model: every SAM 3D candidate fails the photo fit, the box fit is capped and there are too few own samples'}); continue
             else:  # a capped box cannot stand in: the best candidate stays, its remaining gates listed
-                meshes[oid] = (Vw, Fw, Cw, T); info['shownAs'] = 'SAM 3D'
+                meshes[oid] = (Vw, Fw, Cw, np.eye(4)); info['shownAs'] = 'SAM 3D'
                 if ch['decision'].startswith('用测量盒'):
                     info['flagged'] = ch['sam3dFixed']['gates']
             comp = dict(c); comp['refinement'] = {k: v for k, v in c.get('refinement', {}).items() if k != 'trajectory'}
@@ -520,20 +998,55 @@ def compose(config, run, completion, choices_path, scale_path, label, boxes_path
         elif method == 'part':
             parent = ent['parent']; siblings = [e for e in cfg['entities'] if e.get('parent') == parent and e['method'] == 'part']
             if parent not in meshes or built.get(parent, {}).get('shownAs') != 'SAM 3D':
-                unavailable.append({'id': oid, 'reason': f'its parent {parent} has no completed model to split'}); continue
+                unavailable.append({'id': oid, 'reason': f'它的父物体 {parent} 没有可拆分的补全模型', 'reasonEn': f'its parent {parent} has no completed model to split'}); continue
             if 'labels' not in built[parent]:
                 V, F, Cc, T = meshes[parent]
                 Vworld = V @ T[:3, :3].T + T[:3, 3]
-                built[parent]['labels'] = partition(run, [objects[e['id']] for e in siblings], Vworld, F, n2m)
+                labels = partition(run, [objects[e['id']] for e in siblings], Vworld, F, n2m)
+                R = up_frame(fn, horizontal_axis(Vworld, fn)); X = Vworld[F].mean(1) @ R
+                for j, e in enumerate(siblings):  # crop: a part keeps only faces within its own mask samples' extent (+5 cm)
+                    Q = own_points(run, objects[e['id']])
+                    if len(Q) >= 50:
+                        q = np.percentile(Q @ R, [2, 98], 0); m = .05 / n2m
+                        labels[(labels == j) & ~((X >= q[0] - m) & (X <= q[1] + m)).all(1)] = -1
+                built[parent]['labels'] = labels
             labels = built[parent]['labels']; j = [e['id'] for e in siblings].index(oid)
             V, F, Cc, T = meshes[parent]
             if not (labels == j).any():
-                unavailable.append({'id': oid, 'reason': 'no face of the parent model falls in this part\'s masks'}); continue
+                unavailable.append({'id': oid, 'reason': '父模型没有落在本部件掩码里的面', 'reasonEn': 'no face of the parent model falls in this part\'s masks'}); continue
             meshes[oid] = (*sub_mesh(V, F, Cc, labels == j), T); info.update(parent=parent, faces=int((labels == j).sum()))
+            names = (confirmed or {}).get('parts', {}).get(oid)
+            if names:  # an independently measured plane of this part: the displayed piece onto it
+                Vp, Fp, Cp, Tp = meshes[oid]; Vpw = Vp @ Tp[:3, :3].T + Tp[:3, 3]
+                planes = [q for q in confirmed['objects'].get(parent, []) if q['name'] in names]
+                shift, rec_ = confirmed_anchor(run, objects[oid]['views'], Vpw, Fp, planes, n2m)
+                if shift is not None:
+                    meshes[oid] = (Vpw + shift, Fp, Cp, np.eye(4)); info['confirmedAnchor'] = rec_
+            flags = []  # a part bigger than its parent's measured box, or whose mask overlaps a sibling's: low, 需复核
+            for view in objects[oid]['views']:
+                mk = np.load(run / view['canonical_mask_path']).astype(bool)
+                for e in siblings:
+                    if e['id'] == oid:
+                        continue
+                    for w in objects[e['id']]['views']:
+                        if w['frame_id'] == view['frame_id']:
+                            ov = float((mk & np.load(run / w['canonical_mask_path']).astype(bool)).sum() / max(1, mk.sum()))
+                            if ov > .10:
+                                flags.append((f"照片 {view['frame_id'][-1]} 的掩码有 {100 * ov:.0f}% 与「{objects[e['id']]['label']}」重叠",
+                                              f"its photo-{view['frame_id'][-1]} mask overlaps '{e['id']}' by {100 * ov:.0f} %"))
+            pe = eid_of.get(parent)
+            if pe and pe in boxes['boxes']:
+                pb = boxes['boxes'][pe]; ax = np.asarray(pb['axes'], float); W = meshes[oid][0] @ T[:3, :3].T + T[:3, 3]
+                ext = [float(np.ptp(np.percentile(W @ ax[i], [.5, 99.5])) * n2m) for i in range(3)]
+                for name, a, b in zip(('长', '宽', '高'), ext, pb['sizeM']):
+                    if a > b + .02:
+                        flags.append((f'{name} {100 * a:.0f} cm 超过父物体测量盒 {100 * b:.0f} cm', f"{dict(长='length', 宽='width', 高='height')[name]} {100 * a:.0f} cm exceeds its parent's measured box {100 * b:.0f} cm"))
+            if flags:
+                info['partFlags'] = flags
         else:
             rec = surf.get(oid)
             if not rec or not rec.get('faces'):
-                unavailable.append({'id': oid, 'reason': (rec or {}).get('reason', 'no surface')}); continue
+                unavailable.append({'id': oid, 'reason': (rec or {}).get('reason', 'no surface'), 'reasonEn': (rec or {}).get('reason', 'no surface')}); continue
             z = np.load(run / 'surfaces' / f'{oid}.npz'); meshes[oid] = (z['vertices'], z['faces'], z['colors'], np.eye(4)); info.update(rec)
         built[oid] = info
     for parent in {e['parent'] for e in cfg['entities'] if e['method'] == 'part'}:  # the parent keeps the faces no part took
@@ -541,7 +1054,12 @@ def compose(config, run, completion, choices_path, scale_path, label, boxes_path
             V, F, Cc, T = meshes[parent]; keep = built[parent]['labels'] < 0
             meshes[parent] = (*sub_mesh(V, F, Cc, keep), T); built[parent]['remainderFaces'] = int(keep.sum())
             built[parent].pop('labels')
-    # scene objects in config order, then the floor's reference surface and the observed floor (as assemble)
+    # the floor cells some photo shows (the reference surface without its fill), for the support check
+    z = np.load(run / 'surfaces/floor_surface.npz'); fill_v = 2 * surf['floor_surface'].get('fillFaces', 0)
+    Vo = z['vertices'][:len(z['vertices']) - fill_v]; cell = .02 / n2m
+    e1 = np.cross(fn, [1., 0, 0]); e1 /= np.linalg.norm(e1); e2 = np.cross(fn, e1)
+    observed = {tuple(k) for k in np.floor(np.c_[Vo @ e1, Vo @ e2] / cell).astype(int)}
+    # scene objects in config order (each in a frame with local +Z up), then the floor's reference surface and the observed floor
     chunks, offset, world = [], 0, []
     def add(oid, V, F, Cc, T, entry):
         nonlocal offset
@@ -552,24 +1070,30 @@ def compose(config, run, completion, choices_path, scale_path, label, boxes_path
         entry['mesh'] = {'byte_offset': offset, 'vertex_count': len(chunk), 'stride': 9, 'index_byte_offset': offset + chunk.nbytes,
                          'index_count': len(idx), 'index_type': 'uint32'}
         offset += chunk.nbytes + idx.nbytes; world.append(V @ T[:3, :3].T + T[:3, 3]); entries.append(entry)
+    context = {e['id'] for e in cfg['entities'] if e.get('context')}
+    rng = np.random.default_rng(0)
+    worlds = {o: (lambda W: W[rng.choice(len(W), min(len(W), 20000), replace=False)])(V @ T[:3, :3].T + T[:3, 3]) for o, (V, F, Cc, T) in meshes.items() if o not in context}
     for ent in cfg['entities']:
         oid = ent['id']
         if oid not in meshes:
             continue
         V, F, Cc, T = meshes[oid]; info = built[oid]; obj = objects[oid]
-        model = {'sam3d': 'facebook/sam-3d-objects' if info.get('shownAs') == 'SAM 3D' else 'measured box (box_faces)',
+        Vw = V @ T[:3, :3].T + T[:3, 3]
+        eid = eid_of.get(oid); bx = (boxes or {}).get('boxes', {}).get(eid) if eid else None
+        axis = (info.get('ownBox') or bx or {}).get('axes', [None])[0]
+        Vl, Tl = local_frame(Vw, fn, axis)  # local +Z = up: the readout's depth slot is depth, not height
+        info['support'] = support_check(Vw, fn, fd, n2m, observed, cell, {o: W for o, W in worlds.items() if o != oid and o not in related_ids(cfg, oid)})
+        model = {'sam3d': {'SAM 3D': 'facebook/sam-3d-objects', 'measured box': 'measured box (box_faces)', 'own-points box': 'own-points box (the mask samples, p2-p98)'}[info['shownAs']] if ent['method'] == 'sam3d' else None,
                  'part': 'facebook/sam-3d-objects (part of ' + ent.get('parent', '') + ')', 'plane': 'plane fitted to the new point maps',
                  'floor_plane': 'report floor plane', 'estop': 'e-stop specification cylinder'}[ent['method']]
-        entry = {'id': oid, 'label': obj['label'], 'source': 'generated', 'model': model, 'transform': als.decompose(T),
+        entry = {'id': oid, 'label': obj['label'], 'source': 'generated', 'model': model, 'transform': als.decompose(Tl),
                  'frame_ids': [v['frame_id'] for v in obj['views']], 'source_inventory_indices': [], 'rebuild': {k: v for k, v in info.items() if k not in ('plane',)}}
         if ent.get('context'):
             entry.update(role='context', visible=False)
         if info.get('comparison'):
             comp = json.loads((out / info['comparison']).read_text())
             entry['metrics'] = {'comparison': info['comparison'], 'views': comp['views'], 'watertight': comp.get('watertight'), 'faces': int(len(F))}
-        add(oid, V, F, Cc, T, entry)
-    z = np.load(run / 'surfaces/floor_surface.npz')
-    fv = objects  # noqa: F841
+        add(oid, Vl, F, Cc, Tl, entry)
     add('floor_surface', z['vertices'], z['faces'], z['colors'], np.eye(4),  # the publish step turns it into the floor's reference surface
         {'id': 'floor_surface', 'label': '工位地面（拟合平面，参考面）', 'source': 'observed', 'model': 'report floor plane (max-inlier fit of the new point maps)',
          'transform': als.decompose(np.eye(4)), 'frame_ids': [v['frame_id'] for v in floor['views']], 'source_inventory_indices': [],
@@ -591,7 +1115,7 @@ def compose(config, run, completion, choices_path, scale_path, label, boxes_path
     scene = {'version': 1, 'run_id': manifest['experiment'], 'units': '未标定尺度（非米）', 'up': floor['up_native'],
              'bounds': {'min': P.min(0).tolist(), 'max': P.max(0).tolist()}, 'binary': 'scene.bin', 'glb': None, 'metrics_report': None,
              'cameras': cameras, 'objects': entries,
-             'limitations': ['Licence-clean rebuild: MVS geometry (DA3-BASE start, RoMa matches + numpy Levenberg-Marquardt (Schur) bundle adjustment, no GPL; two-view triangulation), SAM 3D Objects completion; no Pi3X, no RecGen',
+             'limitations': ['Licence-clean rebuild: MVS geometry (DA3-BASE start, RoMa matches + numpy Levenberg-Marquardt (Schur) bundle adjustment, no GPL; two-view triangulation; samples that break visibility in another photo removed), SAM 3D Objects completion (MoGe-3 fills MVS holes inside the object masks of its inputs only); no Pi3X, no RecGen',
                              'Generated hidden surfaces and textures have no photographic ground truth',
                              'All supplied views contribute to geometry and placement; scores measure input consistency, not held-out accuracy',
                              'Static editable meshes; no robot joints, collision validation or physical calibration'],
@@ -613,7 +1137,8 @@ def compose(config, run, completion, choices_path, scale_path, label, boxes_path
                 o[k] = e[k]
     (run / 'public/scene.json').write_text(json.dumps(public, ensure_ascii=False, indent=2) + '\n')
     for e in entries:
-        print(e['id'].ljust(22), e['model'][:40].ljust(40), e['mesh']['index_count'] // 3, 'faces', (e.get('rebuild') or {}).get('decision', ''))
+        print(e['id'].ljust(22), e['model'][:40].ljust(40), e['mesh']['index_count'] // 3, 'faces', (e.get('rebuild') or {}).get('decision', ''),
+              (e.get('rebuild') or {}).get('anchorCm'), (e.get('rebuild') or {}).get('partFlags'), (e.get('rebuild') or {}).get('support'))
     print('unavailable', unavailable)
 
 
@@ -892,10 +1417,12 @@ def coverage(run):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('stage', choices=['evidence', 'surfaces', 'compose', 'boxes', 'layer', 'coverage', 'selftest'])
-    p.add_argument('--config'); p.add_argument('--geometry'); p.add_argument('--view'); p.add_argument('--out'); p.add_argument('--run'); p.add_argument('--scale'); p.add_argument('--completion'); p.add_argument('--choices'); p.add_argument('--label'); p.add_argument('--boxes'); p.add_argument('--run-results'); p.add_argument('--manifest'); p.add_argument('--lower-edge'); p.add_argument('--field'); p.add_argument('--obvious'); p.add_argument('--patches', default=''); p.add_argument('--pages'); p.add_argument('--notes')
+    p.add_argument('stage', choices=['filter', 'evidence', 'surfaces', 'compose', 'boxes', 'layer', 'coverage', 'selftest'])
+    p.add_argument('--config'); p.add_argument('--geometry'); p.add_argument('--view'); p.add_argument('--out'); p.add_argument('--run'); p.add_argument('--scale'); p.add_argument('--completion'); p.add_argument('--choices'); p.add_argument('--label'); p.add_argument('--boxes'); p.add_argument('--run-results'); p.add_argument('--manifest'); p.add_argument('--lower-edge'); p.add_argument('--field'); p.add_argument('--obvious'); p.add_argument('--patches', default=''); p.add_argument('--pages'); p.add_argument('--notes'); p.add_argument('--moge'); p.add_argument('--planes')
     a = p.parse_args()
-    if a.stage == 'evidence':
+    if a.stage == 'filter':
+        visibility_filter(a.geometry, a.out, a.scale, json.loads(Path(a.config).read_text()), moge_dir=a.moge, planes_path=a.planes)
+    elif a.stage == 'evidence':
         evidence(a.config, a.geometry, a.view, a.out)
     elif a.stage == 'surfaces':
         surfaces(a.config, a.run, a.scale)
@@ -904,7 +1431,7 @@ if __name__ == '__main__':
     elif a.stage == 'boxes':
         boxes_file(a.run_results, a.manifest, a.out)
     elif a.stage == 'compose':
-        compose(a.config, a.run, a.completion, a.choices, a.scale, a.label, a.boxes)
+        compose(a.config, a.run, a.completion, a.choices, a.scale, a.label, a.boxes, a.planes)
     elif a.stage == 'selftest':
         selftest()
     else:
