@@ -3,6 +3,7 @@
   python scripts/onprem/run_stage.py [--offline BUNDLE | --record BUNDLE] [--weights DIR] APP.py[::ENTRYPOINT] [flags as for `modal run`]
   python scripts/onprem/run_stage.py [...] SCRIPT.py [its own arguments]          (a file without a Modal local entrypoint)
   python scripts/onprem/run_stage.py --self-test
+  python scripts/onprem/run_stage.py geometry --run RUN --start GEOM --output NEW (--weights DIR | --roma DIR)   (geometry())
 
 The module is imported as `modal run` imports it, but `import modal` is scripts/onprem/modal_stub/modal.py (put first on sys.path
 and PYTHONPATH): the images carry no modal client, and no account, token, config or network is ever used. Then:
@@ -36,6 +37,7 @@ import importlib.util
 import inspect
 import io
 import ipaddress
+from itertools import combinations
 import json
 import os
 from pathlib import Path
@@ -46,6 +48,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import urllib.response
@@ -432,8 +435,98 @@ def run(target: str, argv: list) -> object:
     return raw(**entrypoint_args(raw, argv))
 
 
+# ---------------------------------------------------------------- the licence-clean geometry route, one stage
+ROUTE_CERT = .05  # RoMa's own sample_thresh (certainty above it = certain); research-notes/geometry-backbone-ab-2026-10-06 mvs_route.py
+FRAME_FILES = ('pts3d', 'conf', 'valid_mask', 'intrinsics', 'camera_to_world')
+
+
+def geometry(argv) -> dict:
+    """run_stage.py geometry --run RUN --start GEOM --output NEW (--weights DIR | --roma DIR) [--device cpu]
+
+The licence-clean geometry route (research-notes/geometry-backbone-ab-2026-10-06), offline: the network is refused in this
+process and HF_HUB_OFFLINE=1. GEOM = the start geometry (the DA3-BASE stage's output, RUN/geometry frame schema) of RUN's frames
+(manifest.json frames[]: frame_id, canonical, alpha, content_rect_xyxy) ->
+  RoMa v1 outdoor sparse + dense matches of every frame pair on the content rect (modal_apps/geometry_clean_ab.roma_pair):
+    --weights DIR  run RoMa here from DIR = scripts/onprem/fetch_weights_geometry.py --cache DIR (the mirror layout); both files
+                   are SHA-256 checked against the pins before loading and refused on a mismatch (roma_model); written to NEW/roma/
+    --roma DIR     reuse RoMa outputs instead: roma-I-J.npz (uvA, uvB) and dense-I-J.npz (uvAB, certA, uvBA, certB), I < J in
+                   frame order (the same files NEW/roma/ holds)
+  -> bundle adjustment with one focal per photo (geometry_clean_ab.refine: the numpy Schur LM, modal_apps/bundle_adjust.py);
+     a pass that is not usable (bundle_adjust doc) is refused and nothing is written
+  -> two-view triangulation of the dense warp (geometry_clean_ab.mvs) at CERT = ROUTE_CERT, conf = 1 on every kept pixel
+  -> NEW/frames/<frame_id>/{pts3d,conf,valid_mask,intrinsics,camera_to_world}.npy + canonical.png + candidate_manifest.json."""
+    ap = argparse.ArgumentParser(prog='run_stage.py geometry', description=geometry.__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--run', type=Path, required=True)
+    ap.add_argument('--start', type=Path, required=True)
+    ap.add_argument('--output', type=Path, required=True)
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument('--weights', type=Path)
+    src.add_argument('--roma', type=Path)
+    ap.add_argument('--device', default='cpu')
+    a = ap.parse_args(argv)
+    if a.output.exists():
+        raise SystemExit(f'onprem geometry: {a.output} exists; choose a new directory')
+    os.environ.update(HF_HUB_OFFLINE='1', HF_HUB_DISABLE_TELEMETRY='1', PANOPTES_ONPREM='1')
+    block_network(); use_stub(); pin_torch_hub()
+    sys.path[:0] = [str(Path(__file__).resolve().parents[2] / 'modal_apps')]
+    import numpy as np
+    import geometry_clean_ab as gc
+    t0 = time.monotonic(); fman = json.loads((a.run / 'manifest.json').read_text())['frames']
+    if sorted(p.name for p in (a.start / 'frames').iterdir()) != [f['frame_id'] for f in fman]:
+        raise SystemExit(f'onprem geometry: {a.start}/frames are not the frames of {a.run}/manifest.json')
+    frames = gc.read_geometry(a.start); H, W = frames[0]['pts3d'].shape[:2]
+    rects = {tuple(f['content_rect_xyxy']) for f in fman}; x0, y0, x1, y1 = rects.pop()
+    if rects or (y0, y1) != (0, H):
+        raise SystemExit('onprem geometry: one content rect [x0, 0, x1, H] shared by every frame is required')
+    contents = [fr['valid'] & np.load(a.run / f['alpha']) & np.isfinite(fr['pts3d']).all(-1) & (np.linalg.norm(fr['pts3d'], axis=-1) > 1e-6)
+                & (fr['conf'] >= .1) for fr, f in zip(frames, fman)]  # prepare_capture_evidence.RULE (fair_ab.content_mask)
+    pairs, keys, written = list(combinations(range(len(frames)), 2)), ('uvAB', 'certA', 'uvBA', 'certB'), {}
+    if a.roma:
+        matches = {(i, j): tuple(np.load(a.roma / f'roma-{i}-{j}.npz')[k] for k in ('uvA', 'uvB')) for i, j in pairs}
+        dense = {(i, j): tuple(np.load(a.roma / f'dense-{i}-{j}.npz')[k] for k in keys) for i, j in pairs}
+        used = [f'{kind}-{i}-{j}.npz' for i, j in pairs for kind in ('roma', 'dense')]
+        roma = dict(source=f'reused {a.roma}', sha256={n: hashlib.sha256((a.roma / n).read_bytes()).hexdigest() for n in used})
+    else:
+        import torch
+        from PIL import Image
+        import fetch_weights_geometry as fwg
+        torch.manual_seed(0); model = gc.roma_model(a.device, a.weights)  # SHA-256 checked first, a mismatch is refused
+        crops = [Image.open(a.run / f['canonical']).convert('RGB').crop((x0, 0, x1, H)) for f in fman]
+        matches, dense = {}, {}
+        for i, j in pairs:
+            r = gc.roma_pair(model, crops[i], crops[j], a.device, x0=x0)
+            matches[(i, j)], dense[(i, j)] = (r['sparse']['uvA'], r['sparse']['uvB']), tuple(r['dense'][k] for k in keys)
+            written[f'roma-{i}-{j}.npz'], written[f'dense-{i}-{j}.npz'] = gc.npz(**r['sparse']), gc.npz(**r['dense'])
+        roma = dict(source=f'computed on {a.device} from {a.weights}', code=fwg.ROMA_CODE, torch=str(torch.__version__),
+                    weightsSha256={rel: f[1] for n in ('roma_outdoor', 'roma_dinov2') for rel, f in fwg.FILES[n]['files'].items()})
+    gc.MVS.update(CERT=ROUTE_CERT)
+    baf, rep = gc.refine(frames, contents, matches, focal=True, size=(H, W))
+    if not rep['usable']:
+        raise SystemExit('onprem geometry: bundle adjustment not usable, nothing written: ' + json.dumps([p['report'] for p in rep['ba']]))
+    mv, st = gc.mvs(baf, dense, x0=x0, w=x1 - x0, size=(H, W))
+    for fr, f in zip(mv, fman):
+        d = a.output / 'frames' / f['frame_id']; d.mkdir(parents=True)
+        for name, v in zip(FRAME_FILES, (fr['pts3d'], fr['valid'].astype(np.float32), fr['valid'], fr['K'], fr['c2w'])):
+            np.save(d / f'{name}.npy', v)
+        shutil.copyfile(a.run / f['canonical'], d / 'canonical.png')
+    for name, data in written.items():
+        (a.output / 'roma').mkdir(exist_ok=True); (a.output / 'roma' / name).write_bytes(data)
+    start = a.start / 'candidate_manifest.json'
+    summary = dict(stage='run_stage.py geometry', run=str(a.run), start=str(a.start),
+                   startModel=json.loads(start.read_text()).get('model_id') if start.exists() else None,
+                   ba=rep['ba_backend'], baConverged=rep['converged'], baUsable=rep['usable'],
+                   baPasses=[{k: p[k] for k in ('termination', 'iterations', 'cost', 'points', 'dropped')} for p in rep['ba']],
+                   roma=roma, thresholds=dict(gc.MVS), conf='1 on kept pixels', contentRect=[x0, 0, x1, H], mvs=st,
+                   seconds=round(time.monotonic() - t0, 1), created=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+    (a.output / 'candidate_manifest.json').write_text(json.dumps(dict(summary, baReport=rep), indent=1, default=float) + '\n')
+    print('onprem-geometry ' + json.dumps(summary, default=float))
+    return summary
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ['geometry']:
+        return geometry(argv[1:])
     opts = dict(offline=None, record=None, weights=None)
     while argv and argv[0].startswith('--') and argv[0][2:] in (*opts, 'self-test'):
         flag = argv.pop(0)[2:]

@@ -41,10 +41,15 @@ import numpy as np
 
 FAIR = Path('/Users/adam/Desktop/panoptes-public/research-notes/geometry-licence-ab-fair-2026-10-05')
 sys.path[:0] = [str(Path(__file__).parent), str(FAIR), str(Path(__file__).resolve().parents[1] / 'scripts/onprem')]
-import fair_ab_modal as fam  # noqa: E402  frozen inputs, frames_for, geometry_tar, analyse_one, cpu_image (unchanged)
+try:
+    import fair_ab_modal as fam  # noqa: E402  frozen inputs, frames_for, geometry_tar, analyse_one, cpu_image (unchanged)
+except ModuleNotFoundError as error:  # the on-prem geometry image (docker/geometry.Dockerfile) has no research harness: only
+    if error.name != 'fair_ab_modal':  # roma_model / roma_pair / refine / mvs run there (run_stage.py geometry passes x0 / w)
+        raise
+    fam = None
 from moge3_app import MODEL as MOGE, REVISION as MOGE_REV, image as moge_base, volume as moge_volume  # noqa: E402
 
-SCR = fam.SCR
+SCR = fam.SCR if fam else Path('/nonexistent-research-scratch')
 GPUD, GEOM, OUT = SCR / 'checks/clean-gpu', SCR / 'checks/clean-geom', SCR / 'checks/clean-analyse'
 VGGT, VGGT_REV, VGGT_CODE = 'facebook/VGGT-1B-Commercial', 'ebb29a532abe92960eeb6903a5530f16990ef4ab', 'a288dd0f14786c93483e45524328726ab7b1b4ce'
 ROMA_CODE = '77f8d68803526dcddfd9b7a46bc76125bdc25f15'
@@ -76,7 +81,7 @@ pycolmap_image = (modal.Image.debian_slim(python_version='3.11')  # research com
                   .pip_install('numpy==2.2.6', 'opencv-python-headless==4.10.0.84', 'pycolmap==4.2.1')
                   .add_local_file(FAIR / 'fair_ab.py', '/check/fair_ab.py')
                   .add_local_python_source(*SOURCES))
-analyse_image = fam.cpu_image.add_local_python_source(*SOURCES)
+analyse_image = fam.cpu_image.add_local_python_source(*SOURCES) if fam else None
 hf = [modal.Secret.from_name('huggingface')]
 
 
@@ -187,17 +192,18 @@ def roma_model(device, weights=WEIGHTS_DIR):
     return roma_outdoor(device=device, use_custom_corr=False, **fwg.roma_state_dicts(Path(weights), device))
 
 
-def roma_pair(roma, im_a, im_b, device, sparse=True, dense=True) -> dict:
-    """One RoMa match of two content crops (PIL, same size). sparse: N_MATCH balanced samples, uvA / uvB on the 518 grid
-    (pixel centres at integers) + certainty; dense: the full warp sampled at every crop pixel centre both ways,
-    uvAB = where A's pixel lands in B, certA; uvBA, certB the other way."""
+def roma_pair(roma, im_a, im_b, device, sparse=True, dense=True, x0=None) -> dict:
+    """One RoMa match of two content crops (PIL, same size; x0 = the crop's left edge on the canonical grid). sparse: N_MATCH
+    balanced samples, uvA / uvB on the 518 grid (pixel centres at integers) + certainty; dense: the full warp sampled at every
+    crop pixel centre both ways, uvAB = where A's pixel lands in B, certA; uvBA, certB the other way."""
     import torch
     import torch.nn.functional as F
+    x0 = fam.X0 if x0 is None else x0
     warp, cert = roma.match(im_a, im_b, device=device); W, H = im_a.size; out = {}
     if sparse:
         m, c = roma.sample(warp, cert, num=N_MATCH)
         a, b = roma.to_pixel_coordinates(m, H, W, H, W)  # continuous coords, pixel centres at +0.5
-        shift = np.array([fam.X0 - .5, -.5])
+        shift = np.array([x0 - .5, -.5])
         out['sparse'] = dict(uvA=a.cpu().numpy().astype(np.float64) + shift, uvB=b.cpu().numpy().astype(np.float64) + shift,
                              certainty=c.cpu().numpy().astype(np.float32))
     if dense:
@@ -208,7 +214,7 @@ def roma_pair(roma, im_a, im_b, device, sparse=True, dense=True) -> dict:
             w = warp[0, :, half * ws:(half + 1) * ws]; tgt = w[..., 2:4] if half == 0 else w[..., 0:2]
             uv = F.grid_sample(tgt.permute(2, 0, 1)[None].float(), g, align_corners=False, mode='bilinear')[0].permute(1, 2, 0)
             c = F.grid_sample(cert[:, None, :, half * ws:(half + 1) * ws].float(), g, align_corners=False, mode='bilinear')[0, 0]
-            pix = (uv + 1) / 2 * torch.tensor([W, H], device=device) - .5 + torch.tensor([fam.X0, 0.], device=device)
+            pix = (uv + 1) / 2 * torch.tensor([W, H], device=device) - .5 + torch.tensor([x0, 0.], device=device)
             res[f'uv{key}'] = pix.cpu().numpy().astype(np.float32); res[f'cert{key[0]}'] = c.cpu().numpy().astype(np.float16)
         out['dense'] = res
     return out
