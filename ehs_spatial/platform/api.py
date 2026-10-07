@@ -106,10 +106,15 @@ def create_app(*, repository, blobs, executor=None, agent_service=None, policy_s
     async def database_error(request, exc):
         return JSONResponse(status_code=503, content={"error": {"code": "database_unavailable", "params": {}}})
 
+    try:
+        from pymongo.errors import PyMongoError
+        app.add_exception_handler(PyMongoError, database_error)
+    except ImportError:  # PostgreSQL-only installation
+        pass
+
     @app.get("/api/health", response_model=Health, response_model_exclude_unset=True)
     def health():
-        with repository._connect() as connection:
-            connection.execute("SELECT 1")
+        repository.ping()
         return {"status": "ok", "schemaVersion": 1}
 
     @app.get("/api/projects", response_model=Items[Project], response_model_exclude_unset=True)

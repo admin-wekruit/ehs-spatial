@@ -19,12 +19,14 @@ from .contracts import Job, PlatformError, capability_sha, digest, empty_documen
 from .repository import apply_operations
 
 
+JSON_FIELDS = {"document", "operations", "inverse_operations", "images", "task", "inputs", "config", "metadata", "result", "late_results", "response", "request", "snapshot"}
+
+
 def _wire(row):
     if row is None:
         return None
     if isinstance(row, dict):
-        json_fields = {"document", "operations", "inverse_operations", "images", "task", "inputs", "config", "metadata", "result", "late_results", "response", "request", "snapshot"}
-        return {key.split("_")[0] + "".join(x.title() for x in key.split("_")[1:]): deepcopy(value) if key in json_fields else _wire(value)
+        return {key.split("_")[0] + "".join(x.title() for x in key.split("_")[1:]): deepcopy(value) if key in JSON_FIELDS else _wire(value)
                 for key, value in row.items() if key not in ("capability_sha256", "request_sha256")}
     if isinstance(row, (list, tuple)):
         return [_wire(value) for value in row]
@@ -91,6 +93,10 @@ class PostgresRepository:
             connection.execute("SELECT pg_advisory_xact_lock(728611936)")
             for path in sorted((Path(__file__).parent / "migrations").glob("*.sql")):
                 connection.execute(path.read_text())
+
+    def ping(self):
+        with self._connect() as connection:
+            connection.execute("SELECT 1")
 
     @staticmethod
     def _one(connection, query, params=(), *, code="not_found"):
