@@ -1,0 +1,78 @@
+{
+ "schema": "panoptes-naming-calibration-v1",
+ "fitted_on": "x13 crop dataset (mvp2-integrate-*-007 warm cards, Gemini names as labels)",
+ "target_class_agreement": 0.8,
+ "knn": [
+  "dinov2-l",
+  "plain+masked"
+ ],
+ "zero_shot": [
+  "pe-core-l",
+  "masked"
+ ],
+ "rules": [
+  "sam3+bank",
+  "sam3+zero-shot/yolo"
+ ],
+ "folds": {
+  "me340": {
+   "family": "shop floor",
+   "trained_on": [],
+   "cut_trained_on": [
+    "samsclub-a2",
+    "walmart"
+   ],
+   "uncalibrated": true,
+   "sam3+bank": null,
+   "sam3+zero-shot/yolo": null,
+   "cluster_cut": 0.6,
+   "note": "first video of its domain family: no calibrated second vote, so no cheap acceptance; one VLM call per cluster medoid at the cut fitted on the other videos"
+  },
+  "samsclub-a2": {
+   "family": "retail",
+   "trained_on": [
+    "walmart"
+   ],
+   "uncalibrated": false,
+   "sam3+bank": 0.1596,
+   "sam3+zero-shot/yolo": 0.4571,
+   "cluster_cut": 0.6
+  },
+  "walmart": {
+   "family": "retail",
+   "trained_on": [
+    "samsclub-a2"
+   ],
+   "uncalibrated": false,
+   "sam3+bank": 0.1126,
+   "sam3+zero-shot/yolo": 0.5107,
+   "cluster_cut": 0.6
+  }
+ },
+ "families": {
+  "retail": {
+   "trained_on": [
+    "samsclub-a2",
+    "walmart"
+   ],
+   "uncalibrated": false,
+   "sam3+bank": 0.1589,
+   "sam3+zero-shot/yolo": 0.3269,
+   "cluster_cut": 0.6
+  }
+ },
+ "uncalibrated": {
+  "sam3+bank": null,
+  "sam3+zero-shot/yolo": null,
+  "cluster_cut": 0.6,
+  "uncalibrated": true
+ },
+ "site_family": {
+  "me340": "shop floor",
+  "samsclub-a2": "retail",
+  "walmart": "retail",
+  "lightning": "shop floor"
+ },
+ "note": "folds[site]: held out (fitted without that video); families[f]: production",
+ "site_family_note": "r5b: 'lightning' (the Lightning eMotors factory tour clip, data/clips/lightning-3572) is a shop floor: its VLM rows are the only shop-floor rows that are not ME340's"
+}

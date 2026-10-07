@@ -1,10 +1,11 @@
-import type { SurfacePick } from "./viewer/native-math";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import type { MeasurementScale, SurfacePick } from "./viewer/native-math";
+import { useEffect, useId, useRef, useState, type ReactNode, type PointerEvent } from "react";
 import { SpatialView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { ComparisonVideo, VideoMemory, VideoView, videoReplay } from "./VideoView";
 import { request } from "./api";
-import { SpatialMeasurements, type BendAnalysis, type InclinationAnalysis, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
+import { useSceneResources } from "./SceneResources";
+import { SpatialMeasurements, type BendAnalysis, type InclinationAnalysis, type InclinationSurface, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
 import { CadView } from "./CadView";
 import { splatAnnotation } from "./viewer/splat-layer";
 import { useI18n } from "./i18n";
@@ -21,6 +22,7 @@ import {
   type Vec,
 } from "./viewer/native-math";
 import type { Camera, Entity, Revision, Selection, SceneDocument, RepresentationLoadState } from "./types";
+import { boxDimNames, boxFaceNames, boxGeometry, boxLevels, layerText, validBox, type BoxDimName, type BoxFaceName, type BoxLevel, type LayerBox, type MeasurementLayer } from "./measurement-layer";
 import "./report-scene.css";
 
 type Pane = "photo" | "spatial" | "cad" | "plan";
@@ -199,11 +201,86 @@ function PhotoAxes({
   );
 }
 
+// Box faces are hatched in their confidence colour (the weaker the evidence, the denser the hatch); a highlighted box (the layer's
+// low-confidence flag: retake photos) is outlined in pink (faint when not selected), others in teal (selected) or grey.
+const levelHatch: Record<BoxLevel, [string, number]> = { high: ["rgba(92,201,140,.22)", 2], medium: ["rgba(240,180,60,.4)", 4], low: ["rgba(245,130,47,.45)", 5], unverified: ["rgba(235,70,70,.5)", 7] };
+const boxEdge = { highlight: "#ff3fa4", faintHighlight: "rgba(255,63,164,.45)", selected: "#14a38b", other: "#8aa39a", floor: "rgba(255,255,255,.85)" };
+const levelNames: Record<BoxLevel, [string, string]> = { high: ["高", "High"], medium: ["中", "Medium"], low: ["低", "Low"], unverified: ["未验证", "Unverified"] };
+const faceNames: Record<BoxFaceName, [string, string]> = { front: ["前面", "Front"], back: ["后面", "Back"], left: ["左面", "Left"], right: ["右面", "Right"], top: ["顶面", "Top"], bottom: ["底面", "Bottom"] };
+const dimNames: Record<BoxDimName, [string, string]> = { L: ["长", "Length"], W: ["宽（进深）", "Width (depth)"], H: ["高", "Height"], bottom: ["离地", "Clearance"] };
+const statusNames: Record<string, [string, string]> = { seen: ["可见", "seen"], occluded: ["被遮挡", "occluded"], out_of_frame: ["不在画面内", "out of frame"], not_facing: ["未朝向相机", "not facing a camera"] };
+const cm = (metres: number) => { const v = metres * 100; return Math.abs(v) < 100 ? v.toFixed(1) : v.toFixed(0); };
+
+type BoxFrame = { nativeToMeters: number; ground?: { normal: number[]; offset: number } | null };
+/** The viewer draws a line or label carrying `facing` only while that face turns towards its camera (no depth test in the overlay),
+ * and leaves every `layerBox` one out of model-preview captures. */
+type Facing = { at: number[]; normal: number[] };
+type BoxLine = SceneMeasurement["lines"][number] & { layerBox: true; facing?: Facing };
+type BoxLabel = { point: number[]; text: string; layerBox: true; facing?: Facing };
+/** One layer box in the viewer's measurement overlay. The selected box: its outline, its faces hatched in their confidence colours
+ * and named at their centres (front-facing ones only), L × W × H and 离地 over the unified floor. Any other shown box: the outline. */
+function boxOverlay(box: LayerBox, frame: BoxFrame, selected: boolean, title: string, zh: boolean, out: { lines: BoxLine[]; labels: BoxLabel[] }) {
+  const g = boxGeometry(box, frame.nativeToMeters, frame.ground);
+  if (!g) return;
+  const edge = box.highlight ? selected ? boxEdge.highlight : boxEdge.faintHighlight : selected ? boxEdge.selected : boxEdge.other;
+  for (let i = 0; i < 8; i++) for (let k = 0; k < 3; k++) if (!(i & 1 << k)) out.lines.push({ points: [g.corners[i], g.corners[i | 1 << k]], color: edge, layerBox: true });
+  if (!selected) return;
+  // one label for size and clearance at the bottom (by the floor tick), so the top is left to the top face's name
+  const lifted = !!g.floor && !box.floorContact;
+  if (lifted) out.lines.push({ points: [g.floor!, g.bottomCenter], color: boxEdge.floor, layerBox: true });
+  out.labels.push({ point: lifted ? g.floor!.map((v, k) => (v + g.bottomCenter[k]) / 2) : g.bottomCenter, layerBox: true,
+    text: `${title ? `${title} · ` : ""}${zh ? "长×宽×高" : "L×W×H"} ${[box.dims.L, box.dims.W, box.dims.H].map(d => cm(d.valueM)).join("×")} cm · ${box.floorContact ? (zh ? "贴地" : "on floor") : `${zh ? "离地" : "clearance"} ${cm(box.dims.bottom.valueM)} cm`}` });
+  for (const name of boxFaceNames) {
+    const level = box.faces[name]?.confidence ?? "unverified", [color, count] = levelHatch[level], [a, b, c, d] = g.faces[name].map(i => g.corners[i]);
+    const facing = { at: [0, 1, 2].map(k => (a[k] + b[k] + c[k] + d[k]) / 4), normal: box.faceNormals[name] };
+    const at = (x: number, y: number) => [0, 1, 2].map(k => a[k] + x * (b[k] - a[k]) + y * (d[k] - a[k]));
+    for (let i = 1; i <= count; i++) { const t = 2 * i / (count + 1); out.lines.push({ points: t <= 1 ? [at(t, 0), at(0, t)] : [at(1, t - 1), at(t - 1, 1)], color, layerBox: true, facing }); }
+    out.labels.push({ point: facing.at, text: `${faceNames[name][zh ? 0 : 1]}·${levelNames[level][zh ? 0 : 1]}`, layerBox: true, facing });
+  }
+}
+
+/** The shown measurement with the layer boxes added to its overlay (or the boxes alone); unchanged when there is nothing to add.
+ * Shown: the selected box in full, highlighted boxes outlined, and with showAll every box outlined: then the selected box's label
+ * carries its name and the viewer names only the hovered object (labels 'hover'), so names never pile up. */
+function withBoxes(measurement: SceneMeasurement | null, layer: MeasurementLayer | null, boxes: [string, LayerBox][], frame: BoxFrame | null, selected: Entity | null | undefined, showAll: boolean, zh: boolean): SceneMeasurement | null {
+  if (!layer || !frame || !boxes.length || measurement && measurement.coordinateFrameId !== layer.coordinateFrameId) return measurement;
+  const out = { lines: [] as BoxLine[], labels: [] as BoxLabel[] };
+  for (const [id, box] of boxes) if (showAll || box.highlight || id === selected?.id) boxOverlay(box, frame, id === selected?.id, showAll ? selected?.label || box.label : "", zh, out);
+  if (!out.lines.length) return measurement;
+  if (measurement) return { ...measurement, lines: [...measurement.lines, ...out.lines], labels: [...(measurement.labels || []), ...out.labels] };
+  const [first, ...labels] = out.labels;  // the first is the size label: never a face's, so the viewer always shows it
+  return { revisionId: layer.revisionId, kind: "layer_boxes", coordinateFrameId: layer.coordinateFrameId, source: "measurement_layer", value: 0, unit: "native", method: "layer-boxes",
+    references: [], lines: out.lines, labelPoint: first?.point ?? out.lines[0].points[0], displayLabel: first?.text ?? "", labels, quality: {} };
+}
+
+/** 长 / 宽（进深）/ 高 / 离地 with σ and confidence, why the object is highlighted, which photos see each face and what to retake. */
+export function LayerBoxPanel({ box, entityId }: { box: LayerBox; entityId: string }) {
+  const { language } = useI18n(), zh = language === "zh", pick = (pair: readonly [string, string]) => pair[zh ? 0 : 1];
+  const reasons = layerText(language, box.highlightReasons, box.highlightReasonsEn) || [], snapNote = layerText(language, box.snapNote, box.snapNoteEn);
+  const needs = boxFaceNames.flatMap(name => { const face = box.faces[name], need = face && layerText(language, face.need, face.needEn); return need ? [[name, need] as const] : []; });
+  return <section className="report-box-panel" data-layer-box={entityId} data-confidence={box.confidence} data-highlight={box.highlight || undefined}>
+    <h4>{zh ? "尺寸与离地 · 统一地面" : "Size and clearance · unified floor"}<span data-confidence={box.confidence}>{zh ? "置信度 " : "Confidence "}{pick(levelNames[box.confidence])}</span></h4>
+    {box.highlight && <p className="report-box-recapture">{zh ? "低置信度（需补拍）" : "Low confidence (retake photos)"}</p>}
+    {reasons.length > 0 && <ul className="report-box-reasons">{reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>}
+    <table className="report-box-dims"><tbody>{boxDimNames.map(k => { const d = box.dims[k]; return <tr key={k} data-dim={k} data-confidence={d.confidence}>
+      <th>{pick(dimNames[k])}</th><td className="report-numeric">{cm(d.valueM)} ± {d.sigmaCm === null ? "—" : d.sigmaCm.toFixed(1)} cm{k === "bottom" && box.floorContact ? (zh ? "（贴地）" : " (on the floor)") : ""}</td><td>{pick(levelNames[d.confidence])}</td></tr>; })}</tbody></table>
+    {snapNote && <p className="report-box-snap">{snapNote}</p>}
+    <small className="report-numeric">{zh ? "顶部离地" : "Top above floor"} {cm(box.topM)} cm</small>
+    <table className="report-box-faces"><thead><tr><th>{zh ? "面" : "Face"}</th><th>{zh ? "照片" : "Photos"}</th><th>{zh ? "状态" : "Status"}</th><th>{zh ? "置信度" : "Confidence"}</th></tr></thead>
+      <tbody>{boxFaceNames.map(name => { const face = box.faces[name], level = face?.confidence ?? "unverified"; return <tr key={name} data-confidence={level}>
+        <th>{pick(faceNames[name])}</th><td className="report-numeric">{face?.photos.length ? face.photos.join(", ") : "—"}</td>
+        <td>{face ? statusNames[face.status] ? pick(statusNames[face.status]) : face.status : "—"}</td><td>{pick(levelNames[level])}</td></tr>; })}</tbody></table>
+    {needs.length > 0 && <div className="report-box-need"><strong>{zh ? "补拍提示" : "Photos to retake"}</strong><ul>{needs.map(([name, need]) => <li key={name}><b>{pick(faceNames[name])}</b> {need}</li>)}</ul></div>}
+    {box.method && <small>{box.method}</small>}
+  </section>;
+}
+
 export function Extent({ entity, document }: { entity: Entity; document: SceneDocument }) {
   const { t } = useI18n(), d = sourceDimensions(entity), scale = sourceScale(document, entity),
     groundDimensions = [d.widthNative, d.depthNative, d.groundHeight],
     values = isReferenceSurface(document, entity) ? [d.widthNative, d.depthNative] :
       groundDimensions.every(Number.isFinite) ? groundDimensions : [d.extentX, d.extentY, d.extentZ];
+  if (entity.physicalDimensionsUnknown === true) return <span>物理尺寸未知</span>;
   return values.some(Number.isFinite) ? <span className="report-numeric">
     {values.map((value) => Number.isFinite(value) ? (value! * (scale?.nativeToMeters || 1)).toFixed(2) : "—").join(" × ")}
     <small>{scale?.nativeToMeters ? "m" : t("uncalibrated")}</small>
@@ -212,8 +289,16 @@ export function Extent({ entity, document }: { entity: Entity; document: SceneDo
 
 export function ReportScene({
   revision, selection, onSelect, imageId, cameraId, onCamera,
-  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport,
+  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport, variantNotice, matchedComparison = false, measurementOverride, measurementScale, initialView, viewRequest, boxLayer = null,
 }: {
+  /** The report's measurement layer: its boxes are drawn in the 3D scene (the selected one in full, low-confidence ones outlined). */
+  boxLayer?: MeasurementLayer | null;
+  matchedComparison?: boolean;
+  initialView?: "photo" | "point_cloud" | "model" | "compare";
+  /** A later explicit request (e.g. from a semantic result) to show one view; nonce makes repeats distinct. */
+  viewRequest?: { view: "photo" | "point_cloud" | "model" | "compare"; nonce: number } | null;
+  measurementOverride?: SceneMeasurement | null;
+  measurementScale?: MeasurementScale;
   revision: Revision;
   selection: Selection;
   onSelect: (entityId: string, observationId?: string) => void;
@@ -223,19 +308,21 @@ export function ReportScene({
   draw?: boolean;
   onBox?: (box: number[] | null) => void;
   onOpenSourceCad?: () => void;
-  inspector?: ReactNode;
+  inspector?: ReactNode | ((surface: InclinationSurface | undefined) => ReactNode);
   newerReport?: { href: string; title: string };
+  /** A comparison measurement layer is shown instead of the report's own; link back to the original. */
+  variantNotice?: { label: string; href: string };
   objectListRequest?: number;
   onFeedback?: (entityId: string) => void;
   onClearSelection?: () => void;
 }) {
   const { t, language } = useI18n(), container = useRef<HTMLElement>(null),
     objectList = useRef<HTMLDivElement>(null), objectSearch = useRef<HTMLInputElement>(null), currentPreviewKey = useRef(""), panePrefix = useId();
-  const [layer, setLayer] = useState<Layer>(() => revision.document.entities.some(entity =>
+  const [layer, setLayer] = useState<Layer>(() => initialView === "point_cloud" ? "point_cloud" : revision.document.entities.some(entity =>
     !entity.sourceContext && activeModel(entity)?.sourceValidity !== "stale" && activeModel(entity)) ? "model" : "observed_surface"),
     [cadLayer, setCadLayer] = useState<"model" | "observed_surface">("model"),
     [allBounds, setAllBounds] = useState(false), [showPath, setShowPath] = useState(true),
-    [focused, setFocused] = useState<Pane | null>(null),
+    [focused, setFocused] = useState<Pane | null>(initialView === "photo" ? "photo" : initialView === "model" || initialView === "point_cloud" ? "spatial" : null),
     [mobileSection, setMobileSection] = useState("views"),
     [search, setSearch] = useState(""),
     [fullscreenError, setFullscreenError] = useState(false),
@@ -244,50 +331,74 @@ export function ReportScene({
     [modelPreview, setModelPreview] = useState<{ key: string; image: string } | null>(null),
     [modelLoads, setModelLoads] = useState<{ revisionId: string; states: RepresentationLoadState[] } | null>(null),
     [expandedEntities, setExpandedEntities] = useState<Set<string>>(() => new Set());
+  const [comparing, setComparing] = useState(matchedComparison && (!initialView || initialView === "compare")), [wipe, setWipe] = useState(50);
+  const { analysisAvailable, bendAnalysis: savedBendAnalysis, inclinationAnalysis: savedInclinationAnalysis, layerBends, layerConfidence } = useSceneResources();
   const document = revision.document,
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
-  const [cloudWithModels, setCloudWithModels] = useState(true);
+  const [cloudWithModels, setCloudWithModels] = useState(!matchedComparison);
   const hasSplats = !!splatAnnotation(document), [splats, setSplats] = useState(true);
+  const [allBoxes, setAllBoxes] = useState(false), zh = language === "zh";
+  // The one unified floor is the frame's ground (a layer's own ground is already applied to it): a box whose up axis is not that
+  // floor's normal, or with a malformed field, is left out.
+  const boxFrame: BoxFrame | null = boxLayer?.revisionId === revision.id ? {
+    nativeToMeters: boxLayer.scale.nativeToMeters,
+    ground: document.coordinateFrames.find(frame => frame.id === boxLayer.coordinateFrameId)?.ground as BoxFrame["ground"],
+  } : null;
+  const boxes = boxFrame ? Object.entries(boxLayer!.boxes || {}).filter((entry): entry is [string, LayerBox] => validBox(entry[1]) && !!boxGeometry(entry[1], boxFrame.nativeToMeters, boxFrame.ground)) : [];
+  const boxById = new Map(boxes), highlightCount = boxes.filter(([, box]) => box.highlight).length;
   const hasMotion = document.entities.some(entity => (entity as any).motion === "dynamic"), [part, setPart] = useState<"all" | "static" | "dynamic">("all");
   const hasSkeleton = document.entities.some(entity => (entity.representations || []).some(rep => (rep as any).sourceKind === "moving_object_skeleton")), [skeleton, setSkeleton] = useState(false);
   const hasVideo = !!videoReplay(document), [videoMode, setVideoMode] = useState(true), showVideo = hasVideo && videoMode && !draw;  // drawing a missed object needs the still keyframe
   const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || (!imageId ? document.coordinateFrames[0]?.id : "") || "", showCandidates: true, imageId, observations: document.observations };
   const [rawMeasurement, setMeasurement] = useState<SceneMeasurement | null>(null), [measureRegion, setMeasureRegion] = useState<MeasureRegion | null>(null), [drawingRegion, setDrawingRegion] = useState(false);
-  const [bendAnalysis, setBendAnalysis] = useState<BendAnalysis | null>(null), [bendError, setBendError] = useState(false), [showAngles, setShowAngles] = useState(true);
+  const [remoteBendAnalysis, setBendAnalysis] = useState<BendAnalysis | null>(null), [bendError, setBendError] = useState(false), [showAngles, setShowAngles] = useState(true);
   useEffect(() => {
+    if (!analysisAvailable) return;
     const controller = new AbortController(); setBendAnalysis(null); setBendError(false);
     request<BendAnalysis>(`/api/revisions/${revision.id}/bend-analysis-v1`, { signal: controller.signal })
       .then(value => { if (!controller.signal.aborted) setBendAnalysis(value); })
       .catch(() => { if (!controller.signal.aborted) setBendError(true); });
     return () => controller.abort();
   }, [revision.id]);
-  const [inclinationAnalysis,setInclinationAnalysis]=useState<InclinationAnalysis|null>(null), [inclinationError,setInclinationError]=useState(false), [surfaceKey,setSurfaceKey]=useState(""), [allPlanes,setAllPlanes]=useState(false);
+  const [remoteInclinationAnalysis,setInclinationAnalysis]=useState<InclinationAnalysis|null>(null), [inclinationError,setInclinationError]=useState(false), [surfaceKey,setSurfaceKey]=useState(""), [allPlanes,setAllPlanes]=useState(false);
   useEffect(()=>{
+    if (!analysisAvailable) return;
     const controller=new AbortController();setInclinationAnalysis(null);setInclinationError(false);setSurfaceKey("");
     request<InclinationAnalysis>(`/api/revisions/${revision.id}/inclination-analysis-v1`,{signal:controller.signal})
       .then(value=>{if(!controller.signal.aborted)setInclinationAnalysis(value);})
       .catch(()=>{if(!controller.signal.aborted)setInclinationError(true);});
     return ()=>controller.abort();
   },[revision.id]);
-  const inclinationRows=inclinationAnalysis?.revisionId===revision.id?inclinationAnalysis.items:[];
+  const bendAnalysis = analysisAvailable ? remoteBendAnalysis : savedBendAnalysis, inclinationAnalysis = analysisAvailable ? remoteInclinationAnalysis : savedInclinationAnalysis;
+  // A saved analysis measured one model: once an entity shows another model (e.g. a measurement layer's), its old results no longer apply.
+  const measuresShownModel = (result?: SceneMeasurement) => !result || result.references.every(ref => activeModel(document.entities.find(entity => entity.id === ref.entityId) || {} as Entity)?.id === ref.representationId);
+  const inclinationRows=(inclinationAnalysis?.revisionId===revision.id?inclinationAnalysis.items:[]).map(row=>({...row,surfaces:row.surfaces.filter(surface=>measuresShownModel(surface.result))}));
   const incompleteInclinations=inclinationRows.filter(row=>row.status==="failed" || row.status==="partial").length;
   const allSurfaces=inclinationRows.flatMap(row=>row.surfaces.map(surface=>({entityId:row.entityId,surface,key:row.entityId+":"+surface.surfaceId})));
   const visibleSurfaces=allSurfaces.filter(row=>allPlanes || row.surface.classification==="non_vertical" || (row.surface.classification==="direction_unverified" && row.surface.deviationFromVerticalDeg>Math.max(row.surface.angularSpreadDeg,0.000001)));
   const activeSurface=allSurfaces.find(row=>row.key===surfaceKey && row.entityId===selected?.id)?.surface;
   useEffect(()=>{ if(activeSurface)setMeasurement(activeSurface.result); },[activeSurface]);
-  const bendRows = bendAnalysis?.revisionId === revision.id ? bendAnalysis.items : [];
+  const bendRows = [...(bendAnalysis?.revisionId === revision.id ? bendAnalysis.items : []).filter(row => measuresShownModel(row.result) && !layerBends?.some(layerRow => layerRow.entityId === row.entityId)),
+    ...(layerBends || []).filter(row => row.result?.revisionId === revision.id && measuresShownModel(row.result))];
   const incompleteBends = bendRows.filter(row => row.status === "failed").length;
   const detectedBends = bendRows.filter(row => row.status === "measured" && row.result);
   const savedBend = bendRows.find(row => row.entityId === selected?.id);
-  const measurement = (showAngles || rawMeasurement?.unit !== "deg") && rawMeasurement?.revisionId === revision.id && rawMeasurement.references.some(ref => ref.entityId === selected?.id) ? rawMeasurement : null;
-  const [measurePoints,setMeasurePoints]=useState<SurfacePick[]>([]),[pickingPoints,setPickingPoints]=useState(false),[pointError,setPointError]=useState(false),[pointCount,setPointCount]=useState<2|3>(2);
-  useEffect(() => { setMeasureRegion(null); setDrawingRegion(false); setMeasurePoints([]); setPickingPoints(false); }, [revision.id, selection.entityId]);
-  useEffect(()=>{if(layer!=="model"){setMeasurePoints([]);setPickingPoints(false);}},[layer]);
-  function startPointPicking(start:boolean, count:2|3=3) { setPointCount(count); setPickingPoints(start); setMeasurePoints([]); setMeasurement(null); setPointError(false); if(start){setDrawingRegion(false);setLayer("model");setFocused("spatial");setMobileSection("views");} }
+  useEffect(() => {
+    if (!analysisAvailable && !activeSurface) setMeasurement(savedBend?.status === "measured" ? savedBend.result || null : null);
+  }, [analysisAvailable, selected?.id, savedBend, activeSurface]);
+  const [localMeasurement, setLocalMeasurement] = useState<SceneMeasurement | null>(null), [localMeasurementActive, setLocalMeasurementActive] = useState(false);
+  const activeMeasurement = localMeasurementActive ? localMeasurement : measurementOverride ?? rawMeasurement;
+  const measurement = (showAngles || activeMeasurement?.unit !== "deg") && activeMeasurement?.revisionId === revision.id && (localMeasurementActive || activeMeasurement.references.some(ref => ref.entityId === selected?.id)) ? activeMeasurement : null;
+  const [measurePoints,setMeasurePoints]=useState<SurfacePick[]>([]),[pickingPoints,setPickingPoints]=useState(false),[pointError,setPointError]=useState(false),[pointCount,setPointCount]=useState<1|2|3>(2);
+  const measurementGeometryKey = JSON.stringify([revision.id, imageId, geometryOptions.frameId, document.entities.map(entity => [entity.id, entity.visible, entity.currentModelTransform, activeModel(entity)]), document.assets, document.coordinateFrames.map(frame => [frame.id, frame.ground])]);
+  useEffect(() => { setMeasureRegion(null); setDrawingRegion(false); setMeasurePoints([]); setPickingPoints(false); setLocalMeasurement(null); setLocalMeasurementActive(false); setPointError(false); }, [measurementGeometryKey, selection.entityId]);
+  useEffect(()=>{if(layer!=="model"){setMeasurePoints([]);setPickingPoints(false);setLocalMeasurement(null);setLocalMeasurementActive(false);}},[layer]);
+  function startPointPicking(start:boolean, count:1|2|3=3) { setPointCount(count); setPickingPoints(start); setMeasurePoints([]); setLocalMeasurement(null); setLocalMeasurementActive(start); setPointError(false); if(start){setDrawingRegion(false);setLayer("model");chooseView("spatial");} }
   function pickMeasurementPoint(hit:SurfacePick|null) {
     if(!pickingPoints)return;
-    if(!hit||measurePoints.length>0&&hit.coordinateFrameId!==measurePoints[0].coordinateFrameId){setPointError(true);return;}
+    const entity = hit && document.entities.find(entity => entity.id === hit.entityId), rep = entity && activeModel(entity);
+    if(!hit || hit.point.length!==3 || !hit.point.every(Number.isFinite) || hit.coordinateFrameId!==geometryOptions.frameId || !rep || rep.id!==hit.representationId || rep.sourceValidity==="stale" || entity?.visible===false || rep.coordinateFrameId!==hit.coordinateFrameId || (entity?.currentModelTransform||rep.transform).coordinateFrameId!==hit.coordinateFrameId || measurePoints.length>0&&hit.coordinateFrameId!==measurePoints[0].coordinateFrameId){setPointError(true);return;}
     setPointError(false);const next=[...measurePoints,hit].slice(0,pointCount);setMeasurePoints(next);
     if(next.length===pointCount){setPickingPoints(false);setMobileSection("inspector");}
   }
@@ -398,7 +509,17 @@ export function ReportScene({
     if (row.top < viewport.top) list.scrollTop -= viewport.top - row.top;
     else if (row.bottom > viewport.bottom) list.scrollTop += row.bottom - viewport.bottom;
   }, [selection.entityId, search, isFullscreen, mobileSection, expandedEntities]);
-  function chooseView(pane: Pane | null) { setFocused(pane); setMobileSection("views"); }
+  function moveComparison(event: PointerEvent<HTMLDivElement>) {
+    const bounds = event.currentTarget.parentElement!.getBoundingClientRect();
+    setWipe(Math.round(Math.max(0, Math.min(100, (event.clientX - bounds.left) / bounds.width * 100))));
+  }
+  function chooseView(pane: Pane | null) { setComparing(false); setFocused(pane); setMobileSection("views"); }
+  useEffect(() => {
+    if (!viewRequest) return;
+    if (viewRequest.view === "compare") { setComparing(true); setLayer("model"); setMobileSection("views"); }
+    else if (viewRequest.view === "photo") chooseView("photo");
+    else { setLayer(viewRequest.view); chooseView("spatial"); }
+  }, [viewRequest?.nonce]);
   async function fullscreen() {
     setFullscreenError(false);
     try {
@@ -432,7 +553,7 @@ export function ReportScene({
     selectEntity(entityId, observation?.id);
   }
   return (
-    <section ref={container} className="report-scene" data-view={focused || "quad"}
+    <section ref={container} className="report-scene" data-view={comparing ? "compare" : focused || "quad"}
       data-mobile-section={mobileSection} data-mobile-pane={focused || "photo"}
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented) { setFocused(null); setFullscreenError(false); }
@@ -440,7 +561,7 @@ export function ReportScene({
       <header className="report-scene-toolbar">
         <div className="report-scene-intro"><strong>{t("sceneWorkspace")}</strong><span>{t("sceneLinked")}</span></div>
         <div className="report-scene-controls">
-          <label><span>{t("sceneLayers")}</span><select aria-label={t("sceneLayers")} value={layer} onChange={(e) => setLayer(e.target.value as Layer)}>
+          <label><span>{t("sceneLayers")}</span><select aria-label={t("sceneLayers")} disabled={comparing} value={layer} onChange={(e) => setLayer(e.target.value as Layer)}>
             <option value="observed_surface">{t("sceneObserved")}</option><option value="model">{t("sceneModel")}</option>
             <option value="point_cloud" disabled={!hasPointCloud}>{t(hasPointCloud ? "scenePoints" : "sceneNoPoints")}</option>
           </select></label>
@@ -451,28 +572,30 @@ export function ReportScene({
           </select></label>}
           {hasSkeleton && part !== "static" && <label className="report-scene-check"><input type="checkbox" checked={skeleton} onChange={(e) => setSkeleton(e.target.checked)} />{language === "zh" ? "骨架（代替人物表面）" : "Skeleton (instead of surfaces)"}</label>}
           <label className="report-scene-check"><input type="checkbox" checked={allBounds} onChange={(e) => setAllBounds(e.target.checked)} />{t("sceneShowBorders")}</label>
+          {boxes.length > 0 && <label className="report-scene-check"><input type="checkbox" checked={allBoxes} onChange={(e) => setAllBoxes(e.target.checked)} />{zh ? "显示全部尺寸框" : "Show all size boxes"}</label>}
           <label className="report-scene-check"><input type="checkbox" checked={showPath} onChange={(e) => setShowPath(e.target.checked)} />{t("sceneShowCameraPath")}</label>
           {selected && onClearSelection && <button onClick={onClearSelection}>{t("sceneClearSelection")}</button>}
           <button className="report-scene-fullscreen" onClick={fullscreen} aria-pressed={isFullscreen} aria-label={t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}>⛶ <span>{t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}</span></button>
         </div>
       </header>
-      <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的折弯分析" : "Saved bend analysis"}>
+      {(analysisAvailable || bendAnalysis) && <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的折弯分析" : "Saved bend analysis"}>
         <span>{language === "zh" ? bendError ? "折弯分析加载失败，请刷新重试" : !bendAnalysis ? "读取已保存的折弯分析…" : `已计算 ${detectedBends.length} 处折弯角度${incompleteBends ? ` · ${incompleteBends} 个对象计算未完成` : ""}` : bendError ? "Could not load bend analysis; refresh to retry" : !bendAnalysis ? "Loading saved bend analysis…" : `${detectedBends.length} bend angles calculated${incompleteBends ? ` · ${incompleteBends} objects incomplete` : ""}`}</span>
-        <label>{language === "zh" ? "已识别折弯" : "Detected bend"}<select value={detectedBends.some(row => row.entityId === selected?.id) ? selected!.id : ""} onChange={e => { if(e.target.value) { selectEntity(e.target.value); setLayer("model"); } }}>
+        <label>{language === "zh" ? "已识别折弯" : "Detected bend"}<select value={detectedBends.some(row => row.entityId === selected?.id) ? selected!.id : ""} onChange={e => { startPointPicking(false); if(e.target.value) { selectEntity(e.target.value); setLayer("model"); if (!analysisAvailable) { setMeasurement(detectedBends.find(row => row.entityId === e.target.value)?.result || null); setShowAngles(true); chooseView("plan"); } } }}>
           <option value="">{language === "zh" ? "选择有折弯结果的对象" : "Choose an object with a detected bend"}</option>
           {detectedBends.map(row => <option key={row.entityId} value={row.entityId}>{document.entities.find(entity => entity.id === row.entityId)?.label || row.entityId} · {row.result!.value.toFixed(1)}°</option>)}
         </select></label>
         <label className="report-scene-check"><input type="checkbox" checked={showAngles} onChange={e => setShowAngles(e.target.checked)} />{language === "zh" ? "显示角度标注" : "Show angle annotations"}</label>
-      </div>
-      <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的平面倾角" : "Saved plane inclinations"}>
+      </div>}
+      {(analysisAvailable || inclinationAnalysis) && <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的平面倾角" : "Saved plane inclinations"}>
         <span>{inclinationError ? (language === "zh" ? "平面分析加载失败，请刷新重试" : "Plane analysis could not load") : !inclinationAnalysis ? (language === "zh" ? "读取已保存的平面倾角…" : "Loading saved planes…") : language === "zh" ? `已计算 ${allSurfaces.length} 个平面倾角（${inclinationRows.filter(row=>row.surfaces.length>0).length} 个对象）${incompleteInclinations ? ` · ${incompleteInclinations} 个对象计算未完成` : ""}` : `${allSurfaces.length} plane inclinations calculated (${inclinationRows.filter(row=>row.surfaces.length>0).length} objects)${incompleteInclinations ? ` · ${incompleteInclinations} objects incomplete` : ""}`}</span>
-        <label>{language === "zh" ? "倾斜平面（含待确认估计）" : "Inclined surface (includes unverified estimates)"}<select value={surfaceKey} onChange={e=>{const row=allSurfaces.find(r=>r.key===e.target.value);if(row){selectEntity(row.entityId);setSurfaceKey(row.key);setLayer("model");setPreviewMode("free");}else{setSurfaceKey("");setMeasurement(null);}}}>
+        <label>{language === "zh" ? "倾斜平面（含待确认估计）" : "Inclined surface (includes unverified estimates)"}<select value={surfaceKey} onChange={e=>{startPointPicking(false);const row=allSurfaces.find(r=>r.key===e.target.value);if(row){selectEntity(row.entityId);setSurfaceKey(row.key);setLayer("model");setPreviewMode("free");if(!analysisAvailable){setShowAngles(true);chooseView("spatial");}}else{setSurfaceKey("");setMeasurement(null);}}}>
           <option value="">{language === "zh" ? "选择局部面与地面倾角" : "Select a local surface"}</option>
           {visibleSurfaces.map(row=><option key={row.key} value={row.key}>{document.entities.find(e=>e.id===row.entityId)?.label || row.entityId} · {language === "zh" ? "面" : "surface"} {row.surface.surfaceId} · {row.surface.inclinationDeg.toFixed(1)}°{row.surface.classification==="direction_unverified" ? (language === "zh" ? "（估计）" : " (estimate)") : ""}</option>)}
         </select></label>
         <label className="report-scene-check"><input type="checkbox" checked={allPlanes} onChange={e=>{setAllPlanes(e.target.checked);setSurfaceKey("");setMeasurement(null);}} />{language === "zh" ? "全部已测平面" : "All measured planes"}</label>
         <span>{language === "zh" ? "默认显示非竖直平面估计。与地面倾角：水平 0°，竖直 90°；偏离竖直 = 90° − 倾角。" : "Showing estimated nonvertical planes. Ground inclination: horizontal 0°, vertical 90°; deviation from vertical = 90° − inclination."}</span>
-      </div>
+      </div>}
+      {variantNotice && <div className="report-scene-history-notice" role="status" data-layer-variant><span>{variantNotice.label}</span><a href={variantNotice.href}>{t("sceneOriginalReport")} ↗</a></div>}
       {newerReport && <div className="report-scene-history-notice" role="status"><span>{t("sceneHistoricalReport")}</span><a href={newerReport.href} title={newerReport.title}>{t("sceneLatestReport")} ↗</a></div>}
       {fullscreenError && <p className="report-scene-notice" role="status">{t("sceneFullscreenUnavailable")}</p>}
       <nav className="report-scene-section-tabs" aria-label={t("sceneWorkspace")}>
@@ -500,13 +623,17 @@ export function ReportScene({
                 family = modelPreviewEntities(document, entity.id),
                 familyModels = family.filter(member => activeModel(member) && entityGeometryForLayer(member, { ...geometryOptions, layer: "model" })),
                 modelStatus = referenceSurfaces.includes(entity) ? "observed_reference_surface" : family.some(member => activeModel(member)?.sourceValidity === "stale") ? "identityModelStale" : family.some(modelFrameMismatch) ? "sceneModelWrongFrame" : !familyModels.length ? "reportMissingGeometry" : familyModels.some(member => modelState(member)?.state === "error") ? "sceneModelLoadFailed" : familyModels.every(member => modelState(member)?.state === "ready") ? composite ? "sceneCompositeEvidence" : "sceneModelLoaded" : "sceneModelLoading";
-              return <div key={entity.id} className="report-scene-object-row" data-entity-id={entity.id} data-parent-entity-id={entity.parentEntityId || undefined} style={{ marginLeft: depth * 12 }}><button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
+              const recapture = !!boxById.get(entity.id)?.highlight, confidence = layerConfidence?.[entity.id],
+                confidenceMissing = confidence && layerText(language, confidence.missing, confidence.missingEn);
+              return <div key={entity.id} className="report-scene-object-row" data-entity-id={entity.id} data-parent-entity-id={entity.parentEntityId || undefined} data-box-recapture={recapture || undefined} style={{ marginLeft: depth * 12 }}><button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
                 <strong><b className="report-scene-object-number">{objectNumbers.get(entity.id)}</b>{entity.label || entity.id}</strong>
                 <span className="report-scene-object-source">{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
                 <span className="report-scene-object-evidence">{t(evidence.photoKey)}{observations.length > 0 && ` · ${observations.length} ${t("observations")}`}</span>
                 {evidence.identityKey && <span className="report-scene-object-identity"><span>{t("entityIdentity")}</span>{t(evidence.identityKey)}</span>}
                 <span className="report-scene-object-model" data-model-state={modelStatus}><span>{t("model")}</span>{t(modelStatus)}{composite && modelStatus !== "sceneCompositeEvidence" && <> · {t("sceneCompositeEvidence")}</>}{candidate && <em>{t("sceneCandidate")}</em>}</span>
+                {confidence && <span className="report-scene-object-confidence" data-confidence={confidence.level} title={(layerText(language, confidence.reasons, confidence.reasonsEn) || []).join(zh ? "；" : "; ")}><span>{zh ? "置信度" : "Confidence"}</span><b>{layerText(language, confidence.label, confidence.labelEn)}</b>{confidenceMissing?.[0] && <small>{confidenceMissing[0]}</small>}</span>}
                 <span className="report-scene-object-extent"><span>{t("reportObservedExtent")}</span><Extent entity={entity} document={document} /></span>
+                {recapture && <span className="report-scene-object-recapture">{zh ? "低置信度（需补拍）" : "Low confidence (retake photos)"}</span>}
               </button>{children.has(entity.id) && <button aria-expanded={expandedEntities.has(entity.id)} aria-label={`${t("sceneModelParts")} · ${entity.label || entity.id}`} onClick={() => setExpandedEntities(current => { const next = new Set(current);if (next.has(entity.id)) next.delete(entity.id);else next.add(entity.id);return next; })}>{expandedEntities.has(entity.id) ? "▾" : "▸"} {children.get(entity.id)!.length} {t("sceneModelParts")}</button>}{onFeedback && <button className="report-object-feedback" aria-label={`${t("sceneFeedback")} · ${entity.label || entity.id}`} onClick={() => { selectEntity(entity.id); onFeedback(entity.id); setMobileSection("inspector"); }}>{t("sceneFeedback")} ↗</button>}</div>;
             })}
             {!filtered.length && <p className="report-scene-list-empty">{t(objects.length ? "sceneNoMatches" : "sceneNoObjects")}</p>}
@@ -516,16 +643,43 @@ export function ReportScene({
           </footer>
         </aside>
         <div className="report-scene-center" id={`${panePrefix}-views`}>
+          {matchedComparison && <nav className="report-scene-primary-views" aria-label="照片、点云与模型">
+            <button aria-pressed={!comparing && focused === "photo"} onClick={() => chooseView("photo")}><strong>原始照片</strong><small>点击物体查看对应证据</small></button>
+            <button aria-pressed={comparing} onClick={() => { setComparing(true); setLayer("model"); setMobileSection("views"); }}><strong>照片 / 模型对比</strong><small>拖动分界线核对 · 相机固定</small></button>
+            <button disabled={!hasPointCloud} aria-pressed={!comparing && focused === "spatial" && layer === "point_cloud"} onClick={() => { setLayer("point_cloud"); chooseView("spatial"); }}><strong>原始点云</strong><small>{hasPointCloud ? "所选照片深度点 · 可旋转" : "本报告未附原始点云"}</small></button>
+            <button aria-pressed={!comparing && focused === "spatial" && layer === "model"} onClick={() => { setLayer("model"); chooseView("spatial"); }}><strong>可旋转 3D 模型</strong><small>拖动旋转 · 滚轮缩放</small></button>
+          </nav>}
+          {matchedComparison && !comparing && focused === "spatial" && <nav className="report-scene-photo-switch" aria-label="三维证据来源照片">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>照片 {i + 1}</button>)}</nav>}
+          {matchedComparison && !comparing && focused === "spatial" && layer === "point_cloud" && <p className="report-scene-notice" data-point-cloud-image-id={imageId}>当前只显示照片 {images.findIndex(image => image.imageId === imageId) + 1} 的深度估计点，没有补成实体表面。拖动旋转、滚轮缩放；可从左侧列表或点云选择物体。未通过标尺验证的距离仍不能读作厘米。</p>}
           <nav className="report-scene-view-switch" aria-label={t("sceneViews")}>
-            <button className="report-scene-quad" aria-pressed={!focused} onClick={() => chooseView(null)}>{t("sceneQuad")}</button>
-            {paneOrder.map((pane) => <button key={pane} aria-pressed={focused === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(viewNames[pane])}</button>)}
+            <button className="report-scene-quad" aria-pressed={!focused && !comparing} onClick={() => chooseView(null)}>{t("sceneQuad")}</button>
+            {paneOrder.map((pane) => <button key={pane} aria-pressed={!comparing && focused === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(viewNames[pane])}</button>)}
           </nav>
           <nav className="report-scene-view-switch report-scene-mobile-views" aria-label={t("sceneViews")}>
             {paneOrder.map((pane) => <button key={pane} aria-pressed={(focused || "photo") === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(viewNames[pane])}</button>)}
           </nav>
           {layer === "model" && <p className="report-scene-notice" data-geometry-coverage={modelObjects.length + referenceSurfaces.length + compositePreviews.length} data-model-coverage={modelObjects.length} data-model-loaded={readyModels.length} data-reference-surfaces={referenceSurfaces.length} data-composite-previews={compositePreviews.length} data-missing-models={missingModels}><strong>{modelObjects.length + referenceSurfaces.length + compositePreviews.length} / {visibleObjects.length} {t("sceneGeometryCoverage")}</strong> · {modelObjects.length} {t("sceneIndependentModelCount")}{referenceSurfaces.length > 0 && <> · {referenceSurfaces.length} {t("sceneReferenceSurfaceCount")}</>}{compositePreviews.length > 0 && <> · {compositePreviews.length} {t("sceneCompositePreviewCount")}</>} · {missingModels} {t("sceneMissingModelCount")} · {readyModels.length} / {modelObjects.length} {t("sceneModelLoaded")}{pendingModels > 0 && <> · {pendingModels} {t("sceneModelLoading")}</>}{failedModels.length > 0 && <> · {failedModels.length} {t("sceneModelLoadFailed")}</>}{modelCandidates > 0 && <> · {modelCandidates} {t("sceneModelCandidateCount")}</>} · {t("sceneModelCoverageMeaning")}{excludedObjects.length > 0 && <> · {t("sceneExcludedObjects")}: {excludedObjects.length}</>}</p>}
           {hasCandidates && <p className="report-scene-notice">{t("sceneCandidateNotice")}</p>}
-          <div className="report-scene-grid">
+          {comparing && <div className="report-matched-comparison">
+            <div className="report-comparison-stage" data-camera-id={camera?.id}>
+              <PhotoView document={document} imageId={imageId} selectedId={selection.entityId} onSelect={selectEntity} showBounds={allBounds} />
+              <div className="report-comparison-model" style={{ clipPath: `inset(0 0 0 ${wipe}%)` }}>
+                <SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="photo" cameraId={camera?.id || null} showSourcePhoto={false}
+                  onAssetStates={(revisionId, states) => setModelLoads({ revisionId, states })}
+                  layers={{ measurement, modelOnly: true, generated_mesh: true, primitive: true, point_cloud: cloudWithModels && hasPointCloud, showCandidates: true, editable: false, opacity: 1, imageId, observations: document.observations, showBounds: allBounds, cameraPath: false }} />
+              </div>
+              <div className="report-comparison-divider" style={{ left: `${wipe}%` }} role="slider" tabIndex={0} aria-label="拖动照片模型分界线" aria-valuemin={0} aria-valuemax={100} aria-valuenow={wipe}
+                onPointerDown={event => { event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); event.currentTarget.setPointerCapture(event.pointerId); moveComparison(event); }}
+                onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveComparison(event); }}
+                onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) { moveComparison(event); event.currentTarget.releasePointerCapture(event.pointerId); } }}
+                onPointerCancel={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
+                onKeyDown={event => { const key = event.key; if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(key)) { event.preventDefault(); setWipe(value => key === "Home" ? 0 : key === "End" ? 100 : Math.max(0, Math.min(100, value + (["ArrowRight", "ArrowUp"].includes(key) ? 1 : -1)))); } }}><b aria-hidden="true">↔</b></div>
+              <span className="report-comparison-photo-label">原始照片</span><span className="report-comparison-model-label">同相机模型</span>
+            </div>
+            <label className="report-comparison-control"><span>模型</span><input aria-label="照片与模型对比位置" type="range" min="0" max="100" value={wipe} onChange={event => setWipe(Number(event.target.value))} /><span>照片</span><output>{wipe}%</output></label>
+            <footer className="report-scene-photo-switch">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>照片 {i + 1}</button>)}</footer>
+          </div>}
+          {!comparing && <div className="report-scene-grid">
             {paneOrder.map((pane, index) => (
               <section className="report-scene-pane" id={`${panePrefix}-${pane}`} data-pane={pane} key={pane} aria-label={t(viewNames[pane])}>
                 <header><h3><span>{String(index + 1).padStart(2, "0")}</span>{pane === "photo" && showVideo ? (language === "zh" ? "来源视频 · 每帧可点选对象" : "Source video · pick objects in any frame") : t(pane === "spatial" ? availability.spatialTitle : viewNames[pane])}</h3>
@@ -540,11 +694,14 @@ export function ReportScene({
                   {pane === "photo" && showVideo && <VideoView document={document} selectedId={selection.entityId} onSelect={selectEntity} />}
                   {pane === "photo" && !showVideo && <><PhotoView document={document} imageId={imageId} selectedId={selection.entityId} onSelect={selectEntity} draw={draw} onBox={onBox} showBounds={allBounds} />
                     {camera && allBounds && <PhotoAxes revision={revision} camera={camera} layer={layer} selectedId={selection.entityId} observationId={selection.observationId} allBounds={allBounds} />}</>}
-                  {pane === "spatial" && <>{pickingPoints && <div className="cad-measure-guide" role="status">{language === "zh" ? `第 ${measurePoints.length+1}/${pointCount} 点：${(pointCount === 2 ? ["斜边上端点（角的顶点）","同一斜边的下端点"] : ["第一条边上的点","两条边相交的顶点","第二条边上的点"])[measurePoints.length]}。点击模型表面，拖动可旋转。` : `Point ${measurePoints.length+1}/${pointCount}: ${(pointCount === 2 ? ["upper edge endpoint (vertex)","lower endpoint of the same edge"] : ["first edge","shared vertex","second edge"])[measurePoints.length]}. Click the model surface; drag to rotate.`}{pointError && <strong>{language === "zh" ? " 未点到模型表面，请重选。" : " No model surface hit. Try again."}</strong>} <button onClick={()=>startPointPicking(false)}>{language === "zh" ? "取消取点" : "Cancel picking"}</button></div>}<SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
+                  {pane === "spatial" && <>{pickingPoints && <div className="cad-measure-guide" role="status">{language === "zh" ? `第 ${measurePoints.length+1}/${pointCount} 点：点击要测量的模型表面，拖动可旋转。` : `Point ${measurePoints.length+1}/${pointCount}: click the model surface to measure; drag to rotate.`}{pointError && <strong>{language === "zh" ? " 未点到模型表面，请重选。" : " No model surface hit. Try again."}</strong>} <button onClick={()=>startPointPicking(false)}>{language === "zh" ? "取消取点" : "Cancel picking"}</button></div>}<SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
                     modelPreview={previewRequest} onModelPreview={(key, image) => { if (key === currentPreviewKey.current) setModelPreview({ key, image }); }}
                     onAssetStates={(revisionId, states) => setModelLoads({ revisionId, states })} onMeasurementPoint={pickMeasurementPoint}
-                    layers={{ pickingPoints, measurePoints, measureVertexIndex: pointCount === 2 ? 0 : 1, measurement: layer === "model" ? measurement : null, modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud" || layer === "model" && cloudWithModels && hasPointCloud, allBounds, showBounds: allBounds, cameraPath: showPath, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations, part, skeleton, splats: hasSplats && splats }} />
-                    {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
+                    layers={{ groundDatum: matchedComparison || localMeasurementActive, measurementScale, pickingPoints, measurePoints, measureVertexIndex: pointCount === 2 ? 0 : 1, measurement: withBoxes(layer === "model" || layer === "point_cloud" && measurement?.method === "conditional-endpoint-comparison" ? measurement : null, boxLayer, boxes, boxFrame, selected, allBoxes, zh), labels: allBoxes && !allBounds && "hover", modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud" || layer === "model" && cloudWithModels && hasPointCloud, allBounds, showBounds: allBounds, cameraPath: showPath, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations, part, skeleton, splats: hasSplats && splats }} />
+                    {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}
+                    {boxes.length > 0 && <div className="report-box-legend" role="note" data-highlight-count={highlightCount}><span>{zh ? "面置信度" : "Face confidence"}</span>
+                      {boxLevels.map(level => <i key={level} data-confidence={level}>{levelNames[level][zh ? 0 : 1]}</i>)}
+                      <b data-active={highlightCount > 0 || undefined}>{zh ? "粉框 = 低置信度（需补拍）" : "Pink box = low confidence (retake photos)"} · {highlightCount}</b></div>}</>}
                   {pane === "cad" && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
                   {pane === "cad" && !availability.planEmpty && <CadView key={revision.id + cadLayer} document={document} selectedId={selection.entityId} onSelect={selectPlanEntity} geometryOptions={planOptions} measurement={cadLayer === "model" ? measurement : null} region={cadLayer === "model" ? measureRegion : null} drawingRegion={drawingRegion} onRegion={region => { setMeasureRegion(region); setDrawingRegion(false); setMobileSection("inspector"); }} showPath={showPath} />}
                   {pane === "plan" && <div className="report-model-preview" data-model-entity={selected?.id || ""} data-preview-layer={layer}>
@@ -557,7 +714,7 @@ export function ReportScene({
                           axisEntityId: selectedComposite ? undefined : selected.id, showAxes: !selectedComposite, showBounds: false, editable: false, showCandidates: true,
                           modelOnly: layer === "model", generated_mesh: layer === "model", primitive: layer === "model", observed_surface: layer === "observed_surface", point_cloud: layer === "point_cloud",
                           observationEntityId: selected.id, observationId: selection.observationId, imageId, observations: document.observations,
-                          measurement: layer === "model" && measurement?.references.every(ref => selectedFamily.some(entity => entity.id === ref.entityId)) ? measurement : null }} /> : previewImage ? <img src={previewImage} alt={`${selected.label || selected.id} · ${t(viewNames.plan)} · ${t(previewMode)}`} /> : <p role="status">{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selectedModelFailed ? layer === "model" ? "sceneModelLoadFailed" : "sceneEvidenceLoadFailed" : layer === "model" ? "loadingModel" : "sceneEvidenceLoading")}</p>}</div>
+                          measurement: withBoxes(layer === "model" && measurement?.references.every(ref => selectedFamily.some(entity => entity.id === ref.entityId)) ? measurement : null, boxLayer, boxes.filter(([id]) => id === selected.id), boxFrame, selected, false, zh) }} /> : previewImage ? <img src={previewImage} alt={`${selected.label || selected.id} · ${t(viewNames.plan)} · ${t(previewMode)}`} /> : <p role="status">{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selectedModelFailed ? layer === "model" ? "sceneModelLoadFailed" : "sceneEvidenceLoadFailed" : layer === "model" ? "loadingModel" : "sceneEvidenceLoading")}</p>}</div>
                       <footer><strong>{selected.label || selected.id}</strong><span>{selectedComposite ? <>{t("sceneCompositeEvidence")} · {selectedComposite.targets.map(entity => `${objectNumbers.get(entity.id)} ${entity.label || entity.id}`).join(" + ")} · {t("sceneCompositeEvidenceMeaning")}</> : selectedReference ? <>{t("observed_reference_surface")} · {t("sceneObservedCoverage")}</> : layer === "model" ? t(selectedModels.every(entity => activeModel(entity)?.placementState === "confirmed") ? "identityPlacementConfirmed" : "identityPlacementUnconfirmed") : <>{t(layer)} · {t("scenePhotoNumber")} {images.findIndex(image => image.imageId === imageId) + 1}{selection.observationId && <> · {t("sceneObservation")} {selection.observationId.slice(0, 8)}</>} · {t("sceneObservedCoverage")}</>}</span><button onClick={() => chooseView("spatial")}>{t(layer === "model" ? "sceneOpenModelScene" : "sceneOpenEvidenceScene")} ↗</button></footer>
                     </> : <div className="report-scene-plan-empty" role="status"><strong>{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selected ? layer === "model" ? "sceneObjectModelMissing" : "sceneEvidenceMissing" : layer === "model" ? "sceneSelectModel" : "sceneSelectEvidence")}</strong><p>{t(selectedModelWrongFrame ? "sceneModelWrongFrameMeaning" : selected ? layer === "model" ? "sceneObjectModelMissingMeaning" : "sceneEvidenceMissingMeaning" : "sceneSelectModelMeaning")}</p></div>}
                   </div>}
@@ -568,7 +725,7 @@ export function ReportScene({
                 {pane === "photo" && !showVideo && <footer className="report-scene-photo-switch">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>{t("scenePhotoNumber")} {i + 1}</button>)}{draw && <span>{t("sceneDrawActive")}</span>}</footer>}
               </section>
             ))}
-          </div>
+          </div>}
           <VideoMemory document={document} onSelect={selectEntity} />
           <ComparisonVideo document={document} />
           <p className="report-scene-selection-note"><span className="report-scene-reference-note">{t(cadLayer === "model" ? "sceneCadModelSource" : "sceneCadSource")} {cadLayer === "observed_surface" && <> · {selected ? <>{t("sceneCadReference")}: {referenceImageId ? `${t("scenePhotoNumber")} ${images.findIndex(image => image.imageId === referenceImageId) + 1}` : t("sceneCadReferenceMissing")} · {t("sceneViewedPhoto")}: {imageId ? images.findIndex(image => image.imageId === imageId) + 1 : "—"}</> : t("sceneCadFixedState")}</>}</span>{selected ? isReferenceSurface(document, selected) ? t("sceneReferenceSurface") : selectedOverlay ? t(selectedOverlay.axisSpace === "native" ? "sceneNativeAxis" : "sceneSourceAxis") : !entityGeometryForLayer(selected, geometryOptions) ? t("sceneNoGeometrySelection") : t("sceneNoPhotoAxes") : t("sceneReadOnly")}</p>
@@ -577,7 +734,7 @@ export function ReportScene({
           <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>
           <div className="report-scene-inspector-content">{selected && (selected as any).motionSummary && <section className="report-motion-summary">
             <h4>{language === "zh" ? "怎么走动的" : "How it moved"}</h4><p>{(selected as any).motionSummary.text}</p>
-            <small>{language === "zh" ? "依据：每个采样视图可见表面的中心投到地面；只用于回答“去了哪、多快、停在哪”，不是逐关节测量。" : "From the visible surface centre per sampled view, on the floor plane."}</small></section>}{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} savedBend={savedBend} savedSurface={activeSurface} inclinationOutcome={inclinationRows.find(r=>r.entityId===selected.id)} onClearSurface={()=>setSurfaceKey("")} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{inspector ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
+            <small>{language === "zh" ? "依据：每个采样视图可见表面的中心投到地面；只用于回答“去了哪、多快、停在哪”，不是逐关节测量。" : "From the visible surface centre per sampled view, on the floor plane."}</small></section>}{selected && boxById.has(selected.id) && <LayerBoxPanel box={boxById.get(selected.id)!} entityId={selected.id} />}{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} geometryKey={measurementGeometryKey} analysisAvailable={analysisAvailable} measurementScale={measurementScale} onLocalResult={setLocalMeasurement} savedBend={savedBend} savedSurface={activeSurface} inclinationOutcome={inclinationRows.find(r=>r.entityId===selected.id)} onClearSurface={()=>setSurfaceKey("")} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{(typeof inspector === "function" ? inspector(activeSurface) : inspector) ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
         </aside>
       </div>
     </section>

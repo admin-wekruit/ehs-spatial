@@ -29,6 +29,7 @@ import re
 import sys
 
 from .spec import Pending, StageSpec
+from .store import container_usd
 
 REPO = Path(__file__).resolve().parents[2]
 PY = "python"  # resolved through PATH below: the key keeps the word, not this machine's interpreter
@@ -37,10 +38,23 @@ TOKEN = re.compile(r"(?<![\w.])@([A-Za-z][\w-]*)(?::([\w.-]+))?")  # spec.py's g
 RESERVED = {"new", "key", "clip"}
 DROID_BUILD = "$ART/runs/droid-me340-165-171"  # --reuse-build-from: the compiled DROID build every run reuses (not in the key)
 WORKERS = 4  # complete_video_objects --workers: generator calls in flight (outputs do not depend on it)
+# RecGen runs one call at a time: recgen_transport journals each call under the process-wide PANOPTES_RECGEN_JOURNAL, which
+# complete_video_objects sets per call, so parallel calls journal into each other's folders (the first Lightning run failed so)
+SERIAL_GENERATORS = {"recgen"}
 CAPS = {"generator_usd": 10., "splat_minutes": 58.}  # profiles.CAPS; a profile may also cap one generator (<name>_usd)
 MODEL_IDS = {"depth": "depth-anything/DA3-GIANT-1.1", "register": "depth-anything/DA3-GIANT-1.1"}  # argv needs these; the rest are fixed in their scripts
-USD_PER_S = {"L4": .000222 + .0000131 + 8 * .00000222, "A100-40GB": .000583, "A100-80GB": .000694, "H100": .001097,
-             "cpu16": 4 * .0000131 + 16 * .00000222, "cpu24": 4 * .0000131 + 24 * .00000222}  # store.PRICES + Modal CPU containers
+# the Modal container each paid kind keeps busy, as its function requests it: (GPU, CPU cores, memory GiB); a function that requests
+# no CPU or memory is priced at 1 core + 8 GiB (as ehs_spatial.video.MODAL_L4_USD_PER_S), a GPU list at its dearest. Tests keep the
+# tools' own rates equal: SAM 3D (sam3d_research.USD_PER_SECOND), RecGen (complete_video_objects.USD_PER_SECOND), splat (splat_train.usd)
+CONTAINERS = {"source": ("L4", 1, 8), "moge": ("L4", 1, 8), "floor_masks": ("L4", 1, 8), "sam2": ("L4", 1, 8), "motion": ("L4", 1, 8),
+              "census": ("A100-40GB", 4, 16), "camera": ("A100-40GB", 4, 16),  # droid_room: cpu 4, 16 GiB
+              "tracks": ("A100-40GB", 1, 8), "otracks": ("A100-40GB", 1, 8), "events": ("A100-40GB", 1, 8),
+              "depth": ("A100-80GB", 1, 8), "register": ("A100-80GB", 1, 8), "movers": ("A100-80GB", 1, 8),
+              "lingbot": ("H100", 4, 32),  # lingbot_room execute: A100-80GB, H100 or A100-40GB, cpu 4, 32 GiB
+              "lingbot_diagnose": (None, 4, 16), "lingbot_build": (None, 4, 24),  # lingbot_dense_map's CPU containers
+              "splat": ("H100", 2, 12), "splat_clean": ("H100", 2, 12),  # splat_train: H100 first, CPU 2, 12 GiB
+              "sam3d": ("A100-80GB", 4, 32), "recgen": ("A100-80GB", 8, 64)}
+USD_PER_S = {kind: container_usd(*c) for kind, c in CONTAINERS.items()}
 
 # script of each stage kind (a stage's name is its kind, or kind-A-B for one span); None: staging only
 SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_shot_cuts.py", "census": "modal_apps/droid_room.py",
@@ -62,8 +76,17 @@ SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_sho
 # masks) and gave the import --lens and the corrected scale limitation. The other kinds only saw a new contract_scale branch that
 # only the import reaches, or pins in code paths they do not run.
 # names not bumped at the M2 review: its deps changed only through profiles.M2_RULES (floor_frames@2), which
-# name_video_entities never reads (it reads QWEN3VL_NAMING_GATE).
-VERSIONS = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
+# name_video_entities never reads (it reads QWEN3VL_NAMING_GATE); nor for U6 (commercial names with Gemini: profiles.CLOUD,
+# Profile.cloud, the commercial rows), which only the runner reads; a commercial names key changes through its model pins.
+# Nor at the Lightning fixes (M2_RULES inferred_floor@2, lingbot_conf@2, trajectory@1; the delivered profile's omit), for the same
+# reason; sam3d, recgen, box, box_test and merge not for recgen_transport's re-upload check, which changes no output.
+# The delivered profile only serves the adopted runs, which no code of today made: its keys keep the versions they were adopted
+# under (ADOPTED), whatever VERSIONS says later.
+ADOPTED = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
+# at the Lightning fixes: floor_infer 2 withholds the untested convex outline (no --dense); import 3 states no metric figure
+# without a scale that claims metres; splat, splat_clean, lingbot_diagnose and lingbot_build 2 work in the clip's own video frame
+# (source-full.json), not ME340's 1280x720 (splat_final only picks, lingbot_dense_map's other readers only read points: unchanged)
+VERSIONS = ADOPTED | {"floor_infer": 2, "import": 3, "splat": 2, "splat_clean": 2, "lingbot_diagnose": 2, "lingbot_build": 2}
 DECIDE = "scripts/report_runner/decide.py"  # decision stages: versioned by their rule (decide.VERSIONS, rule_code), not here
 
 # every option's default, as each script's argparse declares it (tests/test_report_runner_stages.py re-reads them by AST)
@@ -88,13 +111,13 @@ DEFAULTS = {
     "modal_apps/lingbot_room.py": {'--output': None, '--manifest': None, '--sample': None, '--stride': 3, '--run-id': None, '--video': None, '--frames': None},
     "scripts/lingbot_dense_map.py": {'--run-id': None, '--droid-run': None, '--clip': None, '--masks': None, '--output': None, '--mesh': None, '--surface': None, '--points': None, '--depth-run': None, '--conf': 1.06, '--fill-conf': 1.0, '--sample': 3, '--cell': 0.0075, '--tolerance': 0.04, '--tolerance-floor': 0.015, '--max-points': 4000000, '--exclude-frames': [], '--overlay-rows': (646, 706)},
     "scripts/lingbot_icp_refine.py": {},
-    "scripts/infer_room_floor.py": {'--self-check': False, '--fused': None, '--dense': None, '--droid-run': None, '--skip-frames': [], '--output': None},
+    "scripts/infer_room_floor.py": {'--self-check': False, '--fused': None, '--dense': None, '--droid-run': None, '--skip-frames': [], '--legacy-convex': False, '--output': None},
     "modal_apps/splat_train.py": {'--self-check': False, '--clip': '$ART/data/clips/me340-165', '--droid-run': '$ART/runs/droid-me340-165-171', '--masks': '$ART/runs/me340-dynamic-masks-188/masks', '--mesh': '$ART/runs/da3-posed-me340-189-fused-dynamic/mono-anchored-mesh.ply', '--fill': '$ART/runs/me340-filled-213/textured-scene.glb', '--scale': '$ART/runs/da3-posed-me340-189-fused-dynamic/metric-scale.json', '--captions': (648, 704, 160, 1120), '--steps': 30000, '--cap': 1500000, '--pose': False, '--exposure': False, '--ablation': False, '--max-elongation': None, '--depth-weight': 0, '--lingbot': None, '--seed-voxel': 0.005, '--seed-scale': 0.5, '--compare': None, '--max-minutes': 40, '--resume': None, '--clean': None, '--pick': None, '--skip': [], '--output': None},
     "scripts/register_cut_shot.py": {'--self-check': False, '--droid-run': None, '--depth-run': None, '--clip': None, '--output': None, '--mesh': None, '--registration': None, '--scene': None, '--analysis': None, '--merge': [], '--person-tracks': [], '--shot': '14:226', '--cut-frames': [], '--walk-count': 14, '--model': 'depth-anything/DA3-GIANT-1.1', '--invoke': False},
     "scripts/complete_video_objects.py": {'--self-check': False, '--droid-run': None, '--depth-run': None, '--object-map': None, '--masks': None, '--dynamic-masks': None, '--clip': None, '--output': None, '--entities': [], '--exclude': [], '--count': 10, '--all': False, '--generator': 'recgen', '--reassess': False, '--invoke': False, '--function-id': 'fu-Hh2leT3x1kprDaWpWsZ09l', '--max-usd': 30.0, '--skip-frames': [], '--voxel-native': 0.014, '--no-captions': False, '--workers': 1},
     "scripts/box_free_space.py": {'--box': None, '--study': None, '--output': None, '--self-check': False},
     "scripts/merge_object_models.py": {'--recgen': None, '--sam3d': None, '--box': None, '--box-test': None, '--review': None, '--output': None, '--against': None, '--self-check': False},
-    "scripts/import_video_scene.py": {'--droid-run': None, '--depth-run': None, '--object-map': None, '--masks': None, '--policy': None, '--models': None, '--video': None, '--exclude-frames': None, '--dense-points': None, '--splats': None, '--full-video': None, '--analysis': None, '--inferred-floor': None, '--shell-glb': None, '--comparison-video': None, '--republish': None, '--dynamic-scene': None, '--video-events': None, '--skeleton-scene': None, '--dynamic-analysis': None, '--title': 'Video workcell (imported, not accepted)', '--output-dir': '.platform/imports', '--request-suffix': '1', '--lens': None},
+    "scripts/import_video_scene.py": {'--droid-run': None, '--depth-run': None, '--object-map': None, '--masks': None, '--policy': None, '--models': None, '--video': None, '--exclude-frames': None, '--dense-points': None, '--splats': None, '--full-video': None, '--analysis': None, '--inferred-floor': None, '--shell-glb': None, '--comparison-video': None, '--republish': None, '--dynamic-scene': None, '--video-events': None, '--skeleton-scene': None, '--dynamic-analysis': None, '--title': 'Video workcell (imported, not accepted)', '--output-dir': '.platform/imports', '--request-suffix': '1', '--lens': None, '--untrusted-frames': None},
 }
 PENDING_FLAGS = {}  # flags another part adds later (the AST test accepts either state); Part C's --lens and --namer have landed
 
@@ -106,7 +129,7 @@ SPANS = {("scripts/prepare_video_clip.py", "--frames"): "colon", ("modal_apps/dr
          ("scripts/texture_fused_mesh.py", "--overlay-rows"): "colon", ("scripts/fill_scene_holes.py", "--overlay-rows"): "colon",
          ("scripts/infer_room_floor.py", "--skip-frames"): "dash", ("modal_apps/splat_train.py", "--skip"): "dash",
          ("scripts/register_cut_shot.py", "--shot"): "colon", ("scripts/complete_video_objects.py", "--skip-frames"): "dash",
-         ("scripts/import_video_scene.py", "--exclude-frames"): "colon"}
+         ("scripts/import_video_scene.py", "--exclude-frames"): "colon", ("scripts/import_video_scene.py", "--untrusted-frames"): "colon"}
 # not in a key: where outputs go, paid-call switches, budgets, run ids, execution knobs (store.KEY_DROP_* plus --workers, --name,
 # --output-dir); NOTE_FLAGS keep 'id' and drop '=free text'
 KEY_DROPPED = {"--output", "--invoke", "--run-id", "--reuse-build-from", "--max-usd", "--max-minutes", "--republish", "--request-suffix",
@@ -359,8 +382,40 @@ def _num(x):
     return text[:-2] if text.endswith(".0") else text
 
 
-def _mmss(seconds):
-    return f"{int(seconds // 60):02d}:{int(seconds % 60):02d}"
+def _mss(seconds):
+    return f"{int(seconds // 60)}:{int(seconds % 60):02d}"
+
+
+# O1: a site's place in the delivered reports' titles (operator data); a site '<place>-<run>' (me340-oneshot) is at the place whose
+# key starts '<place>' (me340; samsclub-a2); another site is named by its own name
+PLACES = {"lightning": "Lightning eMotors 工厂", "me340": "ME340 机加工车间", "samsclub-a2": "Sam's Club 仓储通道", "walmart": "Walmart 货架通道"}
+SCALE_WORDS = {"device_metric": "设备尺度", "assumed_camera_height": "估计尺度", "assumed_camera_height_floor_views_disagree": "估计尺度", "model_metric": "估计尺度"}
+
+
+def origin(video, start, end):
+    """The window in the video it was cut from: a prepared clip's MP4 (its clip.json, beside it, names the source and window) is
+    followed back to that source (Lightning: data/clips/lightning-3585/source-rgb.mp4 0-26 s is YouTube 3585-3611 s)."""
+    video = Path(video)
+    for _ in range(8):
+        try:
+            clip = json.loads((video.parent / "clip.json").read_text())
+        except (OSError, ValueError):
+            break
+        if (clip.get("playback") or {}).get("path") != video.name:
+            break
+        start, end, video = start + clip["source"]["start_s"], end + clip["source"]["start_s"], Path(clip["source"]["video"])
+    return video, start, end
+
+
+def title_of(ctx, scale_status):
+    """The delivered reports' title style from the source time: place, window, what the video is, its scale, not accepted.
+    A scale the report does not claim in metres (the lens gate failed, or none was set) reads 原生单位 (native units); a --fresh
+    run, every stage of which this runner ran itself, reads 一键生成 (one command)."""
+    video, start, end = origin(ctx.video, ctx.start, ctx.end)
+    kind = "YouTube 普通视频" if "youtube" in video.name.lower() else "普通视频"
+    place = PLACES.get(ctx.site) or next((v for k, v in PLACES.items() if k.split("-")[0] == ctx.site.split("-")[0]), ctx.site)
+    fresh = "一键生成，" if getattr(getattr(ctx, "store", None), "fresh", False) else ""
+    return f"{place} {_mss(start)}–{_mss(end)}（{kind}，{SCALE_WORDS.get(scale_status, '原生单位')}，{fresh}未验收）"
 
 
 def _field(obj, name, default=None):
@@ -394,28 +449,38 @@ def delivered(ctx):
 
 def previous_import(ctx):
     """The site's last imports.jsonl row: its record path (path only; the record holds a capability and is never opened) and
-    the published title, which a republish keeps (O1: titles are operator data). Only the delivered profile or an explicit
-    --republish republishes; any other run imports a new report of its own, never a new version of a delivered one."""
-    if not (delivered(ctx) or getattr(ctx, "republish", False)):
-        return {}
+    the published title, which a republish of a delivered report keeps (O1: titles are operator data). The delivered profile or
+    an explicit --republish republishes the site's last import; any other run republishes only its own profile's last import
+    (a row the runner appended), so a re-run of one command stays one report, never a new version of a delivered one."""
     state = getattr(ctx.store, "state", None)  # the store's state folder ($ART/runs/report-runner); no store, no history
     index = Path(state) / "imports.jsonl" if state else None
     rows = [json.loads(line) for line in index.read_text().splitlines() if line.strip()] if index and index.exists() else []
-    return next((r for r in reversed(rows) if r.get("site") == ctx.site and r.get("importRecordPath")), {})
+    name = ctx.profile if isinstance(ctx.profile, str) else _field(ctx.profile, "name")
+    mine = lambda r: delivered(ctx) or getattr(ctx, "republish", False) or (r.get("profile") is not None and r.get("profile") == name)
+    return next((r for r in reversed(rows) if r.get("site") == ctx.site and r.get("importRecordPath") and mine(r)), {})
+
+
+REQUIRED = object()
 
 
 class _Graph:
     def __init__(self, ctx, profile):
         self.ctx, self.profile, self.specs, self.by, self.decisions = ctx, profile, [], {}, set()
 
-    def need(self, name):
+    def need(self, name, absent=REQUIRED):
+        """A decision's value. The runner marks a decision {'absent': why} when its stage failed, was blocked or refused:
+        an optional layer then gets `absent` (and is left blank); a decision without one stops the graph."""
         found = self.ctx.decisions.get(name)
         if found is None:
             raise Pending(name, self.specs)
+        if found.get("absent"):
+            if absent is REQUIRED:
+                raise RuntimeError(f"{self.ctx.site}: decision {name} could not be made ({found['absent']}), and the report needs it")
+            return absent
         return found["value"]
 
     def add(self, name, commands, outputs, *, link=None, copy=None, optional=(), droid_frames=None, lingbot_source=None,
-            leaves=None, env=None, gpu=None, rate=None, compute="cpu", timeout_s=3600, est_usd=0., est_s=60., worst_usd=None,
+            leaves=None, env=None, gpu=None, compute="cpu", timeout_s=3600, est_usd=0., est_s=60., worst_usd=None,
             budget_flags=None, models=(), rules=None, cwd=None, deps=None):
         """A StageSpec whose inputs are read off its tokens: role = producer name ('?' when optional); a producer consumed
         as droid frames or LingBot source, a decision's value (when only its JSON is read), else the referenced output
@@ -439,16 +504,16 @@ class _Graph:
             if mode != "outputs":
                 consumes[key] = mode
         kind = kind_of(name)
-        rate = rate or gpu  # USD_PER_S key of what the stage pays for: its GPU, or a Modal CPU container
-        paid = rate is not None or compute == "cloud"
-        spec = StageSpec(name=name, site=self.ctx.site, version=VERSIONS.get(kind, 1),
+        rate = USD_PER_S[kind] if compute == "modal" else 0.  # its Modal container's list price; a cloud API books its reservation
+        paid = compute in ("modal", "cloud")
+        spec = StageSpec(name=name, site=self.ctx.site, version=(ADOPTED if delivered(self.ctx) else VERSIONS).get(kind, 1),
                          deps=deps if deps is not None else deps_of(SCRIPT[kind]) if SCRIPT.get(kind) else (),
                          commands=tuple(tuple(c) for c in commands), inputs=inputs, consumes=consumes,
                          leaves={k: Path(v) for k, v in (leaves or {}).items()}, outputs=dict(outputs),
                          stage_from={k: dict(v) for k, v in (("link", link), ("copy", copy)) if v}, compute=compute, gpu=gpu,
-                         timeout_s=timeout_s, worst_usd=worst_usd if worst_usd is not None else round(timeout_s * USD_PER_S.get(rate or "", 0), 2),
+                         timeout_s=timeout_s, worst_usd=worst_usd if worst_usd is not None else round(timeout_s * rate, 2),
                          est_usd=est_usd, est_s=est_s, budget_flags=budget_flags or {}, models=tuple(models), rules=rules or {},
-                         env={**ENV, **(env or {})}, cwd=cwd, paid=paid)
+                         env={**ENV, **(env or {})}, cwd=cwd, paid=paid, usd_per_s=rate)
         self.specs.append(spec)
         self.by[name] = spec
         return spec
@@ -596,17 +661,28 @@ def graph(ctx):
     voxel = _num(g.need("voxel"))
 
     # R17b fuse, R18 moving layer, R21-R22b object map, names, static filter (D20); the lens gate on the mapped shot (D4)
+    scale_status = None
     if "lens_gate" not in omit:
         g.decide("lens_gate", "lens", shots="@shots:decision", clip="@source:out", moge="@moge:fov", metric="@metric:metric_scale")
+        scale_status = (g.need("lens_gate", absent=None) or {}).get("scale_status")  # the title says whether the report has a scale
+    # D22 trusted path span: its untrusted frames are coverage gaps; fusion (and all built on it) takes only the other depth views
+    views, untrusted = "@depth:mono", []
+    if "trajectory" not in omit:
+        g.decide("trajectory", "trajectory", extra={"mono": "mono"}, droid="@camera:out", metric="@metric:metric_scale", depth="@depth:out",
+                 shots="@shots:decision", clip=f"@{cam}:out")
+        untrusted, views = [tuple(u) for u in g.need("trajectory")["untrusted"]], "@trajectory:mono"
+    gaps = sorted(others_cam + untrusted)  # frames no later stage takes a view from: other shots, untrusted cameras
+    skip = [fmt_span(o, "dash") for o in gaps]
+    late_exclude = ["--exclude-frames", *[fmt_span(o, "colon") for o in gaps]] if gaps else []
     g.add("fuse", [[*mono, "fuse", "--droid-run", "@camera:out", "--output", "@new/out", "--voxel-length-native", voxel, "--support-relative", "0.02",
                     "--support-all-views", "--edge-jump", "0.03", "--carve", "--dynamic-masks", "@dynamic_masks:masks", "--video", f"@{cam}:source_rgb",
                     "--floor-plane", "@metric:metric_scale"]],
           {"out": "out", "mesh": "out/mono-anchored-mesh.ply", "predicted": "out/predicted-scene.glb", "points": "out/supported-keyframe-points.glb",
            "scene": "out/scene.json", "metrics": "out/fuse-metrics.json", "metric_scale": "out/metric-scale.json", "support": "out/droid-support.npz"},
-          link={"out/mono": "@depth:mono"}, copy={"out/infer.json": "@depth:infer", "out/metric-scale.json": "@metric:metric_scale"}, est_s=600)
+          link={"out/mono": views}, copy={"out/infer.json": "@depth:infer", "out/metric-scale.json": "@metric:metric_scale"}, est_s=600)
     g.add("dynamic", [[*mono, "dynamic", "--droid-run", "@camera:out", "--output", "@new/out", "--analysis", "@analysis:analysis"]],
           {"out": "out", "scene": "out/scene.json", "surfaces": "out/dynamic"},
-          link={"out/mono": "@depth:mono", "out/droid-support.npz": "@fuse:support"},
+          link={"out/mono": views, "out/droid-support.npz": "@fuse:support"},
           copy={"out/metric-scale.json": "@fuse:metric_scale", "out/infer.json": "@depth:infer", "out/scene.json": "@fuse:scene"}, est_s=300)
     g.add("object_map", [[PY, S("build_video_object_map.py"), "--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--masks", "@mask_root:out",
                           "--floor", "@fuse:metric_scale", "--dynamic-masks", "@dynamic_masks:masks", "--method", "overlap", "--output", "@new/out"]],
@@ -649,7 +725,7 @@ def graph(ctx):
                          *(["--skip", *skip] if skip else []), "--max-minutes", _num(minutes), "--output", "@new/out"]],
               {"out": "out", "splats": "out/splats.splat", "json": "out/splats.json", "train": "out/train.json", "launch": "out/launch.json",
                "cameras": "out/refined-cameras.npz"}, gpu="H100", compute="modal", timeout_s=int(minutes * 60) + 600, est_usd=1.4, est_s=minutes * 60,
-              worst_usd=round((minutes * 60 + 600) * USD_PER_S["H100"], 2), budget_flags={"--max-minutes": ("minutes", USD_PER_S["H100"])},
+              worst_usd=round((minutes * 60 + 600) * USD_PER_S["splat"], 2), budget_flags={"--max-minutes": ("minutes", USD_PER_S["splat"])},
               models=())
         trained = {f"out/{n}": f"@splat:{r}" for n, r in (("splats.splat", "splats"), ("splats.json", "json"), ("train.json", "train"),
                                                           ("launch.json", "launch"), ("refined-cameras.npz", "cameras"))}
@@ -665,7 +741,7 @@ def graph(ctx):
               timeout_s=1800, est_usd=.1, est_s=400, models=pins(profile, "dense"))
         dense = ["--run-id", "@lingbot:out", "--droid-run", "@camera:out", "--clip", f"@{cam}:out", "--masks", "@dynamic_masks:masks", "--depth-run", "@fuse:out"]
         g.add("lingbot_diagnose", [[PY, S("lingbot_dense_map.py"), "diagnose", *dense, "--overlay-rows", overlay["lingbot_rows"], "--output", "@new"]],
-              {"diagnose": "diagnose.json"}, rate="cpu16", compute="modal", timeout_s=1800, est_usd=.02, est_s=300)
+              {"diagnose": "diagnose.json"}, compute="modal", timeout_s=1800, est_usd=.02, est_s=300)
         g.decide("lingbot_conf", "lingbot_conf", diagnose="@lingbot_diagnose:diagnose")
     for s, e in (o for o in others if o in registered):
         g.add(f"register-{s}-{e}", [[PY, S("register_cut_shot.py"), "--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--clip", "@source:out",
@@ -683,10 +759,10 @@ def graph(ctx):
 
     def generator(name, flags, usd, est):
         paid = usd is not None
-        spec = g.add(name, [[PY, S("complete_video_objects.py"), *common, "--generator", name, *flags, "--workers", str(WORKERS),
+        spec = g.add(name, [[PY, S("complete_video_objects.py"), *common, "--generator", name, *flags, "--workers", str(1 if name in SERIAL_GENERATORS else WORKERS),
                              *(["--max-usd", _num(usd), "--invoke"] if paid else []), "--output", "@new/out"]],
                      {"out": "out", "manifest": "out/manifest.json", "models": "out/models"}, gpu="A100-80GB" if paid else None,
-                     compute="modal" if paid else "cpu", timeout_s=int(usd / USD_PER_S["A100-80GB"]) + 3600 if paid else 7200,
+                     compute="modal" if paid else "cpu", timeout_s=int(usd / USD_PER_S[name]) + 3600 if paid else 7200,
                      worst_usd=usd or 0., est_usd=est, est_s=1800, budget_flags={"--max-usd": "usd"} if paid else None, models=pins(profile, name))
         g.seeded(spec, match)
         if paid:
@@ -698,21 +774,26 @@ def graph(ctx):
 
     # second round: splat pick (D11), LingBot build, dense gate (D8), other-shot movers (D3b), RecGen (D17)
     if splat:
-        rule = g.need("splat_pick")
+        rule = g.need("splat_pick", absent=None)
+        splat = rule is not None  # no pick (the splat failed or was blocked): no splat layer
+    if splat:
         g.add("splat_final", [[PY, M("splat_train.py"), "--clean", "@new/out", "--pick", rule, *inputs]],
               {"out": "out", "splats": "out/splats-clean.splat", "json": "out/splats-clean.json", "cameras": "out/refined-cameras.json"},
               link={f"out/{n}": f"@splat_clean:out/{n}" for n in ("splats.splat", "splats.json", "train.json", "launch.json", "refined-cameras.npz", "clean")},
               est_s=120)
     if dense_map:
-        g.add("lingbot_build", [[PY, S("lingbot_dense_map.py"), "build", *dense, "--mesh", "@fuse:mesh", "--conf", _num(g.need("lingbot_conf")),
-                                 "--overlay-rows", overlay["lingbot_rows"], *exclude, "--output", "@new/out"]],
+        conf = g.need("lingbot_conf", absent=None)
+        dense_map = conf is not None  # no confidence (the LingBot run or its diagnosis failed, or no decile agreed): no dense points
+    if dense_map:
+        g.add("lingbot_build", [[PY, S("lingbot_dense_map.py"), "build", *dense, "--mesh", "@fuse:mesh", "--conf", _num(conf),
+                                 "--overlay-rows", overlay["lingbot_rows"], *late_exclude, "--output", "@new/out"]],
               {"out": "out", "points": "out/dense-points.glb", "info": "out/points.json", "attributes": "out/point-attributes.npz", "remote": "out/remote.json"},
-              copy={"out/plan.json": "@lingbot:plan", "out/diagnose.json": "@lingbot_diagnose:diagnose"}, rate="cpu24", compute="modal",
+              copy={"out/plan.json": "@lingbot:plan", "out/diagnose.json": "@lingbot_diagnose:diagnose"}, compute="modal",
               timeout_s=3600, est_usd=.05, est_s=900)
         g.decide("dense_gate", "dense_gate", map="@lingbot_build:out", fused="@fuse:out")
     moved, scene = [], "@dynamic:out"
     for i, (s, e) in enumerate(others):
-        if (s, e) not in registered or not g.need(f"other_shot-{s}-{e}")["accepted"] or e > n_cam:  # refused, or outside the camera clip: blank
+        if (s, e) not in registered or not g.need(f"other_shot-{s}-{e}", absent={"accepted": False})["accepted"] or e > n_cam:  # refused, or outside the camera clip: blank
             continue
         wins = windows["others"][i] if i < len(windows["others"]) else []
         if not wins and not delivered(ctx):  # never the mapped shot's people in another shot: blank
@@ -736,10 +817,12 @@ def graph(ctx):
               gpu="A100-80GB", compute="modal", timeout_s=1200, est_usd=.05, est_s=300, models=pins(profile, "register"))
         scene = f"@movers-{s}-{e}:scene_dir"
         moved.append(f"movers-{s}-{e}")
-    box_excludes = None
+    box_excludes, unplanned = None, set()  # unplanned: generators whose plan is absent (they failed); the merge goes on without them
     if objects and "sam3d" in generators:
-        plan = g.need("generator_plan")
-        if "recgen" in generators and plan["recgen_entities"]:
+        plan = g.need("generator_plan", absent=None)
+        if plan is None:  # SAM 3D failed or was blocked: the box stage keeps the review excludes
+            box_excludes, unplanned = dict(sorted(review_json.get("entitiesExcluded", {}).items())), {"sam3d"}
+        elif "recgen" in generators and plan["recgen_entities"]:
             ids = plan["recgen_entities"]
             generator("recgen", ["--entities", *ids, "--count", str(len(ids)),
                                  *(["--exclude", *[f"{k}={v}" for k, v in plan["excluded_all"].items()]] if plan["excluded_all"] else [])],
@@ -754,25 +837,28 @@ def graph(ctx):
     # third round: inferred floor (D9), box (D17), box test, merge (D13); then the import (D14)
     dense_dir = None
     if dense_map:
-        use = g.need("dense_gate")["use"]
+        use = g.need("dense_gate", absent={"use": None})["use"]
         dense_dir = {"raw": "@lingbot_build:out", "icp": "@dense_gate/icp"}.get(use)
     g.add("floor_infer", [[PY, S("infer_room_floor.py"), "--fused", "@fuse:out", *(["--dense", dense_dir, "--droid-run", "@camera:out"] if dense_dir else []),
                            *(["--skip-frames", *skip] if skip else []), "--output", "@new/out"]], {"out": "out", "floor": "out/inferred-floor.json"}, est_s=300)
-    g.decide("inferred_floor", "inferred_floor", floor="@floor_infer:floor")
+    g.decide("inferred_floor", "inferred_floor", floor="@floor_infer:floor", gate=None if "lens_gate" in omit else "@lens_gate:decision")
     if objects and box_excludes is None and "generator_plan-box" in g.by:
-        box_excludes = g.need("generator_plan-box")["box_excludes"]
-    if objects and "box" in generators:
+        after = g.need("generator_plan-box", absent=None)
+        box_excludes, unplanned = (after or plan)["box_excludes"], unplanned | ({"recgen"} if after is None else set())
+    if objects and "box" in generators and review:  # D13: a box is shown only with an eye review that approves its mesh; none, no box run
         generator("box", ["--all", *(["--exclude", *[f"{k}={v}" for k, v in box_excludes.items()]] if box_excludes else [])], None, 0.)
         g.add("box_test", [[PY, S("box_free_space.py"), "--box", "@box:out", "--output", "@new/out"]], {"out": "out", "box_test": "out/box-test.json"}, est_s=300)
+    runs = [f"--{name}" for name in ("recgen", "sam3d", "box") if name in g.by and name not in unplanned]
+    objects = objects and bool(runs)  # no generator left to merge: no model layer
     if objects:
-        runs = [f"--{name}" for name in ("recgen", "sam3d", "box") if name in g.by]
         g.add("merge", [[PY, S("merge_object_models.py"), *[w for flag in runs for w in (flag, f"@{flag[2:]}:out")],
                          *(["--box-test", "@box_test:box_test"] if "box" in g.by else []), *(["--review", str(review)] if review else []),
                          "--output", "@new/out"]], {"out": "out", "merge": "out/merge.json", "models": "out/models"}, leaves=review_leaf, est_s=120)
-    floor_kept = g.need("inferred_floor")
+    floor_kept = g.need("inferred_floor", absent=False)
     last = moved[-1] if moved else None
     previous = previous_import(ctx)
-    title = previous.get("title") or f"{site} {_mmss(ctx.start)}–{_mmss(ctx.end)} (imported, not accepted)"
+    # a delivered report keeps its published title (O1); a report of this runner gets the rule's title again
+    title = previous["title"] if previous.get("title") and not previous.get("profile") else title_of(ctx, scale_status)
     layers = [("--shell-glb", "@fill:out/textured-scene.glb", fill), ("--splats", "@splat_final:splats", splat),
               ("--dense-points", dense_dir, dense_dir), ("--inferred-floor", "@floor_infer:out", floor_kept), ("--models", "@merge:models", objects)]
     g.add("import", [[PY, S("import_video_scene.py"), "--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--object-map", filtered,
@@ -780,7 +866,8 @@ def graph(ctx):
                       "--analysis", "@outlines:analysis", "--dynamic-scene", f"@{last}:scene" if last else "@dynamic:scene",
                       "--dynamic-analysis", f"@{last}:analysis" if last else "@analysis:analysis", "--video-events", "@events:events",
                       *[w for flag, token, on in layers if on for w in (flag, token)],
-                      *(["--exclude-frames", *[fmt_span(o, "colon") for o in others]] if others else []), "--title", title,
+                      *(["--exclude-frames", *[fmt_span(o, "colon") for o in others]] if others else []),
+                      *(["--untrusted-frames", *[fmt_span(u, "colon") for u in untrusted]] if untrusted else []), "--title", title,
                       *(["--republish", previous["importRecordPath"]] if previous else []), "--request-suffix", "@key",
                       *(["--lens", "@lens_gate:decision"] if "lens_gate" not in omit else [])]],
           {"log": "runner.log"}, optional={"fill", "splat_final", "lingbot_build", "dense_gate", "floor_infer", "merge", "events", *moved},

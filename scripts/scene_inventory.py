@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import re
@@ -2684,8 +2685,13 @@ def main(argv: list[str] | None = None) -> int:
         height, width = valid.shape
         moge_maps = _moge3_maps(run, frame, live=args.live)
         moge_by_frame[frame.frame_id] = moge_maps
-        for phrase in phrases:
-            response = _segment(run, frame, phrase, live=args.live)
+        # ponytail: four bounded SAM requests per photo; colliding cache names
+        # stay serial. Raise the limit only after measuring provider capacity.
+        slugs = [re.sub(r"[^a-z0-9]+", "_", phrase).strip("_") for phrase in phrases]
+        workers = min(4, len(phrases)) if len(set(slugs)) == len(slugs) else 1
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            responses = list(pool.map(lambda phrase: _segment(run, frame, phrase, live=args.live), phrases))
+        for phrase, response in zip(phrases, responses):
             if response is None:
                 continue
             rles = response.get("rle") or []

@@ -1,6 +1,7 @@
 export const reportSceneMessages: Record<string, [string, string]> = {
   sceneHistoricalReport: ["正在查看历史报告", "Viewing a historical report"],
   sceneLatestReport: ["查看最新工位报告", "Open the latest workcell report"],
+  sceneOriginalReport: ["打开原报告", "Open the original report"],
   sceneCadReference: ["CAD 参考", "CAD reference"],
   sceneViewedPhoto: ["当前查看照片", "Viewed photo"],
   sceneCadReferenceMissing: ["参考来源未确定", "Reference source unresolved"],

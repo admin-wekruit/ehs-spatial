@@ -14,6 +14,7 @@ import argparse
 import inspect
 import json
 import math
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -37,12 +38,17 @@ TRACK_CAP, TRACK_WINDOW, TRACK_STEP = 400, 300, 260
 SPLAT_DB = .2
 FLOOR_MASK_FRAMES = 12
 PERSON_SHARE = .30
+# plan section 5, trusted path span: a step over 5x its 1 s rolling median, a height over 0.3 m off its 2 s rolling median, or a
+# keyframe whose own depth-anchor scale is over 5% off the 2 s rolling median of the keyframes' (a jump, not a slow drift); flags
+# within 2 s join into one untrusted span
+TRUST_STEP, TRUST_STEP_S, TRUST_HEIGHT_M, TRUST_HEIGHT_S, TRUST_SCALE, TRUST_LINK_S = 5., 1., .3, 2., .05, 2.
 PERSON = ("man", "woman", "person", "people", "worker", "human")  # the person words of complete_video_objects.EXCLUDED
 UNNAMED = "unnamed surface"
 # bump a rule's version when its code changes (tests/versions.json 'rule:NAME' guards it; stages.rule_code is what counts)
 # floor_frames 2: the operator list applies only to the clip it names (source video sha256 and window)
-VERSIONS = {name: 1 for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "lingbot_conf", "dense_gate",
-                                 "inferred_floor", "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter")} | {"floor_frames": 2}
+# inferred_floor 2: only a dense-validated floor on a plane the lens gate passed; lingbot_conf 2: no threshold when no decile agrees
+VERSIONS = {name: 1 for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "dense_gate",
+                                 "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter", "trajectory")} | {"floor_frames": 2, "inferred_floor": 2, "lingbot_conf": 2}
 
 
 def _file(path, name):
@@ -231,20 +237,24 @@ def lingbot_stride(shots):
 
 
 def conf_from_deciles(deciles):
-    """The upper edge of the last decile in the leading run whose share within 4% is < 0.90 (none: keep everything)."""
+    """The upper edge of the last decile in the leading run whose share within 4% is < 0.90 (none: keep everything). None when
+    no decile reaches 0.90: no confidence makes neighbouring views agree, so no threshold is chosen (the dense map is withheld)."""
     last = None
     for row in deciles:
         if row["share_within_4pct"] >= LINGBOT_SHARE_4PCT:
             break
         last = row
+    else:
+        return None
     return round(last["conf_to"] if last else deciles[0]["conf_from"], 2)
 
 
 def lingbot_conf(diagnose):
-    """D7. The confidence threshold from lingbot_dense_map diagnose's by_conf_decile."""
+    """D7. The confidence threshold from lingbot_dense_map diagnose's by_conf_decile; None (no dense map) when no decile agrees."""
     deciles = _json(diagnose, "diagnose.json")["by_conf_decile"]
-    return _result("lingbot_conf", conf_from_deciles(deciles), {"shareWithin4pct": [round(d["share_within_4pct"], 4) for d in deciles],
-                                                                 "confTo": [d["conf_to"] for d in deciles], "rule": LINGBOT_SHARE_4PCT})
+    conf = conf_from_deciles(deciles)
+    return _result("lingbot_conf", conf, {"shareWithin4pct": [round(d["share_within_4pct"], 4) for d in deciles], "confTo": [d["conf_to"] for d in deciles],
+                                          "rule": LINGBOT_SHARE_4PCT, **({} if conf is not None else {"withheld": f"no decile reaches {LINGBOT_SHARE_4PCT:.0%} within 4%"})})
 
 
 def plane_frame(scale):
@@ -319,10 +329,16 @@ def dense_gate(map, fused, out):
                     "floorBandM": FLOOR_BAND_M, "floorCellM": FLOOR_CELL_M}})
 
 
-def inferred_floor(floor):
-    """D9. Import the inferred floor only if its own tests did not withhold it."""
-    kind = _json(floor, "inferred-floor.json")["kind"]
-    return _result("inferred_floor", kind != "inferred_floor_withheld", {"kind": kind})
+def inferred_floor(floor, gate=None):
+    """D9. Import the inferred floor only if its own tests kept it: a model tested against a dense map (dense.validation), on a
+    floor plane the lens gate passed (gate: the lens_gate decision, lens.json). The convex outline (no dense map) was never
+    tested, and an intrinsics_uncertain plane is no verified floor: both withheld (a wrong floor is worse than none)."""
+    record = _json(floor, "inferred-floor.json")
+    status = _value(gate, "lens")["scale_status"] if gate else None
+    why = (record.get("reason") or "withheld by its own tests" if record["kind"] == "inferred_floor_withheld" else
+           "no dense-map validation: the convex outline was never tested against the video" if not (record.get("dense") or {}).get("validation") else
+           "the floor plane failed the lens gate (intrinsics_uncertain): no verified plane to extend" if status == "intrinsics_uncertain" else None)
+    return _result("inferred_floor", why is None, {"kind": record["kind"], "lensScaleStatus": status, **({"withheld": why} if why else {})})
 
 
 # ---------------------------------------------------------------- D10, D11, D12: windows, splat cleanup, SAM 2.1 frames
@@ -456,10 +472,109 @@ def static_filter(object_map, masks, dynamic_masks, droid, out=None):
                    {"personShare": PERSON_SHARE, "medianShare": {e: round(float(np.median(s)), 4) for e, s in shares.items() if s and (e in moved or e in cleared or np.median(s) > 0)}})
 
 
+# ---------------------------------------------------------------- D22: which part of the camera path to trust
+def _runs(mask, start=0):
+    """[a, b) runs of True in a boolean array, offset by start."""
+    edges = np.flatnonzero(np.diff(np.r_[0, mask.astype(np.int8), 0]))
+    return [[int(a) + start, int(b) + start] for a, b in zip(edges[::2], edges[1::2])]
+
+
+def trust_flags(centres, fps, height_m=None, keyframe_scales=None):
+    """Per frame of one shot (centres: its camera centres in order): {step, height, scale} booleans. height_m: camera height over
+    the floor in metres (None: no scale, not tested); keyframe_scales: {shot frame: own anchor scale}, each against the median of
+    the keyframes within 1 s of it (each frame takes its nearest keyframe's verdict). A step is between frames i and i+1 and flags
+    both."""
+    from scipy.ndimage import median_filter
+    n = len(centres)
+    step = np.linalg.norm(np.diff(centres, axis=0), axis=1)
+    flags = {name: np.zeros(n, bool) for name in ("step", "height", "scale")}
+    if len(step):
+        local = median_filter(step, 2 * round(fps * TRUST_STEP_S / 2) + 1, mode="nearest")
+        # ponytail: the rolling median is floored at a quarter of the shot's, so a camera standing still does not flag its own jitter
+        jump = step > TRUST_STEP * np.maximum(local, .25 * np.median(step))
+        flags["step"][:-1] |= jump
+        flags["step"][1:] |= jump
+    if height_m is not None:
+        flags["height"] = np.abs(height_m - median_filter(height_m, 2 * round(fps * TRUST_HEIGHT_S / 2) + 1, mode="nearest")) > TRUST_HEIGHT_M
+    if keyframe_scales:
+        frames = np.array(sorted(keyframe_scales))
+        scale = np.array([keyframe_scales[f] for f in frames])
+        off = np.abs(scale / local_median(frames, scale, fps * TRUST_HEIGHT_S / 2) - 1) > TRUST_SCALE
+        nearest = np.abs(np.arange(n)[:, None] - frames[None]).argmin(1)
+        flags["scale"] = off[nearest]
+    return flags
+
+
+def local_median(frames, values, half):
+    """Each value's reference: the median of the values whose frame is within `half` frames of its own."""
+    return np.array([np.median(values[np.abs(frames - f) <= half]) for f in frames])
+
+
+def untrusted_spans(mask, link, start=0):
+    """[a, b) spans of the untrusted frames, joined across trusted gaps shorter than `link` frames."""
+    spans = _runs(mask)
+    joined = []
+    for a, b in spans:
+        if joined and a - joined[-1][1] < link:
+            joined[-1][1] = b
+        else:
+            joined.append([a, b])
+    return [[a + start, b + start] for a, b in joined]
+
+
+def keyframe_scales(droid, depth, out):
+    """{frame: own anchor scale} of the depth views that are DROID keyframes, as mono_room.load fits them for fusion (its support
+    file written here, never into the depth run)."""
+    import mono_room
+    from build_droid_replay import depth_support
+    mono_room.use_clip(Path(droid))
+    support = Path(out) / "droid-support.npz"
+    if not support.exists():
+        data = np.load(Path(droid) / "prediction.npz")
+        np.savez_compressed(support, retained=depth_support(data["keyframe_c2w"], data["keyframe_final_fullres_inverse_depth"][:, ::2, ::2],
+                                                            data["keyframe_final_fullres_intrinsics"] / 2)[2])
+    rows = mono_room.load(Path(droid), support, Path(depth))
+    return {r["source_index"]: r["scale"] for r in rows if r.get("scale_source") == "own_anchors"}
+
+
+def trajectory(droid, metric, depth, shots, clip, out):
+    """D22 (plan section 5, trusted path span). The mapped shot's untrusted frames (trust_flags), as spans joined within 2 s; they
+    become coverage gaps: OUT/mono links only the depth views outside them, which fusion, the object map and the models read,
+    and the later stages skip them. No trusted frame left: refuse (no report on untrusted cameras)."""
+    a, b = _value(shots, "shots")["primary"]
+    fps = float(_json(clip, "clip.json")["playback"]["fps"])
+    centres = np.load(Path(droid) / "prediction.npz")["poses_c2w"][a:b, :3, 3].astype(np.float64)
+    scale = _json(metric, "metric-scale.json")
+    metres = scale.get("metres_per_native_unit")
+    height = (centres - np.array(scale["plane_point_native"])) @ np.array(scale["up_native"]) * metres if metres else None
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    scales = {f - a: s for f, s in keyframe_scales(droid, depth, out).items() if a <= f < b}
+    flags = trust_flags(centres, fps, height, scales)
+    bad = flags["step"] | flags["height"] | flags["scale"]
+    untrusted = untrusted_spans(bad, round(fps * TRUST_LINK_S), a)
+    trusted = _runs(~np.isin(np.arange(a, b), [f for s, e in untrusted for f in range(s, e)]), a)
+    if not trusted:
+        raise ValueError(f"no trusted camera frame in the mapped shot [{a}, {b}): no report on untrusted cameras")
+    (out / "mono").mkdir(parents=True, exist_ok=True)
+    views = sorted((Path(depth) / "mono").glob("*.npz"))
+    kept = [v for v in views if not any(s <= int(v.stem) < e for s, e in untrusted)]
+    for v in kept:
+        (out / "mono" / v.name).symlink_to(os.path.relpath(v, out / "mono"))  # relative, as the store stages links
+    return _result("trajectory", {"untrusted": untrusted, "trusted": trusted, "longestTrusted": max(trusted, key=lambda t: t[1] - t[0]),
+                                  "views": len(kept), "viewsLeftOut": len(views) - len(kept)},
+                   {"shot": [a, b], "fps": fps, "flaggedFrames": {k: _runs(v, a) for k, v in flags.items()},
+                    "keyframeScaleOffLocalMedian": (lambda f, v: {str(int(k) + a): round(float(x), 4) for k, x in zip(f, v / local_median(f, v, fps * TRUST_HEIGHT_S / 2) - 1)})(
+                        np.array(sorted(scales)), np.array([scales[k] for k in sorted(scales)])) if scales else {},
+                    "heightTested": metres is not None,
+                    "rule": {"stepOverRollingMedian": TRUST_STEP, "stepWindowS": TRUST_STEP_S, "heightOffM": TRUST_HEIGHT_M, "heightWindowS": TRUST_HEIGHT_S,
+                             "keyframeScaleOff": TRUST_SCALE, "linkS": TRUST_LINK_S}})
+
+
 RULES = {"shots": shots, "other_shot": other_shot, "lens": lens, "voxel": voxel, "overlay": overlay, "lingbot_stride": lingbot_stride,
          "lingbot_conf": lingbot_conf, "dense_gate": dense_gate, "inferred_floor": inferred_floor, "track_windows": track_windows,
          "splat_pick": splat_pick, "sam2_frames": sam2_frames, "generator_plan": generator_plan, "floor_frames": floor_frames,
-         "static_filter": static_filter}
+         "static_filter": static_filter, "trajectory": trajectory}
 
 
 def roles(name):
@@ -496,6 +611,7 @@ def self_check():
                {"conf_from": 1.737, "conf_to": 2., "share_within_4pct": .92}, {"conf_from": 2., "conf_to": 3., "share_within_4pct": .8}]
     assert conf_from_deciles(deciles) == 1.74, "only the leading run counts, a later dip does not"
     assert conf_from_deciles(deciles[2:]) == 1.74 and conf_from_deciles([{"conf_from": 1., "conf_to": 2., "share_within_4pct": .95}]) == 1.
+    assert conf_from_deciles([d for d in deciles if d["share_within_4pct"] < .9]) is None, "no decile agrees: no threshold, no dense map"
     held = lambda psnr, kept: {"kept": kept, "held_out": {"psnr": psnr}}
     assert pick_cleanup({"none": held(30, 100), "a": held(29.85, 60), "b": held(29.7, 40)}) == "a"
     crop = [160, 0, 960, 720]

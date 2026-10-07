@@ -177,3 +177,44 @@ def test_provider_cannot_silently_ignore_explicit_no_erosion(tmp_path, monkeypat
     result = invoke(value, {'modalVolume':'private','modalFunctionId':'fu-test'})
     assert result['providerError']['code'] == 'recgen_preprocessing_mismatch'
     assert result['providerRequestId'] == 'fc-test'
+
+
+@pytest.mark.parametrize('same', [True, False])
+def test_an_identical_input_already_on_the_volume_is_not_uploaded_again(tmp_path, monkeypatch, same):
+    """A run that failed after its uploads leaves each job's input.npz on the volume; the next attempt found it there and
+    stopped on FileExistsError (Lightning RecGen, runs 3-4). The same bytes are reused; other bytes are refused, never replaced."""
+    from ehs_spatial.platform.recgen import RecGenRequest
+    data = RecGenRequest.from_payload(payload()).to_npz()
+    record = json.dumps({'status':'failed'}).encode()
+    events = []
+    class Upload:
+        def __enter__(self): return self
+        def __exit__(self, *args): raise FileExistsError('/jobs/x/input.npz: already exists')  # as modal's batch_upload on exit
+        def put_file(self, *args): events.append('upload')
+    def read_file(path):
+        events.append(('read', path.rsplit('/', 1)[-1]))
+        return [data if same else b'other'] if path.endswith('/input.npz') else [record]
+    class Call:
+        object_id = 'fc-again'
+        def get(self, timeout): return {'volume_path':f"jobs/{dispatched[0]}/result", 'files':{'output.json':hashlib.sha256(record).hexdigest()}}
+    dispatched = []
+    class Function:
+        object_id = 'fu-pinned'
+        def hydrate(self): pass
+        def with_options(self, **kwargs): return self
+        def spawn(self, identity, **kwargs):
+            dispatched.append(identity)
+            return Call()
+    monkeypatch.setitem(sys.modules, 'modal', SimpleNamespace(exception=SimpleNamespace(TimeoutError=TimeoutError),
+        Volume=SimpleNamespace(from_name=lambda *_:SimpleNamespace(batch_upload=Upload, read_file=read_file)),
+        Function=SimpleNamespace(from_name=lambda *a, **kw:Function())))
+    monkeypatch.setenv('PANOPTES_RECGEN_JOURNAL', str(tmp_path))
+    config = {'modalVolume':'private','modalApp':'research','modalFunction':'generate','modalFunctionId':'fu-pinned'}
+    if same:
+        result = invoke(payload(), config)
+        assert result['providerError']['code'] == 'recgen_inference_failed' and len(dispatched) == 1
+        assert events[:2] == ['upload', ('read', 'input.npz')], 'the volume copy is read back and compared, not overwritten'
+    else:
+        with pytest.raises(PlatformError) as caught:
+            invoke(payload(), config)
+        assert caught.value.code == 'recgen_input_mismatch' and dispatched == []

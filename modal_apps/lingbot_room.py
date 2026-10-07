@@ -90,6 +90,19 @@ def validate_prediction(depth, confidence, points, k, c2w):
     return report
 
 
+def saved_world_to_camera(demo_c2w):
+    """Pinned demo.postprocess returns C2W; the archive's w2c field is W2C."""
+    import numpy as np
+    c2w = np.eye(4)
+    value = np.asarray(demo_c2w, dtype=float)
+    if value.shape != (3, 4) or not np.isfinite(value).all():
+        raise ValueError('LingBot demo camera must be finite 3 x 4 C2W')
+    c2w[:3] = value
+    if not np.allclose(value[:, :3].T @ value[:, :3], np.eye(3), atol=1e-5) or not np.isclose(np.linalg.det(value[:, :3]), 1., atol=1e-5):
+        raise ValueError('LingBot demo rotation must be proper and orthonormal')
+    return np.linalg.inv(c2w)[:3].astype(np.float32)
+
+
 def decode_frames(video, frames, stride, span=None):
     """PNG of every stride-th video frame into frames/; returns the plan records and the video's frame count.
     span (START, END): only frames START..END-1, one continuous shot of an edited video."""
@@ -221,14 +234,15 @@ def infer(run_id, deadline, plan_sha):
         for i,record in enumerate(plan['frames']):
             p=out/f"frame-{record['sourceFrame']:06d}.npz"
             np.savez_compressed(p,depth=data['depth'][i].astype('float32'),depth_conf=data['depth_conf'][i].astype('float32'),
-                w2c=data['extrinsic'][i].astype('float32'),k=data['intrinsic'][i].astype('float32'),
+                w2c=saved_world_to_camera(data['extrinsic'][i]),k=data['intrinsic'][i].astype('float32'),
                 rgb=np.rint(np.moveaxis(data['images'][i],0,-1)*255).astype('uint8'))
             files.append({'sourceFrame':record['sourceFrame'],'file':p.name,'sha256':digest(p)})
         result={'status':'inference_complete','run_id':run_id,'code_revision':REV,'weights_sha256':WEIGHTS_SHA,
                 'plan_sha256':plan_sha,'configuration':plan['configuration'],'frames':files,
                 'inference_seconds':infer_seconds,'peak_gpu_bytes':memory,'elapsed_seconds':time.time()-started,
                 'gpu':torch.cuda.get_device_name(),
-                'geometry_contract':'native camera z-depth + predicted K + official demo extrinsic W2C; invert once at map ingestion, no point head',
+                'geometry_contract':'native camera z-depth + predicted K; demo C2W converted once to archived W2C; readers invert archived W2C once, no point head',
+                'camera_contract_version':2,
                 'native_prediction_sha256':digest(raw),
                 'source_sha256':{str(p.relative_to('/opt/lingbot')):digest(p) for p in Path('/opt/lingbot/lingbot_map').rglob('*.py')},
                 'sensor_depth_uploaded':False,'groundtruth_uploaded':False,'new_training':False}

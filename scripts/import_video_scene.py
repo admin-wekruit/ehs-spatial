@@ -12,6 +12,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
 import secrets
 import sys
 from uuid import NAMESPACE_URL, uuid5
@@ -28,6 +29,48 @@ FRAME, CONFIRMED = "droid_final_native_world", 3
 STUFF = ("floor", "wall", "ceiling")  # as build_video_object_map.STUFF: extents, not things
 FUSED_SHARE = .5  # the fused cut of an entity is shown only if it holds at least this share of the area its best single view shows
 AGNOSTIC, EVIDENCE_PER_AGNOSTIC = "object", 8  # segment-everything label; how many of its views a report entity keeps as evidence
+
+
+# a number with a metric unit: what a report without a measured scale may never state (native units, not metres)
+METRIC = re.compile(r"\d+(?:[.,]\d+)?\s*(?:(?:m|m2|m²|cm|mm|km|metres?|meters?)(?![A-Za-z0-9²])|米|厘米|毫米|公里)")
+
+
+def metric_claims(document, path=""):
+    """[(path, text)] of every string in the document that states a metric figure."""
+    if isinstance(document, dict):
+        return [c for k, v in document.items() for c in metric_claims(v, f"{path}.{k}")]
+    if isinstance(document, list):
+        return [c for i, v in enumerate(document) for c in metric_claims(v, f"{path}[{i}]")]
+    return [(path, document)] if isinstance(document, str) and METRIC.search(document) else []
+
+
+def check_no_metres(document, uncalibrated):
+    """No metric wording without a measured scale: a leak is a bug to fix, never a report."""
+    claims = metric_claims(document) if uncalibrated else []
+    if claims:
+        raise ValueError(f"metric figures in a report without a scale that claims metres: {claims[:5]}")
+
+
+def unmeasured(value):
+    """A model's own words without a scale to back them: every metric figure replaced by what is known."""
+    if isinstance(value, dict):
+        return {k: unmeasured(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [unmeasured(v) for v in value]
+    return METRIC.sub("[distance not measured]", value) if isinstance(value, str) else value
+
+
+def model_basis(checked, uncalibrated):
+    """How a generated model was checked; its fit residual in metres only when the report has a scale that claims metres."""
+    residual = (f"{checked['fitResidualNative']:.3g} native units" if uncalibrated else f"{checked['fitResidualCm']:.1f} cm") if checked.get("fitResidualNative") is not None else "not measured"
+    return (f"{checked['generator']}: generated from one full-resolution video view with its posed depth, then fitted to the object's observed "
+            f"points (residual {residual}); {checked['observedShare']:.0%} of its surface was seen, the see-through rest is the generator's estimate")
+
+
+def floor_basis(basis, uncalibrated):
+    """The inferred floor's model basis: what it rests on and how much of it was seen (its area in m2 only with a scale that claims metres)."""
+    whole = "it" if uncalibrated else f"its {basis['area_m2']} m2"
+    return f"inferred, not observed: {basis['basis']}; {basis['observed_share_of_this_floor']:.0%} of {whole} was seen"
 
 
 def rectify(image, calibration=None):
@@ -86,10 +129,14 @@ def dense_points(folder, include):
             "note": info.get("note") or "dense display points: single-view geometry per point, not multi-view confirmed"}
 
 
-def inferred_floor_points(folder, include, ident, identity, source, shell):
+def inferred_floor_points(folder, include, ident, identity, source, shell, uncalibrated=False):
     """infer_room_floor.py --dense: floor points where none was seen, on the verified plane under and between things seen
-    standing on it; drawn with the room's points, dimmed, and stated as inferred, never observed."""
+    standing on it; drawn with the room's points, dimmed, and stated as inferred, never observed. Without a scale that claims
+    metres the note keeps the rule and drops its metre figures."""
     basis = json.loads((folder / "inferred-floor.json").read_text())
+    note = ("inferred, not observed: floor under and between things seen standing on it and what they enclose, never across open ground "
+            "no camera saw; each point takes the colour of the nearest floor seen, dimmed") if uncalibrated else \
+        f"inferred, not observed: {basis['dense']['region']}; {basis['dense']['colour_rule']}"
     spacing = float(basis["dense"]["point_spacing_native"])
     return {"id": ident("representation", "room-inferred-floor-points"), "kind": "point_cloud", "coordinateFrameId": FRAME, "transform": identity,
             "placementState": "unconfirmed", "primitive": None, "sourceRefs": [{"assetId": source}],
@@ -97,7 +144,7 @@ def inferred_floor_points(folder, include, ident, identity, source, shell):
             "coverage": "inferred_floor_points_not_observed", "pointSizeNative": spacing, "pointCount": basis["dense"]["points"],
             "assetId": include((folder / "inferred-floor-points.glb").read_bytes(), "model/gltf-binary",
                                {"kind": "geometry", "format": "glb-points", "sourceRecordId": "inferred-floor-points", "pointSizeNative": spacing}),
-            "note": f"inferred, not observed: {basis['dense']['region']}; {basis['dense']['colour_rule']}"}
+            "note": note}
 
 
 def fused_part(textured, object_map, entity, minimum=50):
@@ -179,7 +226,7 @@ def scale_limitation(scale, device):
     if "camera_height_native_median" not in scale:
         return "Monocular video; metres come from a model's own metric depth, not from a measurement."
     stated = f"Monocular video; metres come from a stated {scale['metres_per_native_unit'] * scale['camera_height_native_median']:.1f} m carry height"
-    if scale.get("model_estimated_metres_per_native_unit") is None:  # nothing to disagree with: say only that it was not measured
+    if scale.get("model_estimated_metres_per_native_unit") is None or scale.get("height_anchor_vs_model_estimate") is None:  # nothing to disagree with
         return stated + ", not measured."
     return stated + f" that disagrees with the model scale estimate by about {abs(scale['height_anchor_vs_model_estimate']):.0%} on this clip."
 
@@ -189,7 +236,8 @@ def build_document(args, put_asset, calibration, dataset):
     object_map = json.loads((args.object_map / "object-map.json").read_text())
     # A cut-away shot (an edited clip jumping to another camera and lens) is not part of the walk: its frames' cameras and depth
     # place things wrongly, so nothing 3D comes from them. The video still plays them; only their moving-object masks are drawn.
-    cuts = [tuple(int(v) for v in span.split(":")) for span in args.exclude_frames or []]
+    untrusted = getattr(args, "untrusted_frames", None) or []  # the trusted-path rule refused these cameras: coverage gaps, like a cut
+    cuts = [tuple(int(v) for v in span.split(":")) for span in [*(args.exclude_frames or []), *untrusted]]
     assert all(a < b for a, b in cuts), "--exclude-frames spans are START:END with START < END"
     walk = lambda frame: not any(a <= frame < b for a, b in cuts)
     entities_before_cuts = len(object_map["entities"])
@@ -286,7 +334,7 @@ def build_document(args, put_asset, calibration, dataset):
                              **(dense_points(args.dense_points, include) if args.dense_points else
                                 {"coverage": "cross_view_supported_pixels_only", "assetId": include((args.depth_run / "supported-keyframe-points.glb").read_bytes(), "model/gltf-binary",
                                                                                                       {"kind": "geometry", "format": "glb-points", "sourceRecordId": "supported-keyframe-points"})})},
-                            *([inferred_floor_points(args.inferred_floor, include, ident, identity, source, shell)]
+                            *([inferred_floor_points(args.inferred_floor, include, ident, identity, source, shell, uncalibrated)]
                               if args.inferred_floor and (args.inferred_floor / "inferred-floor-points.glb").exists() else [])]})
 
     textured = trimesh.load(args.shell_glb, process=False) if args.shell_glb else None
@@ -352,9 +400,7 @@ def build_document(args, put_asset, calibration, dataset):
                      "sourceRefs": [{"observationId": dict(refs).get(checked["observation"], refs[0][1]), "revision": 1,
                                      "imageId": images[int((checked["observation"] if checked["observation"] in dict(refs) else refs[0][0]).split(":")[1])]}],
                      "sourceConsistency": {k: checked[k] for k in ("silhouette_iou", "relative_depth_median", "relative_depth_p95", "supported_pixels")},
-                     "modelBasis": (f"{checked['generator']}: generated from one full-resolution video view with its posed depth, then fitted to the object's observed "
-                                    f"points (residual {checked['fitResidualCm']:.1f} cm); {checked['observedShare']:.0%} of its surface was seen, the see-through rest is the generator's estimate"
-                                    if "fitResidualCm" in checked else
+                     "modelBasis": (model_basis(checked, uncalibrated) if "fitResidualCm" in checked else
                                     "generated from the frame that holds the whole object, with a whole-object mask from a segmentation prompted by the entity's name; checked against that view only"
                                     if (generated / "anchor.json").exists() else "generated from one keyframe crop with its posed depth; checked against that view only"),
                      **({"inferredDisplay": {"alpha": checked["alpha"], "observedRule": checked.get("observedRule"), "observedShare": checked.get("observedShare")}} if "alpha" in checked else {})}
@@ -371,7 +417,7 @@ def build_document(args, put_asset, calibration, dataset):
             representations.append({"id": ident("representation", "inferred-floor"), "kind": "generated_mesh", "assetId": asset, "coordinateFrameId": FRAME, "transform": identity,
                 "bounds": {"min": slab.bounds[0].tolist(), "max": slab.bounds[1].tolist()}, "placementState": "unconfirmed", "placementReason": "requires_alignment_confirmation",
                 "sourceRefs": [{"observationId": refs[0][1], "revision": 1, "imageId": images[int(refs[0][0].split(":")[1])]}],
-                "modelBasis": f"inferred, not observed: {basis['basis']}; {basis['observed_share_of_this_floor']:.0%} of its {basis['area_m2']} m2 was seen"})
+                "modelBasis": floor_basis(basis, uncalibrated)})
         if model_transform is None and len(refs) >= CONFIRMED and representations:
             # No checked model: the model view shows what was actually seen, textured, as the photo report does for fences and floors.
             fused = fused_part(textured, args.object_map, entity) if textured is not None and entity.get("cells") else None
@@ -502,6 +548,8 @@ def build_document(args, put_asset, calibration, dataset):
     if args.video_events:  # the video memory: window captions and events in the model's own words, kept as evidence beside the geometry
         memory = json.loads(args.video_events.read_text())
         by_label = {e["label"]: e for e in document["entities"] if e.get("motion") == "dynamic"}
+        if uncalibrated:  # the model may say "2 metres" of a video whose scale nobody measured
+            memory["windows"] = unmeasured(memory["windows"])
         for window in memory["windows"]:
             for event in window.get("events") or []:
                 actor = by_label.get(event.get("actor"))
@@ -512,6 +560,7 @@ def build_document(args, put_asset, calibration, dataset):
             "windows": [{k: w.get(k) for k in ("t0", "t1", "caption", "events")} for w in memory["windows"]],
             "note": "model descriptions of each window; evidence for review and search, never a rule verdict"})
     left_out = {"cut_away_frames": args.exclude_frames or [], "cut_away_frames_registered_for_moving_objects_only": [list(r) for r in registered], "entities_whose_3d_came_only_from_cut_away_views": no_walk_3d, "entities_seen_only_in_cut_away_frames": entities_before_cuts - len(object_map["entities"]) - len(skipped),
+                **({"untrusted_camera_frames": untrusted} if untrusted else {}),
                 "entities_shown_by_fused_cut": used_fused, "entities_shown_by_best_single_view": used_view, "unconfirmed_class_agnostic_fragments": len(skipped), "views_not_imported": sum(e["observationsNotImported"] for e in object_map["entities"])}
     if args.comparison_video:  # the clip split into static and dynamic layers, rendered from the clip's own camera (render_static_dynamic_video.py)
         rendered = json.loads(args.comparison_video.with_suffix(".json").read_text())
@@ -524,6 +573,7 @@ def build_document(args, put_asset, calibration, dataset):
                    "Entities are grouped by 3D point overlap of text-prompted masks; identities were not reviewed by a person."] + object_map["limitations"]
     document["annotations"].append({"id": ident("annotation", "provenance"), "kind": "import_provenance", "sourceAssetId": source, "limitations": limitations,
         "missingArtifacts": [], "recomputeRequiresNewCapture": True, "leftOutOfReport": left_out, "pipeline": {"cameras": str(args.droid_run), "depth": str(args.depth_run), "objects": str(args.object_map)}})
+    check_no_metres(document, uncalibrated)
     return document, hashlib.sha256(source_bytes).hexdigest()
 
 
@@ -584,6 +634,8 @@ if __name__ == "__main__":
         parser.add_argument("--" + name, type=Path, required=name not in ("policy", "models"))
     parser.add_argument("--video", type=Path, help="source video to show as a report view (needs --analysis)")
     parser.add_argument("--exclude-frames", nargs="*", metavar="START:END", help="cut-away shots (source frames START..END-1): no cameras, outlines or surfaces from them")
+    parser.add_argument("--untrusted-frames", nargs="*", metavar="START:END", help="frames of the mapped shot whose cameras the trusted-path rule "
+                        "refused (report_runner.decide trajectory): coverage gaps, no cameras, outlines or surfaces from them")
     parser.add_argument("--dense-points", type=Path, help="dense display point map (dense-points.glb + points.json with cell_native): replaces the room's supported-points cloud")
     parser.add_argument("--splats", type=Path, help="a splat_train.py .splat file (its .json beside it): the photo-real appearance layer")
     parser.add_argument("--full-video", type=Path, help="prepare_video_clip.py --full-video source-full.json: the uncropped frames, shown in place of --video")

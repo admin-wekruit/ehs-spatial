@@ -209,5 +209,12 @@ export const workcellMessages: Record<string, [string, string]> = {
     "Published snapshot · findings frozen",
   ],
   reportReassociateScene: ["跨照片对象核对", "Cross-photo object association"],
+  layerFactsTitle: ["照片测量 · 多视角", "Photo measurement · multi-view"],
+  layerScale: ["尺度：1 原生单位 = {cm} cm", "Scale: 1 native unit = {cm} cm"],
+  layerScaleSpread: ["（±{pct}%，各特征单独定尺度的分散）", " (±{pct}%, the spread when each feature sets the scale alone)"],
+  layerScaleSource: ["（{source}）。模型估计，未经现场实测验证。", " ({source}). Model estimate, not verified by on-site measurement."],
+  layerPipelineTitle: ["完整流程（照片 → 模型 → 测量）", "Full pipeline (photos → model → measurements)"],
+  layerPipelineSheet: ["流程图", "Pipeline sheet"],
+  layerPipelineOpen: ["点开看大图", "Open the full-size image"],
   blender_export_timeout: ["Blender 导出超时；此任务未完成导出。", "Blender export timed out; this task did not finish the export."],
 };

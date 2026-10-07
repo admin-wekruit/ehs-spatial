@@ -1,4 +1,5 @@
 import { CadView } from "./CadView";
+import { useSceneResources } from "./SceneResources";
 import {
   createElement,
   lazy,
@@ -88,6 +89,7 @@ import { videoClock } from "./VideoView";
 import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
 import "./styles.css";
 const PolicyPage = lazy(() => import("./PolicyPage"));
+const LiveReport = lazy(() => import("./LiveReport"));
 const path = (value: string) => "#" + value;
 function navigate(value: string) {
   location.hash = value;
@@ -247,6 +249,7 @@ export default function App() {
   } else if (parts[0] === "reports" && parts[1])
     content = <WorkcellReport key={parts[1] + (route.query.get("snapshot") === "1" ? ":snapshot" : "")} publicationId={parts[1]} historical={route.query.get("snapshot") === "1"} />;
   else if (parts[0] === "reports") content = <ReportLibrary />;
+  else if (parts[0] === "live" && parts[1]) content = <Suspense fallback={<Loading />}><LiveReport key={parts[1]} reportId={decodeURIComponent(parts[1])} /></Suspense>;
   else if (parts[0] === "policies")
     content = (
       <Suspense fallback={<Loading />}>
@@ -1068,6 +1071,7 @@ export function SpatialView({
   onModelPreview,
   onAssetStates,
   onMeasurementPoint,
+  showSourcePhoto,
 }: {
   revision: Revision;
   selection: Selection;
@@ -1080,7 +1084,9 @@ export function SpatialView({
   onModelPreview?: (requestKey: string, image: string) => void;
   onMeasurementPoint?: (point: import("./viewer/native-math").SurfacePick | null) => void;
   onAssetStates?: (revisionId: string, states: import("./types").RepresentationLoadState[]) => void;
+  showSourcePhoto?: boolean;
 }) {
+  const { resolveAsset } = useSceneResources();
   const host = useRef<HTMLDivElement>(null),
     runtime = useRef<any>(null),
     callbacks = useRef({ onSelect, onCommit, revision, selection, modelPreview, onModelPreview, onAssetStates, onMeasurementPoint }),
@@ -1122,6 +1128,7 @@ export function SpatialView({
     try {
       viewer = mountSceneViewer(host.current, {
         resolveAsset,
+        showSourcePhoto,
         locale: language,
         layers: viewLayers,
         onEvent: (event: any) => {

@@ -112,15 +112,16 @@ def test_published_fingerprints():
 
 # ------------------------------------------------------------------------------------------------------------ publish
 
-def test_publish_dry_run_runs_nothing(capsys):
+def test_publish_dry_run_runs_nothing(capsys, tmp_path):
     calls = []
-    argvs = P.publish("0000-pub", dry_run=True, catalog="/cat", http="/http", run=lambda *a, **k: calls.append(a))
+    code = P.publish("0000-pub", dry_run=True, platform=tmp_path / "platform", catalog="/cat", run=lambda *a, **k: calls.append(a), stamp="S")
     printed = capsys.readouterr().out.strip().splitlines()
-    assert calls == [] and len(argvs) == 4 and len(printed) == 4
-    assert "export_platform_publication.py" in printed[0] and "--api http://127.0.0.1:8792" in printed[0] and "--output /cat/0000-pub" in printed[0]
-    assert "check_publication_site.py --catalog /cat --source-api" in printed[1] and "prepare_publication_site.py --catalog /cat --output /http" in printed[2]
-    assert printed[3].startswith("PANOPTES_PUBLICATION_CATALOG=/cat PANOPTES_PUBLICATION_HTTP=/http ") and "deploy" in printed[3]
-    P.self_check()
+    assert code == 0 and calls == [] and [line.split(":")[0] for line in printed] == \
+        ["export", "clone blobs", "prepare", "check new", "check all", "deploy", "remove old http"]
+    assert "export_platform_publication.py --api http://127.0.0.1:8792 --publication 0000-pub --output /cat/0000-pub" in printed[0]
+    assert "prepare_publication_site.py --catalog /cat --output /publication-http-S" in printed[2] and "--source-api http://127.0.0.1:8792" in printed[3]
+    assert printed[5].startswith("deploy: PANOPTES_PUBLICATION_CATALOG=/cat PANOPTES_PUBLICATION_HTTP=/publication-http-S ")
+    assert "modal deploy modal_apps/publication_site.py" in printed[5] and printed[5].endswith(f"[in {tmp_path / 'platform'}]")
 
 
 # ------------------------------------------------------------------------------------------------ adopt, toy fixture
@@ -330,6 +331,12 @@ def test_adopt_argv_differences(tmp_path):
     report, _, _ = run_toy(tmp_path / "d", elsewhere)
     assert "R07" in report.refused and any(d.startswith("T07: R07: --frames (D): different") for d in report.unlisted_diffs), report.unlisted_diffs
 
+    def other_node(fx, art):  # the entry names --frames, but at another node (T12): T07's --frames difference is still refused
+        listed(fx, art)
+        fx["deviations"][0]["flags"] = {"T12": ["--droid-run", "--frames"]}
+    report, _, _ = run_toy(tmp_path / "e", other_node)
+    assert "R07" in report.refused and any(d.startswith("T07: R07: --frames (D): different") for d in report.unlisted_diffs), report.unlisted_diffs
+
     def evidence(fx, art):  # equal argv, but the D flag's evidence check fails
         (art / "runs/toy-cam/run.json").write_text(json.dumps({"shot_frames": [0, 9]}))
     report, _, _ = run_toy(tmp_path / "c", evidence)
@@ -388,6 +395,53 @@ def test_a_research_decision_names_exactly_what_its_rule_read(tmp_path):
         report, store, _ = run_toy(tmp_path / change.__name__, change, rules=both)
         assert report.decisions["shots"] == "equal" and "shots" not in report.research_keys, change.__name__
         assert why in report.decisions["research-graph"] and not [e for e in store.entries if e["stage"] == "shots" and "research" in e["scope"]]
+
+
+def windows_graph(ctx):
+    """toy_graph plus a second decision, 'windows', whose rule reads the first ('shots') by its value."""
+    specs = toy_graph(ctx)
+    windows = S("windows", [["python", "-m", "report_runner.decide", "windows", "--out", "@new", "shots=@shots:decision"]],
+                {"shots": ("shots", ("decision",))}, {"decision": "windows.json"})
+    if "windows" not in ctx.decisions:
+        raise Pending("windows", specs[:3] + [windows])
+    return specs[:-1] + [windows, specs[-1]]
+
+
+def windows_rule(shots):
+    return {"value": {"shot": [json.loads(Path(shots).read_text())["value"]["primary"]]}, "evidence": {}, "rule": "windows@1"}
+
+
+def off_shots(segments):
+    return {"value": {"primary": [1, 10], "others": [[0, 1]], "mapped": True}}
+
+
+def run_two_decisions(tmp, shots=shots_rule, register=None):
+    art, video, fx = make_toy(tmp)
+    fx["decisions"]["windows"] = {"shot": [[0, 10]]}
+    fx["decision_inputs"]["windows"] = {"shots": "@decision:shots"}
+    fx["deviations"][0]["decisions"] = register or {}
+    (tmp / "fx.json").write_text(json.dumps(fx))
+    return A.adopt(tmp / "fx.json", video, FakeStore(art), graph=windows_graph, normalize=toy_normalize,
+                   rules={"shots": shots, "windows": windows_rule}, db=FakeDB(DOC))
+
+
+def test_a_research_decision_reads_an_earlier_decision_by_its_value(tmp_path):
+    """inputs_differ on an '@decision:' input: the later rule was fed the delivered value of the earlier decision, while its
+    research key holds the research value; the key stands for the rule's output only when the two values are equal."""
+    report = run_two_decisions(tmp_path / "same")
+    assert report.research_keys["windows"][1] == "replayed" and "research-graph" not in report.decisions
+    report = run_two_decisions(tmp_path / "other", shots=off_shots, register={"shots": ["primary", "others"]})
+    assert "shots" in report.research_keys and "windows" not in report.research_keys, "windows was computed from the delivered shots"
+    assert report.decisions["research-graph"].endswith("shots: the rule read @decision:shots, the research key names @shots:decision (another value)")
+
+
+def test_a_register_entry_excuses_only_the_decision_it_names(tmp_path):
+    """Two decisions: fields an entry names for 'windows' do not excuse the same fields of 'shots'."""
+    report = run_two_decisions(tmp_path / "a", shots=off_shots, register={"windows": ["primary", "others"]})
+    assert report.decisions["shots"] == "differs: others, primary" and report.decisions["windows"] == "equal"
+    assert any(d.startswith("decision shots: no register entry names ['others', 'primary']") for d in report.unlisted_diffs), report.unlisted_diffs
+    report = run_two_decisions(tmp_path / "b", shots=off_shots, register={"shots": ["primary", "others"]})
+    assert report.decisions["shots"] == "listed X1: others, primary" and not [d for d in report.unlisted_diffs if d.startswith("decision")]
 
 
 def test_a_register_node_gets_no_research_key(tmp_path):
@@ -687,14 +741,15 @@ def test_p9_commercial_refuses_the_non_commercial_stages():
     from report_runner import profiles
     from report_runner.store import Store
     fx = fixture("walmart")
-    extra = {"static_filter": {"moved": [], "cleared": []}, "lens_gate": fx["decisions"]["lens"], "other_shot-0-383": {"accepted": False},
+    extra = {"static_filter": {"moved": [], "cleared": []}, "lens_gate": fx["decisions"]["lens"], "trajectory": {"untrusted": []}, "other_shot-0-383": {"accepted": False},
              "shots": {k: v for k, v in fx["decisions"]["shots"].items() if k != "registered"}}  # M2: every other shot is registered (D3)
     store = Store(ART, scope="commercial", refuse=lambda spec: profiles.refuse("commercial", spec))
     specs = delivered_ctx("walmart", fx, store, profile="commercial", extra=extra)
     rows = {r["stage"]: r for r in store.plan(specs)}
     refused = {n: r["why"] for n, r in rows.items() if r["status"] == "refused"}
     assert {"source", "census", "moge", "camera", "register-0-383"} <= set(refused)
-    assert "lingbot" not in rows and "recgen" not in rows and "names" not in rows, "commercial: no LingBot, no RecGen, names blank until Qwen3-VL passes"
+    assert "lingbot" not in rows and "recgen" not in rows, "commercial: no LingBot, no RecGen"
+    assert "names" not in refused and {"names", "sam3d", "box", "merge"} <= set(rows), "commercial names with Gemini (U6, a cloud dependency)"
     for name, why in refused.items():
         spec = next(s for s in specs if s.name == name)
         assert spec.models and ("commercial use" in why or "pinned" in why), (name, why)

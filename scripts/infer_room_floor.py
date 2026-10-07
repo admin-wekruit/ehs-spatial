@@ -15,7 +15,8 @@ the nearest floor the video saw (within REACH, else the median), and every cell 
 inferred point, a little dimmed, for the point-cloud view: the floor is complete where it can be, and still told apart
 from what was observed.
 
-  python scripts/infer_room_floor.py --fused RUN [--dense LINGBOT_MAP] --output NEW_DIR
+  python scripts/infer_room_floor.py --fused RUN --dense LINGBOT_MAP --droid-run RUN --output NEW_DIR
+  python scripts/infer_room_floor.py --fused RUN --output NEW_DIR      # no dense map: withheld (--legacy-convex: the old outline)
   python scripts/infer_room_floor.py --self-check
 """
 import argparse
@@ -170,7 +171,16 @@ def floor_colours(plan_points, seen_plan, seen_colours, reach, fallback, k=24):
     return out
 
 
+NO_DENSE = ("no validated dense map (the LingBot map was missing or failed its display gate): nothing tests where the floor goes on "
+            "unseen ground, and a wrong floor is worse than none")
+
+
 def build(args):
+    if not args.dense and not args.legacy_convex:  # the convex outline was never tested against the video: withheld, with its reason
+        args.output.mkdir(parents=True, exist_ok=False)
+        (args.output / "inferred-floor.json").write_text(json.dumps({"kind": "inferred_floor_withheld", "reason": NO_DENSE}, indent=1))
+        print(json.dumps({"withheld": True, "reason": NO_DENSE}))
+        return
     import open3d as o3d
     import trimesh
     scale = json.loads((args.fused / "metric-scale.json").read_text())
@@ -251,7 +261,10 @@ def build(args):
     from shapely.geometry import Polygon
     area = Polygon(corners).area if dense is None else dense["region_area_m2"] / metres ** 2
     cells = len(np.unique(np.floor(plan[seen] / CELL).astype(int), axis=0))
-    report = {**({"dense": dense} if dense else {}), "kind": "inferred_floor_model", "basis": "verified floor plane (consensus over views) extended over the convex hull of the observed room geometry on the floor plan",
+    basis = ("floor plane (consensus over views) extended under and between things seen standing on it, and over what they enclose; cells "
+             "cameras saw through removed" if dense else "floor plane (consensus over views) extended over the convex hull of the observed room "
+             "geometry on the floor plan (--legacy-convex: not tested against the video)")
+    report = {**({"dense": dense} if dense else {}), "kind": "inferred_floor_model", "basis": basis,
               "observed": False, "observed_share_of_this_floor": round(min(1., cells * CELL * CELL / area), 3),
               "extent_m": [round(float(v) * metres, 2) for v in corners.max(0) - corners.min(0)], "area_m2": round(area * metres ** 2, 1), "metres_per_native_unit": metres,
               "corners_native": (origin + corners[:, :1] * a + corners[:, 1:] * b - up * BELOW).tolist(), "colour_rgb": (colour * 255).astype(int).tolist(), "colour_source": "median colour of the floor that was seen",
@@ -295,6 +308,8 @@ if __name__ == "__main__":
     parser.add_argument("--dense", type=Path, help="LingBot dense map (lingbot_dense_map.py build) in the same frame: outline, grid colours, inferred points")
     parser.add_argument("--droid-run", type=Path, help="with --dense: the cameras whose depth checks every inferred cell")
     parser.add_argument("--skip-frames", nargs="*", default=[], metavar="A-B", help="frames never used as evidence (a cut-away shot)")
+    parser.add_argument("--legacy-convex", action="store_true", help="without --dense: the old convex outline, never tested against the video "
+                                                                    "(default: withheld, since a wrong floor is worse than none)")
     parser.add_argument("--output", type=Path)
     a = parser.parse_args()
     self_check() if a.self_check else build(a)

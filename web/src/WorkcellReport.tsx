@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   type IdentitySuggestion,
@@ -33,6 +33,8 @@ import { ModelEvidence } from "./ModelEvidence";
 import { IdentityReview } from "./IdentityReview";
 import { AgentPanel } from "./AgentPanel";
 import { Extent, ReportScene } from "./ReportScene";
+import { applyMeasurementLayer, layerText, loadMeasurementLayer, withEnglishLabels, withLayerAssets, type MeasurementLayer } from "./measurement-layer";
+import { SceneResources, useSceneResources } from "./SceneResources";
 import { ReportObjectFindings } from "./ReportObjectFindings";
 import { ReportReview, type AssessmentSummary } from "./ReportReview";
 import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "./scene-semantics";
@@ -168,10 +170,14 @@ export function WorkcellReport({
   requestedRevision?: string | null;
   historical?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const readOnly = !!PUBLICATION_ID;
   const [detail, setDetail] = useState<ProjectDetail>(),
-    [publication, setPublication] = useState<Publication>();
+    [publication, setPublication] = useState<Publication>(),
+    [layer, setLayer] = useState<MeasurementLayer | null>(null);
+  const baseResources = useSceneResources(),
+    resources = useMemo(() => withLayerAssets(baseResources, layer), [baseResources, layer]),
+    shownRevision = useMemo(() => detail && withEnglishLabels(detail.revision, layer, language), [detail, layer, language]);
   const [error, setError] = useState<unknown>(),
     [canManage, setCanManage] = useState(false),
     [busy, setBusy] = useState(false),
@@ -215,6 +221,7 @@ export function WorkcellReport({
     setNotice("");
     setDetail(undefined);
     setPublication(undefined);
+    setLayer(null);
     setJobs([]);
     setHistory([]);
     setNewestPublication(undefined);
@@ -247,11 +254,12 @@ export function WorkcellReport({
       }
       const d: ProjectDetail = view ? {project:view.project, branch:view.branch, branches:view.branches, revision:view.publication.snapshot.revision}
         : await request<ProjectDetail>("/api/projects/" + pid);
-      const revision =
+      const measured = pub ? await loadMeasurementLayer(pub.id, new URL(location.href).searchParams.get("layer")) : null;
+      const revision = applyMeasurementLayer(
         pub?.snapshot.revision ||
         (requestedRevision
           ? await request<Revision>("/api/revisions/" + requestedRevision)
-          : d.revision);
+          : d.revision), measured);
       if (!live) return;
       if (pub) {
         const reader = publicationReaderURL(revision.document.schemaVersion, location.href);
@@ -267,6 +275,7 @@ export function WorkcellReport({
       if (!live) return;
       setDetail(next);
       setPublication(pub);
+      setLayer(measured?.revisionId === revision.id ? measured : null);
       setReportEdits(view?.edits || []);
       setCanManage(can);
       appliedHead.current = revision.id;
@@ -680,9 +689,10 @@ export function WorkcellReport({
         {!error && <p role="status">{t("loading")}</p>}
       </div>
     );
-  const { revision, project } = detail,
+  const { project } = detail, revision = shownRevision!,
     doc = revision.document;
   const entity = doc.entities.find((e) => e.id === selection.entityId);
+  const pipeline = entity && layer?.pipelines?.[entity.id], pipelineCaption = pipeline && layerText(language, pipeline.caption, pipeline.captionEn);
   const currentJobs = jobs.filter(
     (j) =>
       j.baseRevisionId === revision.id || j.resultRevisionId === revision.id,
@@ -704,6 +714,7 @@ export function WorkcellReport({
   const exactEvents: ReportEditSummary[] = publication ? reportEdits :
     events.filter(e => e.revisionId === revision.id).map(e => ({...e, operationTypes:e.operations.map(operation => operation.type)}));
   return (
+    <SceneResources.Provider value={resources}>
     <article
       className={"workcell-report" + (reviewMode ? " is-reviewing" : "")}
     >
@@ -809,7 +820,9 @@ export function WorkcellReport({
         {draw && <p className="report-notice">{t("reportDrawHint")}</p>}
         <ReportScene
           revision={revision}
+          boxLayer={layer}
           newerReport={newerReport}
+          variantNotice={layer?.variant ? {label: layerText(language, layer.variant.label, layer.variant.labelEn), href: (() => { const u = new URL(location.href); u.searchParams.delete("layer"); return u.href; })()} : undefined}
           selection={selection}
           onSelect={select}
           imageId={imageId}
@@ -825,6 +838,20 @@ export function WorkcellReport({
           inspector={<>
             {!(reviewMode && agentOpen) && <div className="report-selection-details">
               {entity ? <>
+                {layer?.facts?.[entity.id] && <section className="report-measurement-layer" data-measurement-facts={entity.id}>
+                  <h4>{t("layerFactsTitle")}</h4>
+                  <dl>{layer.facts[entity.id].map((fact, i) => <div key={i} data-fact-kind={fact.kind}><dt>{layerText(language, fact.label, fact.labelEn)}</dt><dd>{layerText(language, fact.text, fact.textEn)}</dd></div>)}</dl>
+                  {layer.models?.[entity.id] && <p>{layerText(language, layer.models[entity.id].note, layer.models[entity.id].noteEn)}</p>}
+                  <p>{t("layerScale").replace("{cm}", (layer.scale.nativeToMeters * 100).toFixed(1))}{layer.scale.uncertaintyRelative ? t("layerScaleSpread").replace("{pct}", (layer.scale.uncertaintyRelative * 100).toFixed(1)) : ""}{t("layerScaleSource").replace("{source}", () => layer.scale.source)}</p>
+                </section>}
+                {pipeline && <section className="report-object-pipeline" data-object-pipeline={entity.id}>
+                  <h4>{t("layerPipelineTitle")}</h4>
+                  <ol>{pipeline.stages.map((stage, i) => <li key={i}><b>{layerText(language, stage.label, stage.labelEn)}</b><span>{layerText(language, stage.text, stage.textEn)}</span></li>)}</ol>
+                  {pipeline.url && <a href={new URL(pipeline.url, location.href).href} target="_blank" rel="noreferrer">
+                    <img src={new URL(pipeline.url, location.href).href} alt={pipelineCaption || t("layerPipelineSheet")} loading="lazy" />
+                    <small>{pipelineCaption || t("layerPipelineOpen")}</small>
+                  </a>}
+                </section>}
                 <ObjectFacts entity={entity} document={doc} /><ModelEvidence entity={entity} onCommit={canWrite ? operations => apply(operations) : undefined}
                   onReview={canWrite ? () => reviewModel(entity.id) : undefined}
                   disabled={busy || jobs.some(task => task.kind === "review_models" && ["pending_dispatch", "queued", "running"].includes(task.status) && Array.isArray(task.inputs.entityIds) && task.inputs.entityIds.includes(entity.id))} />
@@ -1137,9 +1164,10 @@ export function WorkcellReport({
         </button>
       </footer>
     </article>
+    </SceneResources.Provider>
   );
 }
-function ObjectFacts({
+export function ObjectFacts({
   entity,
   document,
 }: {
@@ -1184,7 +1212,7 @@ function ObjectFacts({
             <Extent entity={entity} document={document} />
           </dd>
         </div>
-        {!referenceSurface && <div>
+        {!referenceSurface && entity.physicalDimensionsUnknown !== true && <div>
           <dt>
             {t("reportCurrentModel")} · {t("width")} × {t("depth")} ×{" "}
             {t("height")}
@@ -1199,7 +1227,7 @@ function ObjectFacts({
         </div>}
         {!referenceSurface && <div>
           <dt>{t("reportOrientation")}</dt>
-          <dd>{tilt === null ? "—" : tilt.toFixed(1) + "°"}</dd>
+          <dd>{entity.modelOrientationUnknown === true || tilt === null ? "—" : tilt.toFixed(1) + "°"}</dd>
         </div>}
       </dl>
       <p className="report-footnote">{t(referenceSurface ? "reportReferenceSurfaceNote" : "reportMeasurementNote")}</p>

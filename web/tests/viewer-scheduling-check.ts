@@ -46,3 +46,13 @@ assert.deepEqual(drawn({time:.15,part:'static'}),['model'],'static only');
 assert.deepEqual(drawn({time:.15,part:'dynamic'}),['at-1'],'dynamic only');
 assert.deepEqual(drawn({}),['model'],'no video time: no mover');
 console.log('moving-object time and static/dynamic checks passed');
+
+// A live report grows while it is open: a representation whose entity, id, kind, asset and primitive are unchanged keeps its
+// GPU buffers across setScene (representationKey), anything else is reloaded.
+import {representationKey} from '../src/viewer/native-viewer.ts';
+const box={id:'box',kind:'primitive',primitive:{kind:'box',dimensions:[1,1,1]},transform};
+assert.equal(representationKey('o',box),representationKey('o',{...box,transform:{...transform,position:[1,2,3]}}),'a move is drawn, not reloaded');
+assert.notEqual(representationKey('o',box),representationKey('o',{...box,primitive:{kind:'box',dimensions:[1,2,1]}}),'a new box shape reloads');
+assert.notEqual(representationKey('o',rep('m','generated_mesh')),representationKey('o',{...rep('m','generated_mesh'),assetId:'other'}),'a new asset reloads');
+assert.notEqual(representationKey('o',box),representationKey('p',box),'another entity');
+console.log('live-report representation reuse checks passed');

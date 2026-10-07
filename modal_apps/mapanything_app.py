@@ -62,14 +62,32 @@ def _encode_array(array) -> dict:
     }
 
 
-def load_images_with_metadata(paths):
+def _relative_depth_gradient(depth, metadata):
+    """Relative depth change over a fixed original-image pixel footprint."""
+    import numpy as np
+
+    dy, dx = np.gradient(depth)
+    A = np.asarray(metadata['input_mask_transform']['input_to_canonical_pixel_centres'])
+    raw_gradient = np.stack([dx, dy], axis=-1) @ A[:2, :2]
+    original = metadata['original_image']
+    raw_step = max(original['height'], original['width']) / 518
+    return np.linalg.norm(raw_gradient, axis=-1) * raw_step / np.maximum(depth, 1e-6)
+
+
+def load_images_with_metadata(paths, *, fixed_size=None):
     """Observe the exact upstream raster transform; never infer it from aspect ratio."""
     import numpy as np
     from PIL import Image, ImageOps
     from mapanything.utils.image import load_images, rgb
     from mapanything.utils.cropping import rescale_image_and_other_optional_info, crop_image_and_other_optional_info
 
-    views = load_images(paths)
+    if fixed_size is not None:
+        if (not isinstance(fixed_size, (tuple, list)) or len(fixed_size) != 2 or
+                any(isinstance(v, bool) or not isinstance(v, int) or v <= 0 or v % 14 for v in fixed_size)):
+            raise ValueError("fixed_size must be positive width/height multiples of 14")
+        views = load_images(paths, resize_mode="fixed_size", size=tuple(fixed_size))
+    else:
+        views = load_images(paths)
     if len(views) != len(paths):
         raise ValueError("Upstream skipped an input image")
     metadata = []
@@ -90,6 +108,8 @@ def load_images_with_metadata(paths):
         sx, sy = rw/original.width, rh/original.height
         affine = [[sx, 0, (sx-1)/2-left], [0, sy, (sy-1)/2-top], [0, 0, 1]]
         metadata.append({"original_image": {"width": original.width, "height": original.height},
+            "preprocessing": {"resize_mode": "fixed_size" if fixed_size else "fixed_mapping",
+                              "requested_size_wh": list(fixed_size) if fixed_size else None},
             "alpha_mask": _encode_array(np.ones((h, w), np.uint8)),
             "input_mask_transform": {"resized_shape_hw": [rh, rw], "crop_xyxy": crop,
                 "input_to_canonical_pixel_centres": affine,
@@ -100,7 +120,7 @@ def load_images_with_metadata(paths):
 
 @app.cls(
     image=image,
-    gpu="A100",
+    gpu="A100-80GB:2",
     volumes={"/cache": volume},
     secrets=[modal.Secret.from_name("huggingface")],
     scaledown_window=180,
@@ -171,8 +191,7 @@ class MapAnything:
             depth = _np(prediction["depth_z"]).astype(np.float32)
             if depth.ndim == 3:
                 depth = depth[..., 0]
-            grad_y, grad_x = np.gradient(depth)
-            relative = np.hypot(grad_x, grad_y) / np.maximum(depth, 1e-6)
+            relative = _relative_depth_gradient(depth, source_metadata)
             mask &= relative < 0.08
             pose = _np(prediction["camera_poses"]).astype(np.float32)
             intrinsics = _np(prediction["intrinsics"]).astype(np.float32)
@@ -206,16 +225,31 @@ class MapAnything:
 
 
 @app.local_entrypoint()
-def main(image_paths: str):
+def main(image_paths: str, out: str = ""):
+    import gzip
     from pathlib import Path
+    import time
 
+    started = time.monotonic()
     uris = [
         "data:image/png;base64,"
         + base64.b64encode(Path(p).read_bytes()).decode("ascii")
         for p in image_paths.split(",")
     ]
     result = MapAnything().run.remote({"inputs": uris})
+    elapsed = time.monotonic() - started
     first = json.loads(result["data"][0])
+    if out:
+        destination = Path(out)
+        destination.mkdir(parents=True, exist_ok=True)
+        for index, payload in enumerate(result["data"], 1):
+            with gzip.open(destination / f"frame_{index:04d}.json.gz", "wb") as stream:
+                stream.write(payload)
+        (destination / "point_cloud.glb").write_bytes(result["point_cloud"])
+        (destination / "geometry-timing.json").write_text(json.dumps({
+            "sourceImages": image_paths.split(","), "wallSecondsIncludingColdStart": elapsed,
+            "frames": len(result["data"]), "pointCloudBytes": len(result["point_cloud"]),
+        }, indent=2) + "\n")
     print(
         f"{len(result['data'])} frames; frame0 keys {sorted(first)}; "
         f"pts3d shape {first['pts3d']['shape']}; "

@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "frozenAt": "2026-10-03T23:30:00Z",
+  "classes": [
+    {
+      "id": "fence",
+      "label": "围栏",
+      "phrase": "a metal mesh safety fence"
+    },
+    {
+      "id": "light_curtain",
+      "label": "光幕候选",
+      "phrase": "an industrial safety light curtain sensor"
+    },
+    {
+      "id": "emergency_button",
+      "label": "急停按钮",
+      "phrase": "a red emergency stop button on a yellow base"
+    },
+    {
+      "id": "signal_light",
+      "label": "状态灯",
+      "phrase": "an industrial indicator signal light"
+    },
+    {
+      "id": "robot",
+      "label": "机械臂",
+      "phrase": "an industrial robotic arm"
+    },
+    {
+      "id": "cart",
+      "label": "小车",
+      "phrase": "a wheeled industrial work cart"
+    },
+    {
+      "id": "vguard",
+      "label": "折弯护板",
+      "phrase": "a folded guard panel with black and yellow hazard stripes"
+    },
+    {
+      "id": "bollard",
+      "label": "防撞柱",
+      "phrase": "a black protective bollard"
+    },
+    {
+      "id": "floor",
+      "label": "地面",
+      "phrase": "a concrete factory floor"
+    },
+    {
+      "id": "floor_marking",
+      "label": "地面标线",
+      "phrase": "a painted floor line or floor marking tape"
+    },
+    {
+      "id": "cable_tray",
+      "label": "线槽",
+      "phrase": "a metal cable tray on a factory floor"
+    },
+    {
+      "id": "sign",
+      "label": "标牌",
+      "phrase": "a safety warning sign or instruction poster"
+    },
+    {
+      "id": "work_platform",
+      "label": "工作台",
+      "phrase": "an industrial work platform"
+    },
+    {
+      "id": "yellow_post",
+      "label": "普通黄色柱",
+      "phrase": "a plain yellow protective post"
+    },
+    {
+      "id": "pipe",
+      "label": "管道",
+      "phrase": "a metal pipe"
+    },
+    {
+      "id": "beam",
+      "label": "横梁",
+      "phrase": "a structural metal beam"
+    },
+    {
+      "id": "cabinet",
+      "label": "控制柜",
+      "phrase": "an industrial electrical control cabinet"
+    },
+    {
+      "id": "door",
+      "label": "门",
+      "phrase": "an industrial metal door"
+    },
+    {
+      "id": "pallet",
+      "label": "托盘",
+      "phrase": "a wooden shipping pallet"
+    },
+    {
+      "id": "ladder",
+      "label": "梯子",
+      "phrase": "a metal ladder"
+    },
+    {
+      "id": "fire_extinguisher",
+      "label": "灭火器",
+      "phrase": "a red fire extinguisher"
+    },
+    {
+      "id": "machine",
+      "label": "工业机器",
+      "phrase": "an industrial machine"
+    },
+    {
+      "id": "wall",
+      "label": "墙",
+      "phrase": "a factory wall"
+    },
+    {
+      "id": "cable",
+      "label": "电缆",
+      "phrase": "an electrical cable"
+    }
+  ],
+  "queries": [
+    {
+      "id": "curtain",
+      "label": "寻找光幕",
+      "phrase": "a safety light curtain sensor"
+    },
+    {
+      "id": "fence",
+      "label": "寻找围栏",
+      "phrase": "a metal mesh safety fence"
+    },
+    {
+      "id": "button",
+      "label": "寻找急停按钮",
+      "phrase": "a red emergency stop button on a yellow base"
+    },
+    {
+      "id": "lights",
+      "label": "寻找状态灯",
+      "phrase": "an industrial indicator signal light"
+    },
+    {
+      "id": "guards",
+      "label": "寻找黑黄护板",
+      "phrase": "a folded guard panel with black and yellow hazard stripes"
+    },
+    {
+      "id": "robot",
+      "label": "寻找机械臂",
+      "phrase": "an industrial robotic arm"
+    }
+  ],
+  "referenceClasses": {
+    "robot": "robot",
+    "cart": "cart",
+    "v-guard-left": "vguard",
+    "v-guard-center": "vguard",
+    "v-guard-right": "vguard",
+    "post-box-1": "light_curtain",
+    "post-box-2": "light_curtain",
+    "post-cylinder-1": "bollard",
+    "post-cylinder-2": "bollard",
+    "fence-0": "fence",
+    "fence-1": "fence",
+    "floor": "floor",
+    "emergency-button": "emergency_button",
+    "signal-light-2": "signal_light",
+    "signal-light-4": "signal_light",
+    "sign-8": "sign",
+    "sign-9": "sign",
+    "sign-10": "sign",
+    "sign-11": "sign",
+    "cable-tray-12": "cable_tray",
+    "sign-13": "sign",
+    "sign-14": "sign",
+    "floor-marking-15": "floor_marking",
+    "floor-marking-30": "floor_marking"
+  },
+  "referenceStatus": "proxy catalog labels; yellow safety posts use user-described light curtain identity; neither is independently verified ground truth",
+  "overlapNative": 0.04,
+  "overlapThreshold": 0.35,
+  "semanticThreshold": 0.75,
+  "notes": [
+    "Frozen before embeddings. References are evaluation-only.",
+    "No policy ground truth or measured accuracy claim.",
+    "Geometry reuse: this is incremental semantics, not full reconstruction.",
+    "2026-10-03: reference keys follow the consolidated catalog (workcell_extra_models: repeated detections merged into one object, floor/robot hits aliased); classes, queries and thresholds unchanged from the 2026-10-02 protocol."
+  ]
+}

@@ -75,8 +75,13 @@ def invoke(payload, config, *, is_current=None):
         function.hydrate()
         if function.object_id != config['modalFunctionId']:
             raise PlatformError('recgen_runtime_function_mismatch', 409)
-        with volume.batch_upload() as upload:
-            upload.put_file(root / 'input.npz', f'/jobs/{identity[:32]}/input.npz')
+        remote = f'/jobs/{identity[:32]}/input.npz'
+        try:
+            with volume.batch_upload() as upload:
+                upload.put_file(root / 'input.npz', remote)
+        except FileExistsError:  # an earlier attempt of this job uploaded it: the same bytes are reused, other bytes never replace them
+            if hashlib.sha256(b''.join(volume.read_file(remote))).hexdigest() != sha:
+                raise PlatformError('recgen_input_mismatch', 409) from None
         function = function.with_options(cpu=(8, 8), memory=(65536, 65536), gpu='A100-80GB',
             timeout=180, retries=0, max_containers=1, buffer_containers=0, scaledown_window=0)
         if is_current is not None and not is_current():

@@ -115,6 +115,7 @@ def test_explicit_revision_retry_uses_exact_native_cache_before_any_paid_stage(t
     assert client.post('/api/reports/photos/generations/object_target').json()['state']=='queued'
     assert len(scheduled)==1
     result=run_generation(runs,'photos','object_target')
+    assert result['elapsedSeconds'] >= 0
     if case.startswith('matching_'):
         assert result['state']=='failed' and 'changed' in result['result']['reason'] and not paid
     else:

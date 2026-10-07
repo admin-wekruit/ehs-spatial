@@ -1,11 +1,12 @@
 """One command from an MP4 and a time window to a platform import (M2 report runner).
 
   python scripts/run_video_report.py --video MP4 --start S --end E --site NAME
-         [--profile research|commercial|delivered] [--review DIR] [--dry-run] [--publish] [--verify] [--republish]
+         [--profile research|commercial|delivered] [--review DIR] [--dry-run] [--publish] [--verify] [--republish] [--fresh]
 
 Stages are content-addressed (scripts/report_runner/store.py): a stage whose key is already in
-$ART/runs/report-runner/keys.jsonl is served from its directory; the rest run, 4 at a time.
-PANOPTES_PAID_BUDGET_USD caps the run's paid calls; unset, the run stops before its first paid cache miss.
+$ART/runs/report-runner/keys.jsonl is served from its directory; the rest run, 4 at a time, paid stages one at a time.
+PANOPTES_PAID_BUDGET_USD caps the run's paid calls; unset, the run stops before its first paid cache miss. A re-run of the
+same command continues its budget ($ART/runs/report-runner/ledgers/): each paid stage books list price x wall seconds.
 PANOPTES_DATABASE_URL and PANOPTES_BLOB_ROOT are needed by the import only.
 """
 import argparse
@@ -30,6 +31,8 @@ def parser():
     p.add_argument("--republish", action="store_true", help="import as the next version of the site's last import (imports.jsonl); "
                                                              "implied by --profile delivered, otherwise every run imports a new report")
     p.add_argument("--verify", action="store_true", help="check every hit by full sha256 instead of size and mtime")
+    p.add_argument("--fresh", action="store_true", help="serve only stages this runner ran itself, never an adopted hand-built run; "
+                                                         "the title says 一键生成 (one command)")
     return p
 
 

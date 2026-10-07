@@ -7,6 +7,7 @@
 .spatial-measurements .measure-calculate { width: 100%; margin-top: 12px; background: #315743; color: white; }
 .measurement-result { margin-top: 16px; padding: 14px; background: #eef3eb; border: 1px solid #bccdbb; border-radius: 6px; }
 .measurement-result output { font-size: 27px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.measurement-result .caliper-output { display:block; font-size:20px; overflow-wrap:anywhere; }
 .measurement-result summary { cursor: pointer; font-size: 12px; }
 .cad-measure-guide { padding: 8px 12px; font-size: 12px; background: #eaf4fa; color: #154b62; }
 
