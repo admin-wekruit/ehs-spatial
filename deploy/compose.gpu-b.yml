@@ -1,0 +1,78 @@
+# GPU stack B (docs/ENTERPRISE-PLAN-2026-10-07.md §6: geometry-mvs ~12 GB + moge + mapanything on one A100): registry gpu: b.
+#   make up GPU=b       = docker compose --env-file .env -f deploy/compose.gpu-b.yml up -d geometry-mvs moge mapanything
+# .env as compose.gpu-a.yml; GPU_B_DEVICE (default 1: the second card of a two-card VM; 0 on its own VM).
+# Images: make images GPU=b (deploy/Dockerfile.geometry on the ehs-spatial da3 + geometry + workcell-gpu images;
+# deploy/Dockerfile.serving for moge and mapanything, whose weights download from Hugging Face at first start).
+name: panoptes-gpu-b
+
+x-gpu: &gpu
+  env_file: ../.env   # relative to this file: the repo's .env
+  restart: unless-stopped
+  pull_policy: never
+  ipc: host
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ["${GPU_B_DEVICE:-1}"]
+            capabilities: [gpu]
+
+services:
+  geometry-mvs:   # POST /v1/geometry-mvs/jobs (docs/BACKENDS-v1.md)
+    <<: *gpu
+    image: ${GEOMETRY_IMAGE:-panoptes-geometry-service}:${PANOPTES_VERSION:-v1}
+    ports: ["${GEOMETRY_MVS_PORT:-8804}:8804"]
+    environment:
+      PANOPTES_WEIGHTS_DIR: /weights
+      PANOPTES_WORKCELL: /workcell
+      PANOPTES_SERVING: /serving
+      PANOPTES_SERVICE_CACHE_DIR: /cache
+      PANOPTES_SERVICE_WORK_DIR: /work
+    volumes:
+      - "${WEIGHTS:?set WEIGHTS=/srv/panoptes-weights in .env}:/weights:ro"
+      - geometry-cache:/cache
+      - geometry-work:/work
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py", "8804"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+
+  moge:           # POST /moge (docs/BACKENDS.md, unchanged)
+    <<: *gpu
+    image: ${SERVING_IMAGE:-panoptes-serving}:${PANOPTES_VERSION:-v1}
+    command: ["python", "-m", "uvicorn", "moge_service:app", "--host", "0.0.0.0", "--port", "8803"]
+    ports: ["${MOGE_PORT:-8803}:8803"]
+    environment:
+      HF_HOME: /hf-cache
+    volumes:
+      - hf-cache:/hf-cache
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py", "8803", "--no-key"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 900s
+
+  mapanything:    # POST /geometry (docs/BACKENDS.md, unchanged)
+    <<: *gpu
+    image: ${SERVING_IMAGE:-panoptes-serving}:${PANOPTES_VERSION:-v1}
+    command: ["python", "-m", "uvicorn", "mapanything_service:app", "--host", "0.0.0.0", "--port", "8802"]
+    ports: ["${MAPANYTHING_PORT:-8802}:8802"]
+    environment:
+      HF_HOME: /hf-cache
+    volumes:
+      - hf-cache:/hf-cache
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py", "8802", "--no-key"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 900s
+
+volumes:
+  geometry-cache: {}
+  geometry-work: {}
+  hf-cache: {}

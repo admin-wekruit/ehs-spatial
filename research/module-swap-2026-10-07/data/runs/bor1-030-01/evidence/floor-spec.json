@@ -1,0 +1,20 @@
+{
+ "views": [
+  {
+   "frame_id": "frame_0001",
+   "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/floor-masks/frame_0001.png",
+   "provenance": {
+    "type": "same-capture cached SAM floor (user-bor1-02 product run inventory), canonical 518 grid",
+    "source_path": "runs/user-bor1-02/inventory/sam/frame_0001__floor.json"
+   }
+  },
+  {
+   "frame_id": "frame_0002",
+   "mask": "outputs/candidate-evaluation/bor1-030-01/evidence/floor-masks/frame_0002.png",
+   "provenance": {
+    "type": "same-capture cached SAM floor (user-bor1-02 product run inventory), canonical 518 grid",
+    "source_path": "runs/user-bor1-02/inventory/sam/frame_0002__floor.json"
+   }
+  }
+ ]
+}

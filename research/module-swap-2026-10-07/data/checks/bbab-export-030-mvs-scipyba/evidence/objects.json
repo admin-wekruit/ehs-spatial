@@ -1,0 +1,964 @@
+{
+  "version": 1,
+  "coordinate_system": "mvs-scipyba native OpenCV world (geometry-backbone-ab export; not the published Pi3X world)",
+  "metric_scale_known": false,
+  "status": "complete for the listed objects",
+  "objects": [
+    {
+      "object_id": "cart",
+      "label": "work cart",
+      "reference_frame": "frame_0001",
+      "source_inventory_indices": [],
+      "views": [
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/image_01.jpg",
+          "mask_path": "evidence/objects/cart/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/cart/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            458,
+            1980,
+            1957,
+            3079
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              458
+            ],
+            [
+              0,
+              1,
+              1980
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/cart/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/cart/frame_0001/points.npy",
+          "colors_path": "evidence/objects/cart/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 971247,
+          "partial_point_count": 8947,
+          "centroid_native": [
+            -0.10767419636249542,
+            0.16945578157901764,
+            1.0077282190322876
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "29ef8c08a398f4027b18de16ef405f704ff8cdde4a868e64f8804c113a83a3e2",
+            "colors.npy": "331574df1aaae460ec2b9a52bee3d550d267a4285a11aec5959691197c9e5780"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/image_02.jpg",
+          "mask_path": "evidence/objects/cart/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/cart/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            1424,
+            2090,
+            2518,
+            3154
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              1424
+            ],
+            [
+              0,
+              1,
+              2090
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/cart/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/cart/frame_0002/points.npy",
+          "colors_path": "evidence/objects/cart/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 696491,
+          "partial_point_count": 6559,
+          "centroid_native": [
+            -0.03801113739609718,
+            0.1767757385969162,
+            1.0156611204147339
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "9663f373a22292cc9e044dd3e1ffc6ed8c417f6920419a8918d7a9c85d6b4f28",
+            "colors.npy": "db88df950a0b16d5114c90395e76deddb8a4638fc40bd48905e49cb42d0803f4"
+          }
+        }
+      ],
+      "physical_identity": {
+        "status": "same physical object in each listed view (visual review)",
+        "evidence": "location and fixed details in both photographs",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.07049435778587801
+          ],
+          [
+            0.07049435778587801,
+            0.0
+          ]
+        ]
+      }
+    },
+    {
+      "object_id": "guard",
+      "label": "yellow-black folding guard behind the cart",
+      "reference_frame": "frame_0001",
+      "source_inventory_indices": [],
+      "views": [
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/image_01.jpg",
+          "mask_path": "evidence/objects/guard/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/guard/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            463,
+            1978,
+            2183,
+            2673
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              463
+            ],
+            [
+              0,
+              1,
+              1978
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/guard/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/guard/frame_0001/points.npy",
+          "colors_path": "evidence/objects/guard/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 261933,
+          "partial_point_count": 1186,
+          "centroid_native": [
+            -0.2883155345916748,
+            0.10763022303581238,
+            1.0434281826019287
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "29c1c2f0c4c119875f063fb629b68e587714f64cd9ae93a39f3b5f2ecaa1e007",
+            "colors.npy": "d986a03480ee547cc433c6985da48ae5742814fca813151d67decdbeec3d676f"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/image_02.jpg",
+          "mask_path": "evidence/objects/guard/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/guard/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            1199,
+            2240,
+            1524,
+            2719
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              1199
+            ],
+            [
+              0,
+              1,
+              2240
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/guard/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/guard/frame_0002/points.npy",
+          "colors_path": "evidence/objects/guard/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 81350,
+          "partial_point_count": 1115,
+          "centroid_native": [
+            -0.312849760055542,
+            0.12123839557170868,
+            0.9964382648468018
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "4de0c1d737eeb860b8b3741fd791da37f6d085b7ed136e0a5e4d660411b86b25",
+            "colors.npy": "252fead2cad2121763c1e8e6caf385c8bc7a83ea2b7482a652f5b41dac4fee55"
+          }
+        }
+      ],
+      "physical_identity": {
+        "status": "same physical object in each listed view (visual review)",
+        "evidence": "location and fixed details in both photographs",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.05472808190967583
+          ],
+          [
+            0.05472808190967583,
+            0.0
+          ]
+        ]
+      }
+    },
+    {
+      "object_id": "left_light_curtain",
+      "label": "yellow light curtain post, left of the entrance (camera 1)",
+      "reference_frame": "frame_0001",
+      "source_inventory_indices": [],
+      "views": [
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/image_01.jpg",
+          "mask_path": "evidence/objects/left_light_curtain/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/left_light_curtain/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            211,
+            1027,
+            503,
+            3705
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              211
+            ],
+            [
+              0,
+              1,
+              1027
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_light_curtain/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/left_light_curtain/frame_0001/points.npy",
+          "colors_path": "evidence/objects/left_light_curtain/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 253289,
+          "partial_point_count": 683,
+          "centroid_native": [
+            -0.21774300932884216,
+            0.17016065120697021,
+            0.5469637513160706
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "e7a1beab83e8c72f092005b74e3563021856f73fb4cff1b41a7268b3fdd1d915",
+            "colors.npy": "89cf7ebe93c5f16f5c224a602c224ef04a4db79f88a7b7f9f6f577469e517062"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/image_02.jpg",
+          "mask_path": "evidence/objects/left_light_curtain/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/left_light_curtain/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            503,
+            1496,
+            757,
+            3291
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              503
+            ],
+            [
+              0,
+              1,
+              1496
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_light_curtain/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/left_light_curtain/frame_0002/points.npy",
+          "colors_path": "evidence/objects/left_light_curtain/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 175022,
+          "partial_point_count": 899,
+          "centroid_native": [
+            -0.21881432831287384,
+            0.16496078670024872,
+            0.5441613793373108
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "46cb2c9c010bd8fe5ded814b6d057d2a358ff2a05056055e8440ef7502be9567",
+            "colors.npy": "6518a1df4346ea8964c7365487599274b07d2ffebcd8d495946c45ef1dbac2d9"
+          }
+        }
+      ],
+      "physical_identity": {
+        "status": "same physical object in each listed view (visual review)",
+        "evidence": "location and fixed details in both photographs",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.006003299422912918
+          ],
+          [
+            0.006003299422912918,
+            0.0
+          ]
+        ]
+      }
+    },
+    {
+      "object_id": "left_post",
+      "label": "black bollard, left (camera 1)",
+      "reference_frame": "frame_0001",
+      "source_inventory_indices": [],
+      "views": [
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/image_01.jpg",
+          "mask_path": "evidence/objects/left_post/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/left_post/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            346,
+            2712,
+            640,
+            4032
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              346
+            ],
+            [
+              0,
+              1,
+              2712
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_post/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/left_post/frame_0001/points.npy",
+          "colors_path": "evidence/objects/left_post/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 278451,
+          "partial_point_count": 340,
+          "centroid_native": [
+            -0.16310924291610718,
+            0.29598477482795715,
+            0.4598076343536377
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "110aa08e9f07689a92345873f70ba3c7c0f2076dd871bb230c3c14281d14a556",
+            "colors.npy": "45caf78e5876419c5e16e6aaa01219723442459dfd09a2173a0876ac24654d0c"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/image_02.jpg",
+          "mask_path": "evidence/objects/left_post/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/left_post/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            371,
+            2576,
+            659,
+            3752
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              371
+            ],
+            [
+              0,
+              1,
+              2576
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/left_post/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/left_post/frame_0002/points.npy",
+          "colors_path": "evidence/objects/left_post/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 162513,
+          "partial_point_count": 177,
+          "centroid_native": [
+            -0.16346101462841034,
+            0.2912064492702484,
+            0.4581528902053833
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "970df8fff85db33f04785e3285d59cce4f039107f76f9f750800fa99e928a649",
+            "colors.npy": "484ffcfb41388028b87d8a63ce9344f36d584cab3714ea8a632543e7490cebd5"
+          }
+        }
+      ],
+      "physical_identity": {
+        "status": "same physical object in each listed view (visual review)",
+        "evidence": "location and fixed details in both photographs",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.005068956171561499
+          ],
+          [
+            0.005068956171561499,
+            0.0
+          ]
+        ]
+      }
+    },
+    {
+      "object_id": "right_fence",
+      "label": "safety fence panel right of the entrance (camera 1 only; photo 2 shows a different panel)",
+      "reference_frame": "frame_0001",
+      "source_inventory_indices": [],
+      "views": [
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/image_01.jpg",
+          "mask_path": "evidence/objects/right_fence/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/right_fence/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            1802,
+            244,
+            3024,
+            3258
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              1802
+            ],
+            [
+              0,
+              1,
+              244
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_fence/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/right_fence/frame_0001/points.npy",
+          "colors_path": "evidence/objects/right_fence/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 1921335,
+          "partial_point_count": 0,
+          "centroid_native": null,
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "f12304587232b93be216cce0f81674635df2730385202e391e39cc9f8942d779",
+            "colors.npy": "f6f8508dfa4dc7dc5dd3a9ebc2a8f08d605c68e5d3f6df3653d7141221f3f47d"
+          }
+        }
+      ],
+      "physical_identity": {
+        "status": "single view",
+        "evidence": "location and fixed details in both photographs",
+        "pairwise_visible_centroid_distances_native": []
+      }
+    },
+    {
+      "object_id": "right_light_curtain",
+      "label": "yellow light curtain post, right of the entrance (camera 1)",
+      "reference_frame": "frame_0001",
+      "source_inventory_indices": [],
+      "views": [
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/image_01.jpg",
+          "mask_path": "evidence/objects/right_light_curtain/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/right_light_curtain/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            2635,
+            1165,
+            3005,
+            3423
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              2635
+            ],
+            [
+              0,
+              1,
+              1165
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_light_curtain/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/right_light_curtain/frame_0001/points.npy",
+          "colors_path": "evidence/objects/right_light_curtain/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 265020,
+          "partial_point_count": 1003,
+          "centroid_native": [
+            0.2882530093193054,
+            0.09482645988464355,
+            0.6360862851142883
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "381437fabffd31d15cc4d5bc007594b26c185da0dca55100da6072d6307ac197",
+            "colors.npy": "acfa270bd7a5cf5a2034081307ac40440bb665a536c4eb2791e5e97b0632964a"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/image_02.jpg",
+          "mask_path": "evidence/objects/right_light_curtain/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/right_light_curtain/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            2454,
+            1288,
+            2702,
+            3654
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              2454
+            ],
+            [
+              0,
+              1,
+              1288
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_light_curtain/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/right_light_curtain/frame_0002/points.npy",
+          "colors_path": "evidence/objects/right_light_curtain/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 165104,
+          "partial_point_count": 1124,
+          "centroid_native": [
+            0.2887337803840637,
+            0.08735361695289612,
+            0.6349970102310181
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "ad095983d8b8c0526d5cb53fee712bb285ffa54fce06d7238bc406e22775c432",
+            "colors.npy": "470645f99543c81d971ba83f49a95fd9e8489d6a7107ff82e642ced6bd91844d"
+          }
+        }
+      ],
+      "physical_identity": {
+        "status": "same physical object in each listed view (visual review)",
+        "evidence": "location and fixed details in both photographs",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.007567102620593955
+          ],
+          [
+            0.007567102620593955,
+            0.0
+          ]
+        ]
+      }
+    },
+    {
+      "object_id": "right_post",
+      "label": "black bollard, right (camera 1)",
+      "reference_frame": "frame_0002",
+      "source_inventory_indices": [],
+      "views": [
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/image_02.jpg",
+          "mask_path": "evidence/objects/right_post/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/right_post/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            2342,
+            2747,
+            2625,
+            4032
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              2342
+            ],
+            [
+              0,
+              1,
+              2747
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/right_post/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/right_post/frame_0002/points.npy",
+          "colors_path": "evidence/objects/right_post/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 238279,
+          "partial_point_count": 34,
+          "centroid_native": [
+            0.2814127504825592,
+            0.32884538173675537,
+            0.5588561296463013
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "db86b31f4f299db0c5220facb66033197795a1c3dbd329ddd355e580a9d758ed",
+            "colors.npy": "2fda0f00b7a08f707329610749a609166da2310fe9ccec2a53298a984304598a"
+          }
+        }
+      ],
+      "physical_identity": {
+        "status": "single view",
+        "evidence": "location and fixed details in both photographs",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0
+          ]
+        ]
+      }
+    },
+    {
+      "object_id": "robot",
+      "label": "industrial robot arm",
+      "reference_frame": "frame_0001",
+      "source_inventory_indices": [],
+      "views": [
+        {
+          "frame_id": "frame_0001",
+          "rgb_path": "input/image_01.jpg",
+          "mask_path": "evidence/objects/robot/frame_0001/mask.png",
+          "rgba_path": "evidence/objects/robot/frame_0001/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            788,
+            669,
+            1417,
+            2045
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              788
+            ],
+            [
+              0,
+              1,
+              669
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/robot/frame_0001/canonical_mask.npy",
+          "points_path": "evidence/objects/robot/frame_0001/points.npy",
+          "colors_path": "evidence/objects/robot/frame_0001/colors.npy",
+          "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0001/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 367228,
+          "partial_point_count": 4190,
+          "centroid_native": [
+            -0.2631593942642212,
+            -0.4456004500389099,
+            1.9194462299346924
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "9f1c0eac9f128294f35b0f51e6621020373c3b730a1572064dedb0f79e719a96",
+            "colors.npy": "5aa9b5b574e6dc4d563ca67150ec629bca0421a991ea2471462f5d1c0b2ea159"
+          }
+        },
+        {
+          "frame_id": "frame_0002",
+          "rgb_path": "input/image_02.jpg",
+          "mask_path": "evidence/objects/robot/frame_0002/mask.png",
+          "rgba_path": "evidence/objects/robot/frame_0002/rgba.png",
+          "rgba_crop_xyxy_in_input": [
+            1743,
+            882,
+            2549,
+            2169
+          ],
+          "rgba_pixel_to_input": [
+            [
+              1,
+              0,
+              1743
+            ],
+            [
+              0,
+              1,
+              882
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "canonical_mask_path": "evidence/objects/robot/frame_0002/canonical_mask.npy",
+          "points_path": "evidence/objects/robot/frame_0002/points.npy",
+          "colors_path": "evidence/objects/robot/frame_0002/colors.npy",
+          "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+          "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+          "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+          "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+          "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+          "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+          "conf_path": "geometry/frames/frame_0002/conf.npy",
+          "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+          "mask_pixels": 326620,
+          "partial_point_count": 4002,
+          "centroid_native": [
+            -0.25227704644203186,
+            -0.4409952759742737,
+            1.9246370792388916
+          ],
+          "observed_only": true,
+          "provenance": {
+            "type": "October same-photo SAM3 instance(s) at original resolution (cart: October canonical cart mask mapped through its recorded pixel transform)",
+            "source": "runs workcell-cell030-2026-10-04e sam3.json / cart-masks.json",
+            "review": "visual review sheet evidence/sam3-masks/review.jpg"
+          },
+          "sha256": {
+            "points.npy": "5d2e2d2997c7410d4a0c822cc1f311556fddebc3cc3cb6ea45944e21490e38fa",
+            "colors.npy": "85a9b3c20504f6f8fc3b828bf10b3bc514e1b370eda3658d6988e80ffdc66a30"
+          }
+        }
+      ],
+      "physical_identity": {
+        "status": "same physical object in each listed view (visual review)",
+        "evidence": "location and fixed details in both photographs",
+        "pairwise_visible_centroid_distances_native": [
+          [
+            0.0,
+            0.012906511487912315
+          ],
+          [
+            0.012906511487912315,
+            0.0
+          ]
+        ]
+      }
+    }
+  ]
+}

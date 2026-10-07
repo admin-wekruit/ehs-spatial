@@ -1,0 +1,113 @@
+{
+  "model_id": "depth-anything/DA3-BASE",
+  "model_revision": "f4a6c9b3c95e41c82048423d3493a81ec3fa810e",
+  "weights_sha256": "e01067dc1659613083d9145a9a2547ccdbe6ccbbf83c4fe7b3e8a4e2bdae78b5",
+  "code_revision": "3d835ec1a5802d64a8b8b15f817a1ab54809bfe4",
+  "torch_version": "2.5.1+cu124",
+  "device": "cuda",
+  "precision": "autocast",
+  "process_res": 518,
+  "process_res_method": "upper_bound_resize",
+  "reference_view_strategy": "first",
+  "require_identity_grid": true,
+  "scale_semantics": "relative; no metric calibration applied",
+  "camera_convention": "OpenCV w2c inverted to c2w; right/down/forward",
+  "mask_semantics": "finite positive z-depth and finite confidence; relative depth edge < 0.08",
+  "confidence_semantics": "native depth confidence; not a calibrated probability",
+  "model_load_seconds": 0.7595766429999955,
+  "frames": [
+    {
+      "sha256": "11d142cc6bc881552508cfdf6abc6f1df5fc87996b4b32c5a6b8261ada641eac",
+      "input_role": "baseline canonical image; original photo provenance belongs in experiment manifest",
+      "source_size_wh": [
+        518,
+        518
+      ],
+      "processed_size_wh": [
+        518,
+        518
+      ],
+      "source_to_processed": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "pixel_convention": "DA3/OpenCV integer pixel coordinates"
+    },
+    {
+      "sha256": "40a00c0101ee77ba11dc6106f4703f718c32662cf8e815f9cfa0ce57acc16cf1",
+      "input_role": "baseline canonical image; original photo provenance belongs in experiment manifest",
+      "source_size_wh": [
+        518,
+        518
+      ],
+      "processed_size_wh": [
+        518,
+        518
+      ],
+      "source_to_processed": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "pixel_convention": "DA3/OpenCV integer pixel coordinates"
+    },
+    {
+      "sha256": "43897bc05f5faea2dad6c9d5806b2faeb1a4a4b744341fc647df16dad2d582a3",
+      "input_role": "baseline canonical image; original photo provenance belongs in experiment manifest",
+      "source_size_wh": [
+        518,
+        518
+      ],
+      "processed_size_wh": [
+        518,
+        518
+      ],
+      "source_to_processed": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "pixel_convention": "DA3/OpenCV integer pixel coordinates"
+    }
+  ],
+  "inference_and_encoding_seconds": 0.4845886969999995,
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "inputVariant": "padded"
+}

@@ -1,0 +1,10 @@
+# The /v1 service process of deploy/Dockerfile.geometry (/opt/service): orchestration only, no model code (the stages run in
+# the pinned /opt/da3, /opt/geometry, /opt/moge venvs). Versions = the ones already in the ehs-spatial sam3d image's freeze,
+# where serving/sam3d_service.py runs on the same modules.
+fastapi==0.141.1
+uvicorn==0.54.0
+pydantic==2.11.10
+numpy==1.26.4
+pillow==11.3.0
+PyYAML==6.0.3
+boto3==1.43.102

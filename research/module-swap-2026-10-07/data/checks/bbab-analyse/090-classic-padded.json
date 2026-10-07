@@ -1,0 +1,989 @@
+{
+ "cell": "090",
+ "backbone": "classic",
+ "variant": "padded",
+ "manifest": {
+  "model_id": "classic: ALIKED-n16 + LightGlue (aliked) poses, MoGe-3 (Ruicheng/moge-3-vitl) depth",
+  "code_revision": {
+   "MoGe": "74fbce054ebed49800de42d0ad0e83495065719a",
+   "LightGlue": "eb42fee2d71449efb0aa5c10549752b5d75384d8"
+  },
+  "model_revision": {
+   "moge": "184008f877d7ad1ad4c2cd2182a9bd1f63d0e5be"
+  },
+  "torch_version": "2.8.0+cu128",
+  "device": "cuda",
+  "licences": "MoGe-3 MIT (DINOv2 parts Apache-2.0); LightGlue Apache-2.0; ALIKED BSD-3; OpenCV Apache-2.0; SciPy BSD-3",
+  "contentRect": [
+   63,
+   392
+  ],
+  "maxKeypoints": 4096,
+  "extractorResize": null,
+  "ourK": [
+   [
+    364.0555186847521,
+    0.0,
+    258.5
+   ],
+   [
+    0.0,
+    364.0555186847521,
+    258.5
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "poses": "USAC_MAGSAC essential matrix (1 px) per pair with our K, base pair = most inliers, PnP for the rest, bundle adjustment (Huber 1 px, K fixed), observations > 2 px dropped and re-adjusted",
+  "depth": "MoGe-3 (fov_x = our K) on the content crop of each frame, embedded on the canonical grid; one scale per frame = median z_triangulated / z_moge at its keypoints; world scale = median MoGe metric scale",
+  "mask_semantics": "MoGe-3 mask, finite positive depth, relative depth edge < 0.08 (DA3 converter)",
+  "confidence_semantics": "1 inside the mask (no learned confidence)",
+  "ourKSource": "focal sweep of this cell",
+  "focalSweep": {
+   "bestPx": 364.0555186847521,
+   "interiorMinimum": true,
+   "curve": [
+    [
+     300.0,
+     0.39249014299151974
+    ],
+    [
+     306.0,
+     0.37847114895194683
+    ],
+    [
+     312.0,
+     0.3618965233375683
+    ],
+    [
+     318.0,
+     0.35000192547272757
+    ],
+    [
+     324.0,
+     0.3309913396993486
+    ],
+    [
+     330.0,
+     0.32471799934084977
+    ],
+    [
+     336.0,
+     0.32691520912818084
+    ],
+    [
+     342.0,
+     0.3236419017316169
+    ],
+    [
+     348.0,
+     0.3264835670029451
+    ],
+    [
+     354.0,
+     0.31333377274990526
+    ],
+    [
+     360.0,
+     0.31335437664315424
+    ],
+    [
+     366.0,
+     0.3123764445715374
+    ],
+    [
+     372.0,
+     0.31695747845141453
+    ],
+    [
+     378.0,
+     0.31755671212106323
+    ],
+    [
+     384.0,
+     0.32574564565480657
+    ],
+    [
+     390.0,
+     0.32530311851437643
+    ],
+    [
+     396.0,
+     0.33354224935738186
+    ],
+    [
+     402.0,
+     0.34628010501082207
+    ],
+    [
+     408.0,
+     0.3497242642187158
+    ],
+    [
+     414.0,
+     0.3574401924076198
+    ],
+    [
+     420.0,
+     0.3620560454378099
+    ],
+    [
+     426.0,
+     0.38237887449028496
+    ],
+    [
+     432.0,
+     0.3897861979937328
+    ],
+    [
+     438.0,
+     0.39788940057353445
+    ],
+    [
+     444.0,
+     0.4049757829278523
+    ],
+    [
+     450.0,
+     0.41415126294062954
+    ],
+    [
+     456.0,
+     0.43011004001371855
+    ],
+    [
+     462.0,
+     0.4305228413418517
+    ],
+    [
+     468.0,
+     0.4364117171101993
+    ],
+    [
+     474.0,
+     0.4472438421732077
+    ],
+    [
+     480.0,
+     0.45010126781520443
+    ]
+   ]
+  },
+  "mogeMedianK": [
+   [
+    346.4375915527344,
+    0.0,
+    258.5
+   ],
+   [
+    0.0,
+    346.4375915527344,
+    258.5
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "mogeFocalPx": [
+   {
+    "fx": 326.03936767578125,
+    "fy": 326.0393981933594,
+    "cx": 258.5,
+    "cy": 258.5
+   },
+   {
+    "fx": 346.4375915527344,
+    "fy": 346.4375915527344,
+    "cx": 258.5,
+    "cy": 258.5
+   },
+   {
+    "fx": 346.9919128417969,
+    "fy": 346.991943359375,
+    "cx": 258.5,
+    "cy": 258.5
+   }
+  ],
+  "mogeFocalUnderOurK": [
+   364.0555114746094,
+   364.0555114746094,
+   364.0555114746094
+  ],
+  "keypoints": [
+   1355,
+   1250,
+   1165
+  ],
+  "sfm": {
+   "basePair": [
+    0,
+    2
+   ],
+   "K": [
+    [
+     364.0555186847521,
+     0.0,
+     258.5
+    ],
+    [
+     0.0,
+     364.0555186847521,
+     258.5
+    ],
+    [
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "pairs": {
+    "0-1": {
+     "matches": 254,
+     "inliers": 201
+    },
+    "0-2": {
+     "matches": 572,
+     "inliers": 444
+    },
+    "1-2": {
+     "matches": 397,
+     "inliers": 316
+    }
+   },
+   "tracks": 564,
+   "observations": 1289,
+   "reprojMedianPx": 0.2761336215104952,
+   "reprojP95Px": 0.7918474198471108,
+   "allInFront": true,
+   "baselineOverDepth": {
+    "1": 0.326595590026209,
+    "2": 0.11995010609662153
+   }
+  },
+  "alignment": [
+   {
+    "samples": 444,
+    "scale": 2.160412455253941,
+    "logRatioMAD": 0.0796316522028558,
+    "logRatioP90": 0.9630493194186365
+   },
+   {
+    "samples": 324,
+    "scale": 2.0656295140522882,
+    "logRatioMAD": 0.03790097987418531,
+    "logRatioP90": 0.6804395882606771
+   },
+   {
+    "samples": 521,
+    "scale": 2.047871174469063,
+    "logRatioMAD": 0.07498464500654672,
+    "logRatioP90": 0.8770444841701527
+   }
+  ],
+  "worldScaleDivisor": 2.0656295140522882,
+  "inference_and_encoding_seconds": 136.883560091,
+  "gpu": "NVIDIA L4",
+  "contract": {
+   "frame_0001": {
+    "validFraction": 0.7308216931769055,
+    "reprojMedianPx": 1.8721555668842352e-05,
+    "reprojP95Px": 4.0222861635380926e-05
+   },
+   "frame_0002": {
+    "validFraction": 0.7227046406583086,
+    "reprojMedianPx": 3.499918063076858e-05,
+    "reprojP95Px": 6.707816031693949e-05
+   },
+   "frame_0003": {
+    "validFraction": 0.7243817176249608,
+    "reprojMedianPx": 2.3723882349307e-05,
+    "reprojP95Px": 4.7940849877422146e-05
+   }
+  }
+ },
+ "vsReportCameras": [
+  {
+   "KmaxAbs": 120.68100286989784,
+   "c2wMaxAbs": 1.4269007444381714
+  },
+  {
+   "KmaxAbs": 135.75626295440043,
+   "c2wMaxAbs": 1.5429333448410034
+  },
+  {
+   "KmaxAbs": 106.6640176578444,
+   "c2wMaxAbs": 1.461431860923767
+  }
+ ],
+ "floors": {
+  "lowest": {
+   "normal": [
+    0.03210990130901337,
+    -0.9490780234336853,
+    -0.3134004473686218
+   ],
+   "offset": 2.068777084350586,
+   "residualP95Native": 0.17906689434722267,
+   "residualMedianSignedNative": -0.06332178435450508,
+   "inlierFraction": 0.12116430443235933,
+   "cameraHeightsNative": [
+    2.068777084350586,
+    1.9890335671092099,
+    2.1001728136216675
+   ],
+   "angleToLowestDeg": 8.537736462515939e-07,
+   "estop": {
+    "P3": [
+     1.0273462064070273,
+     0.10727789375193285,
+     2.475238980887729
+    ],
+    "perPhoto": {
+     "photo 1 (image_03 original)": {
+      "widthsPx": {
+       "red lip": 47.855527556910225,
+       "yellow body": 95.38474661971253,
+       "grey cylinder": 99.92122915986148
+      },
+      "depthNative": 2.475238980887729,
+      "fx": 2808.428231375559,
+      "yellowOverRed": 1.9931813834103098,
+      "axisTiltDeg": 9.749463566899104,
+      "visibleHeightCm": {
+       "flatTop": 7.478646468480243,
+       "domedTop": 8.101339690018849,
+       "mid": 7.789993079249546,
+       "cameraDepressionDeg": 18.337797095278596,
+       "rows": {
+        "far": 2082.793661504984,
+        "near": 2092.272857066244,
+        "bottom": 2191.837523656808
+       },
+       "faceSideBoundaryFlatTop": 7.908585668926845,
+       "silhouetteFlatTop": 7.478646468480243,
+       "silhouetteDomedTop": 8.101339690018849
+      }
+     },
+     "photo 2 (September side)": {
+      "widthsPx": {
+       "red lip": 60.46730983892603,
+       "yellow body": 123.14295953366828,
+       "grey cylinder": 131.63497122737982
+      },
+      "depthNative": 1.8588044492146325,
+      "fx": 2674.693553691008,
+      "yellowOverRed": 2.0365212188486446,
+      "axisTiltDeg": 0.8339392967487409,
+      "visibleHeightCm": {
+       "flatTop": 6.848573898105204,
+       "domedTop": 7.584637702101349,
+       "mid": 7.2166058001032765,
+       "cameraDepressionDeg": 21.624033974703295,
+       "rows": {
+        "far": 2114.928466260433,
+        "near": 2123.9359835237265,
+        "bottom": 2249.8027883116824
+       },
+       "faceSideBoundaryFlatTop": 7.706944043963123,
+       "silhouetteFlatTop": 6.848573898105204,
+       "silhouetteDomedTop": 7.584637702101349
+      }
+     },
+     "photo 3 (image_04 original)": {
+      "widthsPx": {
+       "red lip": 49.852376221947175,
+       "yellow body": 100.0068694683394,
+       "grey cylinder": 106.10415993325952
+      },
+      "depthNative": 2.39120626112213,
+      "fx": 2808.428231375559,
+      "yellowOverRed": 2.006060233179257,
+      "axisTiltDeg": 3.750373510207984,
+      "visibleHeightCm": {
+       "flatTop": 7.450010916126614,
+       "domedTop": 8.121519806843141,
+       "mid": 7.785765361484877,
+       "cameraDepressionDeg": 19.309512964138886,
+       "rows": {
+        "far": 2204.8481728583574,
+        "near": 2215.6125984042883,
+        "bottom": 2320.156458364123
+       },
+       "faceSideBoundaryFlatTop": 7.901039565299306,
+       "silhouetteFlatTop": 7.450010916126614,
+       "silhouetteDomedTop": 8.121519806843141
+      }
+     }
+    },
+    "nativeToMeters": 0.9447344779698602,
+    "limit": 0.04,
+    "maxDeviation": 0.010622673347210787,
+    "passed": true,
+    "features": [
+     {
+      "photo": "photo 1 (image_03 original)",
+      "feature": "red lip 4 cm",
+      "specM": 0.04,
+      "measuredNative": 0.042177993347472076,
+      "measuredM": 0.03984700452694027,
+      "deviation": -0.00382488682649329
+     },
+     {
+      "photo": "photo 1 (image_03 original)",
+      "feature": "yellow body 8 cm",
+      "specM": 0.08,
+      "measuredNative": 0.08406839112978524,
+      "measuredM": 0.07942230760776368,
+      "deviation": -0.007221154902953941
+     },
+     {
+      "photo": "photo 2 (September side)",
+      "feature": "red lip 4 cm",
+      "specM": 0.04,
+      "measuredNative": 0.04202234846886687,
+      "measuredM": 0.039699961443802494,
+      "deviation": -0.0075009639049377075
+     },
+     {
+      "photo": "photo 2 (September side)",
+      "feature": "yellow body 8 cm",
+      "specM": 0.08,
+      "measuredNative": 0.08557940432269923,
+      "measuredM": 0.08084981386777686,
+      "deviation": 0.010622673347210787
+     },
+     {
+      "photo": "photo 3 (image_04 original)",
+      "feature": "red lip 4 cm",
+      "specM": 0.04,
+      "measuredNative": 0.04244627397700981,
+      "measuredM": 0.04010045848743603,
+      "deviation": 0.0025114621859005926
+     },
+     {
+      "photo": "photo 3 (image_04 original)",
+      "feature": "yellow body 8 cm",
+      "specM": 0.08,
+      "measuredNative": 0.08514978227191095,
+      "measuredM": 0.08044393510390105,
+      "deviation": 0.005549188798763094
+     }
+    ]
+   },
+   "gatePassed": true,
+   "cameraHeightsCm": [
+    195.44450388199604,
+    187.91085886874484,
+    198.41056667233585
+   ],
+   "residualP95Cm": 16.91706689528075,
+   "housing": {
+    "169518d8": {
+     "group": "housing",
+     "photos": {
+      "1": {
+       "edgePixels": 92,
+       "surfacePoints": 74,
+       "status": "ok",
+       "planeInliers": 74,
+       "planeTiltFromVerticalDeg": 2.740842110725012,
+       "heightCm": 17.257420011811895,
+       "verticalPlaneCm": 17.43642300384125,
+       "surfaceDepthNative": 2.7621392011642456
+      },
+      "3": {
+       "edgePixels": 74,
+       "surfacePoints": 52,
+       "status": "ok",
+       "planeInliers": 52,
+       "planeTiltFromVerticalDeg": 7.734837812164713,
+       "heightCm": 20.453393388660203,
+       "verticalPlaneCm": 20.104238404667917,
+       "surfaceDepthNative": 2.596553808917538
+      }
+     },
+     "heightCm": 18.85540670023605,
+     "verticalPlaneCm": 18.770330704254583
+    },
+    "5163a9b0": {
+     "group": "listed",
+     "photos": {
+      "1": {
+       "edgePixels": 82,
+       "surfacePoints": 63,
+       "status": "ok",
+       "planeInliers": 60,
+       "planeTiltFromVerticalDeg": 13.49004958265185,
+       "heightCm": 11.426455059409435,
+       "verticalPlaneCm": 10.673901980361371,
+       "surfaceDepthNative": 2.421940565109253
+      }
+     },
+     "heightCm": 11.426455059409435,
+     "verticalPlaneCm": 10.673901980361371
+    }
+   },
+   "fence": {
+    "ce9516a5": {
+     "heightCm": 7.652694274917744,
+     "endsCm": [
+      14.25954322785588,
+      1.0458453219796064
+     ],
+     "slopeDeg": -11.11542926919573,
+     "dihedralDeg": 9.405023378906897,
+     "overlap": true,
+     "cmPerPx": 0.9928160820200843
+    }
+   }
+  },
+  "maxInlier": {
+   "normal": [
+    0.021164233382141247,
+    -0.9857626008696055,
+    -0.16680578512790634
+   ],
+   "offset": 1.7719151634384152,
+   "residualP95Native": 0.05874756673303696,
+   "residualMedianSignedNative": 0.0031159763580506095,
+   "inlierFraction": 0.530840542139818,
+   "cameraHeightsNative": [
+    1.7719151634384152,
+    1.7407969188704002,
+    1.7812020851285608
+   ],
+   "angleToLowestDeg": 8.689261357134212,
+   "estop": {
+    "P3": [
+     1.0273462064070273,
+     0.10727789375193285,
+     2.475238980887729
+    ],
+    "perPhoto": {
+     "photo 1 (image_03 original)": {
+      "widthsPx": {
+       "red lip": 46.72578673091211,
+       "yellow body": 96.69304414522082,
+       "grey cylinder": 96.87676604422337
+      },
+      "depthNative": 2.475238980887729,
+      "fx": 2808.428231375559,
+      "yellowOverRed": 2.069372201308537,
+      "axisTiltDeg": 5.231139341514417,
+      "visibleHeightCm": {
+       "flatTop": 8.094710398742954,
+       "domedTop": 8.42630257644457,
+       "mid": 8.260506487593762,
+       "cameraDepressionDeg": 10.653428385381797,
+       "rows": {
+        "far": 2082.0177850723267,
+        "near": 2091.896854683757,
+        "bottom": 2191.948496161494
+       },
+       "faceSideBoundaryFlatTop": 7.936491548922386,
+       "silhouetteFlatTop": 8.094710398742954,
+       "silhouetteDomedTop": 8.42630257644457
+      }
+     },
+     "photo 2 (September side)": {
+      "widthsPx": {
+       "red lip": 60.29732640252009,
+       "yellow body": 123.49155700649172,
+       "grey cylinder": 131.61811173162624
+      },
+      "depthNative": 1.8588044492146325,
+      "fx": 2674.693553691008,
+      "yellowOverRed": 2.0480436592182047,
+      "axisTiltDeg": 1.1868422660563842,
+      "visibleHeightCm": {
+       "flatTop": 7.462206434877425,
+       "domedTop": 7.872609429030876,
+       "mid": 7.66740793195415,
+       "cameraDepressionDeg": 12.938720808711723,
+       "rows": {
+        "far": 2114.910665258765,
+        "near": 2123.9282479286194,
+        "bottom": 2249.628335000346
+       },
+       "faceSideBoundaryFlatTop": 7.691972610546317,
+       "silhouetteFlatTop": 7.462206434877425,
+       "silhouetteDomedTop": 7.872609429030876
+      }
+     },
+     "photo 3 (image_04 original)": {
+      "widthsPx": {
+       "red lip": 49.77036542531434,
+       "yellow body": 100.41374143872416,
+       "grey cylinder": 104.91161880490921
+      },
+      "depthNative": 2.39120626112213,
+      "fx": 2808.428231375559,
+      "yellowOverRed": 2.01754077111219,
+      "axisTiltDeg": 0.851929346521661,
+      "visibleHeightCm": {
+       "flatTop": 8.084198494907882,
+       "domedTop": 8.438581913300503,
+       "mid": 8.261390204104192,
+       "cameraDepressionDeg": 11.007467390865626,
+       "rows": {
+        "far": 2204.8500075638294,
+        "near": 2215.5720422044396,
+        "bottom": 2320.178273711774
+       },
+       "faceSideBoundaryFlatTop": 7.934092729444791,
+       "silhouetteFlatTop": 8.084198494907882,
+       "silhouetteDomedTop": 8.438581913300503
+      }
+     }
+    },
+    "nativeToMeters": 0.9459700807110049,
+    "limit": 0.04,
+    "maxDeviation": 0.026069789451085623,
+    "passed": true,
+    "features": [
+     {
+      "photo": "photo 1 (image_03 original)",
+      "feature": "red lip 4 cm",
+      "specM": 0.04,
+      "measuredNative": 0.041182283897050705,
+      "measuredM": 0.038957208421956574,
+      "deviation": -0.026069789451085623
+     },
+     {
+      "photo": "photo 1 (image_03 original)",
+      "feature": "yellow body 8 cm",
+      "specM": 0.08,
+      "measuredNative": 0.08522147348295292,
+      "measuredM": 0.08061696414897973,
+      "deviation": 0.0077120518622466605
+     },
+     {
+      "photo": "photo 2 (September side)",
+      "feature": "red lip 4 cm",
+      "specM": 0.04,
+      "measuredNative": 0.041904216816944305,
+      "measuredM": 0.03964013536445625,
+      "deviation": -0.008996615888593795
+     },
+     {
+      "photo": "photo 2 (September side)",
+      "feature": "yellow body 8 cm",
+      "specM": 0.08,
+      "measuredNative": 0.08582166554644764,
+      "measuredM": 0.08118472788372594,
+      "deviation": 0.014809098546574306
+     },
+     {
+      "photo": "photo 3 (image_04 original)",
+      "feature": "red lip 4 cm",
+      "specM": 0.04,
+      "measuredNative": 0.04237644675899613,
+      "measuredM": 0.040086850760853165,
+      "deviation": 0.0021712690213291364
+     },
+     {
+      "photo": "photo 3 (image_04 original)",
+      "feature": "yellow body 8 cm",
+      "specM": 0.08,
+      "measuredNative": 0.0854962090711397,
+      "measuredM": 0.08087685579551096,
+      "deviation": 0.010960697443886946
+     }
+    ]
+   },
+   "gatePassed": true,
+   "cameraHeightsCm": [
+    167.6178730170891,
+    164.67418018453012,
+    168.4963880231675
+   ],
+   "residualP95Cm": 5.557344044402612,
+   "housing": {
+    "169518d8": {
+     "group": "housing",
+     "photos": {
+      "1": {
+       "edgePixels": 92,
+       "surfacePoints": 74,
+       "status": "ok",
+       "planeInliers": 74,
+       "planeTiltFromVerticalDeg": 11.076986014581252,
+       "heightCm": 22.951564395321093,
+       "verticalPlaneCm": 23.37252437890681,
+       "surfaceDepthNative": 2.7621392011642456
+      },
+      "3": {
+       "edgePixels": 74,
+       "surfacePoints": 52,
+       "status": "ok",
+       "planeInliers": 52,
+       "planeTiltFromVerticalDeg": 0.8416317111507254,
+       "heightCm": 25.479546250548513,
+       "verticalPlaneCm": 25.552657074383593,
+       "surfaceDepthNative": 2.596553808917538
+      }
+     },
+     "heightCm": 24.215555322934804,
+     "verticalPlaneCm": 24.462590726645203
+    },
+    "5163a9b0": {
+     "group": "listed",
+     "photos": {
+      "1": {
+       "edgePixels": 82,
+       "surfacePoints": 63,
+       "status": "ok",
+       "planeInliers": 60,
+       "planeTiltFromVerticalDeg": 4.816228069057686,
+       "heightCm": 13.83398954940263,
+       "verticalPlaneCm": 13.621623287431298,
+       "surfaceDepthNative": 2.421940565109253
+      }
+     },
+     "heightCm": 13.83398954940263,
+     "verticalPlaneCm": 13.621623287431298
+    }
+   },
+   "fence": {
+    "ce9516a5": {
+     "heightCm": 21.777942931477124,
+     "endsCm": [
+      23.304677770072384,
+      20.25120809288184
+     ],
+     "slopeDeg": -2.5500200368150683,
+     "dihedralDeg": 9.405023378906897,
+     "overlap": true,
+     "cmPerPx": 0.7900386542114284
+    }
+   }
+  },
+  "lsq": {
+   "normal": [
+    0.03055009959462373,
+    -0.9873923764329403,
+    -0.15531576345261666
+   ],
+   "offset": 1.7217231377581192,
+   "residualP95Native": 0.03381950462516458,
+   "residualMedianSignedNative": -0.0072227959836854705,
+   "inlierFraction": 0.1114993378229874,
+   "cameraHeightsNative": [
+    1.7217231377581192,
+    1.7072652080112698,
+    1.7341520791324228
+   ],
+   "angleToLowestDeg": 9.33055154308855,
+   "estop": {
+    "P3": [
+     1.0273462064070273,
+     0.10727789375193285,
+     2.475238980887729
+    ],
+    "perPhoto": {
+     "photo 1 (image_03 original)": {
+      "widthsPx": {
+       "red lip": 46.72402482078998,
+       "yellow body": 96.68897531781883,
+       "grey cylinder": 96.8782270267337
+      },
+      "depthNative": 2.475238980887729,
+      "fx": 2808.428231375559,
+      "yellowOverRed": 2.0693631528677043,
+      "axisTiltDeg": 5.48486476909613,
+      "visibleHeightCm": {
+       "flatTop": 8.156595479238483,
+       "domedTop": 8.46045857397357,
+       "mid": 8.308527026606026,
+       "cameraDepressionDeg": 9.830532849274816,
+       "rows": {
+        "far": 2082.018062904477,
+        "near": 2091.897435992956,
+        "bottom": 2191.94845878245
+       },
+       "faceSideBoundaryFlatTop": 7.944602938386233,
+       "silhouetteFlatTop": 8.156595479238483,
+       "silhouetteDomedTop": 8.46045857397357
+      }
+     },
+     "photo 2 (September side)": {
+      "widthsPx": {
+       "red lip": 60.487695631409736,
+       "yellow body": 123.13989673176876,
+       "grey cylinder": 131.70403227632607
+      },
+      "depthNative": 1.8588044492146325,
+      "fx": 2674.693553691008,
+      "yellowOverRed": 2.035784227624392,
+      "axisTiltDeg": 1.868425254274508,
+      "visibleHeightCm": {
+       "flatTop": 7.515187099248151,
+       "domedTop": 7.906874795327437,
+       "mid": 7.711030947287794,
+       "cameraDepressionDeg": 12.337376571625025,
+       "rows": {
+        "far": 2114.9332942143083,
+        "near": 2123.9392940104008,
+        "bottom": 2249.8022728092037
+       },
+       "faceSideBoundaryFlatTop": 7.70933444160903,
+       "silhouetteFlatTop": 7.515187099248151,
+       "silhouetteDomedTop": 7.906874795327437
+      }
+     },
+     "photo 3 (image_04 original)": {
+      "widthsPx": {
+       "red lip": 49.73157490721361,
+       "yellow body": 100.44240300565889,
+       "grey cylinder": 104.91796722384822
+      },
+      "depthNative": 2.39120626112213,
+      "fx": 2808.428231375559,
+      "yellowOverRed": 2.019690773780213,
+      "axisTiltDeg": 1.273994602722156,
+      "visibleHeightCm": {
+       "flatTop": 8.14772065587339,
+       "domedTop": 8.477079151679563,
+       "mid": 8.312399903776477,
+       "cameraDepressionDeg": 10.242178573217142,
+       "rows": {
+        "far": 2204.8511074632406,
+        "near": 2215.5651957690716,
+        "bottom": 2320.2954219017347
+       },
+       "faceSideBoundaryFlatTop": 7.949947401660352,
+       "silhouetteFlatTop": 8.14772065587339,
+       "silhouetteDomedTop": 8.477079151679563
+      }
+     }
+    },
+    "nativeToMeters": 0.9460132171920572,
+    "limit": 0.04,
+    "maxDeviation": 0.02606210407720444,
+    "passed": true,
+    "features": [
+     {
+      "photo": "photo 1 (image_03 original)",
+      "feature": "red lip 4 cm",
+      "specM": 0.04,
+      "measuredNative": 0.04118073101826733,
+      "measuredM": 0.03895751583691182,
+      "deviation": -0.02606210407720444
+     },
+     {
+      "photo": "photo 1 (image_03 original)",
+      "feature": "yellow body 8 cm",
+      "specM": 0.08,
+      "measuredNative": 0.08521788737735857,
+      "measuredM": 0.08061724780016538,
+      "deviation": 0.007715597502067295
+     },
+     {
+      "photo": "photo 2 (September side)",
+      "feature": "red lip 4 cm",
+      "specM": 0.04,
+      "measuredNative": 0.04203651577476896,
+      "measuredM": 0.03976709952763385,
+      "deviation": -0.00582251180915383
+     },
+     {
+      "photo": "photo 2 (September side)",
+      "feature": "yellow body 8 cm",
+      "specM": 0.08,
+      "measuredNative": 0.08557727579855857,
+      "measuredM": 0.08095723399672637,
+      "deviation": 0.011965424959079707
+     },
+     {
+      "photo": "photo 3 (image_04 original)",
+      "feature": "red lip 4 cm",
+      "specM": 0.04,
+      "measuredNative": 0.042343418986123614,
+      "measuredM": 0.04005743402197404,
+      "deviation": 0.0014358505493508034
+     },
+     {
+      "photo": "photo 3 (image_04 original)",
+      "feature": "yellow body 8 cm",
+      "specM": 0.08,
+      "measuredNative": 0.08552061265658377,
+      "measuredM": 0.08090362991549058,
+      "deviation": 0.011295373943632114
+     }
+    ]
+   },
+   "gatePassed": true,
+   "cameraHeightsCm": [
+    162.8772844664562,
+    161.50954520308082,
+    164.05307874803583
+   ],
+   "residualP95Cm": 3.1993698374293604,
+   "housing": {
+    "169518d8": {
+     "group": "housing",
+     "photos": {
+      "1": {
+       "edgePixels": 92,
+       "surfacePoints": 74,
+       "status": "ok",
+       "planeInliers": 74,
+       "planeTiltFromVerticalDeg": 11.840942353328572,
+       "heightCm": 21.8856408656955,
+       "verticalPlaneCm": 22.32209700179304,
+       "surfaceDepthNative": 2.7621392011642456
+      },
+      "3": {
+       "edgePixels": 74,
+       "surfacePoints": 52,
+       "status": "ok",
+       "planeInliers": 52,
+       "planeTiltFromVerticalDeg": 1.5504063081382071,
+       "heightCm": 24.324084026340984,
+       "verticalPlaneCm": 24.417641774342968,
+       "surfaceDepthNative": 2.596553808917538
+      }
+     },
+     "heightCm": 23.10486244601824,
+     "verticalPlaneCm": 23.369869388068004
+    },
+    "5163a9b0": {
+     "group": "listed",
+     "photos": {
+      "1": {
+       "edgePixels": 82,
+       "surfacePoints": 63,
+       "status": "ok",
+       "planeInliers": 60,
+       "planeTiltFromVerticalDeg": 4.228564701627278,
+       "heightCm": 10.618337771231293,
+       "verticalPlaneCm": 10.439443870228498,
+       "surfaceDepthNative": 2.421940565109253
+      }
+     },
+     "heightCm": 10.618337771231293,
+     "verticalPlaneCm": 10.439443870228498
+    }
+   },
+   "fence": {
+    "ce9516a5": {
+     "heightCm": 21.20668456232116,
+     "endsCm": [
+      22.42433585653055,
+      19.989033268111747
+     ],
+     "slopeDeg": -2.0334378192627693,
+     "dihedralDeg": 9.405023378906897,
+     "overlap": true,
+     "cmPerPx": 0.7702434907764307
+    }
+   }
+  }
+ },
+ "containerSeconds": 150.575155601
+}

@@ -1,0 +1,151 @@
+{
+ "nativeToMeters": 3.2371372068568487,
+ "limit": 0.04,
+ "maxDeviation": 0.03304463731375262,
+ "passed": true,
+ "features": [
+  {
+   "photo": "090 photo 1",
+   "feature": "red lip 4 cm",
+   "specM": 0.04,
+   "measuredNative": 0.01194827776392127,
+   "measuredM": 0.0386782145074499,
+   "deviation": -0.03304463731375262,
+   "source": "photo 1 (image_03 original)"
+  },
+  {
+   "photo": "090 photo 1",
+   "feature": "yellow body 8 cm",
+   "specM": 0.08,
+   "measuredNative": 0.024713281736040493,
+   "measuredM": 0.0800002838112725,
+   "deviation": 3.5476409061541148e-06,
+   "source": "photo 1 (image_03 original)"
+  },
+  {
+   "photo": "090 photo 2",
+   "feature": "red lip 4 cm",
+   "specM": 0.04,
+   "measuredNative": 0.012429649982680422,
+   "measuredM": 0.04023648242714238,
+   "deviation": 0.005912060678559428,
+   "source": "photo 2 (September side)"
+  },
+  {
+   "photo": "090 photo 2",
+   "feature": "yellow body 8 cm",
+   "specM": 0.08,
+   "measuredNative": 0.025445969156568708,
+   "measuredM": 0.08237209352126035,
+   "deviation": 0.029651169015754375,
+   "source": "photo 2 (September side)"
+  },
+  {
+   "photo": "090 photo 3",
+   "feature": "red lip 4 cm",
+   "specM": 0.04,
+   "measuredNative": 0.012278557054416531,
+   "measuredM": 0.039747373887366384,
+   "deviation": -0.006315652815840456,
+   "source": "photo 3 (image_04 original)"
+  },
+  {
+   "photo": "090 photo 3",
+   "feature": "yellow body 8 cm",
+   "specM": 0.08,
+   "measuredNative": 0.02483260792051971,
+   "measuredM": 0.08038655904280242,
+   "deviation": 0.004831988035030266,
+   "source": "photo 3 (image_04 original)"
+  }
+ ],
+ "P3": [
+  0.2962922181199779,
+  0.030463413066194968,
+  0.7407612933813686
+ ],
+ "method": "geometry-backbone-ab-2026-10-06 fair evaluator (fair_ab_modal.analyse -> estop_cylinder.fit, unchanged) on the GPL-free export bbab-export-090-mvs-scipyba: e-stop axis triangulated in the three MVS cameras; red lip 4 cm + yellow body 8 cm sub-pixel symmetric widths per photo; joint = geometric mean of the six feature scales",
+ "floorRule": "maxInlier",
+ "redOnly": 3.274081435787822,
+ "yellowOnly": 3.200609850895614,
+ "uncertaintyRelative": 0.011348234597004694,
+ "perPhoto": {
+  "photo 1 (image_03 original)": {
+   "widthsPx": {
+    "red lip": 46.74721899941971,
+    "yellow body": 96.68985073292247,
+    "grey cylinder": 98.12374971949538
+   },
+   "depthNative": 0.740723135066187,
+   "fx": 2898.053367777729,
+   "yellowOverRed": 2.0683551407437246,
+   "axisTiltDeg": 3.5424331240286353,
+   "visibleHeightCm": {
+    "flatTop": 6.213904861388183,
+    "domedTop": 6.425155346136453,
+    "mid": 6.319530103762318,
+    "cameraDepressionDeg": 6.948603692082404,
+    "rows": {
+     "far": 2082.020393833518,
+     "near": 2091.901474773884,
+     "bottom": 2166.21716329938
+    },
+    "faceSideBoundaryFlatTop": 5.825770615296944,
+    "silhouetteFlatTop": 6.213904861388183,
+    "silhouetteDomedTop": 6.425155346136453
+   }
+  },
+  "photo 2 (September side)": {
+   "widthsPx": {
+    "red lip": 60.324791679636476,
+    "yellow body": 123.49686359594806,
+    "grey cylinder": 131.69594180705062
+   },
+   "depthNative": 0.5695542137784182,
+   "fx": 2764.2161560717536,
+   "yellowOverRed": 2.047199172303752,
+   "axisTiltDeg": 1.4547692801794267,
+   "visibleHeightCm": {
+    "flatTop": 7.894568073645198,
+    "domedTop": 8.175841633089318,
+    "mid": 8.035204853367258,
+    "cameraDepressionDeg": 9.13041592317019,
+    "rows": {
+     "far": 2114.909476608038,
+     "near": 2123.928953126073,
+     "bottom": 2249.6267520868114
+    },
+    "faceSideBoundaryFlatTop": 7.8630623440416025,
+    "silhouetteFlatTop": 7.894568073645198,
+    "silhouetteDomedTop": 8.175841633089318
+   }
+  },
+  "photo 3 (image_04 original)": {
+   "widthsPx": {
+    "red lip": 49.7026492120634,
+    "yellow body": 100.52047606443676,
+    "grey cylinder": 103.88499630008427
+   },
+   "depthNative": 0.7090690287593225,
+   "fx": 2870.2565820538757,
+   "yellowOverRed": 2.0224369859150144,
+   "axisTiltDeg": -0.06697058693218089,
+   "visibleHeightCm": {
+    "flatTop": 8.353776102016536,
+    "domedTop": 8.57664879715262,
+    "mid": 8.465212449584577,
+    "cameraDepressionDeg": 7.4183242888423,
+    "rows": {
+     "far": 2204.8500822782516,
+     "near": 2215.5542040355504,
+     "bottom": 2320.2900075106454
+    },
+    "faceSideBoundaryFlatTop": 7.954714731320619,
+    "silhouetteFlatTop": 8.353776102016536,
+    "silhouetteDomedTop": 8.57664879715262
+   }
+  }
+ },
+ "edgeRule": "estop_cylinder.fit (cell030-sept-pipeline-2026-10-05), unchanged",
+ "geometryExport": "bbab-export-090-mvs-scipyba"
+}

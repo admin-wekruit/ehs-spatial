@@ -1,0 +1,38 @@
+# Report site on-prem: the read-only publication API over the exported catalog + prepared bodies, and nginx serving the viewer
+# bundle, the measurement layers and /api/ -> publications (same origin, no CORS). This is ehs-spatial/containers/onprem's stack
+# (proven offline 2026-10-05) minus the platform API + Postgres, which the pipeline machine runs (S7 import/export).
+# Image: built once from ehs-spatial:  docker build -f containers/onprem/platform.Dockerfile -t panoptes-platform:onprem .
+# Start from the repo root so the ONE .env feeds the paths:
+#   docker compose --env-file .env -f deploy/publications/compose.nginx.yml up -d
+#   open $PANOPTES_PUBLIC_BASE_URL/app.html        (= http://<host>:8080; the port here must match that key)
+# After each publish: re-run prepare_publication_site.py into $PANOPTES_PUBLICATION_HTTP, then `docker compose ... restart publications`.
+name: panoptes-publications
+services:
+  publications:
+    image: ${PANOPTES_PLATFORM_IMAGE:-panoptes-platform:onprem}
+    pull_policy: never
+    user: panoptes
+    command: ["/app/.venv/bin/uvicorn", "serve_publications:app", "--factory", "--host", "0.0.0.0", "--port", "8793"]
+    environment:
+      PANOPTES_PUBLICATION_CATALOG: /catalog
+      PANOPTES_PUBLICATION_HTTP: /publication-http
+      PANOPTES_PUBLICATION_ORIGINS: ${PANOPTES_PUBLICATION_ORIGINS:-}   # S3-website option only; empty = same origin via nginx
+      PANOPTES_FEEDBACK_DB: /feedback/feedback.sqlite
+    volumes:
+      - ${PANOPTES_PUBLICATION_CATALOG:-./data/catalog}:/catalog:ro
+      - ${PANOPTES_PUBLICATION_HTTP:-./data/publication-http}:/publication-http:ro
+      - feedback:/feedback
+    restart: unless-stopped
+
+  web:
+    image: nginx:1.27-alpine
+    depends_on: [publications]          # start order only: nginx resolves "publications" per request (nginx.conf resolver)
+    volumes:
+      - ${PANOPTES_WEB_ROOT:-./data/www}:/usr/share/nginx/html:ro                        # app.html + assets/ (viewer build)
+      - ${PANOPTES_PAGES:-./data/www/measurement-layer}:/usr/share/nginx/html/measurement-layer:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports: ["8080:8080"]
+    restart: unless-stopped
+
+volumes:
+  feedback: {}

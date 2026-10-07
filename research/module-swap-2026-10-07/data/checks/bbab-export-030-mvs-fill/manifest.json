@@ -1,0 +1,180 @@
+{
+  "experiment": "bbab-export-030-mvs-fill",
+  "created_at_utc": "2026-10-05T15:37:45Z",
+  "status": "geometry_complete",
+  "frames": [
+    {
+      "frame_id": "frame_0001",
+      "source_upload": "runs/user-bor1-02/input/image_01.jpg",
+      "input": "input/image_01.jpg",
+      "sha256": "879ec826854e9f53c8b6e222b2d16d3e12b179ec60f4bf9c072eb5a4eccf38ac",
+      "bytes": 4994078,
+      "width": 3024,
+      "height": 4032,
+      "decoded_rgb_sha256": "953ad16f57673688d471a6792986a50f151ad9b1f2384f90c4b421500ababfcc",
+      "canonical": "evidence/canonical/frame_0001.png",
+      "canonical_sha256": "2ad7f9e2bd42b0f897b4d548c2a6ebac76bf5ad7ad53f95119db0144a4c54d8a",
+      "canonical_shape_hw": [
+        518,
+        518
+      ],
+      "content_rect_xyxy": [
+        63,
+        0,
+        455,
+        518
+      ],
+      "alpha": "evidence/canonical/frame_0001_alpha.npy",
+      "alpha_sha256": "b640112c50db7aeb630cbe968a662e5386b2ca281047dd3cfa6f2a46d5a5c453",
+      "input_to_canonical_pixel_centres": [
+        [
+          0.12962962962962962,
+          0.0,
+          62.56481481481482
+        ],
+        [
+          0.0,
+          0.1284722222222222,
+          -0.4357638888888889
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "canonical_to_input_pixel_centres": [
+        [
+          7.714285714285714,
+          0.0,
+          -482.64285714285717
+        ],
+        [
+          0.0,
+          7.783783783783784,
+          3.391891891891892
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "resampling": "Pillow RGB LANCZOS; resize392x518 then white pad x=63..454",
+      "existing_capture_match": null
+    },
+    {
+      "frame_id": "frame_0002",
+      "source_upload": "runs/user-bor1-02/input/image_02.jpg",
+      "input": "input/image_02.jpg",
+      "sha256": "6cd81ae4ae783c37d0a1129e39acb0d7064c46d9b51524130406642f8c7a3bea",
+      "bytes": 5065705,
+      "width": 3024,
+      "height": 4032,
+      "decoded_rgb_sha256": "8f38b5fbd012244d6d7c639ac1ed377452deec3418b509675d57faa88270da15",
+      "canonical": "evidence/canonical/frame_0002.png",
+      "canonical_sha256": "e72b1cbe25979f795397932ad296b3ba5b98a09d5e1667c836651f158a5d354e",
+      "canonical_shape_hw": [
+        518,
+        518
+      ],
+      "content_rect_xyxy": [
+        63,
+        0,
+        455,
+        518
+      ],
+      "alpha": "evidence/canonical/frame_0002_alpha.npy",
+      "alpha_sha256": "b640112c50db7aeb630cbe968a662e5386b2ca281047dd3cfa6f2a46d5a5c453",
+      "input_to_canonical_pixel_centres": [
+        [
+          0.12962962962962962,
+          0.0,
+          62.56481481481482
+        ],
+        [
+          0.0,
+          0.1284722222222222,
+          -0.4357638888888889
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "canonical_to_input_pixel_centres": [
+        [
+          7.714285714285714,
+          0.0,
+          -482.64285714285717
+        ],
+        [
+          0.0,
+          7.783783783783784,
+          3.391891891891892
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "resampling": "Pillow RGB LANCZOS; resize392x518 then white pad x=63..454",
+      "existing_capture_match": null
+    }
+  ],
+  "geometry": {
+    "status": "complete",
+    "path": "geometry",
+    "model": "mvs-fill",
+    "input_frames": [
+      "frame_0001",
+      "frame_0002"
+    ],
+    "coordinate_system": "mvs-fill native OpenCV world (geometry-backbone-ab export; not the published Pi3X world)",
+    "metric_scale_known": false,
+    "frames": [
+      {
+        "frame_id": "frame_0001",
+        "valid_content_points": 98650,
+        "canonical_pixels": 268324,
+        "files": {
+          "camera_to_world.npy": "caf3cb23d4e2795b023b8badb8a27892b9a33ec16fa79a71e9bdeac3d7d9547b",
+          "canonical.png": "2ad7f9e2bd42b0f897b4d548c2a6ebac76bf5ad7ad53f95119db0144a4c54d8a",
+          "conf.npy": "9c36370578f1ff9b244a0949e6b114a151096621d70f8ef963e359093a61da78",
+          "content_valid_mask.npy": "30d30950b438b0721f16ea6f8bd183f033b653e894cf49234a62f782a60b0563",
+          "intrinsics.npy": "dad464a49520d24f2b6a9d9209ffce1cb290b0537e4b04135e4b76ca10ef29ea",
+          "pts3d.npy": "296668819a54e612da57bbff3b4a008f4a03b9231c8ca89a1d7fb944806a82d7",
+          "valid_mask.npy": "30d30950b438b0721f16ea6f8bd183f033b653e894cf49234a62f782a60b0563"
+        }
+      },
+      {
+        "frame_id": "frame_0002",
+        "valid_content_points": 55467,
+        "canonical_pixels": 268324,
+        "files": {
+          "camera_to_world.npy": "28cd1e9b391788efdd5f46ea3850b01090c54fcc0c6731e73b1272e7feeab4a6",
+          "canonical.png": "e72b1cbe25979f795397932ad296b3ba5b98a09d5e1667c836651f158a5d354e",
+          "conf.npy": "5134473a7bab0e058da41cb2dfc3a217381a64527cacc7f1894e3cca0d55a340",
+          "content_valid_mask.npy": "23ad9b70a903107a5e5d695b2137e2edde5fd69248a24d16d6ba288ab9efd405",
+          "intrinsics.npy": "45fc18aab8222004bbb07b90da7e2358086a882bb871201896c96d48d259515b",
+          "pts3d.npy": "e81d7ccbf80394acc71e763cf1e6b2824e7f9705f10ac97f6855d9b9a2ad11a9",
+          "valid_mask.npy": "23ad9b70a903107a5e5d695b2137e2edde5fd69248a24d16d6ba288ab9efd405"
+        }
+      }
+    ],
+    "content_valid_rule": "native valid & declared alpha & finite & nonzero points & conf>=0.1",
+    "candidate": "licence-clean MVS (da3-base scipy BA-f cameras, RoMa outdoor dense warp, midpoint triangulation) + MoGe-3 in-mask fill (per object/photo Huber affine on MVS)"
+  },
+  "script_sha256": "f2ccb9d829877fd69d0e7cc5be79a422ef1a09caf46ceb0e19d59375a03a033d",
+  "privacy": "private photographs; geometry and generation on private ephemeral Modal functions",
+  "evidence": {
+    "objects": "evidence/objects.json",
+    "objects_sha256": "9946cf95d5ca1ed4c2452ede821a6680998c73d6f8e483b5195b11a563fdf303",
+    "floor": "evidence/floor.json",
+    "floor_sha256": "02aa059f2aba89400aeeb53c1198216718ce1ac69c2aa8107b61de4a2ffb2cbe",
+    "exportedFrom": "/Users/adam/Desktop/panoptes-public/panoptes-serving/outputs/candidate-evaluation/bor1-030-01",
+    "exportedBy": "/Users/adam/Desktop/panoptes-public/research-notes/geometry-backbone-ab-2026-10-06/backbone_ab_modal.py"
+  }
+}

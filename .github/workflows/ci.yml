@@ -1,0 +1,66 @@
+# CI for the handoff (plan A6): lint, offline tests with the fake model backend, config/shell/docker syntax. No GPU, no secrets,
+# no model weights; target < 5 min. Tests landing in tests/ from any work package run here as they are.
+name: ci
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PANOPTES_FAKE_MODEL: "1"
+      PANOPTES_WORKCELL: ${{ github.workspace }}   # one repository: the contract dry-run tests need the checkout path
+      HF_HUB_OFFLINE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: lint (ruff, rules in ruff.toml)
+        run: uvx --from 'ruff==0.2.1' ruff check .
+      - name: env.template validates offline (the one configuration surface)
+        run: uv run --no-project python scripts/check_env.py env.template
+      - name: install (uv.lock, hashes)
+        run: uv sync --frozen --extra dev
+      - name: tests (fake model backend, no network)
+        run: uv run pytest tests/ -q -p no:cacheprovider
+
+  config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: shell syntax (zsh -n or bash -n by shebang)
+        run: |
+          set -e
+          command -v zsh >/dev/null || sudo apt-get install -y -qq zsh
+          while IFS= read -r f; do
+            if head -1 "$f" | grep -q zsh; then zsh -n "$f"; else bash -n "$f"; fi
+            echo "ok $f"
+          done < <(git ls-files '*.sh')
+      - name: yaml parses (workflows, registry, compose)
+        run: |
+          python3 -m pip install -q pyyaml
+          python3 -c 'import sys, yaml; [yaml.safe_load(open(f)) for f in sys.argv[1:]]; print(len(sys.argv) - 1, "yaml files ok")' $(git ls-files '*.yml' '*.yaml')
+      - name: compose files resolve (defaults, no .env)
+        run: |
+          set -e
+          for f in $(git ls-files 'deploy/*compose*.yml'); do docker compose -f "$f" config -q; echo "ok $f"; done
+      - name: dockerfiles (build --check = lint only, nothing is built; hadolint fallback)
+        run: |
+          set -e
+          for f in $(git ls-files 'deploy/*Dockerfile*'); do
+            if docker buildx build --help 2>/dev/null | grep -q -- '--check'; then docker buildx build --check -f "$f" .
+            else docker run --rm -i hadolint/hadolint < "$f"; fi
+            echo "ok $f"
+          done

@@ -1,0 +1,149 @@
+{
+  "plane_native": [
+    -0.4741069972515106,
+    -0.604145884513855,
+    -0.6404922604560852,
+    1.4770365953445435
+  ],
+  "up_native": [
+    -0.4741069972515106,
+    -0.604145884513855,
+    -0.6404922604560852
+  ],
+  "coordinate_system": "new joint Pi3X native world",
+  "metric_scale_known": false,
+  "fit": "existing ehs_spatial.geometry._ransac_floor_plane then SVD on its inliers",
+  "distance_threshold_native": 0.016791414469480515,
+  "total_observed_points": 74683,
+  "inlier_points": 55729,
+  "all_point_residual_median_native": 0.009448409080505371,
+  "all_point_residual_p95_native": 0.028065061196684837,
+  "inlier_residual_p95_native": 0.0154428007081151,
+  "camera_signed_heights_native": [
+    1.3629024028778076,
+    1.3817206621170044
+  ],
+  "points_path": "evidence/floor_points.npy",
+  "colors_path": "evidence/floor_colors.npy",
+  "views": [
+    {
+      "frame_id": "frame_0001",
+      "rgb_path": "input/image_01.jpg",
+      "mask_path": "evidence/objects/observed_floor/frame_0001/mask.png",
+      "rgba_path": "evidence/objects/observed_floor/frame_0001/rgba.png",
+      "rgba_crop_xyxy_in_input": [
+        0,
+        2720,
+        3024,
+        4032
+      ],
+      "rgba_pixel_to_input": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          2720
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "canonical_mask_path": "evidence/objects/observed_floor/frame_0001/canonical_mask.npy",
+      "points_path": "evidence/objects/observed_floor/frame_0001/points.npy",
+      "colors_path": "evidence/objects/observed_floor/frame_0001/colors.npy",
+      "K_path": "geometry/frames/frame_0001/intrinsics.npy",
+      "c2w_path": "geometry/frames/frame_0001/camera_to_world.npy",
+      "canonical_rgb_path": "geometry/frames/frame_0001/canonical.png",
+      "pointmap_path": "geometry/frames/frame_0001/pts3d.npy",
+      "valid_path": "geometry/frames/frame_0001/valid_mask.npy",
+      "content_valid_path": "geometry/frames/frame_0001/content_valid_mask.npy",
+      "conf_path": "geometry/frames/frame_0001/conf.npy",
+      "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+      "mask_pixels": 2093099,
+      "partial_point_count": 34739,
+      "centroid_native": [
+        0.40990781784057617,
+        1.1294845342636108,
+        1.011217474937439
+      ],
+      "observed_only": true,
+      "provenance": {
+        "type": "same-capture cached SAM floor (user-bor1-02 product run inventory), canonical 518 grid",
+        "source_path": "runs/user-bor1-02/inventory/sam/frame_0001__floor.json"
+      },
+      "sha256": {
+        "points.npy": "2f319daca4f512a66ee390b9a272311712c327443c4b5e78dd858d0dd6aa547f",
+        "rgba.png": "f6d432eaf1f431e42f6ea458ad7cb146f9d3b891e095364ddef16c189218d591",
+        "colors.npy": "78751aa6e8376856f55aa2f2190928220a9055fb3b7a311a64f83280f69b7847",
+        "mask.png": "41eb77fb281bf21e4fdd080486c09da2cfbb7cc4263141968b473a38d2855e73",
+        "canonical_mask.npy": "35519e4f1c1fe9bf909125e40cbb14e5d2e4c3e53ce8e4bc0a4aae56a01e54ff"
+      }
+    },
+    {
+      "frame_id": "frame_0002",
+      "rgb_path": "input/image_02.jpg",
+      "mask_path": "evidence/objects/observed_floor/frame_0002/mask.png",
+      "rgba_path": "evidence/objects/observed_floor/frame_0002/rgba.png",
+      "rgba_crop_xyxy_in_input": [
+        0,
+        2321,
+        3024,
+        4032
+      ],
+      "rgba_pixel_to_input": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          2321
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "canonical_mask_path": "evidence/objects/observed_floor/frame_0002/canonical_mask.npy",
+      "points_path": "evidence/objects/observed_floor/frame_0002/points.npy",
+      "colors_path": "evidence/objects/observed_floor/frame_0002/colors.npy",
+      "K_path": "geometry/frames/frame_0002/intrinsics.npy",
+      "c2w_path": "geometry/frames/frame_0002/camera_to_world.npy",
+      "canonical_rgb_path": "geometry/frames/frame_0002/canonical.png",
+      "pointmap_path": "geometry/frames/frame_0002/pts3d.npy",
+      "valid_path": "geometry/frames/frame_0002/valid_mask.npy",
+      "content_valid_path": "geometry/frames/frame_0002/content_valid_mask.npy",
+      "conf_path": "geometry/frames/frame_0002/conf.npy",
+      "K_pixel_grid": "canonical518x518; source affine in manifest.json",
+      "mask_pixels": 2426111,
+      "partial_point_count": 39944,
+      "centroid_native": [
+        0.6285418272018433,
+        1.1311845779418945,
+        0.7532960176467896
+      ],
+      "observed_only": true,
+      "provenance": {
+        "type": "same-capture cached SAM floor (user-bor1-02 product run inventory), canonical 518 grid",
+        "source_path": "runs/user-bor1-02/inventory/sam/frame_0002__floor.json"
+      },
+      "sha256": {
+        "points.npy": "9d0955b626bdca80f0661e8b549fa8e1e71ebfe3951e9fa56a547fedeb44cb93",
+        "rgba.png": "7b566034ddb8ab0910acfcead2cca61588e62fcf8a1910d8477fb55e395d3726",
+        "colors.npy": "65cf8822858aed0b1f6eaf64b9dd680579a428590209ff04f59a398e4896ee13",
+        "mask.png": "68eac6719953b3dde0d58010cb73bf191d9064acea9adf88f8994b5e4710e340",
+        "canonical_mask.npy": "26cdc032bf9cb9c0e893f96a3ee73ac219acc4c11d907066a3b60d41a4ca5395"
+      }
+    }
+  ],
+  "evidence_type": "observed partial geometry only; not a generated asset"
+}

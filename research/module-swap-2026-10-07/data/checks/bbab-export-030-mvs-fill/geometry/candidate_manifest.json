@@ -1,0 +1,40 @@
+{
+  "model_id": "licence-clean MVS (da3-base scipy BA-f cameras, RoMa outdoor dense warp, midpoint triangulation) + MoGe-3 in-mask fill (per object/photo Huber affine on MVS)",
+  "thresholds": {
+    "CERT": 0.05,
+    "FB_PX": 1.0,
+    "ANGLE_DEG": 2.0,
+    "REPROJ_PX": 1.0
+  },
+  "created": "2026-10-06T22:53:08Z",
+  "cameras": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/checks/scipyba-geom/030-da3-base-scipyba-f/geometry",
+  "report": {
+    "1<-2": {
+      "kept": 0.2940075644157277,
+      "medianAngleDeg": 27.169990334210745
+    },
+    "2<-1": {
+      "kept": 0.22985284847529747,
+      "medianAngleDeg": 26.16890725048275
+    },
+    "validFraction": [
+      0.2940075644157277,
+      0.22985284847529747
+    ]
+  },
+  "conf": "1 on kept pixels (mvs_route)",
+  "fill": {
+    "method": "MoGe-3 (MIT) z aligned to MVS per photo (global Huber scale s) and per object (offset field: normalized convolution of z_mvs - s*z_moge over the object's own MVS pixels at sigma 48/24/12 px, object median fallback); filled only where MVS invalid inside object masks and inside the object's MVS depth range; conf 0.3; floor untouched",
+    "evaluation": "review-coverage-gaps/moge_fill_eval.py",
+    "params": {
+      "sigmaPx": [
+        48,
+        24,
+        12
+      ],
+      "minLocalWeight": 0.02,
+      "rangeMarginNative": 0.03,
+      "conf": 0.3
+    }
+  }
+}

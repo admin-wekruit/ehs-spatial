@@ -1,0 +1,19 @@
+# One socat forward per service port on the jump VM (the form the customer already runs for 8080 -> 8802 and 8090 -> 8803).
+# %i = service name = /etc/panoptes-forward/%i.env with LISTEN_PORT (jump) and TARGET (GPU VM host:port); see forwards/*.env.
+# Install (deploy/README.md):
+#   sudo cp panoptes-forward@.service /etc/systemd/system/ && sudo mkdir -p /etc/panoptes-forward && sudo cp forwards/*.env /etc/panoptes-forward/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now panoptes-forward@sam3d panoptes-forward@geometry-mvs panoptes-forward@sam3
+#   (mapanything / moge: only if the existing units are retired; keep one forward per port)
+[Unit]
+Description=Panoptes forward %i (socat, jump port -> GPU service)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/panoptes-forward/%i.env
+ExecStart=/usr/bin/socat -dd TCP4-LISTEN:${LISTEN_PORT},fork,reuseaddr TCP4:${TARGET}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

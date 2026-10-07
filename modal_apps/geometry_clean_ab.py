@@ -31,6 +31,7 @@ from __future__ import annotations
 import io
 from itertools import combinations
 import json
+import os
 from pathlib import Path
 import sys
 import tarfile
@@ -39,7 +40,7 @@ import time
 import modal
 import numpy as np
 
-FAIR = Path('/Users/adam/Desktop/panoptes-public/research-notes/geometry-licence-ab-fair-2026-10-05')
+FAIR = Path(os.environ.get('SWAP_NOTES', '/Users/adam/Desktop/panoptes-public/research-notes')) / 'geometry-licence-ab-fair-2026-10-05'   # env.sh: the notes in this repository
 sys.path[:0] = [str(Path(__file__).parent), str(FAIR), str(Path(__file__).resolve().parents[1] / 'scripts/onprem')]
 try:
     import fair_ab_modal as fam  # noqa: E402  frozen inputs, frames_for, geometry_tar, analyse_one, cpu_image (unchanged)

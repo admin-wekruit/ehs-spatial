@@ -1,0 +1,17 @@
+{
+ "mode": "ephemeral modal run",
+ "rateSource": "https://modal.com/pricing",
+ "hardware": "L4, 4 CPU, 32 GiB (x2: RoMa (+ VGGT if readable), MoGe)",
+ "vggt": false,
+ "functionSeconds": 54.248162183,
+ "callSeconds": 605.3071725000627,
+ "estimateUsd": 0.01873948514449552,
+ "timing": {
+  "total": 30.591338156
+ },
+ "mogeSeconds": 23.656798216,
+ "gpu": [
+  "NVIDIA L4",
+  "NVIDIA L4"
+ ]
+}

@@ -1,0 +1,9 @@
+{
+ "mode": "ephemeral modal run",
+ "rateSource": "https://modal.com/pricing",
+ "hardware": "L4, 4 CPU, 32 GiB",
+ "functionSeconds": 25.594809037,
+ "callSeconds": 247.93387512490153,
+ "estimateUsd": 0.008841470833741281,
+ "gpu": "NVIDIA L4"
+}

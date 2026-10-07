@@ -1,0 +1,43 @@
+{
+ "model_id": "licence-clean MVS (da3-base BA-f cameras, RoMa outdoor dense warp, midpoint triangulation)",
+ "cameras": "/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/checks/clean-geom/090-da3-base-ba-f/geometry",
+ "thresholds": {
+  "CERT": 0.05,
+  "FB_PX": 1.0,
+  "ANGLE_DEG": 2.0,
+  "REPROJ_PX": 1.0
+ },
+ "change": "CERT 0.5 -> RoMa sample_thresh 0.05; conf = 1 on kept pixels",
+ "report": {
+  "1<-2": {
+   "kept": 0.2942488771570404,
+   "medianAngleDeg": 23.604001026463912
+  },
+  "2<-1": {
+   "kept": 0.3177103853124261,
+   "medianAngleDeg": 23.879382209824755
+  },
+  "1<-3": {
+   "kept": 0.5563440627216137,
+   "medianAngleDeg": 7.502700941267111
+  },
+  "3<-1": {
+   "kept": 0.515941415176109,
+   "medianAngleDeg": 7.562647382133866
+  },
+  "2<-3": {
+   "kept": 0.4693483571034591,
+   "medianAngleDeg": 15.320582383853036
+  },
+  "3<-2": {
+   "kept": 0.4055235994011504,
+   "medianAngleDeg": 15.35518052378971
+  },
+  "validFraction": [
+   0.5724479946418722,
+   0.4941493972106217,
+   0.6273294066661413
+  ]
+ },
+ "created": "2026-10-06T20:05:09Z"
+}

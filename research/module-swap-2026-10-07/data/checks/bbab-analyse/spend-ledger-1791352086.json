@@ -1,0 +1,10 @@
+{
+  "stage": "analyse",
+  "mode": "ephemeral modal run (fair_ab_modal app, unchanged)",
+  "hardware": "8 CPU, 16 GiB per job",
+  "jobs": 1,
+  "functionSeconds": 122.242538622,
+  "callSeconds": 134.71405179193243,
+  "estimateUsd": 0.01715307301943904,
+  "rateSource": "https://modal.com/pricing"
+}

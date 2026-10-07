@@ -1,0 +1,462 @@
+{
+ "versions": {
+  "pi3x+recgen 组装v2": {
+   "variant": "030-v2-pi3x-recgen",
+   "publicationId": "e7bfb200-34ac-4ea3-b942-d4ca2f6c1358",
+   "nativeToMeters": 1.1166239729160208,
+   "obviousObjects": 0,
+   "G1": "fail",
+   "rows": {
+    "left_light_curtain": {
+     "meanIou": 0.803,
+     "ious": [
+      0.73,
+      0.87
+     ],
+     "depthP50": 2.2,
+     "lowestCm": 25.4,
+     "floor": "离地",
+     "bottomCm": 25.4,
+     "obvious": [],
+     "box": [
+      7,
+      8,
+      161
+     ],
+     "boxConf": "medium"
+    },
+    "right_light_curtain": {
+     "meanIou": 0.514,
+     "ious": [
+      0.46,
+      0.57
+     ],
+     "depthP50": 0.5,
+     "lowestCm": 17.4,
+     "floor": "离地",
+     "bottomCm": 17.4,
+     "obvious": [],
+     "box": [
+      3,
+      8,
+      162
+     ],
+     "boxConf": "high"
+    },
+    "right_fence": {
+     "meanIou": 0.938,
+     "ious": [
+      0.94
+     ],
+     "depthP50": 1.3,
+     "lowestCm": 12.0,
+     "floor": "悬空",
+     "bottomCm": 12.0,
+     "obvious": [],
+     "box": [
+      5,
+      215,
+      242
+     ],
+     "boxConf": "unverified"
+    },
+    "left_post": {
+     "meanIou": 0.821,
+     "ious": [
+      0.9,
+      0.75
+     ],
+     "depthP50": 0.7,
+     "lowestCm": 15.6,
+     "floor": "离地",
+     "bottomCm": 15.6,
+     "obvious": [],
+     "box": [
+      11,
+      11,
+      91
+     ],
+     "boxConf": "low"
+    },
+    "right_post": {
+     "meanIou": 0.712,
+     "ious": [
+      0.71
+     ],
+     "depthP50": 1.2,
+     "lowestCm": 8.4,
+     "floor": "悬空",
+     "bottomCm": 8.4,
+     "obvious": [],
+     "box": [
+      11,
+      23,
+      85
+     ],
+     "boxConf": "unverified"
+    },
+    "robot": {
+     "meanIou": 0.671,
+     "ious": [
+      0.7,
+      0.64
+     ],
+     "depthP50": 1.2,
+     "lowestCm": 85.2,
+     "floor": "离地",
+     "bottomCm": 85.2,
+     "obvious": [],
+     "box": [
+      93,
+      193,
+      232
+     ],
+     "boxConf": "low"
+    },
+    "cart": {
+     "meanIou": 0.803,
+     "ious": [
+      0.75,
+      0.86
+     ],
+     "depthP50": 1.8,
+     "lowestCm": 4.5,
+     "floor": "悬空",
+     "bottomCm": 4.5,
+     "obvious": [],
+     "box": [
+      133,
+      166,
+      95
+     ],
+     "boxConf": "low"
+    },
+    "guard": {
+     "meanIou": 0.63,
+     "ious": [
+      0.54,
+      0.72
+     ],
+     "depthP50": 7.9,
+     "lowestCm": 19.7,
+     "floor": "离地",
+     "bottomCm": 19.7,
+     "obvious": [
+      "模型与照片掩码不符：IoU 0.35 / 0.41"
+     ],
+     "box": [
+      200,
+      174,
+      72
+     ],
+     "boxConf": "low"
+    }
+   }
+  },
+  "pi3x+sam3d 组装v2": {
+   "variant": "030-v2-pi3x-sam3d",
+   "publicationId": "97a6d27c-782f-4417-a874-873847e0c305",
+   "nativeToMeters": 1.1166239729160208,
+   "obviousObjects": 0,
+   "G1": "fail",
+   "rows": {
+    "left_light_curtain": {
+     "meanIou": 0.792,
+     "ious": [
+      0.7,
+      0.89
+     ],
+     "depthP50": 2.1,
+     "lowestCm": 22.8,
+     "floor": "离地",
+     "bottomCm": 22.8,
+     "obvious": [],
+     "box": [
+      9,
+      1,
+      162
+     ],
+     "boxConf": "low"
+    },
+    "right_light_curtain": {
+     "meanIou": 0.771,
+     "ious": [
+      0.87,
+      0.67
+     ],
+     "depthP50": 1.7,
+     "lowestCm": 29.2,
+     "floor": "离地",
+     "bottomCm": 29.2,
+     "obvious": [],
+     "box": [
+      6,
+      9,
+      162
+     ],
+     "boxConf": "medium"
+    },
+    "right_fence": {
+     "meanIou": 0.91,
+     "ious": [
+      0.91
+     ],
+     "depthP50": 2.4,
+     "lowestCm": 8.6,
+     "floor": "悬空",
+     "bottomCm": 8.6,
+     "obvious": [],
+     "box": [
+      23,
+      212,
+      244
+     ],
+     "boxConf": "low"
+    },
+    "left_post": {
+     "meanIou": 0.907,
+     "ious": [
+      0.94,
+      0.87
+     ],
+     "depthP50": 1.5,
+     "lowestCm": 4.9,
+     "floor": "悬空",
+     "bottomCm": 4.9,
+     "obvious": [],
+     "box": [
+      12,
+      12,
+      91
+     ],
+     "boxConf": "low"
+    },
+    "right_post": {
+     "meanIou": 0.922,
+     "ious": [
+      0.92
+     ],
+     "depthP50": 1.2,
+     "lowestCm": 6.1,
+     "floor": "悬空",
+     "bottomCm": 6.1,
+     "obvious": [],
+     "box": [
+      12,
+      17,
+      87
+     ],
+     "boxConf": "unverified"
+    },
+    "robot": {
+     "meanIou": 0.648,
+     "ious": [
+      0.75,
+      0.55
+     ],
+     "depthP50": 2.8,
+     "lowestCm": 77.2,
+     "floor": "离地",
+     "bottomCm": 77.2,
+     "obvious": [],
+     "box": [
+      97,
+      96,
+      250
+     ],
+     "boxConf": "unverified"
+    },
+    "cart": {
+     "meanIou": 0.836,
+     "ious": [
+      0.82,
+      0.85
+     ],
+     "depthP50": 3.4,
+     "lowestCm": 2.6,
+     "floor": "贴地",
+     "bottomCm": 2.6,
+     "obvious": [],
+     "box": [
+      157,
+      204,
+      99
+     ],
+     "boxConf": "low"
+    },
+    "guard": {
+     "meanIou": 0.765,
+     "ious": [
+      0.78,
+      0.75
+     ],
+     "depthP50": 5.9,
+     "lowestCm": 29.9,
+     "floor": "离地",
+     "bottomCm": 29.9,
+     "obvious": [],
+     "box": [
+      217,
+      185,
+      59
+     ],
+     "boxConf": "low"
+    }
+   }
+  },
+  "mvs-fill+sam3d 组装v2": {
+   "variant": "030-v2-mvs-fill-sam3d",
+   "publicationId": "fafdeb6b-7122-4434-a62d-676b3ff9e50a",
+   "nativeToMeters": 3.5616493184162774,
+   "obviousObjects": 1,
+   "G1": "fail",
+   "rows": {
+    "left_light_curtain": {
+     "meanIou": 0.807,
+     "ious": [
+      0.71,
+      0.9
+     ],
+     "depthP50": 1.0,
+     "lowestCm": 26.6,
+     "floor": "离地",
+     "bottomCm": 26.6,
+     "obvious": [],
+     "box": [
+      7,
+      6,
+      164
+     ],
+     "boxConf": "medium"
+    },
+    "right_light_curtain": {
+     "meanIou": 0.76,
+     "ious": [
+      0.88,
+      0.65
+     ],
+     "depthP50": 0.8,
+     "lowestCm": 27.1,
+     "floor": "离地",
+     "bottomCm": 27.1,
+     "obvious": [],
+     "box": [
+      5,
+      10,
+      161
+     ],
+     "boxConf": "medium"
+    },
+    "right_fence": {
+     "meanIou": 0.786,
+     "ious": [
+      0.79
+     ],
+     "depthP50": 1.5,
+     "lowestCm": 17.8,
+     "floor": "离地",
+     "bottomCm": 17.8,
+     "obvious": [],
+     "box": [
+      21,
+      279,
+      252
+     ],
+     "boxConf": "low"
+    },
+    "left_post": {
+     "meanIou": 0.884,
+     "ious": [
+      0.93,
+      0.84
+     ],
+     "depthP50": 0.6,
+     "lowestCm": 0.2,
+     "floor": "贴地",
+     "bottomCm": 0.2,
+     "obvious": [],
+     "box": [
+      11,
+      23,
+      92
+     ],
+     "boxConf": "low"
+    },
+    "right_post": {
+     "meanIou": 0.94,
+     "ious": [
+      0.94
+     ],
+     "depthP50": 0.9,
+     "lowestCm": 25.8,
+     "floor": "离地",
+     "bottomCm": 25.8,
+     "obvious": [],
+     "box": [
+      10,
+      11,
+      70
+     ],
+     "boxConf": "unverified"
+    },
+    "robot": {
+     "meanIou": 0.62,
+     "ious": [
+      0.71,
+      0.53
+     ],
+     "depthP50": 2.9,
+     "lowestCm": 92.7,
+     "floor": "离地",
+     "bottomCm": 92.7,
+     "obvious": [],
+     "box": [
+      129,
+      102,
+      293
+     ],
+     "boxConf": "unverified"
+    },
+    "cart": {
+     "meanIou": 0.822,
+     "ious": [
+      0.76,
+      0.88
+     ],
+     "depthP50": 1.1,
+     "lowestCm": 2.2,
+     "floor": "贴地",
+     "bottomCm": 2.2,
+     "obvious": [],
+     "box": [
+      134,
+      256,
+      106
+     ],
+     "boxConf": "low"
+    },
+    "guard": {
+     "meanIou": 0.474,
+     "ious": [
+      0.15,
+      0.8
+     ],
+     "depthP50": 4.5,
+     "lowestCm": 31.6,
+     "floor": "离地",
+     "bottomCm": 31.6,
+     "obvious": [
+      "模型与照片掩码不符：IoU 0.15 / 0.80"
+     ],
+     "box": [
+      59,
+      136,
+      68
+     ],
+     "boxConf": "low"
+    }
+   }
+  }
+ },
+ "objects": {}
+}
