@@ -18,7 +18,8 @@ PLACE_CELL_M = 0.5
 
 def set_metadata(attrs, data):
     """Spark-DSG node/edge metadata is a JSON object; the binding differs across versions, so try the known spellings."""
-    for setter in (lambda: attrs.metadata.update(data), lambda: setattr(attrs, 'metadata', data), lambda: attrs.metadata.update(json.loads(json.dumps(data)))):
+    data = json.loads(json.dumps(data))   # plain JSON types only
+    for setter in (lambda: attrs.metadata.set(data), lambda: attrs.metadata.add(data), lambda: attrs.metadata.set(json.dumps(data))):
         try:
             setter(); return True
         except Exception:
