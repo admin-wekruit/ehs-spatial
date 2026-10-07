@@ -6,7 +6,9 @@ published. The work itself is a task script (run(ctx, opts) -> dict, optional 'f
 checks package (scripts/workcell_checks) and the shape-check core are importable from it as on the dispatcher.
 
 modal run modal_apps/workcell_layer_trial.py --task TASK.py --view VIEW.json --photos-dir DIR --photo IMAGE_ID=FILE,... \
-    --api ORIGIN --out NEW_DIR [--layer LAYER.json --layer-dir DIR_WITH_ITS_FILES] [--opts OPTS.json]
+    --api ORIGIN --out NEW_DIR [--layer LAYER.json --layer-dir DIR_WITH_ITS_FILES] [--opts OPTS.json] [--served-dir DIR]
+--served-dir: every file under DIR is served too, at its relative path under the fake page (an unpublished report: --api
+https://layer-trial.invalid/report/api with DIR/api/api/assets/<id> = {"url": "/blobs/<sha>"} and DIR/api/blobs/<sha>).
 """
 import json
 from pathlib import Path
@@ -47,13 +49,16 @@ def run(task: str, view: bytes, photos: dict, layer_name: str, served: dict, api
 
 
 @app.local_entrypoint()
-def main(task: str, view: str, photos_dir: str, photo: str, api: str, out: str, layer: str = '', layer_dir: str = '', opts: str = ''):
+def main(task: str, view: str, photos_dir: str, photo: str, api: str, out: str, layer: str = '', layer_dir: str = '', opts: str = '',
+         served_dir: str = ''):
     destination = Path(out)
     if destination.exists():
         raise ValueError('Choose a fresh output directory')
     pairs = dict(item.split('=', 1) for item in photo.split(','))
     photos = {image_id: (Path(photos_dir) / name).read_bytes() for image_id, name in pairs.items()}
     served, name = {}, ''
+    if served_dir:
+        served.update({p.relative_to(served_dir).as_posix(): p.read_bytes() for p in Path(served_dir).rglob('*') if p.is_file()})
     if layer:
         doc = json.loads(Path(layer).read_text()); name = f"measurement-layer/{doc['publicationId']}.json"; served[name] = Path(layer).read_bytes()
         for asset in doc.get('assets') or []:  # files named by the layer, relative to the page as the website serves them

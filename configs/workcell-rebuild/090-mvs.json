@@ -1,0 +1,171 @@
+{
+ "about": "Cell 090 report (publication 4b58dbd2) rebuilt on the licence-clean MVS geometry (research-notes/geometry-backbone-ab-2026-10-06). Every displayed entity of the old report, by its old entity id prefix; 'run' = an object of the source run (its masks); 'part_of' = a source partition of that object (split by its own masks); 'method': sam3d (SAM 3D Objects from every photo with a mask, compare.py gates, measured box fallback), plane (mask rays on a plane fitted to the object's MVS points; planeFrom parent = its parent's points, for a transparent sheet whose own mask shows what is behind it), floor_plane (mask rays on the report floor, +lift m), estop (specification cylinder at the triangulated e-stop), part (faces of the parent's displayed model inside this part's masks).",
+ "experiment": "mvs090-clean-02",
+ "sourceRun": "lucida-replica-01",
+ "publicationId": "4b58dbd2-3846-47f2-af97-57eaa108753c",
+ "entities": [
+  {
+   "id": "left_post",
+   "old": "27d00998",
+   "run": true,
+   "method": "sam3d"
+  },
+  {
+   "id": "right_post",
+   "old": "da0a50da",
+   "run": true,
+   "method": "sam3d"
+  },
+  {
+   "id": "right_fence",
+   "old": "ce9516a5",
+   "run": true,
+   "method": "sam3d"
+  },
+  {
+   "id": "robot",
+   "old": "d5780205",
+   "run": true,
+   "method": "sam3d"
+  },
+  {
+   "id": "left_fence",
+   "old": "929b5b7e",
+   "run": true,
+   "method": "sam3d"
+  },
+  {
+   "id": "cart",
+   "old": "a719e41c",
+   "run": true,
+   "method": "sam3d"
+  },
+  {
+   "id": "guard",
+   "old": "0bc9608d",
+   "run": true,
+   "method": "sam3d"
+  },
+  {
+   "id": "left_light_curtain",
+   "old": "5163a9b0",
+   "run": true,
+   "method": "sam3d"
+  },
+  {
+   "id": "right_light_curtain",
+   "old": "169518d8",
+   "run": true,
+   "method": "sam3d"
+  },
+  {
+   "id": "upper_clear_panel",
+   "old": "7b9004a8",
+   "method": "plane",
+   "parent": "right_fence",
+   "planeFrom": "parent"
+  },
+  {
+   "id": "lower_clear_panel",
+   "old": "33188399",
+   "method": "plane",
+   "parent": "right_fence",
+   "planeFrom": "parent"
+  },
+  {
+   "id": "rear_fence_part",
+   "old": "0f73b37a",
+   "method": "sam3d"
+  },
+  {
+   "id": "signal_lamp_right",
+   "old": "f0e43dd1",
+   "method": "sam3d"
+  },
+  {
+   "id": "estop",
+   "old": "33e5c934",
+   "method": "estop"
+  },
+  {
+   "id": "indicator_lamp",
+   "old": "a214c225",
+   "method": "sam3d",
+   "context": true
+  },
+  {
+   "id": "warning_sign",
+   "old": "7ed570b4",
+   "method": "plane"
+  },
+  {
+   "id": "station_sign",
+   "old": "9b77a5b8",
+   "method": "plane"
+  },
+  {
+   "id": "floor_marking",
+   "old": "4f584238",
+   "method": "floor_plane",
+   "lift": 0.003
+  },
+  {
+   "id": "guard_center",
+   "old": "a98cf4c5",
+   "method": "part",
+   "parent": "guard"
+  },
+  {
+   "id": "cable_tray",
+   "old": "3a875626",
+   "method": "sam3d"
+  },
+  {
+   "id": "guard_right",
+   "old": "82f289b3",
+   "method": "part",
+   "parent": "guard"
+  },
+  {
+   "id": "guard_left",
+   "old": "965e797a",
+   "method": "part",
+   "parent": "guard"
+  },
+  {
+   "id": "signal_lamp_left",
+   "old": "5af975cb",
+   "method": "sam3d"
+  },
+  {
+   "id": "poster",
+   "old": "59b6410a",
+   "method": "sam3d"
+  },
+  {
+   "id": "left_fence_rear",
+   "old": "5a62a2d3",
+   "method": "part",
+   "parent": "left_fence"
+  },
+  {
+   "id": "adjacent_fence",
+   "old": "d22e72d1",
+   "method": "sam3d",
+   "context": true
+  }
+ ],
+ "estop": {
+  "specification": {
+   "redHeadDiameterM": 0.04,
+   "yellowBodyMaxDiameterM": 0.08,
+   "heightM": 0.1,
+   "source": "user, 2026-10-04"
+  }
+ },
+ "geometry": {
+  "export": "bbab-export-090-mvs-scipyba",
+  "ba": "numpy LM (Schur), no GPL (ba_scipy.bundle_adjust; its 090 passes stop at the 500-iteration cap; the result equals pycolmap)",
+  "replaces": "bbab-export-090-mvs-da3-base (pycolmap BA: statically linked SuiteSparse, GPL)"
+ }
+}
