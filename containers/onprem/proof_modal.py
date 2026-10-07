@@ -117,7 +117,7 @@ def proof(reference: dict, published: bytes, layer: bytes, layer_name: str, laye
     env = {k: v for k, v in os.environ.items() if not k.startswith('MODAL')}
     sock, pgbin = '/tmp/pgsock', '/usr/lib/postgresql/16/bin'
     api, pubs = 'http://127.0.0.1:8792', 'http://127.0.0.1:8793'
-    env.update(PANOPTES_DATABASE_URL=f'postgresql://panoptes@/panoptes?host={sock}', PANOPTES_BLOB_BACKEND='local',
+    env.update(PANOPTES_DATABASE_URL=f'postgresql://panoptes@/panoptes?host={sock}',
                PANOPTES_BLOB_ROOT='/data/blobs', PANOPTES_EXECUTOR_BACKEND='local', PYTHONPATH='/app', HOME='/tmp',
                PANOPTES_PLATFORM_API=api)
     pub_env = {'PANOPTES_PUBLICATION_CATALOG': '/data/catalog', 'PANOPTES_PUBLICATION_HTTP': '/data/publication-http',

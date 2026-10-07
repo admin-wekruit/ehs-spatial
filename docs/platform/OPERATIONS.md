@@ -7,8 +7,8 @@ Historical HTML/report routes are archives; they do not write platform projects.
 
 1. Install locked dependencies with `uv sync --extra dev`.
 2. In `web`, run `npm ci`, then `npm run build`.
-3. Set `PANOPTES_DATABASE_URL` to a PostgreSQL database; the startup migration uses an advisory transaction lock.
-4. Set `PANOPTES_BLOB_ROOT` to an absolute directory; `PANOPTES_BLOB_BACKEND=local` and `PANOPTES_EXECUTOR_BACKEND=local` select the local adapters.
+3. Set `PANOPTES_DATABASE_URL` to a PostgreSQL database (`postgresql://…`; the startup migration uses an advisory transaction lock) or a MongoDB database (`mongodb://…/<db>`; the startup migration creates indexes). See `docs/STORAGE.md`.
+4. Set `PANOPTES_BLOB_ROOT` to an absolute directory (local blobs) or `s3://bucket/prefix` (S3-compatible blobs); `PANOPTES_EXECUTOR_BACKEND=local` selects the local executor.
 5. Run `.venv/bin/uvicorn ehs_spatial.platform.runtime:application --factory --host 127.0.0.1 --port 8792`.
 6. Open `/app.html#/projects`. Vite development mode proxies `/api` to port8792.
 
@@ -16,7 +16,7 @@ The local executor runs `.venv/bin/python -m panoptes_worker --job-id UUID` in a
 
 ## Hosted configuration
 
-Use the same application and PostgreSQL SQL schema on the selected host. For Supabase Storage, set `PANOPTES_BLOB_BACKEND=s3`, `PANOPTES_S3_BUCKET`, `PANOPTES_S3_ENDPOINT_URL`, `PANOPTES_S3_REGION`, and standard boto3 service credentials. Credentials are server environment configuration, never frontend build variables or source files.
+Use the same application and database schema on the selected host. For S3-compatible storage (Supabase Storage, MinIO, AWS S3), set `PANOPTES_BLOB_ROOT=s3://bucket/prefix`, `AWS_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, and standard boto3 service credentials (`docs/STORAGE.md`). Credentials are server environment configuration, never frontend build variables or source files.
 
 For Modal execution set `PANOPTES_EXECUTOR_BACKEND=modal`, `PANOPTES_MODAL_APP`, `PANOPTES_MODAL_FUNCTION`. `modal_apps/platform_worker.py` requires an audited immutable worker image digest and an existing named server secret. The model worker file additionally requires exact model/code pins and audited runtime images. Deploying a worker is distinct from passing model quality gates.
 

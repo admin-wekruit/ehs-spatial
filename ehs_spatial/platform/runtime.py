@@ -5,18 +5,41 @@ import os
 import json
 from pathlib import Path
 
-from .config import PlatformConfig
-from .postgres import PostgresRepository
-from .storage import LocalBlobStore, S3BlobStore
+from .config import MONGO_SCHEMES, PlatformConfig
+from .storage import LocalBlobStore
+
+
+def repository_from_url(url, **kwargs):
+    """PANOPTES_DATABASE_URL scheme selects the repository: mongodb:// | mongodb+srv:// or postgres:// | postgresql://."""
+    if url.startswith(MONGO_SCHEMES):
+        from .mongo import MongoRepository
+        return MongoRepository(url, **kwargs)
+    from .postgres import PostgresRepository
+    return PostgresRepository(url, **kwargs)
+
+
+def blob_store(root):
+    """PANOPTES_BLOB_ROOT selects the blob store: s3://bucket/prefix or a directory."""
+    if str(root).startswith("s3://"):
+        from .s3_storage import S3BlobStore
+        return S3BlobStore.from_url(str(root))
+    return LocalBlobStore(root)
+
+
+def policy_repository(repository):
+    """The policy repository matching a repository's backend."""
+    from .mongo import MongoRepository
+    if isinstance(repository, MongoRepository):
+        from .mongo_policy import MongoPolicyRepository
+        return MongoPolicyRepository(repository)
+    from .policy_repository import PostgresPolicyRepository
+    return PostgresPolicyRepository(repository)
 
 
 def services(config=None):
     config = config or PlatformConfig.from_env()
-    repository = PostgresRepository(config.database_url, paid_budget=config.paid_budget)
-    if config.blob_backend == 'local':
-        blobs = LocalBlobStore(config.blob_root)
-    else:
-        blobs = S3BlobStore(config.s3_bucket)
+    repository = repository_from_url(config.database_url, paid_budget=config.paid_budget)
+    blobs = blob_store(config.blob_root)
     repository.blobs = blobs
     from .reconstruction import provider_snapshot_from_env
     repository.execution_config = {"providerManifest": provider_snapshot_from_env()}
@@ -37,7 +60,6 @@ def application():
     from .agent_service import AgentService, GeminiAgentProvider
     from .executor import LocalJobExecutor, ModalJobExecutor
     from .policy_service import PolicyService
-    from .policy_repository import PostgresPolicyRepository
     config = PlatformConfig.from_env()
     repository, blobs = services(config)
     repository.migrate()
@@ -46,7 +68,7 @@ def application():
     else:
         # Updated LocalJobExecutor launches the same module as Modal.
         executor = LocalJobExecutor()
-    policies = PolicyService(PostgresPolicyRepository(repository), blobs)
+    policies = PolicyService(policy_repository(repository), blobs)
     model, cost = os.environ.get('PANOPTES_AGENT_MODEL'), os.environ.get('PANOPTES_AGENT_CALL_BUDGET_USD')
     provider = GeminiAgentProvider(model=model, max_call_cost=float(cost)) if model and cost else None
     agents = AgentService(repository, provider, policies)
