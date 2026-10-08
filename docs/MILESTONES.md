@@ -4,7 +4,7 @@
 
 ## 当前位置
 
-**Phase 3（企业版交接 1.0.0-rc1）已交付，等客户侧验收；Phase 4（判定层）开工 2026-10-08：分支 `verdict-lab`（`ehs_spatial/verdict/`：契约 C1–C5、插件注册表、签名 v1），四个工作包并行（lab 核心 + 基线插件 / coverage + σ + 感知规约 / 规范侧条款图 + 查表 + 对齐 + 检索 / 规则验证 harness + Python 等价引擎 + 决策规则变体），合并后在 090 / 030 上出记分卡 v0。**
+**Phase 3（企业版交接 1.0.0-rc1）已交付，等客户侧验收；Phase 4（判定层）开工 2026-10-08：分支 `verdict-lab`（`ehs_spatial/verdict/`：契约 C1–C5、插件注册表、签名 v1），四个工作包并行（lab 核心 + 基线插件 / coverage + σ + 感知规约 / 规范侧条款图 + 查表 + 对齐 + 检索 / 规则验证 harness + Python 等价引擎 + 决策规则变体），四包已合并到 `verdict-lab`（tests/verdict 66 通过）；记分卡 v0 已出（`docs/research/verdict-lab-scorecard-v0-2026-10-08.md`：基线 / python 引擎等价 / stpl + k=1 三配置 × 两工位）。**
 
 | 阶段 | 时间 | 状态 | 里程碑 / 证据 |
 |---|---|---|---|
