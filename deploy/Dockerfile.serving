@@ -4,12 +4,15 @@
 # from Hugging Face into the HF_HOME volume at first start, HF_TOKEN for the gated facebook/sam3). One image, three commands
 # (deploy/compose.gpu-{a,b}.yml). Build context SRC = deploy/context.sh SRC:
 #   docker build -f SRC/serving/deploy/Dockerfile.serving -t panoptes-serving:v1 SRC
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu24.04
+# Customer review 2026-10-08 (docs/REVIEW-ARGUS-2026-10-08.md): the 12.4.1 cudnn runtime has no ubuntu24.04 tag (22.04 is the one that
+# exists); python3-dev is needed by the MoGe build (without it every MoGe inference returned 500); pip must be upgraded before the
+# requirements install (the stock pip of python3-venv asserts in get_topological_weights on this requirement set).
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONUNBUFFERED=1
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv git build-essential libgl1 libglib2.0-0 \
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv python3-dev git build-essential libgl1 libglib2.0-0 \
         ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY serving/serving/requirements.txt /tmp/requirements.txt
-RUN python3 -m venv /opt/serving && /opt/serving/bin/pip install torch torchvision \
+RUN python3 -m venv /opt/serving && /opt/serving/bin/pip install --upgrade pip && /opt/serving/bin/pip install torch torchvision \
     && /opt/serving/bin/pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 COPY serving/serving /serving/serving
 ENV PATH=/opt/serving/bin:$PATH HF_HOME=/hf-cache
