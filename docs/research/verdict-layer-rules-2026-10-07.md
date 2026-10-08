@@ -347,3 +347,17 @@ LLM 能做的评测工作：生成合成场景 / 规范变体、把规则回译�
 4. **主动抽帧**：只把护带内 / 规则边界附近 / 高不确定度的片段给人标（MonitorVLM-v2 式熵分流）；每小时约 200 帧量级。
 5. **现成回放集**：平台 phase2 的固定相机视频 R1 / R2 / R3 逐帧判定和 ME340 / Walmart / Sam's Club 的 run journals 可直接当回放基线；"留出一半视角"的评估法也适用。
 6. 规模：事件标注 ~50 条 / 小时，抽帧 ~200 帧 / 小时，合成 10 小时真值免费。
+
+## G. 规范怎么"对上"场景图：匹配 = 变量绑定（图：`research/verdict-layer-trial-2026-10-07/out/090/matching.png`）
+
+规范侧不是第二张场景，是**规则模板**：每条规则 = 带变量的模式，四个部分（RASE）各落到场景图词表的一类东西上——
+Selection 落到节点类别，Applicability 落到关系（边）或区域节点，Requirement 落到一种边 + 阈值 + 方向（护带），Exception 落到节点属性。
+场景图是实例。匹配就是模式匹配（数据库查询 / Datalog 的 grounding）：引擎枚举所有满足 Selection + Applicability 的变量绑定，对每个绑定取 Requirement 指定的那条边的值 ± U 做护带比较，一个绑定出一条判定。
+"不同的规则怎么匹配" = 不同的模式，共用同一张图、同一套词表；引擎一次把所有规则的绑定都算出来。
+
+090 的例子：规则 A（离地缝）的 Selection 绑定到 3 个节点（left fence、right fence、safety guard）→ 3 条 floor_gap 边 → −2 ± 100 PASS、84 ± 100 NEEDS_MEASUREMENT、422 ± 101 FAIL；
+规则 B（≥ 500 mm）绑定到 7 对（robot × 固定物）→ 7 条 min_distance_3d 边；规则 C（包围）绑定到 1 个区域 → 占用格可达 → CANNOT_DETERMINE。
+Applicability 里今天没有的条件（F 是危险区周界的一部分；X 在机器人运动包络附近）就是 zone 节点和受限空间输入要补的地方；补上之前，判定是"若适用"的条件判定。
+
+specs 到了之后的对应流程：每条条款 → 四个部分 → 查词表：Selection 的类别有没有、Applicability 的关系有没有、Requirement 的边有没有、Exception 的属性有没有；
+都有 → 编译成规则；缺一个 → 要么加边 / 属性（表示层工作），要么标 needs_input（人 / 数据表给），要么拒绝（照片永远表达不了）。
