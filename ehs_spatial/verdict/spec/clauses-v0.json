@@ -1,0 +1,1304 @@
+{
+ "schema": "verdict/1",
+ "version": "0",
+ "standards": [
+  {
+   "id": "ISO13857:2019",
+   "title": "Safety of machinery - Safety distances to prevent hazard zones being reached by upper and lower limbs",
+   "edition": "2019",
+   "url": "https://www.troax.com/app/uploads/Brochure-Safety-Guide_EN.pdf"
+  },
+  {
+   "id": "ISO13855:2010",
+   "title": "Safety of machinery - Positioning of safeguards with respect to the approach speeds of parts of the human body",
+   "edition": "2010 (2024 edition reformulates S = K*T + DDS + Z)",
+   "url": "https://www.reersafety.com/en/?p=39804"
+  },
+  {
+   "id": "ISO13854:2017",
+   "title": "Safety of machinery - Minimum gaps to avoid crushing of parts of the human body",
+   "edition": "2017",
+   "url": "https://cdn.standards.iteh.ai/samples/66459/46ce3b47790e4526802912dbbd921354/ISO-13854-2017.pdf"
+  },
+  {
+   "id": "ISO10218-2:2011",
+   "title": "Robots and robotic devices - Safety requirements for industrial robots - Part 2: Robot systems and integration",
+   "edition": "2011 (replaced by 2025)",
+   "url": "https://www.iso.org/standard/73934.html"
+  },
+  {
+   "id": "ISO13850:2015",
+   "title": "Safety of machinery - Emergency stop function - Principles for design",
+   "edition": "2015",
+   "url": "https://www.se.com/uk/en/faqs/FAQ000283554/"
+  },
+  {
+   "id": "IEC60204-1:2016",
+   "title": "Safety of machinery - Electrical equipment of machines - Part 1: General requirements",
+   "edition": "2016 (year assumed; the research note cites the clauses without a year)",
+   "url": "https://jjkellercompliancenetwork.com/institute/what-are-the-osha-requirements-for-emergency-stop-devices-jjk-4bbca01b-a2b5-49de-ed83-f7ba8fb0548d"
+  },
+  {
+   "id": "ISO14120:2015",
+   "title": "Safety of machinery - Guards - General requirements for the design and construction of fixed and movable guards",
+   "edition": "2015",
+   "url": "https://knowledge.bsigroup.com/products/safety-of-machinery-guards-general-requirements-for-the-design-and-construction-of-fixed-and-movable-guards-1"
+  },
+  {
+   "id": "OSHA1910",
+   "title": "29 CFR Part 1910 - Occupational Safety and Health Standards",
+   "edition": "e-CFR current",
+   "url": "https://www.law.cornell.edu/cfr/text/29/1910.176"
+  },
+  {
+   "id": "NFPA101",
+   "title": "NFPA 101 Life Safety Code",
+   "edition": "not in the research note",
+   "url": "https://www.jjkellersafety.com/news-articles/does-osha-specify-a-minimum-aisle-width"
+  },
+  {
+   "id": "ISO3691-4:2020",
+   "title": "Industrial trucks - Safety requirements and verification - Part 4: Driverless industrial trucks and their systems",
+   "edition": "2020 (year assumed)",
+   "url": "https://www.certifico.com/normazione/documenti-riservati-normazione/sicurezza-carrelli-industriali-senza-conducente-agv-lgv-conformi-iso-3691-4"
+  }
+ ],
+ "clauses": [
+  {
+   "id": "ISO13857:2019/4.4",
+   "standard": "ISO 13857",
+   "edition": "2019",
+   "title": "Gap between a protective structure and the floor",
+   "paraphrase": "A gap under a guard that bounds a hazard zone must not let a whole body through: at most 180 mm for a slot-shaped gap (the usual floor gap) and 240 mm for a square or round opening. Larger gaps count as whole-body access, not as a lower-limb opening of Table 7.",
+   "rule_class": "geometry",
+   "selection": {
+    "F": [
+     "fence",
+     "guard"
+    ],
+    "Z": [
+     "hazard_zone",
+     "restricted_space"
+    ]
+   },
+   "applicability": [
+    "perimeter_of(F, Z)"
+   ],
+   "requirement": {
+    "predicate": "floor_gap",
+    "args": [
+     "F"
+    ],
+    "operator": "<=",
+    "threshold": 180,
+    "unit": "mm",
+    "inputs": [],
+    "variants_mm": {
+     "slot": 180,
+     "square": 240,
+     "round": 240
+    }
+   },
+   "exceptions": [],
+   "definitions": [
+    "protective structure",
+    "perimeter guard",
+    "hazard zone",
+    "floor gap"
+   ],
+   "tags": [
+    "fence",
+    "guard",
+    "hazard_zone",
+    "restricted_space"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.axelent.co.uk/news/articles/faq-maximum-gap"
+  },
+  {
+   "id": "ISO13857:2019/Table2",
+   "standard": "ISO 13857",
+   "edition": "2019",
+   "title": "Reaching over a protective structure (high risk)",
+   "paraphrase": "Where a person can reach over a protective structure of height b towards a hazard zone whose top is at height a, the horizontal distance c from the structure to the hazard zone must be at least the Table 2 value for (a, b); between entries the larger distance applies. Table 2 is the high-risk table, Table 1 (low risk) was not extracted. The photo shows the posed robot, not the hazard zone's true extent.",
+   "rule_class": "geometry",
+   "selection": {
+    "S": [
+     "fence",
+     "guard"
+    ],
+    "H": [
+     "robot"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "reach_over",
+    "args": [
+     "H",
+     "S"
+    ],
+    "operator": ">=",
+    "table": "ISO13857:2019/Table2",
+    "table_args": {
+     "hazard_height_mm": "top_height(H)",
+     "structure_height_mm": "top_height(S)",
+     "risk_level": "risk_level"
+    },
+    "unit": "mm",
+    "inputs": [
+     "risk_level"
+    ],
+    "examples_mm": {
+     "b=1400": {
+      "a=2000": 1100,
+      "a=1000": 1000,
+      "a=400": 400
+     },
+     "b=1800": {
+      "a=1400": 800,
+      "a=1000": 0
+     },
+     "b=2000": {
+      "a=2600": 500,
+      "a<=1000": 0
+     },
+     "b=2200": {
+      "a=2600": 400,
+      "a<=1600": 0
+     },
+     "b=2500": {
+      "a=2600": 100
+     },
+     "b=2700": {
+      "any a": 0
+     }
+    }
+   },
+   "exceptions": [],
+   "definitions": [
+    "protective structure",
+    "hazard zone",
+    "hazard",
+    "reaching over"
+   ],
+   "tags": [
+    "fence",
+    "guard",
+    "robot",
+    "hazard_zone",
+    "restricted_space"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.troax.com/app/uploads/Brochure-Safety-Guide_EN.pdf"
+  },
+  {
+   "id": "ISO13857:2019/Table2-min-height",
+   "standard": "ISO 13857",
+   "edition": "2019",
+   "title": "Minimum height of a protective structure against reaching over",
+   "paraphrase": "Protective structures lower than 1400 mm do not sufficiently restrict reaching over and are not to be used on their own (Table 2 note): the top of a fence or guard on the hazard zone's perimeter must be at least 1400 mm above the floor.",
+   "rule_class": "geometry",
+   "selection": {
+    "S": [
+     "fence",
+     "guard"
+    ],
+    "Z": [
+     "hazard_zone",
+     "restricted_space"
+    ]
+   },
+   "applicability": [
+    "perimeter_of(S, Z)"
+   ],
+   "requirement": {
+    "predicate": "top_height",
+    "args": [
+     "S"
+    ],
+    "operator": ">=",
+    "threshold": 1400,
+    "unit": "mm",
+    "inputs": []
+   },
+   "exceptions": [],
+   "definitions": [
+    "protective structure",
+    "hazard zone"
+   ],
+   "tags": [
+    "fence",
+    "guard",
+    "hazard_zone",
+    "restricted_space"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.troax.com/app/uploads/Brochure-Safety-Guide_EN.pdf"
+  },
+  {
+   "id": "ISO13857:2019/Table4",
+   "standard": "ISO 13857",
+   "edition": "2019",
+   "title": "Reaching through regular openings (persons of 14 years and older)",
+   "paraphrase": "For a regular opening of size e (slot, square or round) in a guard, the distance from the opening to the hazard zone must be at least the Table 4 safety distance sr for that e and shape; a 40 mm square mesh needs 200 mm (ABB's reading). The mesh pitch is rarely resolvable in the photo-derived scene and normally comes from the catalogue.",
+   "rule_class": "geometry",
+   "selection": {
+    "S": [
+     "fence",
+     "guard"
+    ],
+    "H": [
+     "robot"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "min_distance_3d",
+    "args": [
+     "S",
+     "H"
+    ],
+    "operator": ">=",
+    "table": "ISO13857:2019/Table4",
+    "table_args": {
+     "opening_mm": "mesh_pitch_mm",
+     "shape": "square"
+    },
+    "attributes": [
+     "mesh_pitch_mm"
+    ],
+    "unit": "mm",
+    "inputs": [
+     "table_lookup"
+    ],
+    "examples_mm": {
+     "columns": [
+      "slot",
+      "square",
+      "round"
+     ],
+     "e<=4": [
+      2,
+      2,
+      2
+     ],
+     "4<e<=6": [
+      10,
+      5,
+      5
+     ],
+     "6<e<=8": [
+      20,
+      15,
+      5
+     ],
+     "8<e<=10": [
+      80,
+      25,
+      20
+     ],
+     "10<e<=12": [
+      100,
+      80,
+      80
+     ],
+     "12<e<=20": [
+      120,
+      120,
+      120
+     ],
+     "20<e<=30": [
+      850,
+      120,
+      120
+     ],
+     "30<e<=40": [
+      850,
+      200,
+      120
+     ],
+     "40<e<=120": [
+      850,
+      850,
+      850
+     ]
+    }
+   },
+   "exceptions": [],
+   "definitions": [
+    "protective structure",
+    "hazard",
+    "regular opening",
+    "safety distance"
+   ],
+   "tags": [
+    "fence",
+    "guard",
+    "robot",
+    "hazard_zone",
+    "restricted_space"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.troax.com/app/uploads/Brochure-Safety-Guide_EN.pdf"
+  },
+  {
+   "id": "ISO13857:2019/Table7",
+   "standard": "ISO 13857",
+   "edition": "2019",
+   "title": "Openings for lower limbs",
+   "paraphrase": "A slot-shaped opening at the bottom of a guard that a leg or foot can enter (35 < e <= 180 mm) needs a distance from the opening to the hazard zone of at least the Table 7 value: 180 mm up to e = 60, 650 mm up to 80, 1100 mm up to 180. Beyond 180 mm (slot) or 240 mm (square, round) the gap is whole-body access (clause 4.4). Rows for e <= 35 and for square / round openings were not reported in the research note.",
+   "rule_class": "geometry",
+   "selection": {
+    "F": [
+     "fence",
+     "guard"
+    ],
+    "H": [
+     "robot"
+    ],
+    "Z": [
+     "hazard_zone",
+     "restricted_space"
+    ]
+   },
+   "applicability": [
+    "perimeter_of(F, Z)",
+    "floor_gap(F) > 35"
+   ],
+   "requirement": {
+    "predicate": "min_distance_3d",
+    "args": [
+     "F",
+     "H"
+    ],
+    "operator": ">=",
+    "table": "ISO13857:2019/Table7",
+    "table_args": {
+     "opening_mm": "floor_gap(F)",
+     "shape": "slot"
+    },
+    "unit": "mm",
+    "inputs": [],
+    "examples_mm": {
+     "35<e<=60": 180,
+     "60<e<=80": 650,
+     "80<e<=95": 1100,
+     "95<e<=180": 1100
+    }
+   },
+   "exceptions": [],
+   "definitions": [
+    "protective structure",
+    "hazard zone",
+    "opening",
+    "floor gap"
+   ],
+   "tags": [
+    "fence",
+    "guard",
+    "robot",
+    "hazard_zone",
+    "restricted_space"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.troax.com/app/uploads/Brochure-Safety-Guide_EN.pdf"
+  },
+  {
+   "id": "ISO13855:2010/normal-approach",
+   "standard": "ISO 13855",
+   "edition": "2010",
+   "title": "Minimum distance of an ESPE, normal approach",
+   "paraphrase": "An electro-sensitive protective device whose detection field is approached at right angles must be at least S = K*T + C from the hazard zone: K = 2000 mm/s (S at least 100 mm) or, when that gives more than 500 mm, K = 1600 mm/s (S at least 500 mm); C = 8*(d - 14) mm for detection capability d <= 40 mm and 850 mm for coarser detection. T is the overall stopping performance (machine stop + ESPE response + interface) and is never in a photo. 2010-edition numbers; the 2024 edition rewrites S = K*T + DDS + Z.",
+   "rule_class": "geometry",
+   "selection": {
+    "L": [
+     "light_curtain"
+    ],
+    "Z": [
+     "restricted_space",
+     "hazard_zone"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "zone_distance",
+    "args": [
+     "L",
+     "Z"
+    ],
+    "operator": ">=",
+    "table": "ISO13855:2010/S",
+    "table_args": {
+     "stop_time_ms": "stop_time_ms",
+     "resolution_mm": "resolution_mm"
+    },
+    "formula": "S = K*T + C; K = 2000 mm/s if S <= 500 mm else 1600 mm/s; C = 8*(d - 14) if d <= 40 mm else 850; S >= 100 (K = 2000) / 500 (K = 1600)",
+    "attributes": [
+     "resolution_mm"
+    ],
+    "unit": "mm",
+    "inputs": [
+     "stop_time_ms",
+     "resolution_mm",
+     "restricted_space"
+    ]
+   },
+   "exceptions": [],
+   "definitions": [
+    "ESPE",
+    "hazard zone",
+    "detection capability",
+    "stopping performance",
+    "safety distance"
+   ],
+   "tags": [
+    "light_curtain",
+    "robot",
+    "hazard_zone",
+    "restricted_space"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.reersafety.com/en/?p=39804"
+  },
+  {
+   "id": "ISO13855:2010/parallel-approach",
+   "standard": "ISO 13855",
+   "edition": "2010",
+   "title": "Minimum distance of a horizontal (parallel) detection field",
+   "paraphrase": "A detection field parallel to the floor (laser scanner, floor-parallel curtain) at height H must be at least S = 1600*T + C from the hazard zone with C = 1200 - 0.4*H and at least 850 mm. H may not exceed 1000 mm; above 300 mm the possibility of crawling under must be assessed (not encoded). The configured field size is a scanner setting, not visible.",
+   "rule_class": "geometry",
+   "selection": {
+    "L": [
+     "light_curtain"
+    ],
+    "Z": [
+     "restricted_space",
+     "hazard_zone"
+    ]
+   },
+   "applicability": [
+    "bottom_height(L) <= 1000"
+   ],
+   "requirement": {
+    "predicate": "zone_distance",
+    "args": [
+     "L",
+     "Z"
+    ],
+    "operator": ">=",
+    "table": "ISO13855:2010/C-parallel",
+    "table_args": {
+     "height_mm": "bottom_height(L)"
+    },
+    "formula": "S = 1600*T + C; C = 1200 - 0.4*H, at least 850",
+    "unit": "mm",
+    "inputs": [
+     "stop_time_ms",
+     "restricted_space"
+    ]
+   },
+   "exceptions": [],
+   "definitions": [
+    "ESPE",
+    "laser scanner",
+    "hazard zone",
+    "stopping performance"
+   ],
+   "tags": [
+    "light_curtain",
+    "robot",
+    "hazard_zone",
+    "restricted_space"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.reersafety.com/en/?p=39804"
+  },
+  {
+   "id": "ISO13855:2010/multi-beam",
+   "standard": "ISO 13855",
+   "edition": "2010",
+   "title": "Beam heights of multiple separate beams",
+   "paraphrase": "Access-control devices built from separate beams use fixed beam heights above the floor: 4 beams at 300/600/900/1200 mm, 3 at 300/700/1100, 2 at 400/900, a single beam at 750 mm (the 400 mm lowest beam only where the risk assessment allows). Their distance follows the normal-approach formula with C = 850 (S = 1600*T + 850). The +-50 mm tolerance is the research note's, not the standard's.",
+   "rule_class": "geometry",
+   "selection": {
+    "L": [
+     "light_curtain"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "attribute": "beam_heights_mm",
+    "args": [
+     "L"
+    ],
+    "operator": "in",
+    "table": "ISO13855:2010/multi-beam",
+    "threshold": [
+     [
+      300,
+      600,
+      900,
+      1200
+     ],
+     [
+      300,
+      700,
+      1100
+     ],
+     [
+      400,
+      900
+     ],
+     [
+      750
+     ]
+    ],
+    "tolerance_mm": 50,
+    "unit": "mm",
+    "inputs": []
+   },
+   "exceptions": [],
+   "definitions": [
+    "ESPE",
+    "multi-beam device"
+   ],
+   "tags": [
+    "light_curtain"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.datalogic.com/upload/Flipbook/RG_SAFETY_EN/files/assets/basic-html/page95.html"
+  },
+  {
+   "id": "ISO13854:2017/Table1",
+   "standard": "ISO 13854",
+   "edition": "2017",
+   "title": "Minimum gaps to avoid crushing",
+   "paraphrase": "Where a moving part can close on a fixed object, the remaining gap must be at least the Table 1 value for the body part that can enter: body 500, head 300, leg 180, foot 120, toes 50, arm 120, hand / wrist / fist 100, finger 25 mm; when several parts can enter, the largest applies. Crushing only, not impact or shearing. Body, head and leg were seen in the ISO preview; the lower rows come from a secondary source and the finger value is unverified.",
+   "rule_class": "geometry",
+   "selection": {
+    "R": [
+     "robot"
+    ],
+    "X": [
+     "fence",
+     "guard",
+     "bollard",
+     "control_panel"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "min_distance_3d",
+    "args": [
+     "R",
+     "X"
+    ],
+    "operator": ">=",
+    "table": "ISO13854:2017/Table1",
+    "table_args": {
+     "body_part": "body_part"
+    },
+    "unit": "mm",
+    "inputs": [
+     "body_part",
+     "restricted_space"
+    ],
+    "examples_mm": {
+     "body": 500,
+     "head": 300,
+     "leg": 180,
+     "foot": 120,
+     "toes": 50,
+     "arm": 120,
+     "hand": 100,
+     "finger": 25
+    }
+   },
+   "exceptions": [],
+   "definitions": [
+    "moving part",
+    "fixed structure",
+    "crushing gap"
+   ],
+   "tags": [
+    "robot",
+    "fence",
+    "guard",
+    "bollard",
+    "control_panel",
+    "restricted_space"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://cdn.standards.iteh.ai/samples/66459/46ce3b47790e4526802912dbbd921354/ISO-13854-2017.pdf"
+  },
+  {
+   "id": "ISO10218-2:2011/trapping-clearance",
+   "standard": "ISO 10218-2 / ANSI-RIA R15.06",
+   "edition": "2011 / 2012",
+   "title": "Clearance between the robot operating space and fixed structures",
+   "paraphrase": "Where the robot's operating space comes close to walls, posts or other machines, at least 500 mm (20 in) must remain between them, otherwise additional safeguarding is needed; earlier R15.06 editions used 18 in. The clause number is unverified (vendor restatements only); the operating space depends on the program, so the measured robot box underestimates it.",
+   "rule_class": "geometry",
+   "selection": {
+    "R": [
+     "robot"
+    ],
+    "X": [
+     "fence",
+     "guard",
+     "bollard",
+     "control_panel"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "min_distance_3d",
+    "args": [
+     "R",
+     "X"
+    ],
+    "operator": ">=",
+    "threshold": 500,
+    "unit": "mm",
+    "inputs": [
+     "restricted_space"
+    ]
+   },
+   "exceptions": [],
+   "definitions": [
+    "fixed structure",
+    "restricted space",
+    "trapping"
+   ],
+   "tags": [
+    "robot",
+    "fence",
+    "guard",
+    "bollard",
+    "control_panel",
+    "restricted_space"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.osha.gov/robotics/standards"
+  },
+  {
+   "id": "ISO10218-2:2011/perimeter-safeguarding",
+   "standard": "ISO 10218-2 / ISO 14120",
+   "edition": "2011 / 2015",
+   "title": "Perimeter safeguarding encloses the hazard zone",
+   "paraphrase": "The robot's hazard zone must be enclosed by perimeter guarding; an opening is acceptable only where an interlocked door or an ESPE covers it. In the scene this is a topology check on the plan occupancy grid: no path from outside into the zone through free, observed cells, except through cells that an interlocked door or a light curtain covers. The clause number is not in the research note; paraphrased from the trial's rule r10.",
+   "rule_class": "topology",
+   "selection": {
+    "Z": [
+     "hazard_zone",
+     "restricted_space"
+    ],
+    "D": [
+     "interlocked_door",
+     "light_curtain"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "enclosed",
+    "args": [
+     "Z"
+    ],
+    "operator": "==",
+    "threshold": 1,
+    "unit": "bool",
+    "inputs": [],
+    "predicates": [
+     "opening",
+     "covers_opening"
+    ],
+    "formula": "enclosed(Z), or every opening(Z, cell) has some D with covers_opening(D, cell)"
+   },
+   "exceptions": [
+    "interlock"
+   ],
+   "definitions": [
+    "hazard zone",
+    "perimeter guard",
+    "ESPE",
+    "opening"
+   ],
+   "tags": [
+    "hazard_zone",
+    "restricted_space",
+    "fence",
+    "guard",
+    "interlocked_door",
+    "light_curtain",
+    "robot"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://library.e.abb.com/public/a63ad355c09d4a62b9826fc0a696c64d/Limiting_devices_for_industrial_robot_cells_2TLC172299D0201_revB.pdf"
+  },
+  {
+   "id": "ISO14120:2015/5.18",
+   "standard": "ISO 14120",
+   "edition": "2015",
+   "title": "Guards must not invite climbing",
+   "paraphrase": "A guard is designed so that it offers no climbing aids (footholds, horizontal members usable as steps). Photo-checkable in principle, but the scene has no attribute for footholds yet; listed as a vocabulary gap.",
+   "rule_class": "semantic",
+   "selection": {
+    "G": [
+     "fence",
+     "guard"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "attribute": "climbing_aids",
+    "args": [
+     "G"
+    ],
+    "operator": "==",
+    "threshold": false,
+    "unit": "bool",
+    "inputs": []
+   },
+   "exceptions": [],
+   "definitions": [
+    "guard",
+    "climbing aids"
+   ],
+   "tags": [
+    "fence",
+    "guard"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://knowledge.bsigroup.com/products/safety-of-machinery-guards-general-requirements-for-the-design-and-construction-of-fixed-and-movable-guards-1"
+  },
+  {
+   "id": "ISO13850:2015/4.3",
+   "standard": "ISO 13850",
+   "edition": "2015",
+   "title": "Emergency stop actuator: colour and form",
+   "paraphrase": "The emergency stop actuator is red, on a yellow background where one exists, of the mushroom / palm type, latching with manual reset. Only the red-on-yellow colour and the device's presence are photo-checkable; latching, reset, stop category and PL are not. OSHA 1910.144(a)(1)(iii) likewise requires red.",
+   "rule_class": "semantic",
+   "selection": {
+    "E": [
+     "estop"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "attribute": "colour",
+    "args": [
+     "E"
+    ],
+    "operator": "==",
+    "threshold": "red_on_yellow",
+    "unit": null,
+    "inputs": []
+   },
+   "exceptions": [],
+   "definitions": [
+    "emergency stop device",
+    "actuator"
+   ],
+   "tags": [
+    "estop",
+    "control_panel"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.se.com/uk/en/faqs/FAQ000283554/"
+  },
+  {
+   "id": "IEC60204-1:2016/10.7",
+   "standard": "IEC 60204-1",
+   "edition": "2016",
+   "title": "Emergency stop devices at each operator control station",
+   "paraphrase": "An emergency stop device must be readily accessible at every operator control station and at the other places the risk assessment requires (ISO 13850 4.1.1.1: easily accessible). In the scene: for every declared operator station there is an e-stop within the declared reach radius, with an unobstructed approach. Operator stations are declared zones, not a perception class. The edition year is assumed.",
+   "rule_class": "topology",
+   "selection": {
+    "E": [
+     "estop"
+    ],
+    "P": [
+     "operator_station"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "zone_distance",
+    "args": [
+     "E",
+     "P"
+    ],
+    "operator": "exists",
+    "threshold": "reach_radius_mm",
+    "unit": "mm",
+    "inputs": [
+     "reach_radius_mm"
+    ],
+    "formula": "for every P there is an E with zone_distance(E, P) <= reach_radius_mm"
+   },
+   "exceptions": [],
+   "definitions": [
+    "emergency stop device",
+    "operator control station"
+   ],
+   "tags": [
+    "estop",
+    "operator_station",
+    "control_panel"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://jjkellercompliancenetwork.com/institute/what-are-the-osha-requirements-for-emergency-stop-devices-jjk-4bbca01b-a2b5-49de-ed83-f7ba8fb0548d"
+  },
+  {
+   "id": "IEC60204-1:2016/10.1.2",
+   "standard": "IEC 60204-1",
+   "edition": "2016",
+   "title": "Height of hand-operated actuators above the servicing level",
+   "paraphrase": "Hand-operated control actuators, the emergency stop included, sit at least 0.6 m above the servicing level (the floor the operator stands on). No upper bound is encoded: the often-quoted 1.7 m ceiling could not be traced to a clause and NEC 404.8(A)'s 2.0 m is for switches and breakers.",
+   "rule_class": "geometry",
+   "selection": {
+    "E": [
+     "estop"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "bottom_height",
+    "args": [
+     "E"
+    ],
+    "operator": ">=",
+    "threshold": 600,
+    "unit": "mm",
+    "inputs": []
+   },
+   "exceptions": [],
+   "definitions": [
+    "emergency stop device",
+    "servicing level",
+    "actuator"
+   ],
+   "tags": [
+    "estop",
+    "control_panel"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://engx.theiet.org/f/discussions/20960/control-panel-ergonomics/64006"
+  },
+  {
+   "id": "OSHA:1910.176(a)-marked",
+   "standard": "29 CFR 1910",
+   "edition": "e-CFR current",
+   "title": "Permanent aisles and passageways are marked",
+   "paraphrase": "Where mechanical handling equipment is used, permanent aisles and passageways must be appropriately marked (yellow or yellow / black per 1910.144(a)(3) and ANSI Z535.1). In the scene: every aisle zone contains a floor marking.",
+   "rule_class": "semantic",
+   "selection": {
+    "A": [
+     "aisle"
+    ],
+    "M": [
+     "floor_marking"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "in_zone",
+    "args": [
+     "M",
+     "A"
+    ],
+    "operator": "exists",
+    "unit": "bool",
+    "inputs": [],
+    "formula": "for every A there is an M with in_zone(M, A)"
+   },
+   "exceptions": [],
+   "definitions": [
+    "aisle",
+    "passageway",
+    "floor marking"
+   ],
+   "tags": [
+    "aisle",
+    "floor_marking"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.law.cornell.edu/cfr/text/29/1910.176"
+  },
+  {
+   "id": "OSHA:1910.176(a)-clear",
+   "standard": "29 CFR 1910",
+   "edition": "e-CFR current",
+   "title": "Aisles kept clear",
+   "paraphrase": "Sufficient safe clearances are kept in aisles and at loading docks, and aisles are kept clear of obstructions that could create a hazard. In the scene: no movable or unclassified object stands inside an aisle zone.",
+   "rule_class": "topology",
+   "selection": {
+    "A": [
+     "aisle"
+    ],
+    "X": [
+     "cart",
+     "other"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "in_zone",
+    "args": [
+     "X",
+     "A"
+    ],
+    "operator": "not_exists",
+    "unit": "bool",
+    "inputs": [],
+    "formula": "no X with in_zone(X, A)"
+   },
+   "exceptions": [],
+   "definitions": [
+    "aisle",
+    "passageway"
+   ],
+   "tags": [
+    "aisle"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.law.cornell.edu/cfr/text/29/1910.176"
+  },
+  {
+   "id": "OSHA:1910.36(g)(2)",
+   "standard": "29 CFR 1910",
+   "edition": "e-CFR current",
+   "title": "Exit route width",
+   "paraphrase": "An exit route is at least 28 in (711 mm) wide at all points between the exit access and the exit. Whether an aisle is an exit route is a human input; the scene has no aisle-width predicate yet (vocabulary gap).",
+   "rule_class": "geometry",
+   "selection": {
+    "A": [
+     "aisle"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "aisle_width",
+    "args": [
+     "A"
+    ],
+    "operator": ">=",
+    "threshold": 711,
+    "unit": "mm",
+    "inputs": []
+   },
+   "exceptions": [],
+   "definitions": [
+    "aisle",
+    "exit route",
+    "aisle width"
+   ],
+   "tags": [
+    "aisle"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.law.cornell.edu/cfr/text/29/1910.36"
+  },
+  {
+   "id": "NFPA101/aisle-width-existing",
+   "standard": "NFPA 101",
+   "edition": "not in the research note",
+   "title": "Minimum aisle width, existing buildings",
+   "paraphrase": "NFPA 101 asks for 36 in (914 mm) of clear width in existing buildings and 44 in (1118 mm) in new ones; aisles for powered trucks are at least 3 ft wider than the widest equipment or load. Clause number and edition were not in the research note.",
+   "rule_class": "geometry",
+   "selection": {
+    "A": [
+     "aisle"
+    ]
+   },
+   "applicability": [],
+   "requirement": {
+    "predicate": "aisle_width",
+    "args": [
+     "A"
+    ],
+    "operator": ">=",
+    "threshold": 914,
+    "unit": "mm",
+    "inputs": [],
+    "variants_mm": {
+     "existing": 914,
+     "new": 1118
+    }
+   },
+   "exceptions": [],
+   "definitions": [
+    "aisle",
+    "aisle width"
+   ],
+   "tags": [
+    "aisle"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.jjkellersafety.com/news-articles/does-osha-specify-a-minimum-aisle-width"
+  },
+  {
+   "id": "ISO3691-4:2020/path-clearance",
+   "standard": "ISO 3691-4",
+   "edition": "2020 (year assumed)",
+   "title": "Clearance beside the path of a driverless truck",
+   "paraphrase": "Along the path of a driverless industrial truck there is 0.5 m of clearance on both sides to fixed structures up to a height of 2.1 m; places without it are operating hazard zones needing other measures. The path comes from floor marking or a declared route; the scene has no driverless-truck class (vocabulary gap).",
+   "rule_class": "geometry",
+   "selection": {
+    "P": [
+     "floor_marking"
+    ],
+    "X": [
+     "fence",
+     "guard",
+     "bollard",
+     "control_panel",
+     "robot",
+     "other"
+    ]
+   },
+   "applicability": [
+    "bottom_height(X) <= 2100"
+   ],
+   "requirement": {
+    "predicate": "horizontal_gap",
+    "args": [
+     "P",
+     "X"
+    ],
+    "operator": ">=",
+    "threshold": 500,
+    "unit": "mm",
+    "inputs": []
+   },
+   "exceptions": [],
+   "definitions": [
+    "AGV",
+    "fixed structure",
+    "floor marking"
+   ],
+   "tags": [
+    "agv",
+    "floor_marking"
+   ],
+   "photo_checkable": true,
+   "verified": false,
+   "source_url": "https://www.certifico.com/normazione/documenti-riservati-normazione/sicurezza-carrelli-industriali-senza-conducente-agv-lgv-conformi-iso-3691-4"
+  }
+ ],
+ "tables": [
+  {
+   "id": "ISO13857:2019/Table2",
+   "standard": "ISO 13857",
+   "edition": "2019",
+   "function": "ehs_spatial.verdict.layers.l4_spec.tables:iso13857_table2",
+   "inputs": [
+    "hazard_height_mm",
+    "structure_height_mm",
+    "risk_level"
+   ],
+   "output_unit": "mm",
+   "verified": false,
+   "source_url": "https://www.troax.com/app/uploads/Brochure-Safety-Guide_EN.pdf"
+  },
+  {
+   "id": "ISO13857:2019/Table4",
+   "standard": "ISO 13857",
+   "edition": "2019",
+   "function": "ehs_spatial.verdict.layers.l4_spec.tables:iso13857_table4",
+   "inputs": [
+    "opening_mm",
+    "shape"
+   ],
+   "output_unit": "mm",
+   "verified": false,
+   "source_url": "https://www.troax.com/app/uploads/Brochure-Safety-Guide_EN.pdf"
+  },
+  {
+   "id": "ISO13857:2019/Table7",
+   "standard": "ISO 13857",
+   "edition": "2019",
+   "function": "ehs_spatial.verdict.layers.l4_spec.tables:iso13857_table7",
+   "inputs": [
+    "opening_mm",
+    "shape"
+   ],
+   "output_unit": "mm",
+   "verified": false,
+   "source_url": "https://www.troax.com/app/uploads/Brochure-Safety-Guide_EN.pdf"
+  },
+  {
+   "id": "ISO13855:2010/S",
+   "standard": "ISO 13855",
+   "edition": "2010",
+   "function": "ehs_spatial.verdict.layers.l4_spec.tables:iso13855_s",
+   "inputs": [
+    "stop_time_ms",
+    "resolution_mm"
+   ],
+   "output_unit": "mm",
+   "verified": false,
+   "source_url": "https://www.reersafety.com/en/?p=39804"
+  },
+  {
+   "id": "ISO13855:2010/C-parallel",
+   "standard": "ISO 13855",
+   "edition": "2010",
+   "function": "ehs_spatial.verdict.layers.l4_spec.tables:iso13855_horizontal_c",
+   "inputs": [
+    "height_mm"
+   ],
+   "output_unit": "mm",
+   "verified": false,
+   "source_url": "https://www.reersafety.com/en/?p=39804"
+  },
+  {
+   "id": "ISO13855:2010/multi-beam",
+   "standard": "ISO 13855",
+   "edition": "2010",
+   "function": "ehs_spatial.verdict.layers.l4_spec.tables:iso13855_multibeam_heights",
+   "inputs": [
+    "n_beams"
+   ],
+   "output_unit": "mm",
+   "verified": false,
+   "source_url": "https://www.datalogic.com/upload/Flipbook/RG_SAFETY_EN/files/assets/basic-html/page95.html"
+  },
+  {
+   "id": "ISO13854:2017/Table1",
+   "standard": "ISO 13854",
+   "edition": "2017",
+   "function": "ehs_spatial.verdict.layers.l4_spec.tables:iso13854_gap",
+   "inputs": [
+    "body_part"
+   ],
+   "output_unit": "mm",
+   "verified": false,
+   "source_url": "https://cdn.standards.iteh.ai/samples/66459/46ce3b47790e4526802912dbbd921354/ISO-13854-2017.pdf"
+  }
+ ],
+ "definitions": {
+  "protective structure": [
+   "fence",
+   "guard",
+   "light_curtain",
+   "bollard"
+  ],
+  "guard": [
+   "fence",
+   "guard"
+  ],
+  "perimeter guard": [
+   "fence",
+   "guard"
+  ],
+  "fixed structure": [
+   "fence",
+   "guard",
+   "bollard",
+   "control_panel"
+  ],
+  "hazard zone": [
+   "restricted_space",
+   "hazard_zone"
+  ],
+  "restricted space": [
+   "restricted_space"
+  ],
+  "hazard": [
+   "robot"
+  ],
+  "moving part": [
+   "robot"
+  ],
+  "ESPE": [
+   "light_curtain"
+  ],
+  "electro-sensitive protective equipment": [
+   "light_curtain"
+  ],
+  "laser scanner": [
+   "light_curtain"
+  ],
+  "multi-beam device": [
+   "light_curtain"
+  ],
+  "emergency stop device": [
+   "estop"
+  ],
+  "actuator": [
+   "estop"
+  ],
+  "operator control station": [
+   "operator_station",
+   "control_panel"
+  ],
+  "servicing level": [
+   "floor"
+  ],
+  "floor gap": [
+   "floor_gap"
+  ],
+  "opening": [
+   "opening",
+   "floor_gap"
+  ],
+  "regular opening": [
+   "mesh_pitch_mm"
+  ],
+  "reaching over": [
+   "reach_over"
+  ],
+  "safety distance": [
+   "zone_distance",
+   "min_distance_3d",
+   "horizontal_gap"
+  ],
+  "crushing gap": [
+   "min_distance_3d"
+  ],
+  "trapping": [
+   "min_distance_3d"
+  ],
+  "detection capability": [
+   "resolution_mm"
+  ],
+  "stopping performance": [
+   "stop_time_ms"
+  ],
+  "aisle": [
+   "aisle"
+  ],
+  "passageway": [
+   "aisle"
+  ],
+  "exit route": [
+   "aisle"
+  ],
+  "floor marking": [
+   "floor_marking"
+  ],
+  "aisle width": [],
+  "climbing aids": [],
+  "AGV": []
+ }
+}
