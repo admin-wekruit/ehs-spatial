@@ -24,6 +24,8 @@ class ClauseKG:
         spec_dir = Path(inputs.get("spec_dir") or SPEC_DIR)
         files = cfg.get("clauses_file", "clauses-v0.json")
         files = [files] if isinstance(files, str) else list(files)
+        if not (spec_dir / files[0]).exists():   # the runner offers <benchmark>/spec as an override; the package spec/ is the default
+            spec_dir = SPEC_DIR
         graphs = [ClauseGraph.load(spec_dir / f) for f in files]
         clauses = graphs[0]
         for g in graphs[1:]:   # merge: clauses and tables append, standards by id, definitions by term (later files win on a term)
