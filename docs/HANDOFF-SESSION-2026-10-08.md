@@ -107,6 +107,27 @@ L1 感知 / 重建 → **C1 Scene**（米制盒、σ、置信度、可见视角�
 
 范围先说清：客户克隆我们、只换 GPU 调用；他们的 Linux / Docker / on-prem 适配不是我们的事。下面是他们审查里**属于我们仓库**的部分。客户（仓库 `digital-experience/argus` = 我们的克隆）用 `/ponytail-review` + `/ponytail-debt` 审了：交付路径只占全部代码三成（~135 个 py / 53k 行 在路径上，127k 行不在），生产流水线散在 10 个日期目录里靠 `sys.path` 串联，中文写在代码和输出数据里。**要求**：代码只用英文（中 / 荷兰语只在 `web/src/locales/*.json`）；查看器 en / zh / nl 切换默认 en；一个干净布局（`argus/` 包：pipeline / checks / platform / providers；`services/`、`web/`、`deploy/`、`tests/`）；研究进归档分支或独立仓库；验收门在干净 Linux 克隆上过（`make test` 0 失败、`panoptes run` 两工位结果字段一致、代码无 CJK、交付路径无 `import modal` / `/Users/`、无 > 10 MB 文件、一个 Makefile / env 模板 / deploy / agent 文件）。原文和我们的 11 条决定：`docs/REVIEW-ARGUS-2026-10-08.md`。
 
+**审查的发现，逐条（截图原文的浓缩；原文在 `docs/REVIEW-ARGUS-2026-10-08.md` §1）+ 我们的处置**
+
+| 类别 | 发现（他们的话） | 处置 |
+|---|---|---|
+| 要求 | 代码只用英文（标识符、注释、文档串、日志、异常、JSON 键）；中 / 荷兰语只在目录里 | 我们的（第 8 步后半 + py 文件去中文） |
+| 要求 | 查看器 en / zh / nl 切换，默认 en，缺键回退 en | 我们的（第 8 步，一半在 WIP 分支） |
+| 要求 | 一个干净布局（`argus/` 包：pipeline / checks / platform / providers；services / web / deploy / tests；研究进归档） | 我们的（第 6 步） |
+| 要求 | 合并他们的 26 个提交 | 他们的（留在他们的克隆） |
+| 要求 | 验收门在干净 Linux 克隆上过 | 他们的 |
+| 结构 | 生产流水线散在 10 个日期目录里靠 `sys.path.insert` / `spec_from_file_location` 串联（`field_values_fill.py:16-17` → `licence-clean-stack` → `geometry-licence-ab-fair`） | 我们的（第 6 步：步骤进包，notes 留作冻结记录） |
+| 结构 | `scripts/` 309 文件只有 43 在交付路径；`modal_apps/` 83 文件 15 在路径；`ehs_spatial/` 81 文件 21 在路径（工作台、agent、策略引擎、视频）；`fast_report/` 33 文件只用两个函数 | 我们的（第 6 步归档 / 搬函数） |
+| 结构 | 三套部署目录（`containers/onprem`、`deploy/`、`docker/`）；两个 Makefile；两个 env 模板；CLAUDE.md = AGENTS.md；根目录 `app.py`、`.impeccable.md`；`docs/` 191 个 md 其中 129 在 archive | Makefile / env / AGENTS / `.impeccable.md` **已做**；部署目录归他们（on-prem）；`app.py` 随工作台归档；`docs/archive` 随第 6 步移出 |
+| Modal 仿真 | `scripts/onprem/run_stage.py` + `modal_stub` 743 + 261 行，他们补了 8 次才跑通；固定 `/tmp/w` 等路径；`panoptes run` 不调用的 GPU 函数 | 仿真器归他们（我们的流水线就是 Modal）；固定 `/tmp` **已改 mkdtemp**；未调用的 GPU 函数随第 6 步清 |
+| 配置 | 90 个文件回退到 `/Users/adam/...`；工位名硬编码四处、090 无前缀 030 有前缀；三个 ROOT 变量 | 交付路径回退 **已清**；每工位一个配置文件 + 一个 ROOT 在第 6 步 |
+| 失败语义 | `run_stages.py` 全失败仍退出 0；`pipeline.py` 警告继续；`compare_json.py` 每次失败 | **已做**（退出 1、抛错、基线随码发） |
+| 数据 | 0.5 GB 冻结输入和 `incoming/` 在 git 里；20.6 MB 文件超 10 MB 限制 | 我们的（第 9 步：sha 清单 + 拉取脚本） |
+| 服务 | MoGe 四份；v0 服务 `panoptes run` 不用；`Dockerfile.serving` 三处坏 | MoGe 留一份（第 10 步）；v0 服务和 Dockerfile 归他们（Dockerfile 三处按描述抄了，未验证） |
+| 测试 | Linux 上 11 个失败：macOS 专用 `cp -c` / `st_birthtime`、`node` 未声明、`test_cli` 数据状态、README 链接测试、`test_cell_rect` 容差 | Mac 上 0 失败 + `node` 跳过 + README 测试是我们的（第 4 步）；Linux 可移植归他们 |
+| i18n | `Language = "zh" | "en"` 默认 zh，`[zh, en]` 元组散在 8 个文件；15 个组件内联中文；流水线把中文烤进数据（`labels/labelsEn`、`need/needEn`…）；22 个 py 文件含中文；`i18n-catalog.js` 工作台专用 | 我们的（第 8 步两段：查看器目录；流水线消息码 + 参数） |
+| 门 | 代码无 CJK、交付路径无 `import modal` / `/Users/`、无 > 10 MB、一个 Makefile / env / deploy / agent 文件 | 无 CJK、无机器路径、无 > 10 MB、一个 Makefile / env / agent 文件是我们的 CI 门（第 11 步）；"无 `import modal`"不适用（我们就是 Modal）；一个 deploy 归他们 |
+
 | 步 | 状态 | 怎么接 |
 |---|---|---|
 | 1 去重 | **已做**（`3116dff`） | 一个 `Makefile`（`Makefile.handoff` 并入）、`.env.example` 删、`AGENTS.md` → `CLAUDE.md` 软链接、`.impeccable.md` 删 |
