@@ -1,6 +1,6 @@
 # L2 — Scene -> Facts (C2)
 
-`relations@1` (relations.py): the trial's relation library (research/verdict-layer-trial-2026-10-07/relations.py + scene_graph.py,
+`relations@2` (relations.py; @2 = + `vertical(X)` / `horizontal(X)` for light curtains and area scanners from the box aspect, H >= max(L, W) = vertical): the trial's relation library (research/verdict-layer-trial-2026-10-07/relations.py + scene_graph.py,
 2026-10-07) emitting the predicates of signature-v1.json.
 
 - per object: `top_height`, `bottom_height`, `floor_gap` (= bottom_height clamped at 0)

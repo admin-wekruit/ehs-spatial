@@ -12,6 +12,7 @@ Predicates emitted (Signature v1):
   min_distance_3d(a, b)   closest distance between the two AABBs (0 when they touch / overlap)   U from [plan sigma a, plan sigma b]
   horizontal_gap(a, b)    plan-view AABB gap                                                        same U
   z_overlap(a, b)         overlap of the two height ranges, clamped at 0                            U from [sigma H a, sigma H b]
+  vertical(id) / horizontal(id)   light curtains / area scanners, from the box aspect (H >= max(L, W) = vertical); bool, value None
   reach_over(h, s)        hazard (robot) x fixed structure pairs: value = horizontal gap c            U of the horizontal gap
                           (a = hazard top, b = structure top are NOT carried: Fact has no field for them -> contract request)
   grid                    plan occupancy: blocked = fixed-class footprints, hazard = robot footprints, outside = border cells,
@@ -159,6 +160,8 @@ def facts_of(scene: Scene) -> Facts:
         fs.append(Fact(pred="top_height", args=[o.id], value=mm(o.top_m), unit="mm", u=ut, views=views, flags=ft))
         fs.append(Fact(pred="bottom_height", args=[o.id], value=mm(o.bottom_m), unit="mm", u=ub, views=views, flags=fb))
         fs.append(Fact(pred="floor_gap", args=[o.id], value=mm(max(o.bottom_m, 0.0)), unit="mm", u=ub, views=views, flags=fb))
+        if o.cls in ("light_curtain", "area_scanner"):   # orientation from the box aspect, as relations@2
+            fs.append(Fact(pred="vertical" if o.size_m[2] >= max(o.size_m[0], o.size_m[1]) else "horizontal", args=[o.id], unit="bool", views=views))
     for a, b in itertools.combinations(scene.objects, 2):
         views = sorted(set(str(v) for v in a.views) | set(str(v) for v in b.views))
         (la, ha), (lb, hb) = boxes[a.id], boxes[b.id]

@@ -1,0 +1,4 @@
+# Variant: L5 code-synthesis@0, one Claude call per clause writes spec + tests, deterministic checks (signature, the model's own tests, threshold grid, metamorphic) decide compiled / refused; the row measures LLM translation quality under test gating (llm_calls in the ledger).
+extends: baseline.yaml
+L4: {plugin: clause-kg, clauses_file: [clauses-v0.json, clauses-ts0011963-v0.json]}
+L5: {plugin: code-synthesis}

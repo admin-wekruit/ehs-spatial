@@ -9,6 +9,9 @@ clause_kg.py   plugin L4 clause-kg@0: load spec/clauses-v0.json -> align -> retr
 tables.py      typed lookup functions the clauses point at (ISO 13857 Tables 2/4/7, ISO 13855 S and C, ISO 13854 Table 1)
 alignment.py   align(ClauseGraph, Signature) -> Alignment; coverage(Alignment)
 retrieve.py    retrieve(ClauseGraph, Scene | None) -> [clause id]
+llm_extract.py plugin L4 llm-extract@0: safety-concept TEXT -> ClauseGraph through Claude, verified, aligned, retrieved, diffed
+extract_cli.py `panoptes verdict extract`: llm-extract@0 standalone on one text (clauses + report + diff files, markdown summary)
+../../spec/samples/*.md           the texts llm-extract reads; ../../spec/clauses-ts0011963-v0.json the hand-extracted reference
 ../../spec/clauses-v0.json   the hand-extracted v0 graph (20 clauses, 7 tables, 32 definitions)
 ```
 
@@ -122,3 +125,62 @@ retrieval recall on the benchmark scenes against the ids in `tests/verdict/test_
   they are retained so the gap is visible in the alignment, not hidden by omission.
 - `plugins.py` documents the L4 output as `{'clauses': dict, 'alignment': dict, ...}`; this plugin returns the contract models
   (`ClauseGraph`, `Alignment`) like the other layers do — the runner serialises with `.dump`.
+
+## llm-extract@0 (`llm_extract.py`, `extract_cli.py`)
+
+Turns a safety-concept **text** into a `ClauseGraph` through Claude. Input type: markdown like
+`spec/samples/manual-loading-station-concept-2026-10-08.md` — numbered requirement paragraphs and device-note bullets, each ending in
+citations such as `（TS-0011963 Rev 10, 8.1.4–8.1.6）`. Config: `spec_text` (relative to `spec_dir`, falling back to the package `spec/`
+like clause-kg), `reference` (hand-extracted clauses file for the diff; default `clauses-ts0011963-v0.json`), `example` (reference
+clause used as the worked example, default `TS0011963:Rev10/8.1.4`), `model`, `effort`, `cache_dir`. Output: `clauses`, `alignment`,
+`retrieved` (as clause-kg@0) plus `extraction_report`, `diff` (when the reference exists) and `llm_calls` (non-cached calls; the runner
+sums it into the ledger). Run config: `configs/llm-extract-ts.yaml`.
+
+Three steps:
+
+1. **Split (deterministic).** A unit is every numbered item (the "Configuration requirements" list) and every bullet under a heading
+   that says Measure / device / 装置, provided it carries a citation parenthetical naming a standard; hazard and purpose bullets and the
+   picture description are not requirements. The sample gives 11 units (9 + 2). The standards named in citations become
+   `ClauseGraph.standards` with ids in the clauses files' convention (`TS-0011963 Rev 10` → `TS0011963:Rev10`, `ISO 13849-1:2023` →
+   `ISO13849-1:2023`).
+2. **Extract (one `llm.complete` per unit, cached).** System prompt = the extraction conventions + the Signature vocabulary (classes, zones,
+   predicates with arg kinds / units / notes, attributes, declared inputs) + the document's standard ids + one worked example rendered
+   from the reference file (the unit citing it and that clause in the output shape). It is the long, stable part, so the API caches it
+   too (`llm.py` sets `cache_control`). User prompt = the unit id, its citations and its text. Output schema (`Extraction` → `Candidate`
+   list; pydantic, no dict fields because structured outputs allow `additionalProperties: false` only): clause_id, title, paraphrase,
+   rule_class, selection as `[{var, values}]`, applicability, requirement `{predicate, args, operator, threshold, table, formula, unit,
+   inputs}`, exceptions, tags, photo_checkable, source_quote, vocabulary_gaps.
+3. **Verify (deterministic, no LLM).** Per candidate: every selection value, applicability predicate (or bare attribute), requirement
+   predicate / attribute, input, exception and tag must be a Signature name, else `vocabulary_gap:<term>` and `photo_checkable: false`
+   (the clause stays, so the alignment shows its 0.0 row); a numeric threshold must appear as digits in the unit text (metre values
+   ground their millimetre thresholds: 0.6 → 600), else `ungrounded:<n>`; the clause number must be in the unit's citations of that
+   standard (ranges include their members: 8.1.4–8.1.6 covers 8.1.5; `Table 2 note c` cites Table2; a slug suffix such as `4.3.4-upper`
+   is ignored), else `uncited`; a `table` id must be one of the `Table` ids of the `clauses-*.json` files, else `unknown_table:<id>`;
+   a repeated clause id keeps the first candidate and lists the rest under `duplicates`. Tables and definitions are copied from the
+   reference (the model never invents tables; the aliases help alignment). Every clause is `verified: false`.
+
+The **diff** against the reference compares ids and the requirement key `{predicate | attribute, operator, threshold, table, formula}`:
+`ids_only_llm`, `ids_only_reference`, `same_id_different_requirement` (both keys shown), `same_id_same_requirement`, one-line summary.
+It is a finding, never a target: do not change thresholds to make it match.
+
+**Cache.** `cache_dir` → `$PANOPTES_LLM_CACHE` → `<runs dir>/llm-cache` (the plugin passes `workdir.parents[1] / 'llm-cache'`, i.e.
+`runs/llm-cache` for `panoptes verdict run`; the CLI defaults to the same). A hit never calls the API, so a matrix re-run or a second
+variant on the same text is free. **Fake mode** (`PANOPTES_FAKE_MODEL=1`) answers from the cache only and raises `LookupError` on a
+miss; `tests/verdict/test_spec_llm_extract.py` monkeypatches `llm.complete` instead and answers from the reference file.
+
+**First live command** (credentials: `ANTHROPIC_API_KEY` or an `ant auth login` profile; `PANOPTES_FAKE_MODEL` unset; ~11 Haiku calls):
+
+```
+.venv/bin/python -m ehs_spatial.verdict.layers.l4_spec.extract_cli \
+  --spec-text ehs_spatial/verdict/spec/samples/manual-loading-station-concept-2026-10-08.md --out runs/llm-extract/ts/clauses.json
+.venv/bin/python -m ehs_spatial.cli verdict run --config ehs_spatial/verdict/configs/llm-extract-ts.yaml --item 090   # cache hits: 0 calls
+```
+
+The second command reuses the cache because the prompts are identical (same text, Signature and reference).
+
+**Known limits.** The splitter is built for this document shape (numbered items, device-note headings, full-width or ASCII
+parentheses); a text with numbered hazards yields hazard units the model must answer with zero candidates. Grounding checks digits,
+not meaning (a number quoted for another purpose grounds a wrong threshold). Citation checking cannot see a wrong standard when both
+are cited in the unit with the same clause number. The worked example is one of the reference clauses, so that clause's diff row is
+not evidence. `definitions` per clause stay empty (the graph-level definitions come from the reference). Nothing is verified against a
+purchased standard text.

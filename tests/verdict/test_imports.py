@@ -1,12 +1,12 @@
-"""Lab rule 1: a layer plugin imports only ehs_spatial.verdict.contracts (and .plugins, for @register), the stdlib, numpy / shapely /
-scipy / clingo / yaml, and its own package. Never another layer, never the rest of ehs_spatial. AST scan, no imports executed."""
+"""Lab rule 1: a layer plugin imports only ehs_spatial.verdict.contracts (and .plugins, for @register; .llm for the Claude calls of
+L4 / L5), the stdlib, numpy / shapely / scipy / clingo / yaml / pydantic, and its own package. Never another layer, never the rest of ehs_spatial. AST scan, no imports executed."""
 import ast
 import sys
 from pathlib import Path
 
 LAYERS = Path(__file__).resolve().parents[2] / "ehs_spatial/verdict/layers"
-ALLOWED_TOP = set(sys.stdlib_module_names) | {"numpy", "shapely", "scipy", "clingo", "yaml"}
-ALLOWED_VERDICT = {"ehs_spatial.verdict.contracts", "ehs_spatial.verdict.plugins"}
+ALLOWED_TOP = set(sys.stdlib_module_names) | {"numpy", "shapely", "scipy", "clingo", "yaml", "pydantic"}
+ALLOWED_VERDICT = {"ehs_spatial.verdict.contracts", "ehs_spatial.verdict.plugins", "ehs_spatial.verdict.llm"}
 SHARED = ("ehs_spatial.verdict.synth",)   # lab-shared test-support packages (synthetic scenes); not a layer
 
 

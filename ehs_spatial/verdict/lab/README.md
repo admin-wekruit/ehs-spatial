@@ -9,6 +9,13 @@ panoptes verdict scorecard --runs-dir runs                                      
 panoptes verdict plugins                                                            # what is registered, per layer
 ```
 
+Human labels (`labels.py`; the L7 `html@1` report exports one `verdict-labels/1` JSON per reviewer and run, see layers/l7_report/README.md):
+
+```
+panoptes verdict labels merge --labels a.json b.json --out gold.json [--gold-in old/gold.json] [--version v1]   # agreements -> verdicts, disagreements -> conflicts; copy to a NEW benchmark/v<N>/, never into v0
+panoptes verdict labels declared --labels a.json b.json --out declared.json                                     # {scene_id: declared inputs} for L1 {plugin: scene-json, declared: declared.json}
+```
+
 Config (`config.py`): `benchmark: <dir>` (relative to the config file), optional `item`, and per layer `{plugin, version?, params..., reuse?}`.
 `extends: base.yaml` merges a base config (layer dicts key by key). `reuse: <run_id>` loads that run's `<layer>/` outputs instead of computing
 (the plugin name stays in the config: it is the run's signature). No Hydra, no content hashing: the run directory is the cache.

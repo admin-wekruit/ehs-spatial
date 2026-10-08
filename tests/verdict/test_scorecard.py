@@ -21,4 +21,5 @@ def test_two_rows_and_the_diff_column(tmp_path):
     assert [r["diff"] for r in data] == ["—", "L6 k 2→1"]
     assert data[0]["gold"] == {"PASS": "10/10", "FAIL": "2/2", "NEEDS_MEASUREMENT": "2/2", "NEEDS_INPUT": "7/7", "CANNOT_DETERMINE": "1/1"}
     assert data[0]["gold_provisional"] is True
+    assert data[0]["rules"] == {"compiled": 5, "needs_input": 1, "vocabulary_gap": 0, "refused": 0} and "| 5/1/0/0 | 0 |" in rows[0]
     assert (tmp_path / "sc-2/L2/facts.json").read_bytes() == (tmp_path / "sc-1/L2/facts.json").read_bytes()   # reused, copied into the run

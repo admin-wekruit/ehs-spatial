@@ -30,4 +30,4 @@ def test_baseline_reproduces_the_trial(tmp_path, item):
     for key, r in trial.items():
         v = mine[key]
         assert (v.status, v.measured, v.u, v.margin) == (r["status"], r.get("measured_mm"), r.get("U_mm"), r.get("margin_mm")), key
-        assert v.provenance.run_id == f"parity-{item}" and v.provenance.plugins["L6"] == "clingo@1"
+        assert v.provenance.run_id == f"parity-{item}" and v.provenance.plugins["L6"] == "clingo@2"

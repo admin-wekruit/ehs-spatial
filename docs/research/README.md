@@ -7,7 +7,9 @@
 | 文件 | 内容 | 状态 |
 |---|---|---|
 | `verdict-layer-plan-2026-10-08.md` | 计划：严格 / 解耦 / 可比较；实验台（插件注册表、台账、记分卡，一次只换一层）；五个阶段 | **当前** |
-| `verdict-lab-scorecard-v0-2026-10-08.md` | 实验台第一张记分卡：基线 / python 引擎等价 / stpl + k=1，090 与 030 | **当前**；代码在 `ehs_spatial/verdict/`（`README.md` 是 lab 规则，`lab/README.md` 是用法） |
+| `labeling-ui-survey-2026-10-08.md` | 数据标注 / 审核 UI 调研（14 个工具，带链接）→ 报告里的人工输入面板怎么做（L7 `html@1` + `labels merge`） | **当前**；代码在 `ehs_spatial/verdict/layers/l7_report/html.py`、`lab/labels.py` |
+| `verdict-lab-scorecard-v1-2026-10-08.md` | 第二张记分卡：引擎 v2（包围需 coverage）、clause-kg、function-library、html 报告，六配置 × 两工位；LLM 行待凭证 | **当前**；代码在 `ehs_spatial/verdict/`（`README.md` 是 lab 规则，`lab/README.md` 是用法） |
+| `verdict-lab-scorecard-v0-2026-10-08.md` | 实验台第一张记分卡：基线 / python 引擎等价 / stpl + k=1，090 与 030 | 历史（v1 取代；数字仍成立） |
 | `verdict-layer-architecture-2026-10-08.md`（+ `.png`） | 七层、四个契约的分层与解耦设计；DAAAM / WorldSGG / ChronoGraph 放在哪 | **当前设计** |
 | `verdict-spec-to-check-2026-10-08.md`（+ `survey-E`） | 从自然语言规范到可执行检查：对逐句模板法的批评、替代路线对比、推荐架构、先做什么 | **当前设计**（取代了逐句模板法） |
 | `verdict-evaluation-protocol-2026-10-08.md` | 评测与泛化：冻结基准 + 固定输出、分层记分、留出工位 / 规范、消融代替复现论文 | 当前设计 |

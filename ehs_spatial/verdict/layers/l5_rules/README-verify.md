@@ -17,7 +17,7 @@ parameters, so any L6 plugin (`engine_of(plugin, cfg)`) and any Scene → Facts 
 move together; it assumes `ground_normal = +z`.
 
 Run on the trial pack: `tests/verdict/test_rules_verify.py` (signature, differential, metamorphic, parity helpers) and
-`tests/verdict/test_rules_grid.py` (threshold grid under `python@1` with `guard_band` k=2, `simple`, `conservative`).
+`tests/verdict/test_rules_grid.py` (threshold grid under `python@2` with `guard_band` k=2, `simple`, `conservative`).
 
 Limits: `signature_check` reads `Rule.spec` only (the ASP text is the clingo engine's to validate); the monotone relation perturbs one
 subject per rule (all subjects share the decision function); synthetic-facts handles axis-aligned boxes, so rotations are multiples of 90°

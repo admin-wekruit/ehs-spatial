@@ -1,4 +1,4 @@
-"""Unit checks of L6 python@1: decision-rule variants, the five statuses, applicability / exceptions, grid enclosure, determinism."""
+"""Unit checks of L6 python@2: decision-rule variants, the five statuses, applicability / exceptions, grid enclosure, determinism."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -36,7 +36,7 @@ def status(fx, pk, cfg=None, scene=None):
 
 
 def test_registered():
-    assert REGISTRY["L6"]["python"] is PythonEngine and tag(PythonEngine) == "python@1"
+    assert REGISTRY["L6"]["python"] is PythonEngine and tag(PythonEngine) == "python@2"
 
 
 def test_guard_band_boundaries_match_rules_lp():
@@ -129,6 +129,8 @@ def grid(open_cell=False, observed="all", hazard=True) -> Grid:
 def test_enclosure_grid_semantics():
     assert enclosure(grid())[0] == 1
     assert enclosure(grid(open_cell=True))[0] == 0
+    assert enclosure(grid(observed=None))[0] is None                            # closed ring but no coverage: not decided (@2)
+    assert enclosure(grid(observed=None))[1]["no_coverage"] is True
     assert enclosure(grid(open_cell=True, observed=None))[0] is None
     assert enclosure(grid(open_cell=True, observed="not_opening"))[0] is None   # the only path crosses an unobserved cell
     assert enclosure(grid(hazard=False))[0] is None
@@ -137,6 +139,8 @@ def test_enclosure_grid_semantics():
     v = status(facts(grid=grid(open_cell=True)), pk)
     assert v.status == "FAIL" and v.subjects == ["hazard_zone"] and v.evidence["grid"]["openings"] == 1
     assert status(facts(grid=grid(open_cell=True, observed=None)), pk).status == "CANNOT_DETERMINE"
+    v = status(facts(grid=grid(observed=None)), pk)
+    assert v.status == "CANNOT_DETERMINE" and v.notes[0].startswith("no floor coverage")
     assert run(facts(), pk).verdicts == []                                        # no grid -> no implicit zone -> nothing to bind
 
 
@@ -144,7 +148,7 @@ def test_deterministic_and_provenance():
     fx = facts(top(1500))
     a, b = run(fx, pack(), {"run_id": "x"}), run(fx, pack(), {"run_id": "x"})
     assert a.model_dump_json() == b.model_dump_json()
-    assert a.provenance.plugins == {"L2": "test-l2@0", "L6": "python@1"} and a.provenance.run_id == "x" and a.rule_pack == "p@1"
+    assert a.provenance.plugins == {"L2": "test-l2@0", "L6": "python@2"} and a.provenance.run_id == "x" and a.rule_pack == "p@1"
 
 
 def test_uncompiled_rules_are_skipped():

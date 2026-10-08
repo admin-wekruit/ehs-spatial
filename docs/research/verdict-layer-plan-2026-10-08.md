@@ -74,6 +74,13 @@ scorecard.md             变体 × 指标，自动从 ledger 生成；差异列 
 3. 规范：先给 ISO 13857 / 13855 的正文（或确认用厂商复述），站点规则何时给。
 4. 模型 key：C 阶段用哪家（Gemini 已有 provider；其它要加一个 adapter）。
 
+**已定（2026-10-08，用户："决定，别问"）**：
+1. 三种都做：L5 `function-library@0`（无 LLM，FuncMapper 式）/ `code-synthesis@0`（LLM 写检查 + 自带测试，TUM/CodeAct 式）/ `redundant-translation@0`（两次独立翻译 + 差分执行，ARc 式），对照组 = `handwritten@2`。
+2. 金标由人在报告里标（L7 `html@1` 的标注面板：每条判定的金标状态 / 理由 / 把握 / 复测；每工位的声明输入），导出 JSON 后 `panoptes verdict labels merge` 合成新版本的 `gold.json`；基准目录冻结，新金标 = 新版本目录。
+3. 规范正文暂用"Safety concept tool"式的自然语言 + 条款引用文本（样本 `ehs_spatial/verdict/spec/samples/`），同类型继续补；ISO 正文到手前所有条款 `verified: false`。
+4. 模型 = Claude Haiku（`claude-haiku-5-5`，官方 SDK，`ehs_spatial/verdict/llm.py`；key 或 `ant auth login` 配置文件；响应缓存是包里唯一的哈希）。Gemini 不进判定层。
+5. 包围规则（拓扑）在没有 coverage 时出 **CANNOT_DETERMINE**（契约对 Coverage = None 的读法），经已观察地面的缺口出 FAIL；引擎 clingo@2 / python@2、规则包 handwritten@2；基准 v0 计数不变（两个工位都没有 coverage，以前就是 CANNOT_DETERMINE）。
+
 ## 7. 插件化、并行、报告可见（2026-10-08 补）
 
 用户要求：全部按可插拔（plugin）设计；能并行；报告要看得出是哪套插件产的结果。这正是数据 / 推理流水线的通行做法

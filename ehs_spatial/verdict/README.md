@@ -38,6 +38,8 @@ benchmark/v0/         frozen inputs + gold (versioned folder, in git; bump the v
 
 ## Baseline plugins (ported from research/verdict-layer-trial-2026-10-07)
 
-L1 `measurement-layer@1` (adapter_measurement_layer.py) · L2 `relations@1` (scene_graph.py + relations.py) · L6 `clingo@1`
-(engine.py + rules.lp, guard band k=2) · L7 `markdown@1` (verdicts.md with provenance). L3 `none@1`, L4/L5 `handwritten@1`
-(the trial's five rules as a RulePack).
+L1 `measurement-layer@1` (adapter_measurement_layer.py) · L2 `relations@2` (scene_graph.py + relations.py; @2 adds vertical / horizontal of sensing fields) · L6 `clingo@2`
+(engine.py + rules.lp, guard band k=2) · L7 `markdown@1` (verdicts.md with provenance). L3 `none@1`, L4 `none@1`, L5 `handwritten@2`
+(the trial's five rules as a RulePack). Version 2 of clingo / python / handwritten (2026-10-08): the enclosure rule answers
+CANNOT_DETERMINE when the scene has no Coverage (the contract's reading of Coverage = None), FAIL when the outside reaches the hazard
+cells through observed floor; version 1 said PASS whenever the reconstructed footprints closed the ring. Benchmark v0 counts unchanged.

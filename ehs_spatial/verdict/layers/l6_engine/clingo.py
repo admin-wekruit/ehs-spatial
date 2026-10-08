@@ -1,8 +1,12 @@
-"""L6 clingo@1: Facts + RulePack -> VerdictSet through clingo (port of research/verdict-layer-trial-2026-10-07/engine.py).
+"""L6 clingo@2: Facts + RulePack -> VerdictSet through clingo (port of research/verdict-layer-trial-2026-10-07/engine.py).
 
 Program = RulePack.common_asp + every rule's `asp` + the Facts rendered as
-  obj(Id, Class).  bottom(Id, V, U).  top(Id, V, U).  dist(A, B, D, U) (both orders).  reach_over(H, S, A, B, C, U).
-  cell(c(X,Y)).  adj(c(X,Y), c(X2,Y2)).  blocked(c(X,Y)).  hazard(...).  outside(...).  observed(...).  untrusted(Id).
+  obj(Id, Class).  bottom(Id, V, U).  top(Id, V, U).  dist(A, B, D, U) (both orders).  reach_over(H, S, A, B, C, U).  untrusted(Id).
+  every numeric fact also as <pred>("a", ..., V, U) under its Signature name (top_height, floor_gap, min_distance_3d, zone_distance, ...;
+  symmetric pair predicates in both orders) and every boolean / valueless fact that holds as <pred>("a", ...) (perimeter_of, interlock, ...):
+  the generic atoms synthesised rule packs use. Grid: cell(c(X,Y)).  adj(c(X,Y), c(X2,Y2)).  blocked(c(X,Y)).  hazard(...).  outside(...).
+  observed(...) and coverage_known. when the scene carried a Coverage (no coverage -> topology rules answer cannot_determine; @2 change,
+  the contract's reading of Coverage = None).
 Integer millimetres. Decision rule: guard band with coverage factor k (cfg `k`, default 2). Facts carry u expanded at k = 2, so the
 rendered U is u * k / 2: k = 2 reproduces the trial, k = 1 halves the band, k = 0 is simple acceptance. Verdict.u reports the fact's u.
 The solved status/3, margin/3 and opening/1 atoms become Verdicts; measured / threshold / evidence come from the rule's spec and the Facts.
@@ -20,6 +24,8 @@ from ehs_spatial.verdict.plugins import register
 STATUS = {"pass": "PASS", "fail": "FAIL", "needs_meas": "NEEDS_MEASUREMENT", "needs_input": "NEEDS_INPUT",
           "cannot_determine": "CANNOT_DETERMINE", "open": "CANNOT_DETERMINE"}
 FLAG_NOTES = {"default_sigma": "no sigma for this dimension: default 0.05 m used", "default_scale_unc": "no scale uncertainty: default 2 % used"}
+SYMMETRIC = {"min_distance_3d", "horizontal_gap", "z_overlap", "line_of_sight"}
+LEGACY = {"obj", "untrusted"}
 
 
 def q(s: str) -> str:
@@ -44,6 +50,13 @@ def render(scene: Scene, facts: Facts, k: float) -> str:
             lines.append(f"reach_over({a[0]},{a[1]},{ab['a_mm']},{ab['b_mm']},{v},{u}).")
         elif f.pred == "untrusted":
             lines.append(f"untrusted({a[0]}).")
+        if f.pred in LEGACY:
+            continue
+        if v is not None and f.unit not in (None, "bool"):            # generic numeric atom under the Signature name
+            orders = [a] + ([a[::-1]] if f.pred in SYMMETRIC and len(a) == 2 else [])
+            lines += [f"{f.pred}({','.join(o)},{v},{scale(f.u)})." for o in orders]
+        elif f.value is None or f.value != 0:                           # boolean / valueless fact that holds
+            lines.append(f"{f.pred}({','.join(a)}).")
     if facts.grid:
         g, c = facts.grid, (lambda x, y: f"c({x},{y})")
         nx, ny = g.shape
@@ -52,6 +65,8 @@ def render(scene: Scene, facts: Facts, k: float) -> str:
                   for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)) if 0 <= x + dx < nx and 0 <= y + dy < ny]
         for name in ("blocked", "hazard", "outside", "observed"):
             lines += [f"{name}({c(x, y)})." for x, y in getattr(g, name) or []]
+        if g.observed is not None:
+            lines.append("coverage_known.")
     return "\n".join(lines) + "\n"
 
 
@@ -112,11 +127,17 @@ def verdicts_of(atoms: list[clingo.Symbol], scene: Scene, facts: Facts, pack: Ru
                     unit=req.get("unit"), notes=list(rule.spec.get("notes", [])), provenance=prov)
         if rule.rule_class == "topology":
             v.evidence = topology_evidence(facts.grid, openings)
+            no_cov = facts.grid is None or facts.grid.observed is None
             if st == "open":
-                seen = "unknown (no coverage)" if facts.grid is None or facts.grid.observed is None else "partial"
                 v.notes.insert(0, f"the outside reaches the hazard cells through {len(openings)} opening cells, directions "
-                                  f"{v.evidence.get('open_directions', [])}; floor coverage {seen}: unobserved floor and real openings "
-                                  "are indistinguishable -> no conclusion")
+                                  f"{v.evidence.get('open_directions', [])}; floor coverage {'unknown (no coverage)' if no_cov else 'partial'}: "
+                                  "unobserved floor and real openings are indistinguishable -> no conclusion")
+            elif st == "fail":
+                v.notes.insert(0, f"the outside reaches the hazard cells through observed floor: {len(openings)} opening cells, directions "
+                                  f"{v.evidence.get('open_directions', [])}")
+            elif st == "cannot_determine" and no_cov and facts.grid is not None and facts.grid.hazard:
+                v.notes.insert(0, "no floor coverage in the scene: blocked cells are only what was reconstructed, an unobserved gap cannot be "
+                                  "excluded -> enclosure not decided (Coverage = None means unknown everywhere)")
         else:
             f = by.get((req.get("predicate"), tuple(ids))) or by.get((req.get("predicate"), tuple(reversed(ids))))
             if f is not None:
@@ -131,7 +152,7 @@ def verdicts_of(atoms: list[clingo.Symbol], scene: Scene, facts: Facts, pack: Ru
     return out
 
 
-@register("L6", "clingo", "1")
+@register("L6", "clingo", "2")
 class Clingo:
     """cfg: k (guard-band coverage factor, default 2)."""
 

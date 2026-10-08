@@ -11,10 +11,13 @@ Every layer plugin imports only this module. Nothing here computes geometry or r
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+warnings.filterwarnings("ignore", message='Field name "schema"')   # the contracts' `schema` field shadows pydantic's deprecated BaseModel.schema()
 
 SCHEMA_VERSION = "verdict/1"
 Status = Literal["PASS", "FAIL", "NEEDS_MEASUREMENT", "NEEDS_INPUT", "CANNOT_DETERMINE"]
@@ -194,7 +197,7 @@ class Rule(_Model):
     clause: str                      # e.g. 'ISO 13857:2019 4.4'
     standard: str
     edition: str
-    rule_class: Literal["geometry", "topology", "semantic"]
+    rule_class: Literal["geometry", "topology", "semantic", "procedural"]
     source_text: str = ""
     spec: dict[str, object] = Field(default_factory=dict)   # machine-readable semantics every engine evaluates: selection {var: [classes]},
                                                             # applicability [predicate(args)], requirement {predicate, args, operator, threshold|table|formula, unit, inputs}, exceptions [attributes]

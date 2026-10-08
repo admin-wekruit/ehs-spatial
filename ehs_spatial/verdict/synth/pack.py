@@ -6,7 +6,8 @@ unverified against the purchased texts.
 
 Spec convention (shared with L5 plugins):
   selection      {Var: [classes or zone kinds]}            Var names start with a capital letter
-  applicability  ["pred(Var, Var2)"]                        every atom must hold as a fact; unbound capitalised args are bound by the fact
+  applicability  ["pred(Var, Var2)"]                        every atom must hold as a fact; unbound capitalised args are bound by the fact;
+                                                            a bare attribute name means attr(FirstVar) (L5 rewrites it before the engines)
   requirement    {predicate, args: [Var...], operator, threshold | table | formula, unit, inputs: [declared inputs]}
                  formula symbols are declared-input names, or mapped through requirement['bindings'] = {symbol: declared input}
   exceptions     [attributes]                               a truthy attr(X) fact or Scene attribute on a bound object switches the rule off

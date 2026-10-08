@@ -10,6 +10,40 @@
   functions, alignment and retrieval. `tests/verdict`: 66 passed. Scorecard v0: `docs/research/verdict-lab-scorecard-v0-2026-10-08.md`.
   New optional extra `verdict` (clingo, pyyaml). Reports still carry no machine verdicts; the lab is research tooling.
 
+### Verdict lab, round 2 (2026-10-08, afternoon)
+- Decisions recorded in `docs/research/verdict-layer-plan-2026-10-08.md` §6: enclosure without Coverage → CANNOT_DETERMINE; L5 first round
+  compares three synthesis variants against the handwritten control; LLM = Claude Haiku; gold is labelled inside the report.
+- `clingo@2`, `python@2`, `handwritten@2`: the enclosure rule needs coverage (no Coverage → CANNOT_DETERMINE, breach through observed
+  floor → FAIL, breach only through unobserved floor → CANNOT_DETERMINE); clingo renders every numeric fact as a generic
+  `<pred>(args, V, U)` atom and boolean facts as `<pred>(args)` (synthesised packs use them) plus `coverage_known.`; parity test
+  clingo = python on synthetic cells with / without coverage. Benchmark v0 counts unchanged (neither cell has coverage).
+- `ehs_spatial/verdict/llm.py`: Claude through the official SDK (`anthropic` added to the `verdict` extra), structured outputs,
+  one response cache keyed by model + schema + prompts (the only hash in the package), `PANOPTES_FAKE_MODEL=1` = cache only.
+  `env.template`: `ANTHROPIC_API_KEY` (or an `ant auth login` profile), `PANOPTES_VERDICT_MODEL`, `PANOPTES_LLM_CACHE`.
+- Scorecard: rule-pack statuses (compiled / needs_input / vocabulary_gap / refused) and LLM calls per row; `panoptes verdict extract`
+  and `panoptes verdict labels` subcommands.
+- L4 `llm-extract@0` (`layers/l4_spec/llm_extract.py`): safety-concept text (numbered requirements + clause citations, the
+  `spec/samples/` type) → clause candidates through Claude, one call per unit, then deterministic checks (vocabulary, grounding of every
+  number in the unit's text, citation, duplicates, table ids) and a diff against the hand-extracted reference; `panoptes verdict extract`;
+  config `llm-extract-ts.yaml`; Claude Code subagent `.claude/agents/ehs-safety-spec.md` (the EHS safety subagent: ingest a new text,
+  run the extraction, read flags + diff, propose vocabulary, never change numbers).
+- L5 three synthesis variants vs the handwritten control (`layers/l5_rules/`): `function-library@0` (no LLM: clause requirement → rule
+  spec + ASP through the shared renderer `asp.py`), `code-synthesis@0` (Claude writes spec + ASP + its own tests; signature check,
+  tests, threshold grid, metamorphic relations decide compiled / refused), `redundant-translation@0` (two framings, agreement +
+  differential execution); configs `funclib-ts.yaml`, `codegen-ts.yaml`, `redundant-ts.yaml`. Function library on the merged ISO + TS
+  graph (38 clauses): 11 compiled / 9 needs_input / 18 refused (exists, comparisons inside applicability, attribute requirements,
+  zone kinds other than hazard_zone, not photo-checkable).
+- `relations@2`: `vertical(X)` / `horizontal(X)` of light curtains and area scanners from the box aspect (Signature predicates added);
+  TS 9.1.7 applies to horizontal fields, 9.1.1 / 9.1.2 to vertical ones (before: 9.1.7 failed every vertical curtain). A bare attribute
+  in a clause's applicability (TS 8.1.4 `operator_interaction`) means that attribute of the first selection variable.
+- L7 `html@1` (`layers/l7_report/html.py`): one self-contained verdicts.html with the labelling panel (gold status 1–6 incl.
+  NOT_APPLICABLE, reason, sure / unsure, re-measure, declared inputs, reviewer; hotkeys, queue, progress, filters; export / import of
+  `verdict-labels/1` JSON, no server); `panoptes verdict labels merge|declared` (`lab/labels.py`) turns reviewer files into a new
+  `gold.json` version (agreements in, conflicts listed) and a declared-inputs file that `scene-json` merges (`declared:` cfg).
+  Design from `docs/research/labeling-ui-survey-2026-10-08.md` (14 tools, 8 patterns adopted).
+- `tests/verdict`: 95 passed (fake model: every LLM plugin is tested through a monkeypatched `llm.complete`; no live call was possible
+  on the development Mac — no Claude credentials). Scorecard v1: `docs/research/verdict-lab-scorecard-v1-2026-10-08.md`.
+
 ### Test baseline note
 - At c9da31a (docs reorganisation; also touched `scripts/workcell_checks/box_faces.py`, `lower_edge.py`, `scripts/workcell_photo_oneshot.py`,
   README) the full suite went from the 6 known failures to 23 (`tests/test_app.py::test_readme_links_each_provider_credential_source`,

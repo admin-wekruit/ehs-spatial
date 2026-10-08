@@ -1,4 +1,4 @@
-"""Parity of L6 python@1 with the trial's clingo engine (research/verdict-layer-trial-2026-10-07: engine.py + rules.lp) on the trial's own
+"""Parity of L6 python@2 with the trial's clingo engine (research/verdict-layer-trial-2026-10-07: engine.py + rules.lp) on the trial's own
 outputs: out/{090,030}/scene-graph.json converted into Facts, the trial's six rules as Rule.spec entries (synth/pack.py), exact status per
 (rule, subjects) against out/{090,030}/verdicts.json, plus measured / U / threshold / margin on the numeric rows and the opening count."""
 from __future__ import annotations
@@ -65,4 +65,26 @@ def test_parity_with_trial_verdicts(cell):
             assert (v.measured, v.u, v.threshold, v.margin) == (r["measured_mm"], r["U_mm"], r["threshold_mm"], r["margin_mm"]), key
     assert {s: sum(1 for v in vs.verdicts if v.status == s) for s in COUNTS[cell]} == COUNTS[cell]
     assert got[("enclosure", ("hazard_zone",))].evidence["grid"]["openings"] == OPENINGS[cell]
-    assert vs.decision_rule == "guard_band_k2" and vs.provenance.plugins["L6"] == "python@1"
+    assert vs.decision_rule == "guard_band_k2" and vs.provenance.plugins["L6"] == "python@2"
+
+
+def test_enclosure_parity_clingo_python_on_synth_cells(tmp_path):
+    """@2 of both engines + handwritten@2: enclosure is decided only with coverage (PASS closed / FAIL open), CANNOT_DETERMINE without."""
+    from ehs_spatial.verdict.contracts import Signature
+    from ehs_spatial.verdict.layers.l5_rules.handwritten import Handwritten
+    from ehs_spatial.verdict.layers.l6_engine.clingo import Clingo
+    from ehs_spatial.verdict.synth import facts as F
+    from ehs_spatial.verdict.synth import scenes
+
+    sig = Signature.load(TRIAL.parents[2] / "ehs_spatial/verdict/signature-v1.json")
+    pack = Handwritten().run({"signature": sig}, {}, tmp_path)["rule_pack"]
+    want = {("full", True): "PASS", ("full", False): "FAIL", ("none", True): "CANNOT_DETERMINE", ("none", False): "CANNOT_DETERMINE"}
+    for (cov, enc), expected in want.items():
+        scene = scenes.cell(enclosed=enc, coverage=cov)
+        fx = F.facts_of(scene)
+        for engine in (Clingo, PythonEngine):
+            vs = engine().run({"facts": fx, "rule_pack": pack, "scene": scene}, {"k": 2}, tmp_path)["verdicts"]
+            got = {v.rule_id: v for v in vs.verdicts}["enclosure"]
+            assert got.status == expected, (cov, enc, engine.__name__, got.status, got.notes)
+            if expected == "CANNOT_DETERMINE":
+                assert "no floor coverage" in got.notes[0] or "unobserved" in got.notes[0], got.notes

@@ -1,4 +1,4 @@
-# L6 `python@1` — rule specs evaluated directly on Facts (parity engine for `clingo@1`)
+# L6 `python@2` — rule specs evaluated directly on Facts (parity engine for `clingo@2`; @2 = enclosure without coverage is CANNOT_DETERMINE)
 
 `python.py`. Registered as `@register('L6', 'python', '1')`; cfg keys: `decision` (`guard_band` default | `simple` | `conservative`),
 `k` (guard band only, default 2; Facts carry U at k=2 so U is scaled by k/2), `run_id`, `benchmark`, `plugins` (tags of the other
@@ -17,7 +17,7 @@ Reads only `Rule.spec` (never `Rule.asp`), one verdict per (rule, binding of the
 4. **Requirement** — the fact keyed (`predicate`, bound args); symmetric pair predicates (`min_distance_3d`, `horizontal_gap`, `z_overlap`,
    `line_of_sight`) are also looked up in reverse order. Threshold = `threshold` (number, or the name of a `Rule.thresholds` entry) |
    `formula` (arithmetic over `Scene.declared_inputs`, symbols mapped through `requirement['bindings']`) | `table` (a value declared under
-   the table id; python@1 has no table functions).
+   the table id; python@2 has no table functions).
 5. **Status** (first that applies): untrusted subject → `CANNOT_DETERMINE`; listed input / formula symbol / table value not declared →
    `NEEDS_INPUT` (`unknown_inputs`); no fact → `CANNOT_DETERMINE`; else the decision rule.
 

@@ -1,4 +1,4 @@
-"""L6 python@1: evaluates each rule's engine-neutral `spec` directly on Facts. Parity engine for clingo@1 (the trial's rules.lp).
+"""L6 python@2: evaluates each rule's engine-neutral `spec` directly on Facts. Parity engine for clingo@2 (the trial's rules.lp).
 
 Per rule: bind the selection variables to objects / zones of the listed classes (classes from obj(id, cls) facts, args = [id, cls], and
 from Scene.objects when a scene is given); keep the bindings whose applicability atoms hold as facts; drop the ones an exception attribute
@@ -16,7 +16,9 @@ horizontal_gap, z_overlap, line_of_sight) are also tried in reverse order -- and
   margin = V - T for >= / >, T - V for <= / <, None for == / !=.
 Topology: enclosed(Z) with no enclosed fact and Z = 'hazard_zone' (the implicit zone of the grid's hazard cells) is computed on Facts.grid:
 BFS from the outside cells through unblocked cells; a hazard cell reached through observed cells -> 0 (FAIL); reached only through
-unobserved cells (Grid.observed None = nothing observed) -> CANNOT_DETERMINE; not reached -> 1 (PASS); no hazard cells -> CANNOT_DETERMINE.
+unobserved cells -> CANNOT_DETERMINE; not reached -> 1 (PASS) when the grid carries coverage; Grid.observed None (no Coverage in the
+scene) -> CANNOT_DETERMINE whatever the BFS says (@2: the contract reads Coverage = None as unknown everywhere; @1 said PASS when the
+reconstructed footprints closed the ring); no hazard cells -> CANNOT_DETERMINE.
 Output is sorted by (rule_id, subjects); same inputs + cfg -> byte-identical VerdictSet. No geometry is computed here.
 """
 from __future__ import annotations
@@ -90,7 +92,8 @@ def enclosure(grid: Grid) -> tuple[int | None, dict]:
     hazard = {tuple(c) for c in grid.hazard} - blocked
     outside = {tuple(c) for c in grid.outside} - blocked
     observed = None if grid.observed is None else {tuple(c) for c in grid.observed}
-    info: dict[str, Any] = {"shape": list(grid.shape), "cell_m": grid.cell_m, "hazard_cells": len(hazard), "openings": 0, "via_unobserved": False}
+    info: dict[str, Any] = {"shape": list(grid.shape), "cell_m": grid.cell_m, "hazard_cells": len(hazard), "openings": 0, "via_unobserved": False,
+                            "no_coverage": observed is None}
     if not hazard:
         return None, info
 
@@ -107,9 +110,12 @@ def enclosure(grid: Grid) -> tuple[int | None, dict]:
 
     reach = bfs(lambda c: c not in blocked)
     info["openings"] = sum(1 for (x, y) in reach - hazard if any(n in hazard for n in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))))
+    if observed is None:
+        info["via_unobserved"] = bool(reach & hazard)
+        return None, info
     if not reach & hazard:
         return 1, info
-    if observed is not None and bfs(lambda c: c not in blocked and c in observed) & hazard:
+    if bfs(lambda c: c not in blocked and c in observed) & hazard:
         return 0, info
     info["via_unobserved"] = True
     return None, info
@@ -203,7 +209,7 @@ class _Eval:
                 T = float(self.declared[tid])
             else:
                 missing.append(tid)
-                notes.append(f"table {tid}: python@1 has no verified lookup; declare its value under that id to evaluate")
+                notes.append(f"table {tid}: python@2 has no verified lookup; declare its value under that id to evaluate")
         return (None if T is None else float(T)), list(dict.fromkeys(missing))
 
     def verdict(self, rule: Rule, b: dict[str, str], subjects: list[str], prov: Provenance) -> Verdict:
@@ -224,6 +230,8 @@ class _Eval:
             v.evidence = {"grid": info}
             if value is None:
                 v.notes.append("no hazard cells in the grid" if not info["hazard_cells"] else
+                               "no floor coverage in the scene: blocked cells are only what was reconstructed, an unobserved gap cannot be "
+                               f"excluded -> enclosure not decided ({info['openings']} opening cells in the reconstructed footprints)" if info["no_coverage"] else
                                f"{info['openings']} opening cells reachable from outside only through unobserved cells -> cannot decide")
         elif f is None:
             v.notes.append(f"no fact {pred}({', '.join(args)})")
@@ -236,9 +244,9 @@ class _Eval:
             if value is not None and u is None and op in (">=", ">", "<=", "<") and self.decision != "simple":
                 v.notes.append("fact carries no uncertainty; U taken as 0")
         v.measured, v.u, v.threshold = value, u, T
-        if op == "table" and not missing:   # handwritten@1 spells table rules with operator 'table': the comparison direction is the table's
+        if op == "table" and not missing:   # handwritten spells table rules with operator 'table': the comparison direction is the table's
             missing.append(f"{req.get('table')}#direction")
-            v.notes.append("operator 'table': python@1 needs the comparison direction (>= / <=) besides the table value")
+            v.notes.append("operator 'table': python@2 needs the comparison direction (>= / <=) besides the table value")
         if missing:
             v.status, v.unknown_inputs = "NEEDS_INPUT", missing
             return v
@@ -259,7 +267,7 @@ class _Eval:
         return verdicts, cov
 
 
-@register("L6", "python", "1")
+@register("L6", "python", "2")
 class PythonEngine:
     """cfg: decision ('guard_band' | 'simple' | 'conservative'), k (guard band, default 2), run_id, benchmark, plugins {layer: tag}."""
 

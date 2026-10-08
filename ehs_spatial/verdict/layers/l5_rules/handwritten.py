@@ -1,9 +1,11 @@
-"""L5 handwritten@1: the trial's rule pack (research/verdict-layer-trial-2026-10-07/rules.lp) as a RulePack.
+"""L5 handwritten@2: the trial's rule pack (research/verdict-layer-trial-2026-10-07/rules.lp) as a RulePack.
 
 Five rules, each with an engine-neutral `spec` (selection / applicability / requirement / exceptions, plus reviewer notes) and its
 ASP text; the reach-over rule declares its missing inputs (NEEDS_INPUT); `common_asp` holds the guard-band decision rules.
 L4's clause graph is ignored (hand-written pack). Thresholds are the numbers of docs/research/verdict-layer-rules-2026-10-07.md
 section C: verify against the purchased texts before any production use (several are vendor reproductions).
+@2 (2026-10-08): the enclosure rule reads the engine's `coverage_known` atom: no Coverage -> cannot_determine (the contract's meaning of
+Coverage = None), a breach through observed floor -> fail, a breach only through unobserved floor -> open (cannot_determine).
 """
 from __future__ import annotations
 
@@ -11,33 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from ehs_spatial.verdict.contracts import Rule, RulePack
+from ehs_spatial.verdict.layers.l5_rules.asp import COMMON_ASP   # the decision rules live in asp.py (shared with the synthesis plugins)
 from ehs_spatial.verdict.plugins import register
 
-VERSION = "0"                                   # the trial's rules.lp v0 (2026-10-07)
+VERSION = "1"                                   # the trial's rules.lp v0 (2026-10-07) + the enclosure coverage reading (2026-10-08)
 FIXED = ["fence", "guard", "bollard", "light_curtain"]
-ORIGIN = {"origin": "research/verdict-layer-trial-2026-10-07/rules.lp", "plugin": "handwritten@1"}
-
-COMMON_ASP = """\
-% Facts rendered by the engine (integer millimetres, U = guard-band half width):
-%   obj(ID, Class).  bottom(ID, V, U).  top(ID, V, U).  dist(A, B, D, U).  reach_over(H, S, A, B, C, U).
-%   cell(C).  adj(C1, C2).  blocked(C).  hazard(C).  outside(C).  observed(C).  untrusted(ID).
-fixed(fence).  fixed(guard).  fixed(bollard).  fixed(light_curtain).
-
-% Guard-banded decision (ILAC-G8 / ISO 14253-1 style): a side is taken only when the whole interval V +- U is on it.
-status(R, S, pass)       :- meas(R, S, V, U), thr(R, T), dir(R, ge), V - U >= T.
-status(R, S, fail)       :- meas(R, S, V, U), thr(R, T), dir(R, ge), V + U <  T.
-status(R, S, needs_meas) :- meas(R, S, V, U), thr(R, T), dir(R, ge), V - U <  T, V + U >= T.
-status(R, S, pass)       :- meas(R, S, V, U), thr(R, T), dir(R, le), V + U <= T.
-status(R, S, fail)       :- meas(R, S, V, U), thr(R, T), dir(R, le), V - U >  T.
-status(R, S, needs_meas) :- meas(R, S, V, U), thr(R, T), dir(R, le), V + U >  T, V - U <= T.
-status(R, S, cannot_determine) :- subject(R, S), thr(R, _), not meas(R, S, _, _).
-margin(R, S, V - T) :- meas(R, S, V, _), thr(R, T), dir(R, ge).
-margin(R, S, T - V) :- meas(R, S, V, _), thr(R, T), dir(R, le).
-
-#show status/3.
-#show margin/3.
-#show opening/1.
-"""
+ORIGIN = {"origin": "research/verdict-layer-trial-2026-10-07/rules.lp", "plugin": "handwritten@2"}
 
 
 def threshold_rule(rule_id, clause, standard, edition, selection, requirement, asp, notes=(), source_text="") -> Rule:
@@ -96,14 +77,19 @@ def rules() -> list[Rule]:
                  "reach(C2) :- reach(C1), adj(C1, C2), not blocked(C2).\n"
                  "breach(C) :- hazard(C), reach(C).\n"
                  "opening(C) :- reach(C), adj(C, C2), hazard(C2), not hazard(C).\n"
-                 "status(enclosure, hazard_zone, open)             :- breach(_).\n"
-                 "status(enclosure, hazard_zone, pass)             :- hazard(_), not breach(_).\n"
+                 "seen(C)  :- outside(C), not blocked(C), observed(C).\n"
+                 "seen(C2) :- seen(C1), adj(C1, C2), not blocked(C2), observed(C2).\n"
+                 "breach_seen(C) :- hazard(C), seen(C).\n"
+                 "status(enclosure, hazard_zone, fail)             :- breach_seen(_).\n"
+                 "status(enclosure, hazard_zone, open)             :- breach(_), not breach_seen(_).\n"
+                 "status(enclosure, hazard_zone, pass)             :- hazard(_), not breach(_), coverage_known.\n"
+                 "status(enclosure, hazard_zone, cannot_determine) :- hazard(_), not breach(_), not coverage_known.\n"
                  "status(enclosure, hazard_zone, cannot_determine) :- not hazard(_).\n",
              provenance=ORIGIN),
     ]
 
 
-@register("L5", "handwritten", "1")
+@register("L5", "handwritten", "2")
 class Handwritten:
     def run(self, inputs: dict[str, Any], cfg: dict[str, Any], workdir: Path) -> dict[str, Any]:
         return {"rule_pack": RulePack(pack_id="handwritten-trial", version=VERSION, signature_version=inputs["signature"].version,

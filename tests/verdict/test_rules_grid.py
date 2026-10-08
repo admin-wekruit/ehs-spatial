@@ -1,4 +1,4 @@
-"""Threshold grid (synth/grid.py) expectations under L6 python@1 with the guard band k=2, and the knob the decision variants turn."""
+"""Threshold grid (synth/grid.py) expectations under L6 python@2 with the guard band k=2, and the knob the decision variants turn."""
 from __future__ import annotations
 
 from ehs_spatial.verdict.layers.l5_rules import verify

@@ -1,6 +1,6 @@
 # L6 — Facts, RulePack -> VerdictSet (C5)
 
-`clingo@1` (clingo.py): port of the trial engine (research/verdict-layer-trial-2026-10-07/engine.py + rules.lp, clingo 5.8).
+`clingo@2` (clingo.py; @1 = exact port, @2 = enclosure needs coverage, generic atoms per Signature predicate, `coverage_known`): port of the trial engine (research/verdict-layer-trial-2026-10-07/engine.py + rules.lp, clingo 5.8).
 Program = `RulePack.common_asp` + every rule's `asp` + the Facts rendered as `obj/2`, `bottom/3`, `top/3`, `dist/4` (both orders),
 `reach_over/6` (a / b from the fact's `a_mm=` / `b_mm=` flags, U = max of the three), the grid as `cell/adj/blocked/hazard/outside/observed`,
 and `untrusted/1`. One stable model; `status/3`, `margin/3`, `opening/1` become Verdicts with measured / u / threshold / margin / evidence

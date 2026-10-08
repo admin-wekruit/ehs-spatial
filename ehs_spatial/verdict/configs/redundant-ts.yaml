@@ -1,0 +1,4 @@
+# Variant: L5 redundant-translation@0, two differently framed Claude calls per clause must agree on the normalised spec (then differential execution); the row measures how many clauses survive redundancy against code-synthesis's test gating (two llm_calls per clause).
+extends: baseline.yaml
+L4: {plugin: clause-kg, clauses_file: [clauses-v0.json, clauses-ts0011963-v0.json]}
+L5: {plugin: redundant-translation}

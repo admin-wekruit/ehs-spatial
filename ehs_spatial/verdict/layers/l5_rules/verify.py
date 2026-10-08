@@ -2,7 +2,8 @@
 stage 5; metamorphic relations and threshold grid from docs/research/verdict-evaluation-protocol-2026-10-08.md).
 
   signature_check(pack, signature)                     every class / zone / predicate (with arity) / attribute / declared input a rule
-                                                       references exists in the Signature; variables of the requirement are bound
+                                                       references exists in the Signature (an attribute may appear as a unary applicability
+                                                       atom attr(X)); variables of the requirement are bound
   differential(pack_a, pack_b, scenes, engine, facts_of)   status disagreements per (scene, rule, subjects) between two packs
   metamorphic(pack, scenes, engine, facts_of)          rigid transform (rotation about the floor normal + translation) keeps every status;
                                                        deleting an object no rule selects keeps every status; inflating every U by 10x never
@@ -56,7 +57,10 @@ def signature_check(pack: RulePack, signature: Signature) -> list[str]:
                 problems.append(f"{where}: applicability {text!r} is not name(args)")
                 continue
             name, args = m.group(1), [a.strip() for a in m.group(2).split(",") if a.strip()]
-            if name not in preds:
+            if name in signature.attributes:                 # an attribute is a unary boolean predicate: attr(X)
+                if len(args) != 1:
+                    problems.append(f"{where}: attribute {name} takes 1 arg, got {len(args)}")
+            elif name not in preds:
                 problems.append(f"{where}: applicability predicate {name!r} not in signature")
             elif len(args) != len(preds[name].args):
                 problems.append(f"{where}: {name} takes {len(preds[name].args)} args, got {len(args)}")
@@ -166,7 +170,7 @@ def metamorphic(pack: RulePack, scenes, engine, facts_of, angles=(90, 180, 270),
             if op not in (">=", "<=", ">", "<") or not isinstance(T, (int, float)):
                 continue
             keys = sorted(k for k in base if k[0] == rule.rule_id)
-            if not keys:
+            if not keys or not steps:
                 continue
             key = keys[0]   # ponytail: one subject per rule; every subject goes through the same decision function
             b = dict(zip(rule.spec.get("selection", {}), key[1]))

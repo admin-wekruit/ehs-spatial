@@ -32,6 +32,9 @@ DEFAULTS: dict[str, Any] = dict(k=2, default_sigma_m=0.05, default_scale_rel=0.0
                                 fixed=["fence", "guard", "bollard", "light_curtain"], hazard=["robot"], signature_version="1")
 
 
+ORIENTED = ("light_curtain", "area_scanner")
+
+
 def mm(x: float) -> int:
     return int(round(x * 1000))
 
@@ -142,6 +145,8 @@ def build(scene: Scene, cfg: dict[str, Any], producer: str) -> Facts:
         add("top_height", [o.id], mm(o.top_m), ut, o.views, ft)
         add("bottom_height", [o.id], mm(o.bottom_m), ub, o.views, fb)
         add("floor_gap", [o.id], max(mm(o.bottom_m), 0), ub, o.views, fb)
+        if o.cls in ORIENTED:   # @2: orientation of a sensing field from its box aspect (vertical post vs horizontal field)
+            add("vertical" if o.size_m[2] >= max(o.size_m[0], o.size_m[1]) else "horizontal", [o.id], None, None, o.views, [], unit="bool")
     for oa, ob in itertools.combinations(scene.objects, 2):
         if not (oa.cls in hazard or ob.cls in hazard or (oa.cls in fixed and ob.cls in fixed)):
             continue
@@ -169,7 +174,7 @@ def build(scene: Scene, cfg: dict[str, Any], producer: str) -> Facts:
     return Facts(scene_id=scene.scene_id, signature_version=str(cfg["signature_version"]), facts=facts, grid=grid, producer=producer)
 
 
-@register("L2", "relations", "1")
+@register("L2", "relations", "2")
 class Relations:
     """cfg (all optional, see DEFAULTS): k, default_sigma_m, default_scale_rel, cell_m, margin_m, face_samples, fixed, hazard, signature_version."""
 

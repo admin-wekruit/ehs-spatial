@@ -1,0 +1,4 @@
+# Variant: L5 function-library@0 compiles the merged ISO v0 + TS-0011963 clause graph without an LLM; the row measures how far a deterministic spec-to-ASP compiler gets (compiled / needs_input / refused per clause) against the handwritten pack.
+extends: baseline.yaml
+L4: {plugin: clause-kg, clauses_file: [clauses-v0.json, clauses-ts0011963-v0.json]}
+L5: {plugin: function-library}

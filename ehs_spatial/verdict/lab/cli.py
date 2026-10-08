@@ -1,4 +1,4 @@
-"""panoptes verdict {plugins | run | matrix | scorecard}: the lab's command line (also `python -m ehs_spatial.verdict.lab.cli`).
+"""panoptes verdict {plugins | run | matrix | scorecard | extract | labels}: the lab's command line (also `python -m ehs_spatial.verdict.lab.cli`).
 Only argparse at import time: ehs_spatial.cli registers this subcommand without needing the `verdict` extra installed."""
 from __future__ import annotations
 
@@ -20,12 +20,23 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
         q.add_argument("--runs-dir", default="runs")
         q.add_argument("--run-id", help="default: <YYYYmmdd-HHMMSS>-<git short sha>")
     sub.add_parser("scorecard", help="scorecard.md / scorecard.json from the ledger").add_argument("--runs-dir", default="runs")
+    from ehs_spatial.verdict.layers.l4_spec.extract_cli import add_arguments as add_extract_arguments   # argparse only
+    add_extract_arguments(sub.add_parser("extract", help="safety-concept text -> clause graph through Claude, diff vs the hand-extracted reference"))
+    sub.add_parser("labels", help="reviewer labels from the html report -> gold.json / declared inputs: `labels merge|declared ...` (lab/labels.py)",
+                   add_help=False).add_argument("rest", nargs=argparse.REMAINDER)
 
 
 def dispatch(args: argparse.Namespace) -> None:
     from ehs_spatial.verdict import plugins
     from ehs_spatial.verdict.lab import config, matrix, runner, scorecard
 
+    if args.verdict_command == "extract":
+        from ehs_spatial.verdict.layers.l4_spec.extract_cli import run as extract_run
+        extract_run(args)
+        return
+    if args.verdict_command == "labels":
+        from ehs_spatial.verdict.lab.labels import main as labels_main
+        return labels_main(args.rest)
     if args.verdict_command == "plugins":
         for layer, names in plugins.available().items():
             print(f"{layer}: {' '.join(names) or '-'}")

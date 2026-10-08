@@ -1,4 +1,5 @@
-"""Scorecard: one row per run of the ledger: plugin tag per layer, verdict counts per status, agreement with the benchmark's
+"""Scorecard: one row per run of the ledger: plugin tag per layer, rule-pack statuses (compiled / needs_input / vocabulary_gap / refused,
+the compile rate of an L5 variant), LLM calls, verdict counts per status, agreement with the benchmark's
 gold.json per status when it exists, and what changed versus the previous row (item; per layer the plugin tag or its params;
 `reuse` is not a change). Writes scorecard.md and scorecard.json next to the ledger."""
 from __future__ import annotations
@@ -7,10 +8,11 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from ehs_spatial.verdict.contracts import VerdictSet
+from ehs_spatial.verdict.contracts import RulePack, VerdictSet
 from ehs_spatial.verdict.plugins import LAYERS
 
 STATUSES = ("PASS", "FAIL", "NEEDS_MEASUREMENT", "NEEDS_INPUT", "CANNOT_DETERMINE")
+RULE_STATUSES = ("compiled", "needs_input", "vocabulary_gap", "refused")
 NOT_PARAMS = {"plugin", "version", "reuse"}
 
 
@@ -51,8 +53,10 @@ def rows(runs_dir: Path) -> list[dict]:
         gold_path = Path(entry["benchmark"]) / "gold.json"
         gold = json.loads(gold_path.read_text()) if gold_path.exists() else None
         counts = Counter(v.status for v in vs.verdicts)
+        pack = RulePack.load(root / "L5/rule_pack.json") if (root / "L5/rule_pack.json").exists() else None
+        rules = Counter(r.status for r in pack.rules) if pack else Counter()
         out.append({"run_id": entry["run_id"], "item": entry.get("item"), "scene_id": vs.scene_id, "plugins": entry["plugins"],
-                    "counts": {s: counts[s] for s in STATUSES}, "gold": gold_agreement(gold, vs),
+                    "rules": {s: rules[s] for s in RULE_STATUSES}, "counts": {s: counts[s] for s in STATUSES}, "gold": gold_agreement(gold, vs),
                     "gold_provisional": bool(gold and gold.get("provisional")), "diff": diff(prev, cfg),
                     "seconds": entry["seconds"], "llm_calls": entry.get("llm_calls", 0)})
         prev = cfg
@@ -60,11 +64,12 @@ def rows(runs_dir: Path) -> list[dict]:
 
 
 def markdown(rows_: list[dict]) -> str:
-    head = ["run", "item", *LAYERS, *STATUSES, "gold agreement", "diff vs previous row"]
+    head = ["run", "item", *LAYERS, "rules compiled/needs_input/gap/refused", "llm calls", *STATUSES, "gold agreement", "diff vs previous row"]
     lines = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
     for r in rows_:
         gold = (" · ".join(f"{s} {v}" for s, v in r["gold"].items()) + (" (provisional)" if r["gold_provisional"] else "")) if r["gold"] else "—"
-        cells = [r["run_id"], r["item"], *(r["plugins"][layer] for layer in LAYERS), *(r["counts"][s] for s in STATUSES), gold, r["diff"]]
+        cells = [r["run_id"], r["item"], *(r["plugins"][layer] for layer in LAYERS), "/".join(str(r["rules"][s]) for s in RULE_STATUSES),
+                 r["llm_calls"], *(r["counts"][s] for s in STATUSES), gold, r["diff"]]
         lines.append("| " + " | ".join(str(c) for c in cells) + " |")
     return "\n".join(lines) + "\n"
 
