@@ -1,0 +1,501 @@
+{
+ "vocabulary": "panoptes.verdict.vocabulary/0-trial",
+ "rules": [
+  {
+   "rule_id": "r01-fence-height",
+   "source_text": "Guarding fences must be at least 1.8 m tall.",
+   "clause": "docs/policies/workcell_v2.md p01 (illustrative)",
+   "selection": {
+    "variables": {
+     "F": [
+      "fence"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [],
+    "zones": [],
+    "note": "applies to every fence; perimeter membership not required by the prose"
+   },
+   "requirement": {
+    "edge": "top_height",
+    "operator": ">=",
+    "threshold": 1800.0,
+    "unit": "mm",
+    "formula": null,
+    "inputs": []
+   },
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": null,
+   "compiled_by": "session-model",
+   "status": "compiled",
+   "details": {}
+  },
+  {
+   "rule_id": "r02-estop-near-work-area",
+   "source_text": "The emergency stop button must be within 3 m of the robot work area.",
+   "clause": "docs/policies/workcell_v2.md p02 (illustrative)",
+   "selection": {
+    "variables": {
+     "E": [
+      "estop"
+     ],
+     "Z": [
+      "hazard_zone"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [],
+    "zones": [
+     "restricted_space"
+    ],
+    "note": "'robot work area' = restricted space, a declared input; today's hazard_zone is the robot's posed box"
+   },
+   "requirement": {
+    "edge": "horizontal_gap",
+    "operator": "<=",
+    "threshold": 3000.0,
+    "unit": "mm",
+    "formula": null,
+    "inputs": [
+     "restricted_space"
+    ]
+   },
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": null,
+   "compiled_by": "session-model",
+   "status": "vocabulary_gap",
+   "details": {
+    "gaps": [
+     "zone restricted_space"
+    ],
+    "inputs": [
+     "restricted_space"
+    ]
+   }
+  },
+  {
+   "rule_id": "r03-sensor-at-opening",
+   "source_text": "A safety sensor must be present within 2 m of the cell opening.",
+   "clause": "docs/policies/workcell_v2.md p03 (illustrative; refused by the August compiler)",
+   "selection": {
+    "variables": {
+     "L": [
+      "light_curtain"
+     ],
+     "O": [
+      "hazard_zone"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [
+     "opening(outside, O)"
+    ],
+    "zones": [],
+    "note": "openings are derived from the occupancy layer; needs observed coverage to be trustworthy"
+   },
+   "requirement": {
+    "edge": "exists",
+    "operator": "exists",
+    "threshold": 2000.0,
+    "unit": "mm",
+    "formula": "exists L with horizontal_gap(L, opening) <= 2000",
+    "inputs": []
+   },
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": null,
+   "compiled_by": "session-model",
+   "status": "compiled",
+   "details": {}
+  },
+  {
+   "rule_id": "r04-movable-clear-of-fence",
+   "source_text": "Movable equipment must be kept at least 0.6 m clear of any machine guarding fence.",
+   "clause": "docs/policies/starter.md (illustrative)",
+   "selection": {
+    "variables": {
+     "M": [
+      "cart"
+     ],
+     "F": [
+      "fence"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [],
+    "zones": [],
+    "note": ""
+   },
+   "requirement": {
+    "edge": "min_distance_3d",
+    "operator": ">=",
+    "threshold": 600.0,
+    "unit": "mm",
+    "formula": null,
+    "inputs": []
+   },
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": null,
+   "compiled_by": "session-model",
+   "status": "compiled",
+   "details": {}
+  },
+  {
+   "rule_id": "r05-guard-floor-gap",
+   "source_text": "The gap between the bottom of a perimeter guard and the floor shall not exceed 180 mm.",
+   "clause": "ISO 13857:2019 4.4 (vendor reproduction)",
+   "selection": {
+    "variables": {
+     "F": [
+      "fence",
+      "guard"
+     ],
+     "Z": [
+      "hazard_zone"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [
+     "perimeter_of(F, Z)"
+    ],
+    "zones": [],
+    "note": "'perimeter guard' = guard that is part of the hazard zone's perimeter"
+   },
+   "requirement": {
+    "edge": "floor_gap",
+    "operator": "<=",
+    "threshold": 180.0,
+    "unit": "mm",
+    "formula": null,
+    "inputs": []
+   },
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": null,
+   "compiled_by": "session-model",
+   "status": "vocabulary_gap",
+   "details": {
+    "gaps": [
+     "relation perimeter_of"
+    ],
+    "inputs": []
+   }
+  },
+  {
+   "rule_id": "r06-reach-over",
+   "source_text": "Where a person can reach over a protective structure, the horizontal distance to the hazard zone shall be at least the value given in ISO 13857 Table 2 for the structure height and the hazard height.",
+   "clause": "ISO 13857:2019 Table 2",
+   "selection": {
+    "variables": {
+     "S": [
+      "fence",
+      "guard",
+      "light_curtain",
+      "bollard"
+     ],
+     "H": [
+      "robot"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [],
+    "zones": [],
+    "note": "high-risk table unless the risk assessment says low"
+   },
+   "requirement": {
+    "edge": "reach_over",
+    "operator": ">=",
+    "threshold": null,
+    "unit": "mm",
+    "formula": "c >= Table2(a=hazard top, b=structure top, risk_level)",
+    "inputs": [
+     "table_lookup",
+     "risk_level"
+    ]
+   },
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": null,
+   "compiled_by": "session-model",
+   "status": "compiled_needs_input",
+   "details": {
+    "inputs": [
+     "table_lookup",
+     "risk_level"
+    ]
+   }
+  },
+  {
+   "rule_id": "r07-espe-distance",
+   "source_text": "The minimum distance of an electro-sensitive protective device from the hazard zone shall be S = K·T + C with K = 1600 mm/s and C = 8(d − 14) for detection capability d of 14 to 40 mm.",
+   "clause": "ISO 13855 (2010 numbers)",
+   "selection": {
+    "variables": {
+     "L": [
+      "light_curtain"
+     ],
+     "Z": [
+      "hazard_zone"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [],
+    "zones": [
+     "restricted_space"
+    ],
+    "note": "hazard zone edge = restricted space boundary; K=2000 branch when S <= 500 mm"
+   },
+   "requirement": {
+    "edge": "horizontal_gap",
+    "operator": ">=",
+    "threshold": null,
+    "unit": "mm",
+    "formula": "1600*T + 8*(d-14)",
+    "inputs": [
+     "stop_time_ms",
+     "resolution_mm",
+     "restricted_space"
+    ]
+   },
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": null,
+   "compiled_by": "session-model",
+   "status": "vocabulary_gap",
+   "details": {
+    "gaps": [
+     "zone restricted_space"
+    ],
+    "inputs": [
+     "stop_time_ms",
+     "resolution_mm",
+     "restricted_space"
+    ]
+   }
+  },
+  {
+   "rule_id": "r08-crush-gap",
+   "source_text": "Minimum gaps to avoid crushing: body 500 mm, head 300 mm, leg 180 mm, foot 120 mm, arm 120 mm, hand 100 mm, finger 25 mm.",
+   "clause": "ISO 13854:2017 Table 1 (lower rows vendor-sourced)",
+   "selection": {
+    "variables": {
+     "R": [
+      "robot"
+     ],
+     "X": [
+      "fence",
+      "guard",
+      "bollard",
+      "light_curtain"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [],
+    "zones": [
+     "restricted_space"
+    ],
+    "note": "which body part can enter the gap decides the row; largest applicable gap wins"
+   },
+   "requirement": {
+    "edge": "min_distance_3d",
+    "operator": ">=",
+    "threshold": null,
+    "unit": "mm",
+    "formula": "Table1(body_part)",
+    "inputs": [
+     "body_part",
+     "restricted_space"
+    ]
+   },
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": null,
+   "compiled_by": "session-model",
+   "status": "vocabulary_gap",
+   "details": {
+    "gaps": [
+     "zone restricted_space"
+    ],
+    "inputs": [
+     "body_part",
+     "restricted_space"
+    ]
+   }
+  },
+  {
+   "rule_id": "r09-estop-at-operator-station",
+   "source_text": "Emergency stop devices shall be readily accessible at each operator control station.",
+   "clause": "IEC 60204-1 10.7",
+   "selection": {
+    "variables": {
+     "E": [
+      "estop"
+     ],
+     "P": [
+      "operator_station"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [
+     "reachable_from(E, P)"
+    ],
+    "zones": [
+     "operator_station"
+    ],
+    "note": "'readily accessible' needs a reach radius; operator stations are not a perception class"
+   },
+   "requirement": {
+    "edge": "reachable_from",
+    "operator": "exists",
+    "threshold": null,
+    "unit": "mm",
+    "formula": null,
+    "inputs": [
+     "reach_radius_mm"
+    ]
+   },
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": null,
+   "compiled_by": "session-model",
+   "status": "vocabulary_gap",
+   "details": {
+    "gaps": [
+     "class/zone operator_station (variable P)",
+     "relation reachable_from",
+     "zone operator_station",
+     "edge reachable_from"
+    ],
+    "inputs": [
+     "reach_radius_mm"
+    ]
+   }
+  },
+  {
+   "rule_id": "r10-enclosure",
+   "source_text": "The hazard zone shall be enclosed by perimeter guarding; openings are permitted only where an interlocked door or an electro-sensitive protective device covers them.",
+   "clause": "ISO 14120 / ISO 10218-2 (paraphrase)",
+   "selection": {
+    "variables": {
+     "Z": [
+      "hazard_zone"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [],
+    "zones": [],
+    "note": ""
+   },
+   "requirement": {
+    "edge": "enclosed",
+    "operator": "==",
+    "threshold": 1.0,
+    "unit": "bool",
+    "formula": null,
+    "inputs": []
+   },
+   "exception": {
+    "attributes": [
+     "interlock"
+    ],
+    "note": "an opening covered by an interlocked door or a light curtain (covers_opening) does not count"
+   },
+   "unsupported_reason": null,
+   "compiled_by": "session-model",
+   "status": "vocabulary_gap",
+   "details": {
+    "gaps": [
+     "attribute interlock"
+    ],
+    "inputs": []
+   }
+  },
+  {
+   "rule_id": "r11-stopping-performance",
+   "source_text": "The stopping performance of the machine shall be verified annually and the results recorded.",
+   "clause": "ISO 10218-2:2025 verification (paraphrase)",
+   "selection": {
+    "variables": {
+     "M": [
+      "robot"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [],
+    "zones": [],
+    "note": ""
+   },
+   "requirement": null,
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": "a procedure and a record, not a geometric or semantic property of the photographed scene",
+   "compiled_by": "session-model",
+   "status": "refused",
+   "details": {
+    "reason": "a procedure and a record, not a geometric or semantic property of the photographed scene"
+   }
+  },
+  {
+   "rule_id": "r12-helmets",
+   "source_text": "Workers inside the cell must wear safety helmets.",
+   "clause": "site rule (illustrative)",
+   "selection": {
+    "variables": {
+     "W": [
+      "person"
+     ]
+    }
+   },
+   "applicability": {
+    "relations": [],
+    "zones": [],
+    "note": ""
+   },
+   "requirement": null,
+   "exception": {
+    "attributes": [],
+    "note": ""
+   },
+   "unsupported_reason": "people and PPE are outside the static-workcell scope of this pipeline; a video/people pipeline rule, not a workcell geometry rule",
+   "compiled_by": "session-model",
+   "status": "refused",
+   "details": {
+    "reason": "people and PPE are outside the static-workcell scope of this pipeline; a video/people pipeline rule, not a workcell geometry rule"
+   }
+  }
+ ]
+}

@@ -1,0 +1,195 @@
+{
+  "schema": "panoptes.verdict.vocabulary/0-trial",
+  "note": "The closed vocabulary a compiled rule may reference. 'available' = the scene graph produces it today; 'planned' = known gap (named so a compiled rule can point at it); anything else is a vocabulary gap the validator reports.",
+  "classes": {
+    "available": [
+      "fence",
+      "guard",
+      "bollard",
+      "light_curtain",
+      "robot",
+      "cart",
+      "estop",
+      "floor",
+      "other"
+    ],
+    "planned": [
+      "interlocked_door",
+      "control_panel",
+      "person",
+      "floor_marking"
+    ]
+  },
+  "zones": {
+    "available": [
+      "hazard_zone"
+    ],
+    "planned": [
+      "operator_station",
+      "aisle",
+      "restricted_space"
+    ],
+    "note": "hazard_zone today = plan occupancy of the robot box; restricted_space is a declared input (controller limits), not a reconstruction output"
+  },
+  "attributes": {
+    "available": [
+      "bottom_m",
+      "top_m",
+      "size_m",
+      "sigma_m",
+      "confidence",
+      "views",
+      "floor_contact"
+    ],
+    "planned": [
+      "interlock",
+      "resolution_mm",
+      "colour",
+      "mesh_pitch_mm",
+      "beam_heights_mm"
+    ]
+  },
+  "edges": {
+    "available": {
+      "min_distance_3d": {
+        "unit": "mm",
+        "between": [
+          "object",
+          "object"
+        ]
+      },
+      "horizontal_gap": {
+        "unit": "mm",
+        "between": [
+          "object",
+          "object"
+        ]
+      },
+      "floor_gap": {
+        "unit": "mm",
+        "between": [
+          "object",
+          "floor"
+        ]
+      },
+      "z_overlap": {
+        "unit": "mm",
+        "between": [
+          "object",
+          "object"
+        ]
+      },
+      "above": {
+        "unit": "mm",
+        "between": [
+          "object",
+          "object"
+        ]
+      },
+      "reach_over": {
+        "unit": "mm",
+        "between": [
+          "hazard",
+          "structure"
+        ],
+        "fields": [
+          "a_mm",
+          "b_mm",
+          "c_mm"
+        ]
+      },
+      "line_of_sight": {
+        "unit": "bool",
+        "between": [
+          "object",
+          "object"
+        ],
+        "fields": [
+          "blocked_by"
+        ]
+      },
+      "opening": {
+        "unit": "cell",
+        "between": [
+          "outside",
+          "hazard_zone"
+        ],
+        "note": "derived from the plan occupancy layer"
+      },
+      "enclosed": {
+        "unit": "bool",
+        "between": [
+          "hazard_zone"
+        ],
+        "note": "no outside->zone path through unblocked cells"
+      },
+      "top_height": {
+        "unit": "mm",
+        "between": [
+          "object",
+          "floor"
+        ],
+        "note": "top of the object above the floor"
+      }
+    },
+    "planned": {
+      "perimeter_of": {
+        "unit": "bool",
+        "between": [
+          "object",
+          "zone"
+        ]
+      },
+      "covers_opening": {
+        "unit": "bool",
+        "between": [
+          "light_curtain|interlocked_door",
+          "opening"
+        ]
+      },
+      "aisle_width": {
+        "unit": "mm",
+        "between": [
+          "aisle"
+        ]
+      },
+      "reachable_from": {
+        "unit": "mm",
+        "between": [
+          "estop",
+          "operator_station"
+        ]
+      },
+      "observed": {
+        "unit": "bool",
+        "between": [
+          "cell"
+        ],
+        "note": "coverage from the reconstruction layer"
+      }
+    }
+  },
+  "declared_inputs": [
+    "stop_time_ms",
+    "resolution_mm",
+    "risk_level",
+    "restricted_space",
+    "reach_radius_mm",
+    "body_part",
+    "table_lookup"
+  ],
+  "operators": [
+    "<=",
+    ">=",
+    "==",
+    "exists",
+    "forall",
+    "not_exists"
+  ],
+  "units": [
+    "mm",
+    "deg",
+    "bool",
+    "cell"
+  ]
+}
