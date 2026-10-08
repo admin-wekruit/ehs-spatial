@@ -14,12 +14,13 @@ const cache = new Map();
 function load(filename) {
   if (cache.has(filename)) return cache.get(filename).exports;
   const module = {exports:{}}; cache.set(filename, module);
-  const code = ts.transpileModule(fs.readFileSync(filename,'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS, target:ts.ScriptTarget.ES2022, jsx:ts.JsxEmit.ReactJSX}}).outputText;
+  if (filename.endsWith('.json')) { module.exports = JSON.parse(fs.readFileSync(filename, 'utf8')); return module.exports; }
+  const code = ts.transpileModule(fs.readFileSync(filename,'utf8'), {fileName:filename,compilerOptions:{esModuleInterop:true,module:ts.ModuleKind.CommonJS, target:ts.ScriptTarget.ES2022, jsx:ts.JsxEmit.ReactJSX}}).outputText;
   function dependency(name) {
     if (name.endsWith('.css')) return {};
     if (name === './App') return {ErrorNotice:()=>null};
     if (name === './api') return {request:()=>{throw Error('unexpected server request during rendering');},id:()=> 'request-id'};
-    if (name === './i18n') return {useI18n:()=>({language,t:key=>key})};
+    if (name === './i18n') { const messages = load(path.join(root, 'src/translate.ts')); return {...messages, useI18n:()=>({language,t:(key,params)=>messages.translate(language,key,params)})}; }
     if (!name.startsWith('.')) return require(name);
     const resolved=path.resolve(path.dirname(filename),name);
     return load([resolved,resolved+'.ts',resolved+'.tsx'].find(p=>fs.existsSync(p)));
@@ -59,5 +60,14 @@ assert.doesNotMatch(html,/rr-pass[\s"]|Save attributed review|Assess this revisi
 assert.match(render({...publication,snapshot:{...publication.snapshot,evaluations:[],reviews:[]}}),/has not been assessed/);
 const historyOnly={...publication,snapshot:{...publication.snapshot,revision:{id:'old',document:{...doc,reportEvidence:{historical:{findings:[{status:'FAIL'}]}}}},evaluations:[],reviews:[]}};
 assert.match(render(historyOnly),/has not been assessed/);assert.doesNotMatch(render(historyOnly),/rr-fail/,'historical failures must not become current assessment results');
-language='zh'; assert.match(render(),/判定与理由复核/); assert.match(render(),/规则适用性确认|米制占地范围/);
-console.log('Report review checks passed: exact revision/finding/review binding, immutable snapshot, entity context, missing evidence, read-only controls, zh/en.');
+language='zh'; assert.match(render(),/\u5224\u5b9a\u4e0e\u7406\u7531\u590d\u6838/); assert.match(render(),/\u89c4\u5219\u9002\u7528\u6027\u786e\u8ba4|\u7c73\u5236\u5360\u5730\u8303\u56f4/);
+console.log('Report review checks passed: exact revision/finding/review binding, immutable snapshot, entity context, missing evidence, read-only controls, en/zh/nl.');
+
+// The same saved evidence renders in each locale, then returns to English.
+for (const locale of ['en', 'zh', 'nl', 'en']) {
+  language = locale;
+  const html = render();
+  const {translate} = load(path.join(root, 'src/translate.ts'));
+  assert.ok(html.includes(translate(locale, 'rrTitle')), `localized heading in ${locale}`);
+  if (locale !== 'zh') assert.doesNotMatch(html, /[\u3400-\u9fff]/);
+}

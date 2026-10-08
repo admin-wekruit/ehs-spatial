@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError
-from ehs_spatial.platform.reconstruction import MAP_PINS, _Stages, providers_from_manifest
-from ehs_spatial.platform.storage import LocalBlobStore
+from argus.platform.contracts import PlatformError
+from argus.platform.reconstruction import MAP_PINS, _Stages, providers_from_manifest
+from argus.platform.storage import LocalBlobStore
 from test_platform_backend import repo, project, make_job, identity
 
 

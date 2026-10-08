@@ -17,8 +17,8 @@ except ImportError:
     # carries the check spec through, so a pass-through stands in; with zen installed the real JDM runs.
     sys.modules["zen"] = types.ModuleType("zen")
     STUB = True
-from ehs_spatial.platform import policy_engine as pe
-from ehs_spatial.platform.contracts import PlatformError, validate_document
+from argus.platform import policy_engine as pe
+from argus.platform.contracts import PlatformError, validate_document
 
 if STUB:
     pe.execute_jdm = lambda jdm, applicability, labels: {"applicability": applicability, "check": jdm}

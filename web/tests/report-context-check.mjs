@@ -7,10 +7,12 @@ import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import ts from 'typescript';
 import React from 'react';
+import {LOCALE_TAG} from '../src/translate.ts';
 
 const require=createRequire(import.meta.url), root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const slots=[], effects=[];let cursor=0,tree;
 const hooks={
+  useMemo:fn=>fn(),
   useState(initial){const i=cursor++;if(!Object.hasOwn(slots,i))slots[i]=typeof initial==='function'?initial():initial;return [slots[i],v=>{slots[i]=typeof v==='function'?v(slots[i]):v;}];},
   useRef(initial){return slots[cursor++]??={current:initial};},
   useEffect(effect,deps){const i=cursor++,previous=slots[i];if(!previous||deps.some((v,j)=>!Object.is(v,previous.deps[j])))effects.push(()=>{previous?.cleanup?.();slots[i]={deps,cleanup:effect()};});},
@@ -37,17 +39,20 @@ const publication={id:'publication',projectId:'project',title:'Frozen report',cr
 const publicationView={publication,project:detail.project,branch,branches:[branch],
   edits:[edits[0]].map(({id,createdAt,baseRevisionId,revisionId,operations})=>({id,createdAt,baseRevisionId,revisionId,operationTypes:operations.map(o=>o.type)}))};
 let hash='#/projects/project/report?revision=revision&object=a&observation=observation-a&image=image-a&box=1,2,30,40&review=1&agent=1';
-globalThis.location={get hash(){return hash;},set hash(value){navigations.push(value);hash=value;}};
+globalThis.location={get href(){return 'https://example.invalid/index.html'+hash;},get hash(){return hash;},set hash(value){navigations.push(value);hash=value;}};
 globalThis.window={history:{replaceState(_state,_title,url){assert.ok(url.startsWith('#/'));hash=url;}},scrollTo(){}};
 const code=ts.transpileModule(fs.readFileSync(path.join(root,'src/WorkcellReport.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
 const core=await import('../src/core.ts');
 const semantics=await import('../src/scene-semantics.ts');
+const measurement=await import('../src/measurement-layer.ts');
 const module={exports:{}};
 new Function('require','module','exports',code)(name=>{
   if(name==='react')return hooks;
   if(name.endsWith('.css'))return {};
-  if(name==='./i18n')return {useI18n:()=>({t:key=>key})};
+  if(name==='./i18n')return {LOCALE_TAG,useI18n:()=>({language:'en',t:key=>key})};
   if(name==='./core')return core;
+  if(name==='./measurement-layer')return {...measurement,loadMeasurementLayer:async()=>null};
+  if(name==='./SceneResources')return {SceneResources:{Provider:empty},useSceneResources:()=>({analysisAvailable:true})};
   if(name==='./scene-semantics')return semantics;
   if(name==='./App')return {ErrorNotice:empty};
   if(name==='./ReportScene')return {ReportScene};

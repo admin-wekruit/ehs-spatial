@@ -1,7 +1,7 @@
 """CPU regression on exact prepared upstream code; no model inference or fake GS modules.
 
 First run scripts/prepare_sam3d_mesh_source.py --fetch --source
-.platform/model-delivery-20260915/sam3d-mesh-source-v2, or set PANOPTES_SAM3D_TEST_SOURCE.
+data/model-sources/sam3d-mesh-source, or set PANOPTES_SAM3D_TEST_SOURCE.
 """
 import ast
 import hashlib
@@ -15,16 +15,14 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-preparation = runpy.run_path(str(Path(__file__).parents[1] / 'scripts/prepare_sam3d_mesh_source.py'))
-CODE_REVISION, PATCH, RECEIPT, SOURCE_HASHES, prepare = (preparation[key] for key in
-    ('CODE_REVISION', 'PATCH', 'RECEIPT', 'SOURCE_HASHES', 'prepare'))
+from argus.providers.prepare_sam3d_mesh_source import CODE_REVISION, PATCH, RECEIPT, SOURCE_HASHES, prepare
 
 
 def test_pinned_prepared_mesh_path_preserves_real_vertex_colors_topology_and_axes():
     torch = pytest.importorskip('torch')
     pytest.importorskip('trimesh')
     root = Path(os.environ.get('PANOPTES_SAM3D_TEST_SOURCE',
-        '.platform/model-delivery-20260915/sam3d-mesh-source-v2'))
+        'data/model-sources/sam3d-mesh-source'))
     if not (root / RECEIPT).exists():
         pytest.skip('Run the documented pinned source preparation first')
     receipt = json.loads((root / RECEIPT).read_text())
@@ -108,8 +106,8 @@ def eager_imports(root, entries):
 
 
 def test_pinned_mesh_import_closure_excludes_optional_gaussian_code():
-    root = Path(os.environ.get('PANOPTES_SAM3D_TEST_SOURCE', '.platform/model-delivery-20260915/sam3d-mesh-source-v2'))
-    upstream = Path(os.environ.get('PANOPTES_SAM3D_TEST_UPSTREAM', '.platform/model-delivery-20260915/sam3d-public-full'))
+    root = Path(os.environ.get('PANOPTES_SAM3D_TEST_SOURCE', 'data/model-sources/sam3d-mesh-source'))
+    upstream = Path(os.environ.get('PANOPTES_SAM3D_TEST_UPSTREAM', 'data/model-sources/sam3d-upstream'))
     entries = ['sam3d_objects.pipeline.inference_pipeline_pointmap',
         'sam3d_objects.model.backbone.tdfy_dit.models.structured_latent_vae.decoder_mesh']
     if not all((base / 'sam3d_objects/pipeline/inference_pipeline_pointmap.py').exists() for base in (root, upstream)):
@@ -133,7 +131,7 @@ def test_pinned_mesh_import_closure_excludes_optional_gaussian_code():
 
 
 def test_gaussian_exports_are_deferred_until_explicitly_requested():
-    root = Path(os.environ.get('PANOPTES_SAM3D_TEST_SOURCE', '.platform/model-delivery-20260915/sam3d-mesh-source-v2'))
+    root = Path(os.environ.get('PANOPTES_SAM3D_TEST_SOURCE', 'data/model-sources/sam3d-mesh-source'))
     if not (root / RECEIPT).exists():
         pytest.skip('Prepare the pinned source first')
     for relative, name in (

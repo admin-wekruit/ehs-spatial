@@ -1,4 +1,0 @@
-# Variant: perception monitor on (stpl@1) and a narrower guard band (k=1): how many NEEDS_MEASUREMENT become decisions, what gets untrusted.
-extends: baseline.yaml
-L3: {plugin: stpl}
-L6: {plugin: clingo, k: 1}

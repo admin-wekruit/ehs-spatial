@@ -6,11 +6,11 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError, canonical, digest
-from ehs_spatial.platform.recgen import validate_frozen_source
-from ehs_spatial.platform.reconstruction import _Stages, _unpacked, run_analysis
-from ehs_spatial.platform.research_inputs import prepare_recgen_input
-from ehs_spatial.platform.storage import LocalBlobStore
+from argus.platform.contracts import PlatformError, canonical, digest
+from argus.platform.recgen import validate_frozen_source
+from argus.platform.reconstruction import _Stages, _unpacked, run_analysis
+from argus.platform.research_inputs import prepare_recgen_input
+from argus.platform.storage import LocalBlobStore
 from test_platform_reconstruction import Repo, bundle, provider
 from test_recgen_research import payload, research_configuration
 
@@ -108,7 +108,7 @@ def test_observation_owned_by_another_entity_is_rejected(source):
 
 
 def test_envelope_is_accepted_by_existing_research_job_loader(source, monkeypatch):
-    from ehs_spatial.platform import reconstruction
+    from argus.platform import reconstruction
     repo, blobs, job, *_ = source
     frozen = prepare(source)['validation']
     asset = repo.register_asset(repo.pid, {**blobs.put(canonical(frozen), 'application/json'),

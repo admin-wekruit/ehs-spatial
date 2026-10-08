@@ -5,12 +5,12 @@ import json
 import pytest
 
 from test_platform_backend import repo, project, identity, capability, entity
-from ehs_spatial.platform.agent_service import AgentService, AgentResult
-from ehs_spatial.platform.contracts import PlatformError
-from ehs_spatial.platform.policy_service import PolicyService, templates, execute_jdm
-from ehs_spatial.platform.policy_repository import PostgresPolicyRepository
-from ehs_spatial.platform.storage import LocalBlobStore
-from panoptes_worker.__main__ import run_job
+from argus.platform.agent_service import AgentService, AgentResult
+from argus.platform.contracts import PlatformError
+from argus.platform.policy_service import PolicyService, templates, execute_jdm
+from argus.platform.policy_repository import PostgresPolicyRepository
+from argus.platform.storage import LocalBlobStore
+from argus.platform.worker import run_job
 
 
 def job_body(scene, kind):

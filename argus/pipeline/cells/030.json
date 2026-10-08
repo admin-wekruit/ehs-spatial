@@ -1,0 +1,28 @@
+{
+  "run": "bor1-030-01",
+  "objects": [
+    "cart",
+    "guard",
+    "left_light_curtain",
+    "left_post",
+    "right_fence",
+    "right_light_curtain",
+    "right_post",
+    "robot"
+  ],
+  "frames": [
+    "sam3d",
+    "sam3d-frame_0001",
+    "sam3d-frame_0002"
+  ],
+  "scale": "mvs030/estop-scale.json",
+  "variant": "030-v2-mvs-fill-sam3d",
+  "lowerEdgeObjects": [
+    "right_light_curtain",
+    "left_light_curtain",
+    "right_fence",
+    "left_fence"
+  ],
+  "baselinePublicationPrefix": "fafdeb6b",
+  "partMasks": {}
+}

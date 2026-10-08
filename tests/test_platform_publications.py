@@ -7,10 +7,10 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
-from ehs_spatial.platform.api import create_app
-from ehs_spatial.platform.contracts import PlatformError, PublicationSnapshot
-from ehs_spatial.platform.storage import LocalBlobStore
-from panoptes_worker.__main__ import run_job
+from argus.platform.api import create_app
+from argus.platform.contracts import PlatformError, PublicationSnapshot
+from argus.platform.storage import LocalBlobStore
+from argus.platform.worker import run_job
 from test_platform_backend import repo, project, identity, entity
 
 

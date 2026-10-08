@@ -5,10 +5,10 @@ import io
 import numpy as np
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError, digest
-from ehs_spatial.platform import recgen
-from ehs_spatial.platform.reconstruction import _packed
-from ehs_spatial.platform.spatial import transform_points
+from argus.platform.contracts import PlatformError, digest
+from argus.platform import recgen
+from argus.platform.reconstruction import _packed
+from argus.platform.spatial import transform_points
 
 
 def payload():
@@ -167,8 +167,8 @@ def test_original_crop_request_retains_explicit_pixel_mapping():
 
 def test_build_payload_selects_only_reviewed_same_entity_views_and_derives_camera_z(tmp_path):
     from test_platform_reconstruction import Repo, bundle
-    from ehs_spatial.platform.storage import LocalBlobStore
-    from ehs_spatial.platform.reconstruction import run_analysis, _Stages, _capture, _load_geometry, _load_masks
+    from argus.platform.storage import LocalBlobStore
+    from argus.platform.reconstruction import run_analysis, _Stages, _capture, _load_geometry, _load_masks
 
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
@@ -216,7 +216,7 @@ def research_configuration(value, images):
 
 
 def test_recgen_factory_is_research_only_and_does_not_relax_sam3d_gates():
-    from ehs_spatial.platform.reconstruction import providers_from_manifest, validate_research_manifest
+    from argus.platform.reconstruction import providers_from_manifest, validate_research_manifest
     value = payload()
     images = [{'id':v['imageId'], 'sha256':v['imageSha256']} for v in value['views']]
     manifest, protocol = research_configuration(value, images)
@@ -235,8 +235,8 @@ def test_recgen_factory_is_research_only_and_does_not_relax_sam3d_gates():
 @pytest.mark.parametrize('failure', ['schema', 'selection', 'source_revision', 'source_image', 'source_mask', 'source_geometry', 'erosion_not_frozen'])
 def test_invalid_frozen_input_never_reaches_call_reservation(tmp_path, monkeypatch, failure):
     from test_platform_reconstruction import Repo
-    from ehs_spatial.platform.storage import LocalBlobStore
-    from ehs_spatial.platform.reconstruction import run_research_stage
+    from argus.platform.storage import LocalBlobStore
+    from argus.platform.reconstruction import run_research_stage
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     value = payload()
@@ -270,11 +270,8 @@ def test_research_factory_retains_received_usage_and_native_scene_assembly(tmp_p
     import sys
     from types import SimpleNamespace
     from test_platform_reconstruction import Repo, bundle
-    from ehs_spatial.platform.storage import LocalBlobStore
-    from ehs_spatial.platform.reconstruction import (
-        run_analysis, run_research_stage, _Stages, _capture, _load_geometry, _load_masks,
-        _record_generated_representation,
-    )
+    from argus.platform.storage import LocalBlobStore
+    from argus.platform.reconstruction import run_analysis, run_research_stage, _Stages, _capture, _load_geometry, _load_masks, _record_generated_representation
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     repo.document, _ = run_analysis(repo, blobs, repo.job, bundle(repo))
@@ -301,7 +298,7 @@ def test_research_factory_retains_received_usage_and_native_scene_assembly(tmp_p
             'colors':np.ones((3, 4)),
             'officialPosedVertices':transform_points(vertices, pose), 'pins':recgen.RECGEN_PINS,
             'telemetry':{'workerElapsedSeconds':2, 'actualCostUsd':None}, 'providerRequestId':'reviewed-call'}
-    monkeypatch.setitem(sys.modules, 'ehs_spatial.platform.recgen_transport', SimpleNamespace(invoke=invoke))
+    monkeypatch.setitem(sys.modules, 'argus.platform.recgen_transport', SimpleNamespace(invoke=invoke))
     job = {**repo.job, 'kind':'validate_model', 'config':{'researchProtocolSha256':digest(protocol)}}
     before = deepcopy(repo.document)
     result = run_research_stage(repo, blobs, job, 'generation', value, selected_images, manifest, protocol)
@@ -320,5 +317,5 @@ def test_research_factory_retains_received_usage_and_native_scene_assembly(tmp_p
     assert all({'observationId':oid, 'revision':1} in model['sourceRefs'] for oid in ids)
     mesh_asset = repo.get_asset(model['assetId'])
     assert mesh_asset['sizeBytes'] == 3 * 9 * 4 + 3 * 4, 'Native mesh format stores exactly position, normal, RGB'
-    from ehs_spatial.platform.contracts import validate_document
+    from argus.platform.contracts import validate_document
     validate_document(document)

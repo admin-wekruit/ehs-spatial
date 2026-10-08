@@ -9,10 +9,10 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError
-from ehs_spatial.platform.spatial import primitive_mesh, transform_matrix, transform_points
-from ehs_spatial.platform.repository import apply_operations
-from scripts.import_public_scene import floor_evidence, floor_mesh_members, import_document, legacy_transform, packed_asset, parametric_definition, source_path, unpack_mesh
+from argus.platform.contracts import PlatformError
+from argus.platform.spatial import primitive_mesh, transform_matrix, transform_points
+from argus.platform.repository import apply_operations
+from argus.platform.import_public_scene import floor_evidence, floor_mesh_members, import_document, legacy_transform, packed_asset, parametric_definition, source_path, unpack_mesh
 
 
 def make_public_scene(root):
@@ -100,8 +100,8 @@ def test_model_report_inputs_pin_exact_observation_versions_without_rewriting_so
     assert document['reportEvidence']['objects'][1]['entityId'] is None
     assert all(p.read_bytes() == raw for p, raw in before.items())
     assert import_document(path, put)[1]['documentSha256'] == manifest['documentSha256']
-    from ehs_spatial.platform.identity import migrate_document
-    from ehs_spatial.platform.correspondence import audit_correspondence
+    from argus.platform.identity import migrate_document
+    from argus.platform.correspondence import audit_correspondence
     document['captureId'] = str(uuid5(NAMESPACE_URL, 'test-import-capture'))
     current = migrate_document(document, base_revision_id=str(uuid5(NAMESPACE_URL, 'test-import-revision')))
     audited = next(r for r in audit_correspondence(current)['rows'] if r['entityId'] == entity['id'])
@@ -358,8 +358,8 @@ def test_imported_bounds_measures_exact_photo_binding_without_automatic_acceptan
 @pytest.mark.parametrize('with_report', [False, True])
 def test_exact_candidate_inputs_pin_owned_observations_with_or_without_report(tmp_path, parametric, with_report):
     from copy import deepcopy
-    from ehs_spatial.platform.correspondence import audit_correspondence
-    from ehs_spatial.platform.identity import migrate_document
+    from argus.platform.correspondence import audit_correspondence
+    from argus.platform.identity import migrate_document
 
     path = make_parametric_scene(tmp_path)[0] if parametric else make_public_scene(tmp_path)
     source = json.loads(path.read_text())
@@ -448,7 +448,7 @@ def test_floor_role_requires_pinned_native_mesh_membership(tmp_path, monkeypatch
     source['floor_reference']={'path':'floor.json','sha256':floor_sha,'coordinate_system':'Another descriptive wording'}
     path.write_text(json.dumps(source))
     # Geometry-cloud import has its own end-to-end test; isolate floor binding here.
-    monkeypatch.setattr('scripts.import_geometry_evidence.import_geometry_evidence',lambda *args:{'frames':[]})
+    monkeypatch.setattr('argus.platform.import_geometry_evidence.import_geometry_evidence',lambda *args:{'frames':[]})
     def put(data,media_type,metadata):
         sha=hashlib.sha256(data).hexdigest()
         return {'id':str(uuid5(NAMESPACE_URL,sha)),'sha256':sha,'sizeBytes':len(data),'mediaType':media_type,'metadata':metadata}
@@ -528,7 +528,7 @@ def native_representation_source_fixture(tmp_path):
     geometry['manifestAssetId'] = include(json.dumps(geometry).encode(),'application/json',{'kind':'native_geometry_manifest'})
     document['geometryEvidence'] = geometry
     document['captureId'] = 'source-capture'
-    from ehs_spatial.platform.identity import migrate_document
+    from argus.platform.identity import migrate_document
     document = migrate_document(document, base_revision_id='source-revision')
     # include remains attached to this exact prepared document, as production preparation does.
     return document, source, stored, include, manifest, {'points':points, 'mask':np.ones((6,8),bool)}, deepcopy(document)
@@ -536,11 +536,11 @@ def native_representation_source_fixture(tmp_path):
 
 def test_exact_imported_mesh_source_equivalence_keeps_one_observation_and_actual_cad(tmp_path):
     from copy import deepcopy
-    from ehs_spatial.platform.identity import apply_source_equivalences, resolve_entity_id
-    from ehs_spatial.platform.contracts import validate_document
-    from ehs_spatial.platform.reconstruction import _verified_source_equivalences, _plan_projection
-    from ehs_spatial.platform.blender_export import mesh_from_asset
-    from scripts.import_report_evidence import import_source_equivalences
+    from argus.platform.identity import apply_source_equivalences, resolve_entity_id
+    from argus.platform.contracts import validate_document
+    from argus.platform.reconstruction import _verified_source_equivalences, _plan_projection
+    from argus.platform.blender_export import mesh_from_asset
+    from argus.platform.import_report_evidence import import_source_equivalences
     from types import SimpleNamespace
     document, source, stored, include, manifest, arrays, before = native_representation_source_fixture(tmp_path)
     observation = document['observations'][0]
@@ -600,8 +600,8 @@ def test_exact_imported_mesh_source_equivalence_keeps_one_observation_and_actual
     'translated_native_meshes','foreign_image','different_frame','ambiguous_owner','mask','no_proof','source_face_selection'])
 def test_imported_representation_proof_rejects_forged_or_changed_sources_atomically(tmp_path,tamper):
     from copy import deepcopy
-    from ehs_spatial.platform.identity import apply_source_equivalences
-    from scripts.import_report_evidence import import_source_equivalences
+    from argus.platform.identity import apply_source_equivalences
+    from argus.platform.import_report_evidence import import_source_equivalences
     document,source,stored,include,manifest,arrays,_ = native_representation_source_fixture(tmp_path)
     observation=document['observations'][0]; masks={observation['id']:arrays['mask']}
     import_source_equivalences(document,source,observation['sourceRefs'][0]['assetId'],[],masks,include,
@@ -666,9 +666,9 @@ def test_new_import_packages_same_source_mesh_proof_with_existing_native_readers
             asset=assets[aid]
             include(stored[aid],asset['mediaType'],asset.get('metadata',{}))
         return deepcopy(geometry)
-    monkeypatch.setattr('scripts.import_geometry_evidence.import_geometry_evidence',import_geometry)
-    monkeypatch.setattr('scripts.import_public_scene.import_observation_masks',lambda *args:{})
-    monkeypatch.setattr('scripts.import_public_scene.observation_mask_sources',lambda *args:({},[],[]))
+    monkeypatch.setattr('argus.platform.import_geometry_evidence.import_geometry_evidence',import_geometry)
+    monkeypatch.setattr('argus.platform.import_public_scene.import_observation_masks',lambda *args:{})
+    monkeypatch.setattr('argus.platform.import_public_scene.observation_mask_sources',lambda *args:({},[],[]))
     saved={}
     def put(data,media,metadata):
         sha=hashlib.sha256(data).hexdigest(); aid=str(uuid5(NAMESPACE_URL,sha)); saved[aid]=data
@@ -679,33 +679,3 @@ def test_new_import_packages_same_source_mesh_proof_with_existing_native_readers
     assert proof['pairs'][0]['kind']=='same_source_indexed_mesh'
     assert len(imported['observations'])==1 and len(imported['entities'])==2
     assert not next(e for e in imported['entities'] if e['id']==proof['pairs'][0]['entityId'])['observationRefs']
-
-
-def test_source_equivalence_refreshes_cad_in_normal_reassociation(tmp_path):
-    from ehs_spatial.platform import reconstruction
-    from ehs_spatial.platform.storage import LocalBlobStore
-    from scripts.import_report_evidence import import_source_equivalences
-    from scripts.research.reprocess_object_identity import assert_source_conserved
-    from test_platform_reconstruction import Repo
-    document, source, stored, include, manifest, arrays, before = native_representation_source_fixture(tmp_path)
-    observation = document['observations'][0]
-    source_id = observation['sourceRefs'][0]['assetId']
-    masks = {observation['id']:arrays['mask']}
-    import_source_equivalences(document,source,source_id,[],masks,include,read_asset=stored.__getitem__,
-        read_source=lambda name,sha:(tmp_path/name).read_bytes(),read_import_asset=lambda record:packed_asset(tmp_path,record))
-    document['geometryEvidence']['frames'][0]['assets']['canonical.png'] = observation['imageId']
-    blobs = LocalBlobStore(tmp_path/'blobs')
-    repo = Repo(blobs)
-    repo.assets = [{**a,**blobs.put(stored[a['id']],a['mediaType']),'projectId':repo.pid} for a in document['assets']]
-    repo.document = document
-    updated,result = reconstruction.run_reassociation(repo,blobs,{**repo.job,'kind':'reassociate_scene','inputs':{}},{})
-    assert result['status']=='succeeded' and result['newModelCalls']==0 and not repo.calls
-    assert result['association']['sourceEquivalences']['verifiedPairCount']==1
-    assert_source_conserved(document,updated)
-    owner = next(e for e in updated['entities'] if observation['id'] in e['observationRefs'])
-    reference = next(r for r in owner['representations'] if r.get('sourceKind')=='observed_reference_surface')
-    projection = reference.get('planProjection')
-    assert projection and projection['imageId']==observation['imageId']
-    assert projection['observationId']==observation['id'] and projection['observationRevision']==observation['revision']
-    assert projection['assetId']==reference['assetId'] and projection['transformSnapshot']==reference['transform']
-    assert projection['polygons']

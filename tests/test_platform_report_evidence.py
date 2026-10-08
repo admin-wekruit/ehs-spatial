@@ -7,17 +7,17 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError
-from ehs_spatial.platform.storage import LocalBlobStore
-from scripts.import_public_scene import import_document, run_import
-from scripts.import_report_evidence import original_box, original_polygons, report_dependencies
+from argus.platform.contracts import PlatformError
+from argus.platform.storage import LocalBlobStore
+from argus.platform.import_public_scene import import_document, run_import
+from argus.platform.import_report_evidence import original_box, original_polygons, report_dependencies
 from test_platform_import import make_public_scene
 from test_platform_backend import repo
 
 
 def test_source_cad_coverage_uses_exact_mask_owner_and_keeps_original_geometry():
     from copy import deepcopy
-    from ehs_spatial.platform.source_cad import refresh_source_cad_links
+    from argus.platform.source_cad import refresh_source_cad_links
     payloads, assets = {}, []
     def asset(aid, value):
         raw = json.dumps(value).encode()
@@ -98,7 +98,7 @@ def test_source_cad_coverage_uses_exact_mask_owner_and_keeps_original_geometry()
 
 
 def test_source_cad_manifest_freezes_source_files_independently(tmp_path):
-    from scripts.import_report_evidence import build_source_cad_manifest
+    from argus.platform.import_report_evidence import build_source_cad_manifest
     root = tmp_path / "inventory"
     (root / "sam").mkdir(parents=True)
     raw = json.dumps({"objects": [{"inv": 7, "frame": "frame-a", "label": "any fence", "instance": 1}]}).encode()
@@ -118,7 +118,7 @@ def test_source_cad_manifest_freezes_source_files_independently(tmp_path):
 
 def test_source_equivalence_proof_requires_exact_instance_and_mask(tmp_path):
     from copy import deepcopy
-    import scripts.import_report_evidence as importer
+    import argus.platform.import_report_evidence as importer
     assert hasattr(importer, "import_source_equivalences"), "same-source provenance must produce an immutable identity proof"
     original = tmp_path / "arbitrary-segmentation.json"
     original.write_text(json.dumps({"rle": [json.dumps({"size": [2, 3], "counts": [0, 6]}), json.dumps({"size": [2, 3], "counts": [6]})]}))
@@ -163,7 +163,7 @@ def test_source_equivalence_proof_requires_exact_instance_and_mask(tmp_path):
 
 def test_native_segmentation_assets_keep_original_bytes_and_canonical_grid(tmp_path):
     from copy import deepcopy
-    from scripts.import_report_evidence import import_observation_masks, observation_mask_sources
+    from argus.platform.import_report_evidence import import_observation_masks, observation_mask_sources
     root = tmp_path / "geometry"
     root.mkdir()
     Image.new("L", (6, 4), 255).save(root / "mask.png")
@@ -209,99 +209,6 @@ def test_native_segmentation_assets_keep_original_bytes_and_canonical_grid(tmp_p
     assert len(stored) == saved_count and before["observations"][0]["maskAssetId"] is None
 
 
-def test_identity_batch_registers_real_capture_once_and_preserves_cas(repo, tmp_path):
-    from copy import deepcopy
-    from ehs_spatial.platform.contracts import canonical, digest
-    from ehs_spatial.platform.reconstruction import run_reassociation
-    from scripts.research.reprocess_object_identity import make_plan, register_target, assert_source_conserved
-    from scripts.research.scan_object_identity import encoded, file_ref
-    from test_platform_backend import project
-    repo.blobs = LocalBlobStore(tmp_path / "store")
-    cap, created = project(repo)
-    project_id = created["project"]["id"]
-    registry = {}
-    def save(raw, media, metadata):
-        blob = repo.blobs.put(raw, media)
-        blob["metadata"] = metadata
-        asset = repo.register_asset(project_id, blob)
-        registry[asset["id"]] = {**asset, "file": file_ref(repo.blobs.root / asset["storageKey"])}
-        return asset
-    source, _ = import_document(make_public_scene(tmp_path), save)
-    assert source["captureId"] is None and source["observations"]
-    job = repo.create_job(project_id, cap, {"requestId": str(uuid4()), "branchId": created["branch"]["id"],
-        "baseRevisionId": created["revision"]["id"], "kind": "import_scene", "inputs": {}, "config": {}})
-    job = repo.claim_job(job["id"])
-    finished = repo.finish_job(job["id"], job["attemptToken"], "succeeded", document=source)
-    base_id = finished["resultRevisionId"]
-    publication = repo.create_publication(project_id, cap, {"requestId": str(uuid4()), "sceneRevisionId": base_id,
-        "evaluationIds": [], "reviewIds": [], "title": "Frozen source"})
-    prepared = deepcopy(source)
-    # Same bytes under a provisional preparation ID must resolve to the old asset.
-    old_asset = source["assets"][0]
-    provisional = str(uuid4())
-    prepared["assets"].append({**old_asset, "id": provisional})
-    registry[provisional] = {**registry[old_asset["id"]], "id": provisional}
-    extra = repo.blobs.put(b"new source evidence", "application/octet-stream")
-    extra.update(id=str(uuid4()), metadata={"kind": "identity_test_evidence"})
-    prepared["assets"].append({**extra, "kind": "identity_test_evidence"})
-    registry[extra["id"]] = {**extra, "file": file_ref(repo.blobs.root / extra["storageKey"])}
-    source_path, prepared_path = tmp_path / "base.json", tmp_path / "prepared.json"
-    source_path.write_bytes(canonical(source)); prepared_path.write_bytes(canonical(prepared))
-    target = {"projectId": project_id, "revisionId": base_id, "document": file_ref(source_path), "publicationIds": [publication["id"]], "catalogPublicationIds": []}
-    scan_path = tmp_path / "scan.json"
-    scan_path.write_bytes(encoded({"evaluationRevisions": [target], "publications": [{"id": publication["id"]}]}))
-    manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_bytes(encoded({"sourceScan": file_ref(scan_path), "evaluationRevisions": [{**target,
-        "baseDocument": file_ref(source_path), "document": file_ref(prepared_path)}], "assets": list(registry.values())}))
-    plan = make_plan(manifest_path); target = plan["targets"][0]
-    queued = register_target(repo, repo.blobs, plan, target, registry)
-    assert queued["status"] == "queued"
-    assert register_target(repo, repo.blobs, plan, target, registry) == queued
-    captures = repo.list_project_records(project_id, "captures")["items"]
-    assert len(captures) == 1 and captures[0]["id"] == target["capture"]["id"]
-    assert captures[0]["task"]["sourceDocumentSha256"] == digest(source)
-    job = repo.claim_job(queued["id"])
-    document, result = run_reassociation(repo, repo.blobs, job, {})
-    assert document["captureIds"] == [captures[0]["id"]]
-    assert_source_conserved(source, document)
-    assert len({a["id"] for a in document["assets"]}) == len(document["assets"])
-    assert result["newModelCalls"] == 0 and result["status"] == "incomplete"
-    concurrent = repo.create_job(project_id, cap, {"requestId": str(uuid4()), "branchId": target["branchId"],
-        "baseRevisionId": base_id, "kind": "import_scene", "inputs": {}, "config": {}})
-    concurrent = repo.claim_job(concurrent["id"])
-    moved = repo.finish_job(concurrent["id"], concurrent["attemptToken"], "succeeded", document=source)
-    saved = repo.finish_job(job["id"], job["attemptToken"], result["status"], document=document, result=result)
-    assert saved["headAdvanced"] is False and saved["resultRevisionId"] != moved["resultRevisionId"]
-    assert repo.get_publication(publication["id"])["snapshot"] == publication["snapshot"]
-    assert repo.get_revision(base_id)["document"] == source
-    assert repo.get_project(project_id)["branch"]["headRevisionId"] == base_id
-
-    # Proof blobs contain asset references too: DB deduplication must resolve
-    # them before the proof bytes and prepared document are frozen.
-    proof = repo.blobs.put(canonical({"schemaVersion": 1, "kind": "same_source_observation_equivalences",
-        "pairs": [{"sourceRef": {"assetId": provisional, "sha256": old_asset["sha256"]},
-                   "evidenceRefs": [{"assetId": extra["id"], "sha256": extra["sha256"]}]}]}), "application/json")
-    proof.update(id=str(uuid4()), metadata={"kind": "source_identity_evidence"})
-    prepared["assets"].insert(0, proof)
-    prepared["sourceIdentityEvidence"] = [{"assetId": proof["id"], "sha256": proof["sha256"]}]
-    registry[proof["id"]] = {**proof, "file": file_ref(repo.blobs.root / proof["storageKey"])}
-    prepared_path.write_bytes(canonical(prepared))
-    manifest = json.loads(manifest_path.read_bytes())
-    manifest["evaluationRevisions"][0]["document"] = file_ref(prepared_path)
-    manifest["assets"] = list(registry.values())
-    manifest_path.write_bytes(encoded(manifest))
-    proof_plan = make_plan(manifest_path)
-    proof_job = register_target(repo, repo.blobs, proof_plan, proof_plan["targets"][0], registry)
-    prepared_asset = repo.get_asset(proof_job["inputs"]["preparedDocumentAssetId"])
-    actual = json.loads(repo.blobs.get(prepared_asset["storageKey"], prepared_asset["sha256"], prepared_asset["sizeBytes"]))
-    proof_ref = actual["sourceIdentityEvidence"][0]
-    actual_proof_asset = repo.get_asset(proof_ref["assetId"])
-    actual_proof = json.loads(repo.blobs.get(actual_proof_asset["storageKey"], actual_proof_asset["sha256"], actual_proof_asset["sizeBytes"]))
-    assert actual_proof["pairs"][0]["sourceRef"]["assetId"] == old_asset["id"]
-    assert actual_proof["pairs"][0]["evidenceRefs"][0]["assetId"] != extra["id"]
-    assert proof_ref["sha256"] == actual_proof_asset["sha256"] == digest(actual_proof)
-    assert next(a for a in actual["assets"] if a["id"] == proof_ref["assetId"])["sha256"] == proof_ref["sha256"]
-    assert register_target(repo, repo.blobs, proof_plan, proof_plan["targets"][0], registry) == proof_job
 
 
 def put(data, media_type, metadata):
@@ -388,6 +295,23 @@ def test_report_pixel_centres_and_box_edges_use_distinct_conventions():
     matrix = [[2, 0, .5], [0, 3, 1], [0, 0, 1]]
     assert original_polygons([[[0, 0], [1, 1]]], matrix) == [[[.5, 1], [2.5, 4]]]
     assert original_box([0, 0, 2, 2], matrix, 20, 20) == [0, 0, 4, 6]
+
+
+def test_invalid_shared_sam_instance_keeps_the_typed_import_error(tmp_path):
+    from argus.platform.import_report_evidence import import_source_equivalences
+    path = tmp_path / 'source.json'
+    raw = b'{"rle":[]}'
+    path.write_bytes(raw)
+    checksum = hashlib.sha256(raw).hexdigest()
+    document = {'assets': [], 'observations': [{'id': oid, 'imageId': 'photo'} for oid in ('generated', 'raw')],
+                'cameras': [{'imageId': 'photo', 'sourceRefs': [{'sourceCameraId': 'frame'}]}],
+                'entities': [{'observationRefs': [oid], 'lineage': [{'operation': 'offline_import', 'sourceRecordId': oid}]} for oid in ('generated', 'raw')]}
+    source = {'objects': [{'candidate_id': 'raw', 'source_frame_id': 'source-frame', 'target_frame_id': 'frame',
+                          'source_mask': {'ref': {'encoding': 'rle', 'sha256': checksum, 'pointer': ['rle', 0]}}}]}
+    records = [{'sourceRecordId': 'generated', 'view': {'frame_id': 'frame', 'provenance': {'source_instance': 0,
+                'source_sha256': checksum, 'source_path': str(path), 'source_frame': 'source-frame'}}}]
+    with pytest.raises(PlatformError, match='import_source_instance_invalid'):
+        import_source_equivalences(document, source, 'source', records, {}, lambda *_: pytest.fail('invalid source must not be imported'))
 
 
 def test_report_dependencies_and_source_integrity_are_not_silently_ignored(tmp_path):

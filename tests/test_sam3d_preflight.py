@@ -1,6 +1,6 @@
 """A plausible-looking manifest must not invent model release readiness."""
-from scripts.preflight_sam3d import preflight
-from ehs_spatial.platform.contracts import digest
+from argus.providers.preflight_sam3d import preflight
+from argus.platform.contracts import digest
 import numpy as np
 
 
@@ -51,8 +51,8 @@ def test_runtime_preflight_does_not_require_the_release_evidence_it_will_measure
 
 def test_product_runtime_gate_cannot_be_lowered_by_research_fields():
     import pytest
-    from ehs_spatial.platform.contracts import PlatformError
-    from ehs_spatial.platform.reconstruction import ProviderSpec
+    from argus.platform.contracts import PlatformError
+    from argus.platform.reconstruction import ProviderSpec
     _, manifest, protocol = research_configuration()
     config = manifest["generation"]
     evidence = config["releaseEvidence"]

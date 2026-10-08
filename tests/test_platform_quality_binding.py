@@ -3,9 +3,9 @@ from copy import deepcopy
 
 import pytest
 
-from ehs_spatial.platform import correspondence
-from ehs_spatial.platform.reconstruction import run_capture_pipeline
-from ehs_spatial.platform.storage import LocalBlobStore
+from argus.platform import correspondence
+from argus.platform.reconstruction import run_capture_pipeline
+from argus.platform.storage import LocalBlobStore
 from test_capture_pipeline import providers_for_new_capture
 from test_platform_reconstruction import Repo
 

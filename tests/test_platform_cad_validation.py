@@ -4,9 +4,9 @@ from copy import deepcopy
 import numpy as np
 import pytest
 
-from ehs_spatial.platform import correspondence, reconstruction
-from ehs_spatial.platform.spatial import MeshData
-from ehs_spatial.platform.storage import LocalBlobStore
+from argus.platform import correspondence, reconstruction
+from argus.platform.spatial import MeshData
+from argus.platform.storage import LocalBlobStore
 from test_platform_correspondence import scene
 from test_platform_reconstruction import Repo
 

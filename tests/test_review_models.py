@@ -8,9 +8,9 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from ehs_spatial.platform import reconstruction as reconstruction
-from ehs_spatial.platform.contracts import PlatformError, validate_document
-from ehs_spatial.platform.correspondence import audit_correspondence
+from argus.platform import reconstruction as reconstruction
+from argus.platform.contracts import PlatformError, validate_document
+from argus.platform.correspondence import audit_correspondence
 from test_platform_reconstruction import provider
 from test_platform_research_inputs import source
 
@@ -199,7 +199,7 @@ def test_missing_family_member_cannot_be_replaced_with_sibling_geometry(retained
 
 
 def test_wrong_saved_pose_is_assessed_without_refinement_or_replacement(retained, monkeypatch):
-    from ehs_spatial.platform import model_quality
+    from argus.platform import model_quality
     case = retained
     case.entity['currentModelTransform']['position'][2] = 1.
     before = deepcopy(case.repo.document)
@@ -210,7 +210,7 @@ def test_wrong_saved_pose_is_assessed_without_refinement_or_replacement(retained
 
 
 def test_agent_can_queue_only_explicit_owned_review_targets(retained, monkeypatch):
-    from ehs_spatial.platform.agent_service import AgentService
+    from argus.platform.agent_service import AgentService
     case, created = retained, []
     def create(pid, capability, body):
         created.append(body)
@@ -362,7 +362,7 @@ def test_review_derives_missing_and_stale_cad_but_preserves_current_cache(retain
 
 @pytest.mark.parametrize('unknown', [False, True])
 def test_direct_research_preparation_reviews_retained_models_before_next_revision(retained, unknown):
-    from ehs_spatial.platform.reconstruction_pipeline import run_reconstruction_pipeline
+    from argus.platform.reconstruction_pipeline import run_reconstruction_pipeline
     case = retained
     make_family(case)
     if unknown:

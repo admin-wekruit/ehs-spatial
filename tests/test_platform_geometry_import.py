@@ -7,8 +7,8 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError
-from scripts.import_geometry_evidence import (FRAME_FILES, SELECTION_RULE, geometry_dependencies,
+from argus.platform.contracts import PlatformError
+from argus.platform.import_geometry_evidence import (FRAME_FILES, SELECTION_RULE, geometry_dependencies,
     import_geometry_evidence, read_cloud, sha, write_cloud)
 
 

@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 from test_recgen_research import payload
-from ehs_spatial.platform.contracts import PlatformError
-from ehs_spatial.platform.reconstruction import ProviderResponseError
-from ehs_spatial.platform.recgen_transport import invoke
+from argus.platform.contracts import PlatformError
+from argus.platform.reconstruction import ProviderResponseError
+from argus.platform.recgen_transport import invoke
 
 
 @pytest.mark.parametrize('builtin_poll_timeout', [False, True])
@@ -16,7 +16,7 @@ def test_unknown_call_is_cancelled_persisted_and_never_automatically_resubmitted
     events = []
     clock = [0.]
     class PollTimeout(Exception): pass
-    monkeypatch.setattr('ehs_spatial.platform.recgen_transport.time.monotonic', lambda:clock[0])
+    monkeypatch.setattr('argus.platform.recgen_transport.time.monotonic', lambda:clock[0])
     class Upload:
         def __enter__(self): return self
         def __exit__(self, *args): pass
@@ -147,7 +147,7 @@ def test_live_ownership_loss_terminates_call_and_download_failure_keeps_receipt(
 @pytest.mark.parametrize('attempt', [None, '', ' ', 1, 'a' * 129, '../retry'])
 def test_invalid_explicit_dispatch_attempt_rejected_before_provider(attempt):
     from test_recgen_research import research_configuration
-    from ehs_spatial.platform.reconstruction import _validate_research_protocol
+    from argus.platform.reconstruction import _validate_research_protocol
     _, protocol = research_configuration(payload(), [])
     protocol['dispatchAttemptId'] = attempt
     with pytest.raises(PlatformError) as caught:
@@ -157,8 +157,8 @@ def test_invalid_explicit_dispatch_attempt_rejected_before_provider(attempt):
 
 @pytest.mark.parametrize('reported', [True, None, 'malformed-settings'])
 def test_provider_cannot_silently_ignore_explicit_no_erosion(tmp_path, monkeypatch, reported):
-    from ehs_spatial.platform.contracts import digest
-    from ehs_spatial.platform.recgen import RECGEN_PINS, RecGenRequest
+    from argus.platform.contracts import digest
+    from argus.platform.recgen import RECGEN_PINS, RecGenRequest
     value = payload()
     value['maskErosionEnabled'] = False
     data = RecGenRequest.from_payload(value).to_npz()
@@ -183,7 +183,7 @@ def test_provider_cannot_silently_ignore_explicit_no_erosion(tmp_path, monkeypat
 def test_an_identical_input_already_on_the_volume_is_not_uploaded_again(tmp_path, monkeypatch, same):
     """A run that failed after its uploads leaves each job's input.npz on the volume; the next attempt found it there and
     stopped on FileExistsError (Lightning RecGen, runs 3-4). The same bytes are reused; other bytes are refused, never replaced."""
-    from ehs_spatial.platform.recgen import RecGenRequest
+    from argus.platform.recgen import RecGenRequest
     data = RecGenRequest.from_payload(payload()).to_npz()
     record = json.dumps({'status':'failed'}).encode()
     events = []

@@ -1,3 +1,0 @@
-# Variant: same facts and rules, the pure-Python engine instead of clingo (parity check: statuses must be identical).
-extends: baseline.yaml
-L6: {plugin: python, decision: guard_band, k: 2}

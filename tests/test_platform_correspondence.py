@@ -1,7 +1,7 @@
 """Pure metadata audit; source ownership is not geometry or byte verification."""
 from copy import deepcopy
 
-from ehs_spatial.platform.correspondence import audit_correspondence
+from argus.platform.correspondence import audit_correspondence
 
 
 def scene():

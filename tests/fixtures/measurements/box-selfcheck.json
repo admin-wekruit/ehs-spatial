@@ -1,0 +1,1066 @@
+[
+  {
+    "post": {
+      "centerNative": [
+        -6e-06,
+        1.999995,
+        0.450126
+      ],
+      "axes": [
+        [
+          0.943934,
+          0.330134,
+          0.0
+        ],
+        [
+          -0.330134,
+          0.943934,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.330134,
+          -0.943934,
+          -0.0
+        ],
+        "back": [
+          -0.330134,
+          0.943934,
+          0.0
+        ],
+        "left": [
+          -0.943934,
+          -0.330134,
+          -0.0
+        ],
+        "right": [
+          0.943934,
+          0.330134,
+          0.0
+        ],
+        "bottom": [
+          -0.0,
+          -0.0,
+          -1.0
+        ],
+        "top": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "sizeM": [
+        0.1012,
+        0.101,
+        0.9003
+      ],
+      "bottomM": 0.0,
+      "topM": 0.9003,
+      "floorContact": true,
+      "dims": {
+        "L": {
+          "valueM": 0.1012,
+          "sigmaCm": 0.77,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 0.101,
+          "sigmaCm": 1.61,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.9003,
+          "sigmaCm": 0.93,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.0,
+          "sigmaCm": 0.85,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [
+            1,
+            2
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        }
+      }
+    },
+    "panel": {
+      "centerNative": [
+        6.4e-05,
+        2.975122,
+        0.619811
+      ],
+      "axes": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          -0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.0,
+          -1.0,
+          -0.0
+        ],
+        "back": [
+          -0.0,
+          1.0,
+          0.0
+        ],
+        "left": [
+          -1.0,
+          -0.0,
+          -0.0
+        ],
+        "right": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "bottom": [
+          -0.0,
+          -0.0,
+          -1.0
+        ],
+        "top": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "sizeM": [
+        1.2005,
+        0.05,
+        0.7602
+      ],
+      "bottomM": 0.2397,
+      "topM": 0.9999,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 1.2005,
+          "sigmaCm": 1.89,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 0.05,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.7602,
+          "sigmaCm": 2.28,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.2397,
+          "sigmaCm": 1.37,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [
+            1
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        }
+      }
+    },
+    "bollard": {
+      "centerNative": [
+        0.800043,
+        2.39998,
+        0.400176
+      ],
+      "axes": [
+        [
+          0.947502,
+          -0.319751,
+          -0.0
+        ],
+        [
+          0.319751,
+          0.947502,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          -0.319751,
+          -0.947502,
+          -0.0
+        ],
+        "back": [
+          0.319751,
+          0.947502,
+          0.0
+        ],
+        "left": [
+          -0.947502,
+          0.319751,
+          0.0
+        ],
+        "right": [
+          0.947502,
+          -0.319751,
+          -0.0
+        ],
+        "bottom": [
+          -0.0,
+          -0.0,
+          -1.0
+        ],
+        "top": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "sizeM": [
+        0.1198,
+        0.1201,
+        0.8004
+      ],
+      "bottomM": 0.0,
+      "topM": 0.8004,
+      "floorContact": true,
+      "dims": {
+        "L": {
+          "valueM": 0.1198,
+          "sigmaCm": 1.05,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 0.1201,
+          "sigmaCm": 6.66,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.8004,
+          "sigmaCm": 2.41,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.0,
+          "sigmaCm": 1.87,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [
+            1
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        }
+      }
+    },
+    "cube": {
+      "centerNative": [
+        -1.025,
+        2.375,
+        0.075
+      ],
+      "axes": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          -0.0,
+          -1.0,
+          -0.0
+        ],
+        "back": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "left": [
+          -1.0,
+          -0.0,
+          -0.0
+        ],
+        "right": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "bottom": [
+          -0.0,
+          -0.0,
+          -1.0
+        ],
+        "top": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "sizeM": [
+        0.15,
+        0.15,
+        0.15
+      ],
+      "bottomM": 0.0,
+      "topM": 0.15,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 0.15,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 0.15,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.15,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.0,
+          "sigmaCm": null,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        }
+      }
+    }
+  },
+  {
+    "post": {
+      "centerNative": [
+        -6e-06,
+        1.999995,
+        0.450126
+      ],
+      "axes": [
+        [
+          0.943934,
+          0.330134,
+          0.0
+        ],
+        [
+          -0.330134,
+          0.943934,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.330134,
+          -0.943934,
+          -0.0
+        ],
+        "back": [
+          -0.330134,
+          0.943934,
+          0.0
+        ],
+        "left": [
+          -0.943934,
+          -0.330134,
+          -0.0
+        ],
+        "right": [
+          0.943934,
+          0.330134,
+          0.0
+        ],
+        "bottom": [
+          -0.0,
+          -0.0,
+          -1.0
+        ],
+        "top": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "sizeM": [
+        0.1012,
+        0.101,
+        0.9003
+      ],
+      "bottomM": 0.0,
+      "topM": 0.9003,
+      "floorContact": true,
+      "dims": {
+        "L": {
+          "valueM": 0.1012,
+          "sigmaCm": 0.77,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 0.101,
+          "sigmaCm": 1.61,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.9003,
+          "sigmaCm": 0.93,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.0,
+          "sigmaCm": 0.85,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [
+            1,
+            2
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        }
+      }
+    },
+    "panel": {
+      "centerNative": [
+        0.000102,
+        2.975704,
+        0.619876
+      ],
+      "axes": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          -0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.0,
+          -1.0,
+          -0.0
+        ],
+        "back": [
+          -0.0,
+          1.0,
+          0.0
+        ],
+        "left": [
+          -1.0,
+          -0.0,
+          -0.0
+        ],
+        "right": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "bottom": [
+          -0.0,
+          -0.0,
+          -1.0
+        ],
+        "top": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "sizeM": [
+        1.2008,
+        0.05,
+        0.7603
+      ],
+      "bottomM": 0.2397,
+      "topM": 1.0,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 1.2008,
+          "sigmaCm": 1.89,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 0.05,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.7603,
+          "sigmaCm": 2.28,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.2397,
+          "sigmaCm": 1.37,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [
+            1
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        }
+      }
+    },
+    "bollard": {
+      "centerNative": [
+        0.800064,
+        2.399977,
+        0.404675
+      ],
+      "axes": [
+        [
+          0.947502,
+          -0.319751,
+          -0.0
+        ],
+        [
+          0.319751,
+          0.947502,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          -0.319751,
+          -0.947502,
+          -0.0
+        ],
+        "back": [
+          0.319751,
+          0.947502,
+          0.0
+        ],
+        "left": [
+          -0.947502,
+          0.319751,
+          0.0
+        ],
+        "right": [
+          0.947502,
+          -0.319751,
+          -0.0
+        ],
+        "bottom": [
+          -0.0,
+          -0.0,
+          -1.0
+        ],
+        "top": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "sizeM": [
+        0.118,
+        0.1194,
+        0.8093
+      ],
+      "bottomM": 0.0,
+      "topM": 0.8093,
+      "floorContact": true,
+      "dims": {
+        "L": {
+          "valueM": 0.118,
+          "sigmaCm": 0.81,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 0.1194,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.8093,
+          "sigmaCm": 1.12,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.0,
+          "sigmaCm": 0.94,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [
+            1
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        }
+      }
+    },
+    "cube": {
+      "centerNative": [
+        -1.025,
+        2.375,
+        0.075
+      ],
+      "axes": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          -0.0,
+          -1.0,
+          -0.0
+        ],
+        "back": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "left": [
+          -1.0,
+          -0.0,
+          -0.0
+        ],
+        "right": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "bottom": [
+          -0.0,
+          -0.0,
+          -1.0
+        ],
+        "top": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "sizeM": [
+        0.15,
+        0.15,
+        0.15
+      ],
+      "bottomM": 0.0,
+      "topM": 0.15,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 0.15,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 0.15,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.15,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.0,
+          "sigmaCm": null,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        }
+      }
+    }
+  }
+]

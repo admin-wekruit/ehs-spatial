@@ -1,0 +1,37 @@
+{
+  "090": {
+    "publicationId": "a9a6e0a0-a77e-4ca0-b460-aa6f18d72698",
+    "revisionId": "86207849-d672-4df4-b453-22584f491894",
+    "coordinateFrameId": "3c0cfc31-267a-53db-a2b3-e5338e6ade3c",
+    "boxes": 9,
+    "nativeToMeters": 3.2371372068568487,
+    "entities": {
+      "left_post": "9c5a1063-7e72-51e4-996f-40ed2182181b",
+      "right_post": "9b760eac-397b-5663-a245-843f6b11c350",
+      "right_fence": "f19145c1-e40d-5a5e-9e4e-1b8023d5aa6d",
+      "robot": "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+      "left_fence": "70bf794d-0e00-50a2-9871-abe4d5ad76cc",
+      "cart": "a370512f-4db9-5231-bc7f-5851d1ce8fb9",
+      "guard": "ed56fff4-3362-59ae-a09a-bc54bf4515e2",
+      "left_light_curtain": "da08d580-8968-52e0-8782-10e6f5e50988",
+      "right_light_curtain": "e17c9fdc-e0bc-5df2-9626-73756bf2995c"
+    }
+  },
+  "030": {
+    "publicationId": "fafdeb6b-7122-4434-a62d-676b3ff9e50a",
+    "revisionId": "f464b25e-9e27-4966-aca1-e21472fa2962",
+    "coordinateFrameId": "d9e3265b-74e3-54b7-84a4-cc91e69ab4db",
+    "boxes": 8,
+    "nativeToMeters": 3.5616493184162774,
+    "entities": {
+      "cart": "c297c720-e273-506a-8d44-6b624cd01c01",
+      "guard": "1ed52346-0777-5939-b935-d5e48f44b333",
+      "left_light_curtain": "bf0b0ae8-19fb-562e-a80c-7fabea0895a5",
+      "left_post": "b3806b16-7f37-541b-8650-468598d7ed5f",
+      "right_fence": "0d84459c-3591-55ef-966e-b1b17475f94b",
+      "right_light_curtain": "4339d261-6523-5a1f-afa5-9fbc3f834fc6",
+      "right_post": "738b8922-a8b0-5f80-997f-8b4148b1f1ab",
+      "robot": "9c76c044-a985-5c1e-b8b0-61cc098a4537"
+    }
+  }
+}

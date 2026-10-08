@@ -4,10 +4,10 @@ from copy import deepcopy
 import numpy as np
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError, validate_document
-from ehs_spatial.platform.postgres import PostgresRepository
-from ehs_spatial.platform.reconstruction import _Stages, run_capture_pipeline
-from ehs_spatial.platform.storage import LocalBlobStore
+from argus.platform.contracts import PlatformError, validate_document
+from argus.platform.postgres import PostgresRepository
+from argus.platform.reconstruction import _Stages, run_capture_pipeline
+from argus.platform.storage import LocalBlobStore
 from test_platform_reconstruction import Repo, bundle, geometry_response, inventory_review_response, provider
 
 
@@ -105,7 +105,7 @@ def test_bad_shape_is_retained_but_not_reported_as_completed_model(tmp_path):
 
 @pytest.mark.parametrize('explicit_anchor', [False, True])
 def test_capture_uses_reviewed_alternate_owned_photo_and_replays_both_candidates(tmp_path, explicit_anchor):
-    from ehs_spatial.platform.reconstruction import run_analysis
+    from argus.platform.reconstruction import run_analysis
 
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
@@ -224,8 +224,8 @@ def test_complete_capture_requires_actual_model_and_reference_cad(tmp_path, refe
     assert result['correspondence']['summary']['referenceCount'] == 1
     assert not result['qualityPendingEntityIds']
     if not reference_only:
-        from ehs_spatial.platform.correspondence import validate_cad_correspondence
-        from ehs_spatial.platform.reconstruction_pipeline import _result
+        from argus.platform.correspondence import validate_cad_correspondence
+        from argus.platform.reconstruction_pipeline import _result
         model = next(e for e in document['entities'] if e.get('activeModelRepresentationId'))
         model['currentModelTransform']['position'][0] += 100
         # Translation preserves the CAD cache contract, but the old shape/pose
@@ -326,8 +326,8 @@ def test_foreign_cad_reference_is_rejected_before_any_provider_call(tmp_path):
 
 @pytest.mark.parametrize('projection_fails', [False, True])
 def test_research_continuation_preserves_retained_review_outcome(tmp_path, monkeypatch, projection_fails):
-    from ehs_spatial.platform import reconstruction
-    from ehs_spatial.platform.reconstruction_pipeline import _result
+    from argus.platform import reconstruction
+    from argus.platform.reconstruction_pipeline import _result
 
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)

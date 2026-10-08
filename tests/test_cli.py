@@ -1,91 +1,124 @@
-"""panoptes run --dry-run / status against the repo's frozen research data: the steps of run_all.sh, their done / todo
-state and their commands, without running anything heavy and without writing a ledger."""
-
+"""Offline delivery CLI boundaries and current two-cell paths."""
 import os
+import json
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
-
 import pytest
+from argus import ROOT
+from argus.pipeline import cli
 
-from ehs_spatial import cli
+def run(*args, env=None):
+    return subprocess.run([sys.executable, '-m', 'argus.pipeline.cli', *args], cwd=ROOT, capture_output=True, text=True,
+                          env={**os.environ, **(env or {})})
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "research/module-swap-2026-10-07/data"
-
-
-def panoptes(*args, env=None, tmp=None):
-    # a private platform / workcell root: S7's done-check looks at $PANOPTES_PLATFORM/.platform/swap-20261007/<variant>/result.json,
-    # which exists on the machine that published the reports (and PANOPTES_WORKCELL may point at that checkout)
-    extra = {"PANOPTES_PAGES": str(tmp / "pages"), "PANOPTES_PLATFORM": str(tmp / "platform"), "PANOPTES_WORKCELL": str(tmp / "workcell")} if tmp else {}
-    return subprocess.run([sys.executable, "-m", "ehs_spatial.cli", *args], cwd=ROOT, capture_output=True, text=True,
-                          env={**os.environ, **extra, **(env or {})})
-
-
-def states(stdout):
-    out = {}
-    for line in stdout.splitlines():
-        parts = line.split()
-        if len(parts) >= 3 and parts[0] in cli.STEPS:
-            out[(parts[0], parts[1])] = parts[2]
-    return out
-
-
-def test_load_env_sources_env_sh():
+def test_env_uses_one_data_root_and_preserves_explicit_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv('PANOPTES_DATA_ROOT', str(tmp_path))
+    monkeypatch.setenv('PANOPTES_DATABASE_URL', 'postgresql://customer-db/panoptes')
     env = cli.load_env()
-    assert Path(env["SWAP_SCRATCH"]) == DATA and Path(env["SWAP_NOTES"]) == ROOT / "research/module-swap-2026-10-07/notes"
-    assert env["PANOPTES_ONPREM"] == "1" and "run_stage.py" in env["MODAL_RUN"] and env["PY"].endswith("python")
+    assert env['PANOPTES_DATA_ROOT'] == str(tmp_path) and env['PANOPTES_RUNS'] == str(tmp_path / 'runs')
+    assert env['PANOPTES_DATABASE_URL'] == 'postgresql://customer-db/panoptes' and env['PY'] == sys.executable
+    assert env['PANOPTES_PAGES'] == str(tmp_path / 'measurement-layer')
 
-
-def test_dry_run_lists_steps_against_the_repo_data(tmp_path):
-    result = panoptes("run", "--cell", "090", "--dry-run", tmp=tmp_path)
+@pytest.mark.parametrize('cell', ['090', '030'])
+def test_fresh_clone_dry_run_traces_every_stage_without_running_models(tmp_path, cell):
+    result = run('run', '--cell', cell, '--dry-run', env={'PANOPTES_DATA_ROOT': str(tmp_path)})
     assert result.returncode == 0, result.stderr
     out = result.stdout
-    assert "dry run: nothing is executed" in out and "DONE 090" in out
-    s2a, s4a = out.split("S2b mvs")[0], out.split("S4a sam3d")[1].split("S4b")[0]
-    assert "done, skipped" in s2a  # checks/clean-gpu/090 is frozen in the repo
-    assert "completion_ab.py --stage sam3d" in s4a and "AB_FRAME=all" in s4a and "AB_CELL=090" in s4a  # swap-runs/ is not
-    assert "mvs_route.py" not in out  # S2b is done too
-    assert "compare.py left_light_curtain" in out and "build_capture_report.py" in out and "compare_layers.py" in out
-    assert not (DATA / "swap-runs/090/ledger.json").exists()
+    for stage in cli.STEPS:
+        assert stage in out
+    for module in ('mvs_route', 'geometry_evaluator', 'fill_geometry', 'completion', 'select_sam3d', 'swap_generation',
+                   'pin_run', 'assemble_scene', 'build_capture_report', 'serve_export', 'run_stages', 'build_swap_layer'):
+        assert 'argus.pipeline.' + module in out or module == 'completion' and '/argus/pipeline/completion.py' in out
+    assert 'argus.platform.publish_capture' in out and f'cmp-{cell}-mvs-fill' in out
+    assert f'{cell}-v2-mvs-fill-sam3d' in out and 'AB_FRAME=all' in out
+    assert not (tmp_path / 'swap-runs').exists()
+    assert 'research/' not in out and 'run_stage.py' not in out
+    assert 'pg_ctl' not in out and 'pg_isready' not in out and '55432' not in out
+
+def test_step_selection_and_status(tmp_path):
+    env = {'PANOPTES_DATA_ROOT': str(tmp_path)}
+    only = run('run', '--cell', '090', '--dry-run', '--only', 'S4c', env=env)
+    assert only.returncode == 0 and 'S4c generation' in only.stdout and 'S5' not in only.stdout
+    status = run('status', '--cell', '030', env=env)
+    assert status.returncode == 0 and 'S2a' in status.stdout and 'todo' in status.stdout and 'always' in status.stdout
+    assert run('run', '--cell', '090', '--dry-run', '--only', 'S99', env=env).returncode != 0
+
+def test_http_sam3d_is_a_python_call(tmp_path):
+    out = run('run', '--cell', '090', '--dry-run', '--only', 'S4a', env={'PANOPTES_DATA_ROOT': str(tmp_path), 'SAM3D_BACKEND': 'http'}).stdout
+    assert '-m argus.pipeline.completion --stage sam3d' in out and 'modal run' not in out
+
+def test_default_geometry_route_uses_shared_provider_outputs(tmp_path, monkeypatch):
+    from argus.providers import geometry_mvs
+    env = {**cli.load_env(), 'PANOPTES_DATA_ROOT': str(tmp_path)}
+    ctx = cli.Ctx('090', env)
+    frames = [{'frame_id': 'frame_0001'}]
+    monkeypatch.delenv('GEOMETRY_MVS_BACKEND', raising=False)
+    monkeypatch.setattr(geometry_mvs, 'frames_for', lambda run: frames)
+    def route(cell, selected, *, dest):
+        assert cell == '090' and selected is frames and dest == tmp_path
+        for path in geometry_mvs.outputs(cell, dest):
+            path.mkdir(parents=True)
+        (dest / 'checks/clean-gpu/090/moge-frame_0001.npz').touch()
+    monkeypatch.setattr(geometry_mvs, 'run', route)
+    cli.s2a_route(ctx)
+    assert ctx.backend == 'modal' and cli.ITEMS[0].done(ctx)
+    assert all(p.exists() for p in cli.ITEMS[1].inputs(ctx))
 
 
-def test_status_marks_done_todo_and_always(tmp_path):
-    result = panoptes("status", "--cell", "030", tmp=tmp_path)
-    assert result.returncode == 0, result.stderr
-    s = states(result.stdout)
-    assert s[("S2a", "route")] == "done" and s[("S2d", "export-fill")] == "done"
-    assert s[("S4a", "sam3d")] == "todo" and s[("S7", "publish")] == "todo"
-    assert s[("S2d", "field-values")] == "always" and s[("S8", "checks")] == "always"
-    assert len(s) == len(cli.ITEMS)
+def test_publish_uses_configured_database_without_provisioning(tmp_path, monkeypatch):
+    env = {**cli.load_env(), 'PANOPTES_DATA_ROOT': str(tmp_path), 'PANOPTES_DATABASE_URL': 'mongodb://customer-db/panoptes'}
+    ctx = cli.Ctx('090', env)
+    calls = []
+    def execute(argv, **kwargs):
+        assert argv[:3] == [sys.executable, '-m', 'argus.platform.publish_capture']
+        assert kwargs['env']['PANOPTES_DATABASE_URL'] == 'mongodb://customer-db/panoptes'
+        calls.append(argv)
+    monkeypatch.setattr(cli.subprocess, 'run', execute)
+    cli.s7_publish(ctx)
+    assert len(calls) == 1
 
 
-def test_only_and_from_select_steps(tmp_path):
-    only = panoptes("run", "--cell", "090", "--dry-run", "--only", "S4c", tmp=tmp_path).stdout
-    assert "S4c generation" in only and "S4c pins" in only and "S4a" not in only and "S5" not in only
-    tail = panoptes("run", "--cell", "090", "--dry-run", "--from", "S7", tmp=tmp_path).stdout
-    assert "S7 publish" in tail and "S8 checks" in tail and "S6 report" not in tail and "tables_030.py" not in tail
-    bad = panoptes("run", "--cell", "090", "--dry-run", "--only", "S99", tmp=tmp_path)
-    assert bad.returncode != 0 and "unknown step" in bad.stderr
+def test_default_data_root_belongs_to_calling_workspace(tmp_path, monkeypatch):
+    monkeypatch.delenv('PANOPTES_DATA_ROOT', raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert cli.load_env()['PANOPTES_DATA_ROOT'] == str(tmp_path / 'data')
 
 
-def test_provider_branches_show_in_the_dry_run(tmp_path):
-    scratch = tmp_path / "scratch"
-    scratch.mkdir()
-    env = {"SWAP_SCRATCH": str(scratch), "GEOMETRY_MVS_BACKEND": "http", "SAM3D_BACKEND": "http"}
-    out = panoptes("run", "--cell", "090", "--dry-run", "--only", "S2a", env=env, tmp=tmp_path).stdout
-    assert "providers.geometry_mvs.run('090'" in out and "GEOMETRY_MVS_BACKEND=http" in out and "prod_route_modal.py" not in out
-    out = panoptes("run", "--cell", "090", "--dry-run", "--only", "S2a", env={"SWAP_SCRATCH": str(scratch)}, tmp=tmp_path).stdout
-    assert "prod_route_modal.py --stage route --cells 090" in out
-
-
-def test_ctx_drops_weights_flag_without_a_mirror(tmp_path):
+def test_relative_paths_are_resolved_before_child_cwd_changes(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    for key, value in {'PANOPTES_DATA_ROOT': './data', 'PANOPTES_RUNS': './captures', 'PANOPTES_PAGES': './pages'}.items():
+        monkeypatch.setenv(key, value)
     env = cli.load_env()
-    env["MODAL_RUN"] = f"{env['PY']} run_stage.py --weights {tmp_path / 'no-mirror'}"
-    assert "--weights" not in cli.Ctx("090", env).MODAL_RUN
-    (tmp_path / "mirror").mkdir()
-    (tmp_path / "mirror/manifest.json").write_text("{}")
-    env["MODAL_RUN"] = f"{env['PY']} run_stage.py --weights {tmp_path / 'mirror'}"
-    assert cli.Ctx("090", env).MODAL_RUN[-2:] == ["--weights", str(tmp_path / "mirror")]
-    with pytest.raises(SystemExit):
-        cli.Ctx("091", env)
+    assert [env[key] for key in ('PANOPTES_DATA_ROOT', 'PANOPTES_RUNS', 'PANOPTES_PAGES')] == [str(tmp_path / name) for name in ('data', 'captures', 'pages')]
+
+
+def test_sam3d_done_requires_a_candidate_for_every_configured_object(tmp_path):
+    import numpy as np
+    ctx = cli.Ctx('030', {**cli.load_env(), 'PANOPTES_DATA_ROOT': str(tmp_path)})
+    item = next(i for i in cli.ITEMS if i.name == 'sam3d')
+    dest = ctx.AB / 'sam3d';dest.mkdir(parents=True)
+    (dest / 'record.json').write_text(json.dumps({'objects': {oid: {'error': 'provider failed'} for oid in ctx.OBJS}}))
+    assert not item.done(ctx)
+    alternative = ctx.AB / ctx.FRAMES[-1];alternative.mkdir()
+    for oid in ctx.OBJS[:-1]:
+        np.savez(alternative / f'{oid}.npz', vertices=np.ones((3, 3)))
+    assert not item.done(ctx)
+    np.savez(alternative / f'{ctx.OBJS[-1]}.npz', vertices=np.ones((3, 3)))
+    assert item.done(ctx)
+
+
+@pytest.mark.parametrize('cache', ['current', 'old', 'missing', 'invalid'])
+def test_selection_cache_requires_current_messages_for_every_object(tmp_path, cache):
+    ctx = cli.Ctx('030', {**cli.load_env(), 'PANOPTES_DATA_ROOT': str(tmp_path)})
+    item = next(i for i in cli.ITEMS if i.name == 'compare')
+    assert not item.done(ctx)
+    results = {oid: {'decision': {'code': 'measurement.selection.unchanged'}} for oid in ctx.OBJS}
+    if cache == 'old':
+        results[ctx.OBJS[0]]['decision'] = 'old English decision'
+    elif cache == 'missing':
+        results.pop(ctx.OBJS[0])
+    ctx.CMP.mkdir(parents=True)
+    (ctx.CMP / 'results.json').write_text('{' if cache == 'invalid' else json.dumps(results))
+    assert bool(item.done(ctx)) is (cache == 'current')
+    assert next(i for i in cli.ITEMS if i.name == 'generation').done is None

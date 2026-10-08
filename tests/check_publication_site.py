@@ -14,8 +14,8 @@ from uuid import UUID
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
-from ehs_spatial.platform.contracts import Asset, ProjectDetail, Publication, PublicationSummary
-from ehs_spatial.platform.publication_site import create_app
+from argus.platform.contracts import Asset, ProjectDetail, Publication, PublicationSummary
+from argus.platform.publication_site import create_app
 
 
 def check(catalog_dir: Path, source_api: str | None = None):

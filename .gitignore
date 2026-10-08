@@ -9,3 +9,9 @@ runs/
 .DS_Store
 build-context/
 .platform/
+
+/data/
+web/node_modules
+web/dist/
+build/
+dist/

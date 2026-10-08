@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Validate a Panoptes .env against env.template, the one configuration surface. Stdlib only, no network unless --live.
 
-  python scripts/check_env.py [.env] [--template env.template] [--strict] [--live]
+  python -m scripts.check_env [.env] [--template env.template] [--strict] [--live]
 
 Errors (exit 1): a required key missing or empty, an unknown *_BACKEND value, an http backend without its URL(s), a URL / database
 URL / blob root that does not parse, a non-integer count, HF_TOKEN stored in the file.
-Warnings: placeholder values (change-me, example), paths that do not exist, keys the template does not know, a cloud default left
-in place. --strict turns warnings into errors (what `make check-env` runs on the customer's filled .env).
+Warnings: placeholder values (change-me, example), paths that do not exist, keys the template does not know.
+--strict turns warnings into errors (what `make check-env` runs on the configured .env).
 --live: GET <root>/healthz with X-API-Key on every *_HTTP_URLS entry and *_HTTP_URL root; any non-200 is an error.
 """
 from __future__ import annotations
@@ -20,21 +20,18 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
-ROOT = Path(__file__).resolve().parents[1]
-REQUIRED = ("PANOPTES_SERVICE_API_KEY", "PANOPTES_DATABASE_URL", "PANOPTES_BLOB_ROOT", "PANOPTES_SERVING", "PANOPTES_WORKCELL", "WEIGHTS")
+from argus import ROOT
+REQUIRED = ("PANOPTES_DATA_ROOT", "PANOPTES_DATABASE_URL")
 # backend key -> (allowed values, code default, url key, url key holds a comma list of roots)
 BACKENDS = {
-    "SAM3D_BACKEND": (("http", "local", "modal"), "http", "SAM3D_HTTP_URLS", True),
-    "GEOMETRY_MVS_BACKEND": (("http", "local", "modal"), "http", "GEOMETRY_MVS_HTTP_URLS", True),
-    "SAM3_BACKEND": (("fal", "modal", "http"), "fal", "SAM3_HTTP_URL", False),
-    "GEOMETRY_BACKEND": (("replicate", "modal", "http"), "replicate", "GEOMETRY_HTTP_URL", False),
-    "MOGE_BACKEND": (("modal", "replicate", "http"), "modal", "MOGE_HTTP_URL", False),
+    "SAM3D_BACKEND": (("http", "modal"), "modal", "SAM3D_HTTP_URLS", True),
+    "GEOMETRY_MVS_BACKEND": (("http", "modal"), "modal", "GEOMETRY_MVS_HTTP_URLS", True),
 }
-INTS = ("PANOPTES_SERVICE_MAX_QUEUE", "PANOPTES_SERVICE_TIMEOUT_S", "PANOPTES_SERVICE_RETRIES", "EHS_SAM_CONCURRENCY")
-FLAGS = ("PANOPTES_FAKE_MODEL", "HF_HUB_OFFLINE", "PANOPTES_ONPREM")
-PATHS = ("PANOPTES_SERVING", "PANOPTES_WORKCELL", "PANOPTES_PLATFORM", "WEIGHTS", "SWAP_SCRATCH", "PANOPTES_RUNS", "PANOPTES_PAGES", "PY", "PG",
+INTS = ("PANOPTES_SERVICE_TIMEOUT_S", "PANOPTES_SERVICE_RETRIES")
+FLAGS = ("PANOPTES_FAKE_MODEL", "HF_HUB_OFFLINE")
+PATHS = ("PANOPTES_DATA_ROOT", "PANOPTES_PAGES", "PG",
          "PGDATA_DIR", "PANOPTES_PUBLICATION_CATALOG", "PANOPTES_PUBLICATION_HTTP", "PANOPTES_WEB_ROOT", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE")
-URLS = ("PANOPTES_PUBLIC_BASE_URL", "AWS_ENDPOINT_URL", "PANOPTES_CONTRACT_URL")
+URLS = ("PANOPTES_PUBLIC_BASE_URL", "AWS_ENDPOINT_URL")
 DB_SCHEMES = ("postgresql", "postgres", "mongodb", "mongodb+srv")
 PLACEHOLDER = re.compile(r"change-me|example|<[^>]+>", re.I)
 LINE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
@@ -76,7 +73,7 @@ def check(env: dict[str, str], known: set[str], *, live: bool = False) -> tuple[
     def url_ok(key, value):
         p = urlsplit(value)
         if p.scheme not in ("http", "https") or not p.netloc:
-            errors.append(f"{key}: not an http(s) URL: {value!r}")
+            errors.append(f"{key}: not an http(s) URL")
             return False
         return True
 
@@ -89,14 +86,10 @@ def check(env: dict[str, str], known: set[str], *, live: bool = False) -> tuple[
         if key not in known:
             warnings.append(f"{key}: not in env.template (there is only one configuration surface: document it there or drop it)")
         if value and PLACEHOLDER.search(value):
-            warnings.append(f"{key}: placeholder value {value!r}")
+            warnings.append(f"{key}: placeholder value")
     live_targets = []
     for key, (allowed, default, url_key, is_list) in BACKENDS.items():
-        value = env.get(key)
-        if value is None:
-            if default != "http":
-                warnings.append(f"{key}: unset, code default is the cloud backend {default!r}; set http for on-prem")
-            continue
+        value = env.get(key, default)
         if value.strip().lower() not in allowed:
             errors.append(f"{key}: {value!r} is not one of {', '.join(allowed)}")
             continue
@@ -119,7 +112,7 @@ def check(env: dict[str, str], known: set[str], *, live: bool = False) -> tuple[
     if db:
         p = urlsplit(db)
         if p.scheme not in DB_SCHEMES:
-            errors.append(f"PANOPTES_DATABASE_URL: scheme must be one of {', '.join(DB_SCHEMES)}, got {db!r}")
+            errors.append(f"PANOPTES_DATABASE_URL: scheme must be one of {', '.join(DB_SCHEMES)}")
         elif not (p.netloc or "host=" in p.query):
             errors.append("PANOPTES_DATABASE_URL: no host (user:pass@host:port/db or ?host=/socket/dir)")
         if p.scheme.startswith("mongodb") and not env.get("PANOPTES_MONGO_PREFIX"):
@@ -139,14 +132,17 @@ def check(env: dict[str, str], known: set[str], *, live: bool = False) -> tuple[
     bucket = env.get("PANOPTES_RESULT_BUCKET", "")
     if bucket and (not bucket.startswith("s3://") or not urlsplit(bucket).netloc):
         errors.append(f"PANOPTES_RESULT_BUCKET: s3://bucket/prefix, got {bucket!r}")
+    source = env.get("PANOPTES_INPUT_SOURCE")
+    if source:
+        parsed = urlsplit(source)
+        if parsed.scheme not in ("file", "https", "s3") or not parsed.path or (parsed.scheme != "file" and not parsed.netloc):
+            errors.append("PANOPTES_INPUT_SOURCE: file://, HTTPS mirror or s3:// source required")
     for key in URLS:
         if env.get(key) and url_ok(key, env[key]) and env[key].endswith("/"):
             warnings.append(f"{key}: drop the trailing slash")
     for key in PATHS:
         if env.get(key) and not Path(env[key]).exists():
             warnings.append(f"{key}: path does not exist: {env[key]}")
-    if not env.get("PANOPTES_PUBLIC_BASE_URL"):
-        warnings.append("PANOPTES_PUBLIC_BASE_URL: unset; `panoptes run` cannot print the report address")
     if live:
         key_header = {"X-API-Key": env.get("PANOPTES_SERVICE_API_KEY", "")}
         for key, root in live_targets:

@@ -1,0 +1,379 @@
+import base64
+from collections.abc import Callable, Mapping
+from functools import lru_cache
+import json
+import hashlib
+import math
+from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, build_opener
+
+import numpy as np
+from PIL import Image
+
+from argus.pipeline.contracts import GeometryFrame
+from argus.pipeline.path_safety import validate_safe_path_segment
+from argus.providers.base import ProviderError
+
+
+def saved_geometry_runner(geometry_dir: Path, *, input_sha256: list[str],
+                          provider_sha256: list[str], point_cloud_sha256: str):
+    """Explicit replay of a verified completed stage; never an automatic cache fallback."""
+    if not 1 <= len(input_sha256) <= 4 or len(input_sha256) != len(provider_sha256):
+        raise ValueError("Saved geometry requires one checksum per source/provider frame")
+    if any(not isinstance(s, str) or len(s) != 64 or any(c not in '0123456789abcdef' for c in s)
+           for s in [*input_sha256, *provider_sha256, point_cloud_sha256]):
+        raise ValueError("Saved geometry requires exact SHA256 checksums")
+    geometry_dir = Path(geometry_dir).resolve()
+
+    def checked(path, expected):
+        if not path.resolve().is_relative_to(geometry_dir):
+            raise ValueError("Saved geometry leaves its run")
+        data = path.read_bytes()
+        if hashlib.sha256(data).hexdigest() != expected:
+            raise ValueError("Saved geometry SHA256 mismatch")
+        return data
+
+    def run(model_identifier, *, input):
+        sources = input.get("inputs", [])
+        if len(sources) != len(input_sha256):
+            raise ValueError("Saved geometry source frame count changed")
+        for uri, expected in zip(sources, input_sha256):
+            if not isinstance(uri, str) or not uri.startswith("data:image/") or ";base64," not in uri:
+                raise ValueError("Saved geometry requires the actual source image bytes")
+            data = base64.b64decode(uri.split(",", 1)[1], validate=True)
+            if hashlib.sha256(data).hexdigest() != expected:
+                raise ValueError("Saved geometry source SHA256 mismatch")
+        return {"data": [checked(geometry_dir / "provider" / f"frame_{i:04d}.json", sha)
+                         for i, sha in enumerate(provider_sha256, 1)],
+                "point_cloud": checked(geometry_dir / "point_cloud.glb", point_cloud_sha256)}
+    return run
+
+
+def decode_encoded_array(payload: dict[str, object]) -> np.ndarray:
+    dtype = np.dtype(payload["dtype"])
+    shape = tuple(payload["shape"])
+    raw = base64.b64decode(payload["data"], validate=True)
+    expected_bytes = math.prod(shape) * dtype.itemsize
+    if len(raw) != expected_bytes:
+        raise ValueError(
+            f"encoded array byte count mismatch: expected {expected_bytes}, got {len(raw)}"
+        )
+    return np.frombuffer(raw, dtype=dtype).reshape(shape).copy()
+
+
+@lru_cache(maxsize=32)
+def _input_mask_mapping(path: Path, mtime_ns: int, size: int) -> tuple:
+    # Cache only dimensions/rectangle, never the provider's large point arrays.
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        original = payload["original_image"]
+        source_shape = (original["height"], original["width"])
+        image_shape = tuple(payload["image"]["shape"])
+        alpha = decode_encoded_array(payload["alpha_mask"])
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"Input-mask transform requires original_image and alpha_mask evidence: {path}") from exc
+    if not all(type(n) is int and n > 0 for n in source_shape):
+        raise ValueError(f"Invalid original_image dimensions: {path}")
+    if alpha.ndim != 2 or image_shape != (*alpha.shape, 3):
+        raise ValueError(f"Provider image and alpha_mask grids disagree: {path}")
+    if not np.isin(alpha, [0, 1]).all() or not alpha.any():
+        raise ValueError(f"alpha_mask must contain a nonempty binary content rectangle: {path}")
+    y, x = np.nonzero(alpha)
+    rect = (int(x.min()), int(y.min()), int(x.max()) + 1, int(y.max()) + 1)
+    if np.count_nonzero(alpha) != (rect[2] - rect[0]) * (rect[3] - rect[1]):
+        raise ValueError(f"alpha_mask content is not a solid rectangle: {path}")
+    transform = payload.get("input_mask_transform")
+    if transform is None:
+        resized_shape = (rect[3]-rect[1], rect[2]-rect[0])
+        crop = (0, 0, resized_shape[1], resized_shape[0])
+    else:
+        if not isinstance(transform, dict) or not isinstance(transform.get("resized_shape_hw"), list) or not isinstance(transform.get("crop_xyxy"), list):
+            raise ValueError(f"Missing explicit resize/crop operations: {path}")
+        resized_shape = tuple(transform["resized_shape_hw"])
+        crop = tuple(transform["crop_xyxy"])
+        if (len(resized_shape) != 2 or len(crop) != 4 or
+                not all(type(n) is int and n > 0 for n in resized_shape) or
+                not all(type(n) is int for n in crop) or
+                not (0 <= crop[0] < crop[2] <= resized_shape[1] and 0 <= crop[1] < crop[3] <= resized_shape[0]) or
+                (crop[2]-crop[0], crop[3]-crop[1]) != (rect[2]-rect[0], rect[3]-rect[1])):
+            raise ValueError(f"Invalid recorded resize/crop transform: {path}")
+    sx, sy = resized_shape[1]/source_shape[1], resized_shape[0]/source_shape[0]
+    affine = [[sx, 0, (sx-1)/2-crop[0]+rect[0]], [0, sy, (sy-1)/2-crop[1]+rect[1]], [0, 0, 1]]
+    if transform is not None:
+        declared = np.asarray(transform.get("input_to_canonical_pixel_centres"), dtype=float)
+        if declared.shape != (3, 3) or not np.allclose(declared, affine, atol=1e-10, rtol=0):
+            raise ValueError(f"Recorded affine disagrees with actual resize/crop dimensions: {path}")
+    return source_shape, alpha.shape, rect, {"resized_shape_hw": list(resized_shape), "crop_xyxy": list(crop),
+        "input_to_canonical_pixel_centres": affine}
+
+
+def input_mask_to_canonical(
+    mask: np.ndarray, run: Path, frame_id: str, shape: tuple[int, int]
+) -> np.ndarray:
+    """Map an input-image mask through the recorded resize/crop/padding transform.
+
+    Canonical masks already index native pts3d directly. Other resolutions
+    require the exact provider source dimensions and rectangular alpha mask;
+    no aspect-ratio inference, stretching across padding, or geometry refit.
+    """
+    mask = np.asarray(mask)
+    if mask.ndim != 2 or len(shape) != 2 or not all(isinstance(n, (int, np.integer)) and n > 0 for n in shape):
+        raise ValueError("Input mask and canonical shape must be positive two-dimensional grids")
+    if not np.isfinite(mask).all():
+        raise ValueError("Input mask must contain finite values")
+    mask = mask.astype(bool)
+    if mask.shape == tuple(shape):
+        return mask
+    validate_safe_path_segment(frame_id, "frame_id")
+    path = (Path(run) / "geometry" / "provider" / f"{frame_id}.json").resolve()
+    try:
+        stat = path.stat()
+    except OSError as exc:
+        raise ValueError(f"Missing input-mask transform evidence: {path}") from exc
+    source_shape, canonical_shape, rect, transform = _input_mask_mapping(path, stat.st_mtime_ns, stat.st_size)
+    if mask.shape != source_shape or tuple(shape) != canonical_shape:
+        raise ValueError(
+            f"Input-mask transform grid mismatch: mask={mask.shape}, original={source_shape}, "
+            f"canonical={tuple(shape)}, provider={canonical_shape}: {path}"
+        )
+    left, top, right, bottom = rect
+    mapped = np.zeros(shape, dtype=bool)
+    mapped[top:bottom, left:right] = np.asarray(
+        Image.fromarray(mask).resize(tuple(transform["resized_shape_hw"])[::-1], Image.Resampling.NEAREST)
+        .crop(transform["crop_xyxy"])
+    )
+    return mapped
+
+
+def parse_frame_json(
+    json_path: str | Path,
+    output_dir: str | Path,
+    frame_id: str,
+) -> GeometryFrame:
+    payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
+    image = decode_encoded_array(payload["image"])
+    pts3d = decode_encoded_array(payload["pts3d"])
+    conf = decode_encoded_array(payload["conf"])
+    valid_mask = decode_encoded_array(payload["non_ambiguous_mask"])
+    camera_to_world = decode_encoded_array(payload["camera_poses"])
+    intrinsics = decode_encoded_array(payload["intrinsics"])
+
+    if image.ndim != 3 or image.shape[2] != 3:
+        raise ValueError(f"provider image must be HxWx3, got {image.shape}")
+    height, width = image.shape[:2]
+    if (
+        pts3d.shape != (height, width, 3)
+        or conf.shape != (height, width)
+        or valid_mask.shape != (height, width)
+    ):
+        raise ValueError("image, pts3d, conf, and non_ambiguous_mask must be pixel-aligned")
+    if camera_to_world.shape != (4, 4) or intrinsics.shape != (3, 3):
+        raise ValueError("camera_poses must be 4x4 and intrinsics must be 3x3")
+
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    image_path = destination / "canonical.png"
+    pts3d_path = destination / "pts3d.npy"
+    conf_path = destination / "conf.npy"
+    valid_mask_path = destination / "valid_mask.npy"
+    Image.fromarray(image).save(image_path)
+    np.save(pts3d_path, pts3d)
+    np.save(conf_path, conf)
+    np.save(valid_mask_path, valid_mask)
+    np.save(destination / "camera_to_world.npy", camera_to_world)
+    np.save(destination / "intrinsics.npy", intrinsics)
+
+    return GeometryFrame(
+        frame_id=frame_id,
+        canonical_image_path=str(image_path),
+        pts3d_path=str(pts3d_path),
+        conf_path=str(conf_path),
+        valid_mask_path=str(valid_mask_path),
+        camera_to_world=camera_to_world.tolist(),
+        intrinsics=intrinsics.tolist(),
+    )
+
+
+
+
+def _json_safe(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        return f"<{len(value)} bytes>"
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return str(value)
+
+
+# Hosts a replicate prediction may legitimately point us at. Anything else
+# in a provider response is treated as hostile (review finding O3): a
+# malicious response must not be able to direct reads of local files or
+# arbitrary origins into run artifacts.
+_ALLOWED_URL_SUFFIXES = (".replicate.delivery", ".replicate.com")
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """The suffix check below runs on the initial URL only; a followed
+    redirect could land anywhere (metadata IPs, internal services), so any
+    30x from an allowed host is treated as hostile and refused outright."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError(f"provider URL redirect refused: {newurl}")
+
+
+def _redirect_refusing_opener(*extra_handlers):
+    return build_opener(_NoRedirectHandler(), *extra_handlers)
+
+
+_OPENER = _redirect_refusing_opener()
+
+
+def _read_provider_bytes(location: object, *, allow_local: bool = False) -> bytes:
+    # self-hosted backends (Modal, internal http) hand bytes straight back
+    if isinstance(location, (bytes, bytearray)):
+        return bytes(location)
+    if isinstance(location, str) and location.startswith("data:"):
+        return base64.b64decode(location.split(",", 1)[1])
+    if not isinstance(location, (str, Path)) and hasattr(location, "read"):
+        content = location.read()
+        return content if isinstance(content, bytes) else bytes(content)
+    value = str(getattr(location, "url", location))
+    parsed = urlparse(value)
+    if parsed.scheme in {"http", "https"}:
+        hostname = parsed.hostname or ""
+        if not hostname.endswith(_ALLOWED_URL_SUFFIXES):
+            raise ValueError(f"provider URL host not allowed: {hostname}")
+        with _OPENER.open(value, timeout=60) as response:
+            return response.read()
+    if allow_local:
+        # Test/replay seam only: replaying a saved response with local paths.
+        local_path = Path(parsed.path if parsed.scheme == "file" else value)
+        if local_path.is_file():
+            return local_path.read_bytes()
+    raise ValueError(f"unsupported provider file location: {value}")
+
+
+def _download_provider_bytes(location: object, *, allow_local: bool = False) -> bytes:
+    try:
+        return _read_provider_bytes(location, allow_local=allow_local)
+    except Exception as exc:
+        raise ProviderError("geometry", "map_anything.download", str(exc)) from exc
+
+
+class MapAnythingAdapter:
+    def __init__(
+        self,
+        runner: Callable[..., object],
+        *,
+        allow_local: bool = False,
+    ) -> None:
+        self.runner = runner
+        self.allow_local = allow_local
+
+    def run(
+        self,
+        image_paths: list[str],
+        geometry_dir: str | Path,
+    ) -> tuple[list[GeometryFrame], Path]:
+        if not 1 <= len(image_paths) <= 4:
+            raise ValueError("MapAnything requires one to four image paths")
+        sources = [Path(value) for value in image_paths]
+        for source in sources:
+            if not source.is_file():
+                raise FileNotFoundError(source)
+
+        output_dir = Path(geometry_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        flags: dict[str, object] = {
+            "normals": False,
+            "to_base64": True,
+            "return_pcd": True,
+            "return_mesh": False,
+            "point_scales": False,
+            "keys_to_exclude": "",
+            "alpha_blend_onto": "white",
+        }
+        request_metadata = {
+            "model_identifier": self.runner.metadata["model_id"],
+            "input": {**flags, "inputs": image_paths},
+        }
+        (output_dir / "map_anything_request.json").write_text(
+            json.dumps(request_metadata, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        try:
+            # Data URIs instead of file handles: the replicate client uploads
+            # handles to its authenticated Files API, whose URLs the model's
+            # Cog wrapper cannot fetch ("No valid data, image, or video files
+            # found in the input!"). Base64 payloads are self-contained.
+            inputs = [
+                "data:image/png;base64,"
+                + base64.b64encode(source.read_bytes()).decode("ascii")
+                for source in sources
+            ]
+            response = self.runner(
+                self.runner.metadata["model_id"],
+                input={"inputs": inputs, **flags},
+            )
+        except Exception as exc:
+            raise ProviderError("geometry", "map_anything.run", str(exc)) from exc
+
+        try:
+            response_metadata = _json_safe(response)
+        except Exception as exc:
+            raise ProviderError("geometry", "map_anything.response", str(exc)) from exc
+        (output_dir / "map_anything_response.json").write_text(
+            json.dumps(response_metadata, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        try:
+            if not isinstance(response, Mapping):
+                raise ValueError("MapAnything response must be an object")
+            data = response.get("data")
+            point_cloud_location = response.get("point_cloud")
+            if not isinstance(data, (list, tuple)) or len(data) != len(image_paths):
+                raise ValueError(
+                    "MapAnything response must contain one data file per "
+                    f"input image ({len(image_paths)})"
+                )
+            if point_cloud_location is None:
+                raise ValueError("MapAnything response is missing point_cloud")
+        except Exception as exc:
+            raise ProviderError("geometry", "map_anything.response", str(exc)) from exc
+
+        provider_dir = output_dir / "provider"
+        provider_dir.mkdir(exist_ok=True)
+        raw_json_paths = []
+        point_cloud_path = output_dir / "point_cloud.glb"
+        for index, location in enumerate(data, start=1):
+            raw_json_path = provider_dir / f"frame_{index:04d}.json"
+            raw_json_path.write_bytes(
+                _download_provider_bytes(location, allow_local=self.allow_local)
+            )
+            raw_json_paths.append(raw_json_path)
+        point_cloud_path.write_bytes(
+            _download_provider_bytes(point_cloud_location, allow_local=self.allow_local)
+        )
+
+        frames = []
+        for index, raw_json_path in enumerate(raw_json_paths, start=1):
+            frame_id = f"frame_{index:04d}"
+            try:
+                frames.append(
+                    parse_frame_json(
+                        raw_json_path,
+                        output_dir / "frames" / frame_id,
+                        frame_id,
+                    )
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ProviderError(
+                    "geometry", "map_anything.decode", str(exc)
+                ) from exc
+        return frames, point_cloud_path

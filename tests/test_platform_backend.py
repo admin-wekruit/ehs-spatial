@@ -13,10 +13,10 @@ import psycopg
 from psycopg import sql
 import pytest
 
-from ehs_spatial.platform.api import create_app
-from ehs_spatial.platform.contracts import PlatformError, digest
-from ehs_spatial.platform.postgres import PostgresRepository
-from ehs_spatial.platform.storage import LocalBlobStore
+from argus.platform.api import create_app
+from argus.platform.contracts import PlatformError, digest
+from argus.platform.postgres import PostgresRepository
+from argus.platform.storage import LocalBlobStore
 
 
 def identity():
@@ -388,8 +388,8 @@ def test_never_claimed_queued_job_can_recover_without_replaying_paid_work(repo):
 
 
 def test_offline_import_retries_and_missing_blob_cannot_commit(repo,tmp_path,monkeypatch):
-    from scripts import import_public_scene
-    from scripts.import_public_scene import run_import
+    from argus.platform import import_public_scene
+    from argus.platform.import_public_scene import run_import
     from test_platform_import import make_public_scene
     source=tmp_path/'source';source.mkdir()
     path=make_public_scene(source)
@@ -425,9 +425,9 @@ def test_offline_import_retries_and_missing_blob_cannot_commit(repo,tmp_path,mon
 
 
 def test_policy_service_real_database_unknown_applicability_and_typed_invalid(repo, tmp_path):
-    from ehs_spatial.platform.policy_service import PolicyService, templates
+    from argus.platform.policy_service import PolicyService, templates
     cap, scene = project(repo)
-    from ehs_spatial.platform.policy_repository import PostgresPolicyRepository
+    from argus.platform.policy_repository import PostgresPolicyRepository
     service = PolicyService(PostgresPolicyRepository(repo), LocalBlobStore(tmp_path))
     client = TestClient(create_app(repository=repo, blobs=service.blobs, policy_service=service))
     headers = {"Authorization": "Capability " + cap}
@@ -469,11 +469,11 @@ def test_policy_service_real_database_unknown_applicability_and_typed_invalid(re
 
 
 def test_openapi_response_contracts_preserve_stored_documents_and_cover_routes(repo,tmp_path):
-    from ehs_spatial.platform.api import _public
-    from ehs_spatial.platform.contracts import canonical
-    from ehs_spatial.platform.policy_service import PolicyService,templates
-    from ehs_spatial.platform.policy_repository import PostgresPolicyRepository
-    from scripts.import_public_scene import run_import
+    from argus.platform.api import _public
+    from argus.platform.contracts import canonical
+    from argus.platform.policy_service import PolicyService,templates
+    from argus.platform.policy_repository import PostgresPolicyRepository
+    from argus.platform.import_public_scene import run_import
     from test_platform_import import make_public_scene
     source=tmp_path/'source';source.mkdir()
     blobs=LocalBlobStore(tmp_path/'blobs')
@@ -515,6 +515,14 @@ def test_openapi_response_contracts_preserve_stored_documents_and_cover_routes(r
     assert client.get(f"/api/assets/{asset['id']}/content").content==blobs.get(asset['storageKey'],asset['sha256'],asset['sizeBytes'])
     assert client.get('/api/policy-templates').json()=={'items':templates()}
     cap,created=project(repo)
+    committed=repo.commit_edits(created['project']['id'],cap,edit_body(created,[
+        {'type':'addAnnotation','annotation':{'id':identity(),'kind':'operator_note','text':'Frozen evidence'}}]))
+    publication=repo.create_publication(created['project']['id'],cap,{
+        'requestId':identity(),'sceneRevisionId':committed['revision']['id'],'title':'Frozen edit','evaluationIds':[],'reviewIds':[]})
+    frozen_edit=publication['snapshot']['editBatches'][0]
+    edit_response=client.get(f"/api/publications/{publication['id']}/edits/{frozen_edit['id']}")
+    assert edit_response.status_code==200 and canonical(edit_response.json())==canonical(frozen_edit)
+    created['revision']=committed['revision']
     headers={'Authorization':'Capability '+cap}
     policy=client.post(f"/api/projects/{created['project']['id']}/policies",json={**templates()[0],'requestId':identity()},headers=headers)
     assert policy.status_code==200
@@ -532,9 +540,9 @@ def test_openapi_response_contracts_preserve_stored_documents_and_cover_routes(r
 
 def test_identity_agent_scope_and_evidence_fulfillment_keep_historical_evaluation(repo, tmp_path):
     from test_platform_identity import source_scene, decision
-    from ehs_spatial.platform.contracts import EvidenceRequest
-    from ehs_spatial.platform.policy_repository import PostgresPolicyRepository
-    from ehs_spatial.platform.policy_service import PolicyService, templates
+    from argus.platform.contracts import EvidenceRequest
+    from argus.platform.policy_repository import PostgresPolicyRepository
+    from argus.platform.policy_service import PolicyService, templates
     cap, scene = project(repo)
     pid, branch = scene['project']['id'], scene['branch']['id']
     repo.blobs = LocalBlobStore(tmp_path)
@@ -591,7 +599,7 @@ def test_identity_agent_scope_and_evidence_fulfillment_keep_historical_evaluatio
 
 
 def test_jsonb_roundtrip_hashes_are_stable_without_changing_existing_revisions(repo):
-    from ehs_spatial.platform.contracts import canonical
+    from argus.platform.contracts import canonical
     from psycopg.types.json import Jsonb
     from copy import deepcopy
     cap, scene = project(repo)

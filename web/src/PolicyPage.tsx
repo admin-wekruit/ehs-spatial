@@ -289,7 +289,7 @@ export default function PolicyPage({
       <section className="page-width safety-page">
         <div className="title-row">
           <div>
-            <p className="eyebrow">SCENE EVIDENCE × POLICY</p>
+            <p className="eyebrow">{t("policy.sceneEvidence")}</p>
             <h1>{t("safety")}</h1>
           </div>
           <a className="button" href={`#/projects/${projectId}/workbench`}>
@@ -543,7 +543,7 @@ export default function PolicyPage({
   return (
     <section className={"policy-page " + (editing ? "" : "page-width")}>
       <div className="page-width">
-        <p className="eyebrow">RULES / EVIDENCE / REVIEW</p>
+        <p className="eyebrow">{t("policy.reviewFlow")}</p>
         <div className="title-row">
           <h1>{t("policyLibrary")}</h1>
           <button
@@ -693,7 +693,7 @@ export default function PolicyPage({
               </div>
             </section>
             <aside className="rule-tests">
-              <h2>{language === "zh" ? "规则测试" : "Rule tests"}</h2>
+              <h2>{t("PolicyPagetsx.270")}</h2>
               <button type="button" onClick={runTests}>
                 {t("runTests")}
               </button>
@@ -712,7 +712,7 @@ export default function PolicyPage({
                 />
               </label>
               <label className="field-label">
-                {language === "zh" ? "适用限制" : "Limitations"}
+                {t("PolicyPagetsx.271")}
                 <textarea
                   rows={5}
                   value={limitations}

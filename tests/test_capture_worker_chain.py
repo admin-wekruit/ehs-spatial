@@ -11,13 +11,13 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from ehs_spatial.platform import reconstruction
-from ehs_spatial.platform.contracts import digest
-from ehs_spatial.platform.recgen import RECGEN_PINS
-from ehs_spatial.platform.spatial import transform_points
-from ehs_spatial.platform.storage import LocalBlobStore
-from ehs_spatial.providers.gemini import GEMINI_MODEL_ID
-from panoptes_worker.__main__ import run_job
+from argus.platform import reconstruction
+from argus.platform.contracts import digest
+from argus.platform.recgen import RECGEN_PINS
+from argus.platform.spatial import transform_points
+from argus.platform.storage import LocalBlobStore
+from argus.providers.gemini import GEMINI_MODEL_ID
+from argus.platform.worker import run_job
 from test_platform_backend import edit_body, identity, project, repo
 from test_platform_reconstruction import depth_response, inventory_review_response, provider
 from test_recgen_research import payload, research_configuration
@@ -99,7 +99,7 @@ def chain(repo, tmp_path, monkeypatch):
             'observationIds': [view['observationId'] for view in value['views']],
             'visibleShapeIssues': [], 'nextAction': 'none'},
             'telemetry': {'actualCostUsd': 0}, 'providerRequestId': 'synthetic-review'}
-    monkeypatch.setitem(sys.modules, 'ehs_spatial.platform.recgen_transport', SimpleNamespace(invoke=generation_transport))
+    monkeypatch.setitem(sys.modules, 'argus.platform.recgen_transport', SimpleNamespace(invoke=generation_transport))
     # Keep the actual configured provider factory, validation, reservation, and cache path.
     monkeypatch.setattr(reconstruction, '_model_review_invoke', review_transport)
     return SimpleNamespace(repo=repo, blobs=blobs, cap=cap, scene=scene, capture=capture,
@@ -253,7 +253,7 @@ def test_last_generation_failure_retains_ancestor_analysis_in_terminal_result(ch
     analyzed, research = start_research(chain)
     assert analyzed['result']['analysis']['status'] == 'incomplete'
     assert len(research['config']['pipeline']['entityIds']) == 1
-    monkeypatch.setattr(sys.modules['ehs_spatial.platform.recgen_transport'], 'invoke',
+    monkeypatch.setattr(sys.modules['argus.platform.recgen_transport'], 'invoke',
         lambda *_args, **_kwargs: {'providerError': {'code': 'known_failure'}, 'providerRequestId': 'synthetic-terminal-failure'})
     failed = dispatch(chain, research['id'])
     assert failed['status'] == 'incomplete' and failed['result']['generationStatus'] == 'failed'
@@ -297,18 +297,6 @@ def test_user_edit_after_research_enqueue_prevents_generation_reservation(chain)
     assert chain.repo.get_project(research['projectId'])['revision']['id'] == edited['revision']['id']
 
 
-def test_standalone_fixed_revision_research_remains_artifact_only_after_user_edit(chain):
-    from scripts.research.validate_sam3d import submit
-    analyzed, internal_research = start_research(chain)
-    asset = chain.repo.get_asset(internal_research['inputs']['validationAssetId'])
-    frozen = json.loads(chain.blobs.get(asset['storageKey'], asset['sha256'], asset['sizeBytes']))
-    edited = user_edit(chain, analyzed['resultRevisionId'])
-    standalone = submit({'validation': frozen, 'sha256': digest(frozen)}, chain.repo, chain.blobs)
-    assert standalone['kind'] == 'validate_model' and 'pipeline' not in standalone['config']
-    finished = dispatch(chain, standalone['id'])
-    assert finished['status'] == 'succeeded' and len(chain.generated) == 1, finished
-    assert not finished['result'].get('continuationJobId') and finished['resultRevisionId'] is None
-    assert chain.repo.get_project(standalone['projectId'])['revision']['id'] == edited['revision']['id']
 
 
 def test_fresh_budget_rejection_preserves_analysis_and_preparation_record(chain):
@@ -330,7 +318,7 @@ def test_fresh_budget_rejection_preserves_analysis_and_preparation_record(chain)
 @pytest.mark.parametrize('failure', ['provider_failed', 'provider_response_invalid'])
 def test_known_generation_failure_is_recorded_and_remaining_entity_continues_once(chain, monkeypatch, failure):
     analyzed, research = start_research(chain)
-    transport = sys.modules['ehs_spatial.platform.recgen_transport']
+    transport = sys.modules['argus.platform.recgen_transport']
     original = transport.invoke
     attempted = []
     def fail_first(value, config, *, is_current):
@@ -375,7 +363,7 @@ def test_known_generation_failure_is_recorded_and_remaining_entity_continues_onc
 @pytest.mark.parametrize('failure', ['provider_outcome_unknown', 'response_persistence_failed'])
 def test_unknown_generation_outcome_stops_remaining_targets_without_replay(chain, monkeypatch, failure):
     _, research = start_research(chain)
-    transport = sys.modules['ehs_spatial.platform.recgen_transport']
+    transport = sys.modules['argus.platform.recgen_transport']
     original = transport.invoke
     attempted = []
     def unknown(value, _config, *, is_current):

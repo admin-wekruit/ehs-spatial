@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from ehs_spatial.object_evidence import build_object_evidence, load_candidate_mask, write_object_evidence, _local
-from ehs_spatial.providers.sam3 import encode_coco_rle
+from argus.pipeline.object_evidence import build_object_evidence, load_candidate_mask, write_object_evidence, _local
+from argus.providers.sam3 import encode_coco_rle
 
 
 def test_registry_preserves_instances_and_source_pixel_contract(tmp_path):

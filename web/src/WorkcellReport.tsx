@@ -27,13 +27,13 @@ import {
   sourceDimensions,
   sourceScale,
 } from "./core";
-import { useI18n } from "./i18n";
+import { LOCALE_TAG, useI18n } from "./i18n";
 import { ErrorNotice } from "./App";
 import { ModelEvidence } from "./ModelEvidence";
 import { IdentityReview } from "./IdentityReview";
 import { AgentPanel } from "./AgentPanel";
 import { Extent, ReportScene } from "./ReportScene";
-import { applyMeasurementLayer, layerText, loadMeasurementLayer, withEnglishLabels, withLayerAssets, type MeasurementLayer } from "./measurement-layer";
+import { applyMeasurementLayer, renderMessage, loadMeasurementLayer, withLocalizedLabels, withLayerAssets, type MeasurementLayer } from "./measurement-layer";
 import { SceneResources, useSceneResources } from "./SceneResources";
 import { ReportObjectFindings } from "./ReportObjectFindings";
 import { ReportReview, type AssessmentSummary } from "./ReportReview";
@@ -102,7 +102,7 @@ export function ReportDate({ value }: { value: string }) {
   const { language } = useI18n();
   return (
     <time dateTime={value}>
-      {new Date(value).toLocaleString(language === "zh" ? "zh-CN" : "en-US", {
+      {new Date(value).toLocaleString(LOCALE_TAG[language], {
         dateStyle: "medium",
         timeStyle: "short",
       })}
@@ -177,7 +177,7 @@ export function WorkcellReport({
     [layer, setLayer] = useState<MeasurementLayer | null>(null);
   const baseResources = useSceneResources(),
     resources = useMemo(() => withLayerAssets(baseResources, layer), [baseResources, layer]),
-    shownRevision = useMemo(() => detail && withEnglishLabels(detail.revision, layer, language), [detail, layer, language]);
+    shownRevision = useMemo(() => detail && withLocalizedLabels(detail.revision, layer, language), [detail, layer, language]);
   const [error, setError] = useState<unknown>(),
     [canManage, setCanManage] = useState(false),
     [busy, setBusy] = useState(false),
@@ -692,7 +692,7 @@ export function WorkcellReport({
   const { project } = detail, revision = shownRevision!,
     doc = revision.document;
   const entity = doc.entities.find((e) => e.id === selection.entityId);
-  const pipeline = entity && layer?.pipelines?.[entity.id], pipelineCaption = pipeline && layerText(language, pipeline.caption, pipeline.captionEn);
+  const pipeline = entity && layer?.pipelines?.[entity.id], pipelineCaption = pipeline?.caption && renderMessage(language, pipeline.caption);
   const currentJobs = jobs.filter(
     (j) =>
       j.baseRevisionId === revision.id || j.resultRevisionId === revision.id,
@@ -822,7 +822,7 @@ export function WorkcellReport({
           revision={revision}
           boxLayer={layer}
           newerReport={newerReport}
-          variantNotice={layer?.variant ? {label: layerText(language, layer.variant.label, layer.variant.labelEn), href: (() => { const u = new URL(location.href); u.searchParams.delete("layer"); return u.href; })()} : undefined}
+          variantNotice={layer?.variant ? {label: renderMessage(language, layer.variant.label), href: (() => { const u = new URL(location.href); u.searchParams.delete("layer"); return u.href; })()} : undefined}
           selection={selection}
           onSelect={select}
           imageId={imageId}
@@ -840,13 +840,13 @@ export function WorkcellReport({
               {entity ? <>
                 {layer?.facts?.[entity.id] && <section className="report-measurement-layer" data-measurement-facts={entity.id}>
                   <h4>{t("layerFactsTitle")}</h4>
-                  <dl>{layer.facts[entity.id].map((fact, i) => <div key={i} data-fact-kind={fact.kind}><dt>{layerText(language, fact.label, fact.labelEn)}</dt><dd>{layerText(language, fact.text, fact.textEn)}</dd></div>)}</dl>
-                  {layer.models?.[entity.id] && <p>{layerText(language, layer.models[entity.id].note, layer.models[entity.id].noteEn)}</p>}
-                  <p>{t("layerScale").replace("{cm}", (layer.scale.nativeToMeters * 100).toFixed(1))}{layer.scale.uncertaintyRelative ? t("layerScaleSpread").replace("{pct}", (layer.scale.uncertaintyRelative * 100).toFixed(1)) : ""}{t("layerScaleSource").replace("{source}", () => layer.scale.source)}</p>
+                  <dl>{layer.facts[entity.id].map((fact, i) => <div key={i} data-fact-kind={fact.kind}><dt>{renderMessage(language, fact.label)}</dt><dd>{renderMessage(language, fact.text)}</dd></div>)}</dl>
+                  {layer.models?.[entity.id] && <p>{renderMessage(language, layer.models[entity.id].note)}</p>}
+                  <p>{t("layerScale", { cm: (layer.scale.nativeToMeters * 100).toFixed(1) })}{layer.scale.uncertaintyRelative ? t("layerScaleSpread", { pct: (layer.scale.uncertaintyRelative * 100).toFixed(1) }) : ""}{t("layerScaleSource", { source: renderMessage(language, layer.scale.source) })}</p>
                 </section>}
                 {pipeline && <section className="report-object-pipeline" data-object-pipeline={entity.id}>
                   <h4>{t("layerPipelineTitle")}</h4>
-                  <ol>{pipeline.stages.map((stage, i) => <li key={i}><b>{layerText(language, stage.label, stage.labelEn)}</b><span>{layerText(language, stage.text, stage.textEn)}</span></li>)}</ol>
+                  <ol>{pipeline.stages.map((stage, i) => <li key={i}><b>{renderMessage(language, stage.label)}</b><span>{renderMessage(language, stage.text)}</span></li>)}</ol>
                   {pipeline.url && <a href={new URL(pipeline.url, location.href).href} target="_blank" rel="noreferrer">
                     <img src={new URL(pipeline.url, location.href).href} alt={pipelineCaption || t("layerPipelineSheet")} loading="lazy" />
                     <small>{pipelineCaption || t("layerPipelineOpen")}</small>
@@ -1019,7 +1019,7 @@ export function WorkcellReport({
               downloadJSON(doc, "workcell-" + revision.id + ".json")
             }
           >
-            Scene JSON ↓
+            {t("app.sceneJson")} ↓
           </button>
           {sourceImages.map((a, i) => (
             <ReportDownload assetId={a.id} key={a.id}>

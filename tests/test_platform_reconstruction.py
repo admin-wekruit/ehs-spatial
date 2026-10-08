@@ -9,12 +9,12 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError,empty_document,validate_document,digest
-from ehs_spatial.platform.reconstruction import (
+from argus.platform.contracts import PlatformError,empty_document,validate_document,digest
+from argus.platform.reconstruction import (
     MAP_PINS,ProviderSpec,providers_from_env,run_analysis,run_generation,run_segmentation,
     provider_snapshot_from_env,providers_from_manifest,run_research_stage,_Stages,ProviderResponseError,
 )
-from ehs_spatial.platform.storage import LocalBlobStore
+from argus.platform.storage import LocalBlobStore
 
 
 class Repo:
@@ -71,7 +71,7 @@ class Repo:
 
 
 def test_generation_batch_requires_explicit_targets_and_preserves_existing_models():
-    from ehs_spatial.platform.reconstruction import _generation_targets
+    from argus.platform.reconstruction import _generation_targets
     entities = [{'id': 'floor', 'geometryRole': 'floor'}, {'id':'context','sourceContext': True},
         {'id':'modeled','activeModelRepresentationId':'mesh','representations':[{'id':'mesh','kind':'generated_mesh'}]},
         {'id':'parent'}, {'id':'part','parentEntityId':'parent'}, {'id':'a'}, {'id':'b'}]
@@ -242,7 +242,7 @@ def test_invalid_inventory_review_preserves_original_objects_and_raw_cached_resu
 
 @pytest.mark.parametrize('change', ['revision','box','evidence','owner','source_hash','payload_snapshot','payload_pixels'])
 def test_inventory_admission_rechecks_current_source_snapshot(tmp_path,change):
-    from ehs_spatial.platform.reconstruction import _capture,_discover,_inventory_review_input,_admit_inventory_review
+    from argus.platform.reconstruction import _capture,_discover,_inventory_review_input,_admit_inventory_review
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     _,document,images = _capture(repo,blobs,repo.job)
@@ -268,7 +268,7 @@ def test_inventory_admission_rechecks_current_source_snapshot(tmp_path,change):
 
 
 def test_inventory_equal_boxes_do_not_merge_distinct_component_identity(tmp_path):
-    from ehs_spatial.platform.reconstruction import _capture,_discover,_inventory_review_input,_admit_inventory_review
+    from argus.platform.reconstruction import _capture,_discover,_inventory_review_input,_admit_inventory_review
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     _,document,images = _capture(repo,blobs,repo.job)
@@ -377,7 +377,7 @@ def test_append_retains_prior_photo_inventory_qualification(tmp_path):
 
 @pytest.mark.parametrize('bad', ['photo','grid','nonfinite','negative','different_z'])
 def test_auxiliary_depth_must_belong_to_the_source_grid(bad):
-    from ehs_spatial.platform.reconstruction import _depth_response
+    from argus.platform.reconstruction import _depth_response
     image = {'id':'photo-a','imageId':'photo-a','sha256':'a'*64,'width':12,'height':12}
     response = depth_response(image)
     if bad == 'photo': response['imageId'] = 'photo-b'
@@ -439,7 +439,7 @@ def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses
 
 
 def test_analysis_resegmentation_and_research_share_exact_owned_text_box_input(tmp_path):
-    from ehs_spatial.platform.reconstruction import _research_segmentation_input
+    from argus.platform.reconstruction import _research_segmentation_input
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     providers = bundle(repo)
@@ -568,7 +568,7 @@ def test_shape_ready_does_not_invent_button_placement_and_segmentation_keeps_ide
     repo.document = document
     tiny = next(e for e in document["entities"] if e["label"] == "tiny control")
     def generation(payload):
-        from ehs_spatial.platform.spatial import primitive_mesh
+        from argus.platform.spatial import primitive_mesh
         mesh = primitive_mesh({"type":"box","dimensions":[.1,.1,.1]})
         return {"vertices":mesh.vertices,"faces":mesh.faces,"proposedObjectToNative":None}
     providers["generation"] = provider("generation",generation)
@@ -589,7 +589,7 @@ def test_shape_ready_does_not_invent_button_placement_and_segmentation_keeps_ide
 
 
 def test_generation_uses_reviewed_observation_and_rejects_invalid_batch_before_calls(tmp_path):
-    from ehs_spatial.platform.spatial import primitive_mesh
+    from argus.platform.spatial import primitive_mesh
 
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
@@ -631,7 +631,7 @@ def test_generation_uses_reviewed_observation_and_rejects_invalid_batch_before_c
 
 
 def test_frozen_provider_snapshot_not_mutable_deployment_preserves_release_gates(tmp_path,monkeypatch):
-    from ehs_spatial.providers.gemini import GEMINI_MODEL_ID
+    from argus.providers.gemini import GEMINI_MODEL_ID
     spec = provider("discovery",lambda _: {},GEMINI_MODEL_ID)
     pins = {**spec.pins, 'adapter':'gemini-bounded-discovery-v2'}
     config = {"provider":"gemini","pins":pins,"estimatedCostUsd":.10,"releaseEvidence":{**spec.release_evidence, 'pins':pins}}
@@ -682,7 +682,7 @@ def test_usage_ledger_survives_received_response_failure_without_inventing_cost(
 
 
 def test_capture_source_cameras_cannot_silently_rebind_to_different_geometry(tmp_path):
-    from ehs_spatial.platform.reconstruction import _capture,_geometry
+    from argus.platform.reconstruction import _capture,_geometry
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     document,_ = run_analysis(repo,blobs,repo.job,bundle(repo))
@@ -728,8 +728,8 @@ def test_analysis_binds_estimated_native_ground_only_to_explicit_mask_evidence(t
 
 @pytest.mark.parametrize("pose_source", ["imported_proposal", "requires_alignment_confirmation", "manual", "primitive", "unattributed"])
 def test_regeneration_retains_source_models_and_preserves_active_pose(tmp_path, pose_source):
-    from ehs_spatial.platform.repository import apply_operations
-    from ehs_spatial.platform.spatial import primitive_mesh
+    from argus.platform.repository import apply_operations
+    from argus.platform.spatial import primitive_mesh
 
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
@@ -817,7 +817,7 @@ def test_original_mask_rings_survive_crop_resize_holes_single_pixels_and_resegme
     # A distinct provider revision supplies this different synthetic response;
     # the rejected old response remains cached and is never silently retried.
     providers['segmentation'] = provider('segmentation',lambda _:{'mask':mask},model='complex-mask-fixture')
-    monkeypatch.setattr("ehs_spatial.platform.reconstruction.MAX_MASK_POLYGON_RUNS",2)
+    monkeypatch.setattr("argus.platform.reconstruction.MAX_MASK_POLYGON_RUNS",2)
     limited,_ = run_segmentation(repo,blobs,{**repo.job,"inputs":{"observationId":oid}},providers)
     observation = next(o for o in limited["observations"] if o["id"] == oid)
     assert observation["maskStatus"] == "present" and "originalPixelPolygons" not in observation
@@ -830,8 +830,8 @@ def test_original_mask_rings_survive_crop_resize_holes_single_pixels_and_resegme
 
 
 def test_append_photos_registers_new_solution_preserves_source_and_reuses_duplicates(tmp_path):
-    from ehs_spatial.platform.reconstruction import _load_geometry
-    from ehs_spatial.platform.spatial import transform_points
+    from argus.platform.reconstruction import _load_geometry
+    from argus.platform.spatial import transform_points
     from scipy.spatial.transform import Rotation
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs,size=(24,32))
@@ -896,7 +896,7 @@ def test_append_photos_registers_new_solution_preserves_source_and_reuses_duplic
 @pytest.mark.parametrize('fault', [None, 'missing_original', 'foreign_mask', 'wrong_image', 'wrong_shape',
     'source_mask_hash', 'source_frame', 'source_record', 'unowned_source', 'unhashed_original'])
 def test_stale_canonical_mask_uses_only_verified_original_grid(tmp_path, fault):
-    from ehs_spatial.platform.reconstruction import _load_masks
+    from argus.platform.reconstruction import _load_masks
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs, size=(8, 12))
     document = repo.document
@@ -952,7 +952,7 @@ def test_stale_canonical_mask_uses_only_verified_original_grid(tmp_path, fault):
 
 
 def test_resegmentation_uses_replacement_mask_and_only_invalidates_its_observation_sources(tmp_path):
-    from ehs_spatial.platform.reconstruction import _load_geometry, _load_masks
+    from argus.platform.reconstruction import _load_geometry, _load_masks
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     providers = bundle(repo)
@@ -1008,8 +1008,8 @@ def test_resegmentation_uses_replacement_mask_and_only_invalidates_its_observati
 
 
 def test_resegmentation_ground_fit_stays_in_affected_coordinate_frame(tmp_path):
-    from ehs_spatial.platform.reconstruction import _ground
-    from ehs_spatial.platform.spatial import FrameGeometry
+    from argus.platform.reconstruction import _ground
+    from argus.platform.spatial import FrameGeometry
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     document, _ = run_analysis(repo, blobs, repo.job, bundle(repo))
@@ -1037,8 +1037,8 @@ def test_resegmentation_ground_fit_stays_in_affected_coordinate_frame(tmp_path):
 
 def source_equivalence_case(tmp_path, *, native_image_sha256=None):
     """Real immutable JSON/RLE blobs; no model provider or network needed."""
-    from ehs_spatial.platform.identity import migrate_document
-    from ehs_spatial.platform.spatial import FrameGeometry
+    from argus.platform.identity import migrate_document
+    from argus.platform.spatial import FrameGeometry
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     stages = _Stages(repo, blobs, repo.job, {})
@@ -1088,7 +1088,7 @@ def source_equivalence_case(tmp_path, *, native_image_sha256=None):
 
 
 def test_source_equivalence_verifier_reads_exact_source_rle_and_seeds_geometry(tmp_path):
-    from ehs_spatial.platform.reconstruction import _verified_source_equivalences, _associate_and_surfaces
+    from argus.platform.reconstruction import _verified_source_equivalences, _associate_and_surfaces
     document, masks, stages, pair, _, frames = source_equivalence_case(tmp_path)
     before = deepcopy(document)
     verified, skipped = _verified_source_equivalences(document, masks, stages)
@@ -1111,7 +1111,7 @@ def test_source_equivalence_verifier_reads_exact_source_rle_and_seeds_geometry(t
 
 @pytest.mark.parametrize('changed', ['sha','pointer','instance','mask','image','native_image'])
 def test_source_equivalence_verifier_rejects_mismatched_proof_inputs(tmp_path, changed):
-    from ehs_spatial.platform.reconstruction import _verified_source_equivalences
+    from argus.platform.reconstruction import _verified_source_equivalences
     document, masks, stages, pair, save_proof, _ = source_equivalence_case(tmp_path, native_image_sha256='f'*64 if changed == 'native_image' else None)
     if changed == 'sha':
         pair['sourceRef']['sha256'] = 'f'*64
@@ -1131,7 +1131,7 @@ def test_source_equivalence_verifier_rejects_mismatched_proof_inputs(tmp_path, c
 
 
 def test_source_equivalence_verifier_skips_revised_or_missing_observation_masks(tmp_path):
-    from ehs_spatial.platform.reconstruction import _verified_source_equivalences
+    from argus.platform.reconstruction import _verified_source_equivalences
     document, masks, stages, _, _, _ = source_equivalence_case(tmp_path)
     document['observations'][0]['revision'] += 1
     verified, skipped = _verified_source_equivalences(document, masks, stages)
@@ -1144,7 +1144,7 @@ def test_source_equivalence_verifier_skips_revised_or_missing_observation_masks(
 
 
 def test_source_equivalence_verifier_rejects_provenance_from_an_unrelated_object(tmp_path):
-    from ehs_spatial.platform.reconstruction import _verified_source_equivalences
+    from argus.platform.reconstruction import _verified_source_equivalences
     document, masks, stages, pair, save_proof, _ = source_equivalence_case(tmp_path)
     # This pointer exists and repeats exactly the same SHA/instance/mask. It is
     # still not a provenance edge from either named observation.
@@ -1160,7 +1160,7 @@ def test_source_equivalence_verifier_rejects_provenance_from_an_unrelated_object
 
 
 def test_source_equivalence_verifier_rejects_nonobject_proof_document(tmp_path):
-    from ehs_spatial.platform.reconstruction import _verified_source_equivalences
+    from argus.platform.reconstruction import _verified_source_equivalences
     document, masks, stages, _, _, _ = source_equivalence_case(tmp_path)
     asset = stages.put(b'[]', {'kind':'source_identity_evidence'}, 'application/json')
     document['assets'].append(asset)
@@ -1171,8 +1171,8 @@ def test_source_equivalence_verifier_rejects_nonobject_proof_document(tmp_path):
 
 @pytest.mark.parametrize('collapsed_photo', [False, True])
 def test_observed_meshing_rejects_degenerate_faces_without_losing_supported_objects(tmp_path, collapsed_photo):
-    from ehs_spatial.platform.reconstruction import _id, _mesh, _save_mesh, _include, run_reassociation
-    from ehs_spatial.platform.spatial import MeshData
+    from argus.platform.reconstruction import _id, _mesh, _save_mesh, _include, run_reassociation
+    from argus.platform.spatial import MeshData
 
     valid, rgb = np.ones((2, 2), bool), np.full((2, 2, 3), 100, np.uint8)
     for scale in (1e-30, 1., 1e30):
@@ -1270,7 +1270,7 @@ def test_observed_meshing_rejects_degenerate_faces_without_losing_supported_obje
 
 
 def test_full_observed_rebuild_preserves_identity_measurements_and_every_photo(tmp_path):
-    from ehs_spatial.platform.reconstruction import run_reassociation
+    from argus.platform.reconstruction import run_reassociation
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     providers = bundle(repo)
@@ -1327,8 +1327,8 @@ def test_full_observed_rebuild_preserves_identity_measurements_and_every_photo(t
 def test_observed_plan_uses_indexed_triangles_preserving_concavity_holes_and_islands(tmp_path, monkeypatch, cells, parts, holes):
     from types import SimpleNamespace
     from shapely import Polygon, union_all
-    from ehs_spatial.platform import reconstruction
-    from ehs_spatial.platform.spatial import MeshData
+    from argus.platform import reconstruction
+    from argus.platform.spatial import MeshData
 
     vertices, faces = [], []
     for x, y in cells:
@@ -1372,8 +1372,8 @@ def test_observed_plan_uses_indexed_triangles_preserving_concavity_holes_and_isl
 
 def test_plan_projection_keeps_vertical_edges_and_current_model_pose_without_confirming_it(tmp_path):
     from shapely import LineString, Polygon, union_all
-    from ehs_spatial.platform.reconstruction import _plan_projection, _refresh_plan_projections
-    from ehs_spatial.platform.spatial import MeshData
+    from argus.platform.reconstruction import _plan_projection, _refresh_plan_projections
+    from argus.platform.spatial import MeshData
 
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
@@ -1406,8 +1406,8 @@ def test_plan_projection_keeps_vertical_edges_and_current_model_pose_without_con
 
 
 def test_projection_refresh_uses_frozen_scene_mesh_layout_and_checks_hash(tmp_path):
-    from ehs_spatial.platform.reconstruction import _save_mesh, _include, _refresh_plan_projections
-    from ehs_spatial.platform.spatial import primitive_mesh
+    from argus.platform.reconstruction import _save_mesh, _include, _refresh_plan_projections
+    from argus.platform.spatial import primitive_mesh
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     stages = _Stages(repo, blobs, repo.job, {})
@@ -1431,7 +1431,7 @@ def test_projection_refresh_uses_frozen_scene_mesh_layout_and_checks_hash(tmp_pa
 
 
 def test_scene_cad_references_preserve_sources_and_do_not_rebuild_geometry(tmp_path, monkeypatch):
-    from ehs_spatial.platform import reconstruction
+    from argus.platform import reconstruction
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     doc, _ = run_analysis(repo, blobs, repo.job, bundle(repo))
@@ -1486,7 +1486,7 @@ def test_scene_cad_references_preserve_sources_and_do_not_rebuild_geometry(tmp_p
 
 
 def test_cad_reference_job_pins_same_project_source_manifest(tmp_path, monkeypatch):
-    from ehs_spatial.platform import reconstruction, source_cad
+    from argus.platform import reconstruction, source_cad
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     repo.document, _ = run_analysis(repo, blobs, repo.job, bundle(repo))
@@ -1516,7 +1516,7 @@ def test_cad_reference_job_pins_same_project_source_manifest(tmp_path, monkeypat
 
 @pytest.mark.parametrize('extra_ids', [False,True])
 def test_inventory_coverage_diagnostic_names_only_owned_missing_observations(tmp_path,extra_ids):
-    from ehs_spatial.platform.reconstruction import _capture,_discover,_inventory_review_input,_admit_inventory_review
+    from argus.platform.reconstruction import _capture,_discover,_inventory_review_input,_admit_inventory_review
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     _,document,images = _capture(repo,blobs,repo.job)

@@ -14,9 +14,9 @@ from fastapi.testclient import TestClient
 import pytest
 
 from check_publication_site import fixture as publication_fixture
-from ehs_spatial.platform.agent_service import AgentResult, GeminiAgentProvider, INSTRUCTION
-from ehs_spatial.platform.feedback import FEEDBACK_INSTRUCTION, FeedbackService, persistent_feedback_app
-from ehs_spatial.platform.publication_site import create_app
+from argus.platform.agent_service import AgentResult, GeminiAgentProvider, INSTRUCTION
+from argus.platform.feedback import FEEDBACK_INSTRUCTION, FeedbackService, persistent_feedback_app
+from argus.platform.publication_site import create_app
 
 
 ORIGIN = "https://report.example"
@@ -347,7 +347,7 @@ def test_model_context_contains_selected_object_evidence_only(catalog, tmp_path)
 
 
 def test_part_feedback_distinguishes_active_residual_from_original_model(catalog):
-    from ehs_spatial.platform.feedback import feedback_context
+    from argus.platform.feedback import feedback_context
     _, publications = catalog
     publication = deepcopy(publications[0])
     document = publication['snapshot']['revision']['document']

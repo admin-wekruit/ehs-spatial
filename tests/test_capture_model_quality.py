@@ -11,11 +11,9 @@ from PIL import Image
 import pytest
 from pydantic import ValidationError
 
-from ehs_spatial.platform.contracts import PlatformError, canonical, empty_document
-from ehs_spatial.platform.reconstruction import (
-    _ModelReviewResponse, _assess_generation, _packed, _record_generated_representation,
-)
-from ehs_spatial.platform.spatial import FrameGeometry, transform_points, unproject_pixels
+from argus.platform.contracts import PlatformError, canonical, empty_document
+from argus.platform.reconstruction import _ModelReviewResponse, _assess_generation, _packed, _record_generated_representation
+from argus.platform.spatial import FrameGeometry, transform_points, unproject_pixels
 
 
 class Stages:

@@ -1,4 +1,0 @@
-# Variant: the baseline's facts and verdicts with the HTML labeling report (verdicts.html: queue, focus panel, hotkeys, export of
-# verdict-labels/1 JSON) instead of verdicts.md.
-extends: baseline.yaml
-L7: {plugin: html}

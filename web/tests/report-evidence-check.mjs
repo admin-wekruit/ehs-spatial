@@ -14,14 +14,15 @@ let resolveTestAsset=()=>{throw Error('unexpected request');};
 function load(filename) {
   if(cache.has(filename))return cache.get(filename).exports;
   const module={exports:{}};cache.set(filename,module);
-  const code=ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+  if (filename.endsWith('.json')) { module.exports = JSON.parse(fs.readFileSync(filename, 'utf8')); return module.exports; }
+  const code=ts.transpileModule(fs.readFileSync(filename,'utf8'),{fileName:filename,compilerOptions:{esModuleInterop:true,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   function dependency(name) {
     if(name.endsWith('.css'))return {};
     if(name==='./App')return {ErrorNotice:()=>null};
     if(name==='./WorkcellReport')return {ReportDownload:({assetId,children})=>React.createElement('button',{'data-asset':assetId},children)};
     if(name==='./api')return {resolveAsset:id=>resolveTestAsset(id)};
     if(name==='react')return new Proxy(React,{get:(target,key)=>testHooks?.[key]||target[key]});
-    if(name==='./i18n')return {useI18n:()=>({language,t:key=>key})};
+    if(name==='./i18n') { const messages = load(path.join(root, 'src/translate.ts')); return {...messages, useI18n:()=>({language,t:(key,params)=>messages.translate(language,key,params)})}; }
     if(!name.startsWith('.'))return require(name);
     const resolved=path.resolve(path.dirname(filename),name);
     return load([resolved,resolved+'.ts',resolved+'.tsx'].find(p=>fs.existsSync(p)));
@@ -30,7 +31,7 @@ function load(filename) {
   return module.exports;
 }
 const {ReportEvidence,interpretationSelection,interpretationSourcePhoto,orderedInterpretations,partitionInterpretationItems,exactHistoricalPolicy,comparisonSource,sourceCadFor,cadZoomView,cadPanView,cadFocusView,cadLinkedEntities,OriginalCadEvidence}=load(path.join(root,'src/ReportEvidence.tsx'));
-const item={label:'Button',labelZh:'按钮',note:'Bound button note',entityIds:['button'],imageId:'photo-b',sourceImageId:'original-photo',sourcePixelBox:[20,40,60,100],cameraId:'camera-b',sourceFrameId:'source-3',targetSourceFrameId:'target-1',mappingStatus:'verified',sourceCandidateIds:['candidate']};
+const item={label:'Button',note:'Bound button note',entityIds:['button'],imageId:'photo-b',sourceImageId:'original-photo',sourcePixelBox:[20,40,60,100],cameraId:'camera-b',sourceFrameId:'source-3',targetSourceFrameId:'target-1',mappingStatus:'verified',sourceCandidateIds:['candidate']};
 const legacy={runId:'old-run',items:[{...item,label:'Unassociated old note',entityIds:[],imageId:null,sourceImageId:null}],missing:[],rejected:[],sourceRefs:[]};
 const current={runId:'capture-run',items:[item],missing:[],rejected:[],sourceRefs:[]};
 const policy={id:'policy-exact',spec:{policyId:'policy-exact',rationale:'Exact policy rationale',sourceText:'Exact source clause',threshold:0,unit:'m',unsupportedReason:'No temporal evidence'},sourceRefs:[{assetId:'policy-source'}]};
@@ -163,7 +164,7 @@ assert.match(coverageHtml,/data-asset="source-inventory"/);
 assert.match(coverageHtml,/data-asset="source-manifest"/);
 assert.match(coverageHtml,/Original segmentation evidence verified/);
 assert.equal(JSON.stringify(doc),before,'rendering/sorting must not mutate the fixed scene snapshot');
-language='zh';assert.match(render('safety'),/规则理由/);assert.match(render('quality'),/原始实验候选对比/);
+language='zh';assert.match(render('safety'),/\u89c4\u5219\u7406\u7531/);assert.match(render('quality'),/\u539f\u59cb\u5b9e\u9a8c\u5019\u9009\u5bf9\u6bd4/);
 if(process.env.PANOPTES_TEST_PUBLICATION_URL){
   const response=await fetch(process.env.PANOPTES_TEST_PUBLICATION_URL);assert.equal(response.status,200);
   const publication=await response.json(),actual=publication.snapshot.revision.document,bundle=actual.reportEvidence;
@@ -173,7 +174,7 @@ if(process.env.PANOPTES_TEST_PUBLICATION_URL){
   assert.ok(sorted[0].items.some(i=>i.entityIds.some(id=>interpretationSelection(actual,i,id)?.imageId)));
   const groups=partitionInterpretationItems(actual,sorted[0].items);
   assert.equal(groups.linked.length+groups.sourceOnly.length+groups.unbound.length,sorted[0].items.length);
-  assert.match(render('understanding',actual),new RegExp(`${groups.linked.length} 条已定位当前对象 / ${sorted[0].items.length} 条来源记录`));
+  assert.match(render('understanding',actual),new RegExp(`${groups.linked.length} \u6761\u5df2\u5b9a\u4f4d\u5f53\u524d\u5bf9\u8c61 / ${sorted[0].items.length} \u6761\u6765\u6e90\u8bb0\u5f55`));
   for(const analysis of sorted)for(const detection of analysis.items)for(const id of detection.entityIds){
     const selected=interpretationSelection(actual,detection,id);assert.ok(selected);
     if(selected.observationId)assert.equal(actual.observations.find(o=>o.id===selected.observationId).imageId,selected.imageId);
@@ -183,7 +184,7 @@ if(process.env.PANOPTES_TEST_PUBLICATION_URL){
   for(const object of bundle.objects.filter(o=>o.metrics&&['beforeIou','afterIou','beforeDepth','afterDepth'].some(key=>typeof o.metrics[key]==='number'))){assert.ok(comparisonSource(bundle,object.sourceRecordId));if(object.metricsMeaning)assert.ok(actualQuality.includes(object.metricsMeaning));}
   console.log(`Read-only snapshot ${publication.id}: ${groups.linked.length} linked / ${sorted[0].items.length} source records; ${groups.sourceOnly.length} source photos available; ${groups.unbound.length} photograph bindings missing; ${bundle.historical.policies.length} exact historical policy specs.`);
 }
-console.log('Report evidence checks passed: three association states, lazy source crops and full-image switch/retry, unchanged current selection, historical archive, exact policy/metric identity, immutable sorting, zh/en.');
+console.log('Report evidence checks passed: three association states, lazy source crops and full-image switch/retry, unchanged current selection, historical archive, exact policy/metric identity, immutable sorting, en/zh/nl.');
 
 const splitDoc=structuredClone(doc);
 splitDoc.entities=[{id:'child-a',label:'Child A',observationRefs:['observation-a']},{id:'child-b',label:'Child B',observationRefs:['observation-b']}];
@@ -194,3 +195,12 @@ splitDoc.reportEvidence.objects=[{entityId:null,sourceRecordId:'source-button',m
 const splitQuality=render('quality',splitDoc);
 assert.match(splitQuality,/Child A/);assert.match(splitQuality,/Child B/);
 assert.equal((splitQuality.match(/0\.2345/g)||[]).length,1,'Source-record quality metrics remain one historical row, not duplicated as child measurements');
+
+// The same saved evidence renders in each locale, then returns to English.
+for (const locale of ['en', 'zh', 'nl', 'en']) {
+  language = locale;
+  const html = render('safety');
+  const {translate} = load(path.join(root, 'src/translate.ts'));
+  assert.ok(html.includes(translate(locale, 'reportHistoricalSafety').replaceAll('&', '&amp;')), `localized heading in ${locale}`);
+  if (locale !== 'zh') assert.doesNotMatch(html, /[\u3400-\u9fff]/);
+}

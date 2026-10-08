@@ -3,9 +3,9 @@ from copy import deepcopy
 
 import pytest
 
-from ehs_spatial.platform import reconstruction
-from ehs_spatial.platform.correspondence import audit_correspondence
-from panoptes_worker.__main__ import run_job
+from argus.platform import reconstruction
+from argus.platform.correspondence import audit_correspondence
+from argus.platform.worker import run_job
 from test_capture_worker_chain import chain, dispatch, model_calls, start_research, successor, user_edit
 from test_platform_backend import identity, project, repo
 
@@ -132,8 +132,8 @@ def test_rejected_review_cache_older_than_asset_listing_is_reused_without_dispat
 
 @pytest.mark.parametrize('outcome', ['succeeded', 'failed', 'uncached_response'])
 def test_completed_competing_call_between_cache_miss_and_reservation_is_never_dispatched_twice(repo, tmp_path, monkeypatch, outcome):
-    from ehs_spatial.platform.contracts import PlatformError
-    from ehs_spatial.platform.storage import LocalBlobStore
+    from argus.platform.contracts import PlatformError
+    from argus.platform.storage import LocalBlobStore
     from test_platform_reconstruction import provider
     blobs = repo.blobs = LocalBlobStore(tmp_path)
     cap, scene = project(repo)

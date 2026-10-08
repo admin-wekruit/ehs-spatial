@@ -7,6 +7,7 @@ import React from 'react';
 import * as core from '../src/core.ts';
 import * as semantics from '../src/scene-semantics.ts';
 import * as math from '../src/viewer/native-math.ts';
+import * as measurement from '../src/measurement-layer.ts';
 const require=createRequire(import.meta.url), slots=[]; let cursor=0;
 const hooks={useId:()=> 'scene',useEffect(){},useRef:initial=>({current:initial}),
   useState(initial){const i=cursor++;if(!Object.hasOwn(slots,i))slots[i]=typeof initial==='function'?initial():initial;return [slots[i],v=>{slots[i]=typeof v==='function'?v(slots[i]):v;}];}};
@@ -18,6 +19,8 @@ new Function('require','module','exports',code)(name=>{
   if(name.endsWith('.css'))return {};
   if(name==='./i18n')return {useI18n:()=>({t:key=>key})};
   if(name==='./core')return core;
+  if(name==='./measurement-layer')return measurement;
+  if(name==='./SceneResources')return {useSceneResources:()=>({analysisAvailable:true})};
   if(name==='./scene-semantics')return semantics;
   if(name==='./viewer/native-math')return math;
   if(name==='./App')return {SpatialView};

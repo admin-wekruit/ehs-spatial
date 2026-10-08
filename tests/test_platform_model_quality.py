@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from ehs_spatial.platform.contracts import PlatformError
-from ehs_spatial.platform.spatial import MeshData, pixel_center_mapping, transform_points, unproject_pixels
+from argus.platform.contracts import PlatformError
+from argus.platform.spatial import MeshData, pixel_center_mapping, transform_points, unproject_pixels
 
 
 def scene(*, rotated=False):
@@ -31,11 +31,11 @@ def scene(*, rotated=False):
 
 
 def test_quality_module_exists():
-    assert importlib.util.find_spec("ehs_spatial.platform.model_quality") is not None
+    assert importlib.util.find_spec("argus.platform.model_quality") is not None
 
 
 def test_similarity_refinement_fits_scale_but_does_not_certify_missing_views():
-    from ehs_spatial.platform.model_quality import refine_model_pose, assess_model
+    from argus.platform.model_quality import refine_model_pose, assess_model
     mesh, view = scene()
     center = mesh.vertices.mean(0)
     small = MeshData(center + (mesh.vertices-center)*.75,mesh.faces)
@@ -49,7 +49,7 @@ def test_similarity_refinement_fits_scale_but_does_not_certify_missing_views():
 
 
 def test_coarse_layout_tolerates_small_gaps_but_rejects_wrong_position_and_depth():
-    from ehs_spatial.platform.model_quality import assess_model
+    from argus.platform.model_quality import assess_model
     _, view = scene()
     view['maskComplete'] = False
     vertices, faces = [], []
@@ -75,7 +75,7 @@ def test_coarse_layout_tolerates_small_gaps_but_rejects_wrong_position_and_depth
 
 
 def test_coarse_depth_keeps_tail_diagnostic_and_rejects_displaced_main_body():
-    from ehs_spatial.platform.model_quality import assess_model
+    from argus.platform.model_quality import assess_model
     mesh, view = scene()
     view['depth'][4:6,6:27] = 6.  # Limited local recess omitted in a coarse sheet.
     detailed=assess_model(mesh,np.eye(4),[view])
@@ -92,9 +92,9 @@ def test_review_payload_preserves_all_camera_views_and_inputs(with_family):
     import base64
     import io
     from PIL import Image
-    from ehs_spatial.platform import model_quality
-    from ehs_spatial.platform.contracts import digest
-    from ehs_spatial.platform.reconstruction import _packed
+    from argus.platform import model_quality
+    from argus.platform.contracts import digest
+    from argus.platform.reconstruction import _packed
 
     assert hasattr(model_quality, 'build_model_review_payload')
     mesh, first = scene(rotated=True)
@@ -132,7 +132,7 @@ def test_review_payload_preserves_all_camera_views_and_inputs(with_family):
 
 
 def test_camera_centres_skew_non_square_rotated_and_source_binding():
-    from ehs_spatial.platform.model_quality import assess_model
+    from argus.platform.model_quality import assess_model
     mesh, view = scene(rotated=True)
     report = assess_model(mesh, np.eye(4), [view])
     assert report["status"] == "observed_consistent"
@@ -158,7 +158,7 @@ def test_camera_centres_skew_non_square_rotated_and_source_binding():
 
 
 def test_partial_mask_does_not_demand_complete_silhouette():
-    from ehs_spatial.platform.model_quality import assess_model
+    from argus.platform.model_quality import assess_model
     mesh, view = scene()
     view["mask"][:, 13:] = False
     view.pop("maskComplete")
@@ -173,7 +173,7 @@ def test_partial_mask_does_not_demand_complete_silhouette():
 
 
 def test_background_occlusion_never_excludes_wrong_target_depth():
-    from ehs_spatial.platform.model_quality import assess_model
+    from argus.platform.model_quality import assess_model
     mesh, view = scene()
     view["mask"][:, 16:] = False
     view["depth"][:, 16:] = 2
@@ -188,7 +188,7 @@ def test_background_occlusion_never_excludes_wrong_target_depth():
 
 
 def test_unknown_depth_cannot_hide_predicted_background_and_domain_is_real():
-    from ehs_spatial.platform.model_quality import assess_model
+    from argus.platform.model_quality import assess_model
     mesh, view = scene()
     view["mask"][:, 16:] = False
     view["depth"][:, 16:] = np.nan
@@ -205,7 +205,7 @@ def test_unknown_depth_cannot_hide_predicted_background_and_domain_is_real():
 
 
 def test_missing_depth_and_empty_views_are_insufficient():
-    from ehs_spatial.platform.model_quality import assess_model, refine_model_pose
+    from argus.platform.model_quality import assess_model, refine_model_pose
     mesh, view = scene()
     view["valid"][:] = False
     report = assess_model(mesh, np.eye(4), [view])
@@ -221,7 +221,7 @@ def test_missing_depth_and_empty_views_are_insufficient():
 
 @pytest.mark.parametrize("invalid", ["K", "cameraToWorld", "mask", "sourceHashes", "missingSourceHash", "observationRevision"])
 def test_invalid_views_fail_closed(invalid):
-    from ehs_spatial.platform.model_quality import assess_model
+    from argus.platform.model_quality import assess_model
     mesh, view = scene()
     if invalid == "K":
         view[invalid][1, 0] = 2
@@ -242,7 +242,7 @@ def test_invalid_views_fail_closed(invalid):
 
 
 def test_pose_validation_and_frame_mismatch():
-    from ehs_spatial.platform.model_quality import assess_model
+    from argus.platform.model_quality import assess_model
     mesh, view = scene()
     for pose in (np.zeros((4, 4)), np.diag([-1, 1, 1, 1]), np.full((4, 4), np.nan)):
         with pytest.raises(PlatformError):
@@ -253,7 +253,7 @@ def test_pose_validation_and_frame_mismatch():
 
 
 def test_each_view_matters_and_duplicate_views_do_not_manufacture_evidence():
-    from ehs_spatial.platform.model_quality import assess_model
+    from argus.platform.model_quality import assess_model
     mesh, view = scene()
     other = deepcopy(view)
     other.update(observationId="observation-b", imageId="image-b")
@@ -266,7 +266,7 @@ def test_each_view_matters_and_duplicate_views_do_not_manufacture_evidence():
 
 
 def test_rigid_refinement_improves_depth_preserves_scale_and_input_mesh():
-    from ehs_spatial.platform.model_quality import refine_model_pose
+    from argus.platform.model_quality import refine_model_pose
     world_mesh, view = scene()
     scale = np.diag([1.3, .7, 1.6, 1.])
     mesh = MeshData(transform_points(world_mesh.vertices, np.linalg.inv(scale)), world_mesh.faces)
@@ -288,7 +288,7 @@ def test_rigid_refinement_improves_depth_preserves_scale_and_input_mesh():
 
 
 def test_refinement_cannot_trade_a_good_view_for_mean_improvement():
-    from ehs_spatial.platform.model_quality import refine_model_pose
+    from argus.platform.model_quality import refine_model_pose
     mesh, view = scene()
     conflicting = deepcopy(view)
     conflicting.update(observationId="observation-b", imageId="image-b")
@@ -300,7 +300,7 @@ def test_refinement_cannot_trade_a_good_view_for_mean_improvement():
 
 
 def test_render_actual_mesh_colors_in_source_camera_with_white_background():
-    from ehs_spatial.platform import model_quality
+    from argus.platform import model_quality
     assert hasattr(model_quality, "render_model_views")
     mesh, view = scene(rotated=True)
     colored = MeshData(mesh.vertices, mesh.faces, np.tile([.8, .2, .1], (4, 1)))
@@ -313,7 +313,7 @@ def test_render_actual_mesh_colors_in_source_camera_with_white_background():
 
 
 def test_render_requires_valid_source_cameras():
-    from ehs_spatial.platform import model_quality
+    from argus.platform import model_quality
     assert hasattr(model_quality, "render_model_views")
     mesh, view = scene()
     view["cameraToWorld"][0, 0] = 2
@@ -322,7 +322,7 @@ def test_render_requires_valid_source_cameras():
 
 
 def test_refinement_reassesses_native_resolution_after_sampled_search():
-    from ehs_spatial.platform.model_quality import refine_model_pose
+    from argus.platform.model_quality import refine_model_pose
     mesh, view = scene()
     for key in ("mask", "valid", "depth"):
         view[key] = view[key].repeat(10, axis=0).repeat(10, axis=1)
@@ -349,7 +349,7 @@ def partitioned_family():
 
 
 def test_family_scores_declared_union_on_parent_evidence_without_promoting_members():
-    from ehs_spatial.platform.model_quality import assess_model, assess_model_family
+    from argus.platform.model_quality import assess_model, assess_model_family
     _, view, members = partitioned_family()
     originals = [member['mesh'].vertices.copy() for member in members]
     separate = [assess_model(m['mesh'],m['objectToNative'],[view]) for m in members]
@@ -378,7 +378,7 @@ def test_family_scores_declared_union_on_parent_evidence_without_promoting_membe
 
 @pytest.mark.parametrize('corruption', ['unrelated','missing_parent','cycle','duplicate','frame','view_frame'])
 def test_family_rejects_unrelated_mesh_or_unregistered_frame(corruption):
-    from ehs_spatial.platform.model_quality import assess_model_family
+    from argus.platform.model_quality import assess_model_family
     _, view, members = partitioned_family()
     if corruption == 'unrelated': members[1]['parentEntityId'] = 'someone-else'
     elif corruption == 'missing_parent': members.pop(0)
@@ -391,7 +391,7 @@ def test_family_rejects_unrelated_mesh_or_unregistered_frame(corruption):
 
 
 def test_family_keeps_all_parent_views_and_does_not_hide_bad_depth():
-    from ehs_spatial.platform.model_quality import assess_model_family
+    from argus.platform.model_quality import assess_model_family
     _, view, members = partitioned_family()
     bad = deepcopy(view)
     bad['observationId'] = 'another-observation'

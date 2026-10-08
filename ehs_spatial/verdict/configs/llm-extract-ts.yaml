@@ -1,6 +1,0 @@
-# Variant: L4 = llm-extract@0 over the safety-concept sample text (Claude Haiku through ehs_spatial.verdict.llm, responses cached under
-# runs/llm-cache, so a re-run costs no calls). The run records the extracted graph, its alignment, the extraction report and the diff
-# against the hand-extracted clauses-ts0011963-v0.json. L5 stays the handwritten pack, so verdict counts do not change yet.
-# PANOPTES_FAKE_MODEL=1 needs every unit's response in the cache (first live run: see layers/l4_spec/README.md, llm-extract@0).
-extends: baseline.yaml
-L4: {plugin: llm-extract, spec_text: samples/manual-loading-station-concept-2026-10-08.md, reference: clauses-ts0011963-v0.json}

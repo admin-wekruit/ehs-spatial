@@ -5,8 +5,8 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import numpy as np
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from ehs_spatial.platform.scene_measurements import fitted_plane, surface_distance, measure_scene, register_measurement_routes
-from ehs_spatial.platform.contracts import PlatformError
+from argus.platform.scene_measurements import fitted_plane, surface_distance, measure_scene, register_measurement_routes
+from argus.platform.contracts import PlatformError
 
 square=np.array([[[0,0,0],[2,0,0],[2,2,0]],[[0,0,0],[2,2,0],[0,2,0]]],float)
 p=fitted_plane(square)
@@ -59,7 +59,7 @@ print('PASS: planes, true mesh-surface distance, crossings, interior closest poi
 
 # Mesh holes stay empty under projection, unlike an enclosing outline/box.
 from copy import deepcopy
-from ehs_spatial.platform.spatial import MeshData
+from argus.platform.spatial import MeshData
 before=deepcopy(revision)
 ring=[]
 for x0,y0,x1,y1 in [(0,0,3,1),(0,2,3,3),(0,1,1,2),(2,1,3,2)]:
@@ -116,7 +116,7 @@ with TestClient(app) as client:
 
 # Intrinsic fold: rays run from the shared hinge into each sheet, preserving
 # the obtuse interior angle and ignoring world/ground/camera orientation.
-from ehs_spatial.platform import scene_measurements as measurements
+from argus.platform import scene_measurements as measurements
 assert hasattr(measurements,'fitted_bend'), 'Missing same-object two-surface bend measurement'
 def folded_sheet(degrees, narrow=.25):
  angle=np.deg2rad(degrees)
@@ -173,7 +173,7 @@ print('PASS: noisy reconstructed fold rotation invariance')
 assert abs(fitted_plane(square)['span']-fitted_plane(square@turn.T)['span'])<1e-10, 'Fit tolerance must not depend on world axes'
 
 # Processing persists every outcome; report reads never decode a mesh.
-from ehs_spatial.platform.scene_measurements import analyze_bends, saved_bends
+from argus.platform.scene_measurements import analyze_bends, saved_bends
 from unittest.mock import patch
 candidate=deepcopy(revision)
 for e in candidate['document']['entities']:
@@ -183,7 +183,7 @@ def computed(rev,kind,entity_a,*args,triangle_limit=500_000):
  assert triangle_limit is None, 'Offline analysis must process complete geometry'
  if entity_a=='b': raise PlatformError('measurement_no_stable_bend',422)
  return {**value,'revisionId':rev['id']}
-with patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=computed) as compute:
+with patch('argus.platform.scene_measurements.measure_scene',side_effect=computed) as compute:
  analysis=analyze_bends(candidate,load,persist=True)
  assert compute.call_count==2
  assert [r['status'] for r in analysis['items']]==['measured','unsupported']
@@ -198,18 +198,18 @@ with patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=c
  assert compute.call_count==3
  candidate['document']['entities'][1]['sourceContext']=True
  assert len(saved_bends(candidate)['items'])==1
-with patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=PlatformError('asset_not_found',404)):
+with patch('argus.platform.scene_measurements.measure_scene',side_effect=PlatformError('asset_not_found',404)):
  candidate['document']['entities'][0]['representations'][0]['transform']['scale'][0]+=1
  failed=analyze_bends(candidate,load,persist=True)
  assert failed['items'][0]['status']=='failed' and failed['items'][0]['reason']=='asset_not_found'
 api=FastAPI();register_measurement_routes(api,lambda _:candidate,load)
 with TestClient(api) as client:
- with patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=AssertionError('read must not compute')):
+ with patch('argus.platform.scene_measurements.measure_scene',side_effect=AssertionError('read must not compute')):
   assert client.get('/api/revisions/new-revision/bend-analysis-v1').json()==saved_bends(candidate)
 print('PASS: persistent per-object outcomes, exact-input reuse, pose invalidation, exclusions and compute-free report reads')
 
 # All scene-producing worker paths share this stage before saving a revision.
-from panoptes_worker.__main__ import run_job
+from argus.platform.worker import run_job
 from uuid import uuid4
 class WorkerRepository:
  def claim_job(self,identity): return {'id':identity,'kind':'generate_scene','attemptToken':'test','config':{}}
@@ -221,23 +221,23 @@ class WorkerRepository:
   assert len(result['inclinationAnalysis']['outcomes'])==2
   return result
 worker_scene=deepcopy(revision['document'])
-with patch('ehs_spatial.platform.reconstruction.run_generation',return_value=(worker_scene,{'status':'succeeded'})):
+with patch('argus.platform.reconstruction.run_generation',return_value=(worker_scene,{'status':'succeeded'})):
  run_job(WorkerRepository(),None,str(uuid4()),providers={})
 
 # Publication builds write an independent derivative; serving it does not read
 # a full revision or compute a mesh, and original revision bytes stay unchanged.
-from ehs_spatial.platform.publication_site import compile_catalog, create_app
+from argus.platform.publication_site import compile_catalog, create_app
 from tempfile import TemporaryDirectory
 unchanged=deepcopy(revision)
 with TemporaryDirectory() as directory:
- with patch('ehs_spatial.platform.publication_site.read_catalog',return_value=({'/api/revisions/revision':revision},{})):
+ with patch('argus.platform.publication_site.read_catalog',return_value=({'/api/revisions/revision':revision},{})):
   compile_catalog(directory,Path(directory)/'prepared')
  assert revision==unchanged
  app=create_app(directory,allowed_origins=[],prepared_dir=Path(directory)/'prepared')
- with TestClient(app) as client, patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=AssertionError('GET computed geometry')):
+ with TestClient(app) as client, patch('argus.platform.scene_measurements.measure_scene',side_effect=AssertionError('GET computed geometry')):
   payload=client.get('/api/revisions/revision/bend-analysis-v1').json()
   assert len(payload['items'])==2 and all(row['status']!='not_processed' for row in payload['items'])
-  with patch('ehs_spatial.platform.scene_measurements.analyze_inclinations',side_effect=AssertionError('GET recomputed inclination')):
+  with patch('argus.platform.scene_measurements.analyze_inclinations',side_effect=AssertionError('GET recomputed inclination')):
    saved=client.get('/api/revisions/revision/inclination-analysis-v1').json()
    assert len(saved['items'])==2 and all(row['status']!='not_processed' for row in saved['items'])
 app=FastAPI()

@@ -6,8 +6,8 @@ from uuid import UUID, uuid5
 import psycopg
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError, canonical, digest
-from ehs_spatial.platform.storage import LocalBlobStore
+from argus.platform.contracts import PlatformError, canonical, digest
+from argus.platform.storage import LocalBlobStore
 from test_platform_backend import edit_body, entity, identity, make_job, project, repo
 
 
@@ -179,7 +179,7 @@ def research_command(repo, parent, tmp_path, *, target_overrides=None, asset_kin
 
 
 def test_research_child_revalidates_authority_inside_parent_transaction(repo, tmp_path, monkeypatch):
-    from ehs_spatial.platform import research_authority
+    from argus.platform import research_authority
     cap, scene = project(repo)
     parent = repo.claim_job(make_job(repo, cap, scene)["id"])
     command, frozen = research_command(repo, parent, tmp_path)
@@ -199,7 +199,7 @@ def test_research_child_revalidates_authority_inside_parent_transaction(repo, tm
 
 @pytest.mark.parametrize("bad", ["projectId", "branchId", "baseRevisionId", "input_hash", "protocol_hash", "asset_kind", "missing_blobs"])
 def test_research_child_checks_source_and_automatic_target_before_authority(repo, tmp_path, monkeypatch, bad):
-    from ehs_spatial.platform import research_authority
+    from argus.platform import research_authority
     cap, scene = project(repo)
     parent = repo.claim_job(make_job(repo, cap, scene)["id"])
     command, _ = research_command(repo, parent, tmp_path,
@@ -218,7 +218,7 @@ def test_research_child_checks_source_and_automatic_target_before_authority(repo
 
 
 def test_research_budget_rejection_cannot_commit_parent_or_child(repo, tmp_path, monkeypatch):
-    from ehs_spatial.platform import research_authority
+    from argus.platform import research_authority
     cap, scene = project(repo)
     parent = repo.claim_job(make_job(repo, cap, scene)["id"])
     command, _ = research_command(repo, parent, tmp_path)

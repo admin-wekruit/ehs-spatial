@@ -3,11 +3,12 @@ import {isReferenceSurface} from '../scene-semantics.ts';
 import {activeModel,compositeModelEvidence,modelPreviewEntities,modelPreviewGeometry,isCurrentReferenceSurface,modelFamilyGeometry,modelFamilyTransforms,entityGeometryForLayer,representationAvailable,representationInPhoto,cameraForImage,currentCameras,cameraPath,type GeometryLayer} from '../core.ts';
 import type {SceneDocument,RepresentationLoadState} from '../types';
 import {createSplatLayer,type SplatSource} from './splat-layer.ts';
+import {translate,type Language} from '../translate.ts';
 
 export type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;material?:{baseColorFactor:number[];alphaMode:'OPAQUE'|'MASK'|'BLEND';alphaCutoff:number};bounds:{min:Vec;max:Vec};name?:string};
 type GPU={mesh:Mesh;vertex:WebGLBuffer;index:WebGLBuffer;texture:WebGLTexture;entityId:string;representation:any};
 export type ViewerEvent={type:string;[key:string]:any};
-export type ViewerOptions={resolveAsset:(id:string)=>Promise<string|{url:string}>;locale?:string;onEvent?:(event:ViewerEvent)=>void;layers?:Record<string,any>;showSourcePhoto?:boolean};
+export type ViewerOptions={resolveAsset:(id:string)=>Promise<string|{url:string}>;locale?:Language;onEvent?:(event:ViewerEvent)=>void;layers?:Record<string,any>;showSourcePhoto?:boolean};
 export type SceneViewer=ReturnType<typeof mountSceneViewer>;
 
 export function representationPass(entity:any,representation:any,frameId:string|null,layers:any) {
@@ -138,10 +139,11 @@ export function primitive(spec:any):Mesh {
 }
 
 export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
+  let language:Language=options.locale??'en';
   const stage=document.createElement('div');stage.className='native-stage';Object.assign(stage.style,{position:'relative',width:'100%',height:'100%',minHeight:'260px',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#111b21'});
   const photo=document.createElement('img');photo.alt='';Object.assign(photo.style,{position:'absolute',objectFit:'contain',pointerEvents:'none'});photo.hidden=true;
   const groundSVG=document.createElementNS('http://www.w3.org/2000/svg','svg');groundSVG.setAttribute('class','native-ground-datum');Object.assign(groundSVG.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});
-  const canvas=document.createElement('canvas');canvas.setAttribute('aria-label',options.locale==='en'?'Interactive scene':'交互场景');canvas.tabIndex=0;Object.assign(canvas.style,{position:'relative',touchAction:'none'});
+  const canvas=document.createElement('canvas');canvas.setAttribute('aria-label',translate(language,'viewer.interactiveScene'));canvas.tabIndex=0;Object.assign(canvas.style,{position:'relative',touchAction:'none'});
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');Object.assign(svg.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});stage.append(photo,groundSVG,canvas,svg);container.append(stage);
   const gl=canvas.getContext('webgl2',{alpha:true,antialias:true,preserveDrawingBuffer:true});if(!gl){stage.remove();throw Error('webgl_unavailable');}
   let disposed=false,epoch=0,photoEpoch=0,doc:any={entities:[],cameras:[],coordinateFrames:[]},revisionId='',selection:any={},camera:Camera|null=null,radius=1,center:Vec=[0,0,0],frameId:string|null=null,gpu:GPU[]=[],stale=new Set<GPU>(),abort=new AbortController(),preview=new Map<string,Transform>(),drag:any=null,axisDrag:any=null,hoverId:string|null=null;
@@ -261,7 +263,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
         if(axis){axis.setAttribute('data-ground-axis',labels[k]);axis.setAttribute('data-native-start',JSON.stringify(origin));axis.setAttribute('data-native-end',JSON.stringify(end));}
         if(p){const label=document.createElementNS(svg.namespaceURI,'text');label.textContent=labels[k];for(const[name,value]of Object.entries({x:p[0]+5,y:p[1]-5,fill:colors[k],stroke:'#111b21','stroke-width':3,'paint-order':'stroke','font-size':16,'font-weight':700,'data-ground-axis-label':labels[k]}))label.setAttribute(name,String(value));svg.append(label);}
       }
-      const p=project(origin);if(p){const label=document.createElementNS(svg.namespaceURI,'text');label.textContent=(options.locale==='en'?'Estimated ground · world XYZ':'地面估计 · 世界 XYZ')+(metres?(options.locale==='en'?' · grid 50 cm (model scale)':' · 每格 50 cm（模型标尺）'):'');for(const[name,value]of Object.entries({x:p[0]+7,y:p[1]+18,fill:'#bacdd3',stroke:'#111b21','stroke-width':3,'paint-order':'stroke','font-size':12}))label.setAttribute(name,String(value));svg.append(label);}
+      const p=project(origin);if(p){const label=document.createElementNS(svg.namespaceURI,'text');label.textContent=translate(language,metres?'viewer.groundScaled':'viewer.ground');for(const[name,value]of Object.entries({x:p[0]+7,y:p[1]+18,fill:'#bacdd3',stroke:'#111b21','stroke-width':3,'paint-order':'stroke','font-size':12}))label.setAttribute(name,String(value));svg.append(label);}
     }
     const measurement=layers.measurement;
     if(measurement?.revisionId===revisionId&&measurement.coordinateFrameId===frameId){
@@ -510,5 +512,5 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     catch{splat=null;emit('loadError',{code:'splat_load_failed'});}
     draw();
   }
-  return {setScene,setStreamMesh,capturePreview,setSplats,splatStats:()=>splat?.stats()||null,setSelection(value:any){selection={...value};draw();},setCamera,setLayers(value:any){layers={...layers,...value};if(!layers.pickingPoints)pickCursor=null;if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;if(sceneAssetsSignature&&taskKey(sceneRepresentationTasks(doc,frameId,layers))!==loadedLayerKey)void setScene({id:revisionId,document:doc}).catch(error=>emit('loadError',{code:error.message}));dimensions();draw();},previewOperations(ops:any[]){for(const op of ops)if(op.type==='setTransform')previewTransform(op.entityId,op.transform||op);draw();},clearPreview(){preview.clear();draw();},resize(){draw();},dispose(){if(disposed)return;disposed=true;splat?.dispose();streamedMeshes.clear();repaint.cancel();epoch++;photoEpoch++;abort.abort();photoAbort.abort();if(photoObjectURL)URL.revokeObjectURL(photoObjectURL);observer.disconnect();cleanups.forEach(fn=>fn());release();shaders.forEach(s=>gl.deleteShader(s));gl.deleteProgram(program);gl.getExtension('WEBGL_lose_context')?.loseContext();photo.removeAttribute('src');stage.remove();}};
+  return {setLocale(value:Language){language=value;canvas.setAttribute('aria-label',translate(language,'viewer.interactiveScene'));draw();},setScene,setStreamMesh,capturePreview,setSplats,splatStats:()=>splat?.stats()||null,setSelection(value:any){selection={...value};draw();},setCamera,setLayers(value:any){layers={...layers,...value};if(!layers.pickingPoints)pickCursor=null;if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;if(sceneAssetsSignature&&taskKey(sceneRepresentationTasks(doc,frameId,layers))!==loadedLayerKey)void setScene({id:revisionId,document:doc}).catch(error=>emit('loadError',{code:error.message}));dimensions();draw();},previewOperations(ops:any[]){for(const op of ops)if(op.type==='setTransform')previewTransform(op.entityId,op.transform||op);draw();},clearPreview(){preview.clear();draw();},resize(){draw();},dispose(){if(disposed)return;disposed=true;splat?.dispose();streamedMeshes.clear();repaint.cancel();epoch++;photoEpoch++;abort.abort();photoAbort.abort();if(photoObjectURL)URL.revokeObjectURL(photoObjectURL);observer.disconnect();cleanups.forEach(fn=>fn());release();shaders.forEach(s=>gl.deleteShader(s));gl.deleteProgram(program);gl.getExtension('WEBGL_lose_context')?.loseContext();photo.removeAttribute('src');stage.remove();}};
 }

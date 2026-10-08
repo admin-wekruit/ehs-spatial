@@ -1,6 +1,6 @@
 """A physical frame rotation must not alter dimensions or floor-relative angles."""
 import numpy as np
-from ehs_spatial.measurements import measure_observed_points, measurement_scale, _rotation_to_positive_z
+from argus.pipeline.measurements import measure_observed_points, measurement_scale, _rotation_to_positive_z
 
 
 def test_visible_dimensions_orientation_and_scale_provenance():

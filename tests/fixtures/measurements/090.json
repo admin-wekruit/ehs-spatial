@@ -1,0 +1,1185 @@
+{
+  "coordinateFrameId": "3c0cfc31-267a-53db-a2b3-e5338e6ade3c",
+  "scale": {
+    "nativeToMeters": 3.2371372068568487,
+    "status": "operator_anchored"
+  },
+  "ground": {
+    "normal": [
+      0.020622752183110337,
+      -0.9944689197976491,
+      -0.10298674501551684
+    ],
+    "offset": 0.45128035391602855,
+    "plane": [
+      0.020622752183110337,
+      -0.9944689197976491,
+      -0.10298674501551684,
+      0.45128035391602855
+    ]
+  },
+  "boxes": {
+    "9c5a1063-7e72-51e4-996f-40ed2182181b": {
+      "centerNative": [
+        -0.211192,
+        0.249835,
+        0.585414
+      ],
+      "axes": [
+        [
+          0.937342,
+          -0.016602,
+          0.348015
+        ],
+        [
+          -0.3478,
+          -0.103711,
+          0.931815
+        ],
+        [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.3478,
+          0.103711,
+          -0.931815
+        ],
+        "back": [
+          -0.3478,
+          -0.103711,
+          0.931815
+        ],
+        "left": [
+          -0.937342,
+          0.016602,
+          -0.348015
+        ],
+        "right": [
+          0.937342,
+          -0.016602,
+          0.348015
+        ],
+        "bottom": [
+          -0.020623,
+          0.994469,
+          0.102987
+        ],
+        "top": [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      },
+      "sizeM": [
+        0.1102,
+        0.2883,
+        0.8946
+      ],
+      "bottomM": 0.0,
+      "topM": 0.8946,
+      "floorContact": true,
+      "dims": {
+        "L": {
+          "valueM": 0.1102,
+          "sigmaCm": 0.22,
+          "confidence": "high"
+        },
+        "W": {
+          "valueM": 0.2883,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.8946,
+          "sigmaCm": 0.37,
+          "confidence": "medium"
+        },
+        "bottom": {
+          "valueM": 0.0,
+          "sigmaCm": 0.36,
+          "confidence": "medium"
+        }
+      },
+      "highlight": false,
+      "confidence": "medium",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "high"
+        },
+        "right": {
+          "photos": [
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "high"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "medium"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "high"
+        }
+      }
+    },
+    "9b760eac-397b-5663-a245-843f6b11c350": {
+      "centerNative": [
+        0.268634,
+        0.250377,
+        0.698291
+      ],
+      "axes": [
+        [
+          0.914046,
+          0.06049,
+          -0.401076
+        ],
+        [
+          0.405087,
+          -0.085863,
+          0.910237
+        ],
+        [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          -0.405087,
+          0.085863,
+          -0.910237
+        ],
+        "back": [
+          0.405087,
+          -0.085863,
+          0.910237
+        ],
+        "left": [
+          -0.914046,
+          -0.06049,
+          0.401076
+        ],
+        "right": [
+          0.914046,
+          0.06049,
+          -0.401076
+        ],
+        "bottom": [
+          -0.020623,
+          0.994469,
+          0.102987
+        ],
+        "top": [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      },
+      "sizeM": [
+        0.1111,
+        0.1075,
+        0.8799
+      ],
+      "bottomM": 0.0,
+      "topM": 0.8799,
+      "floorContact": true,
+      "dims": {
+        "L": {
+          "valueM": 0.1111,
+          "sigmaCm": 0.25,
+          "confidence": "high"
+        },
+        "W": {
+          "valueM": 0.1075,
+          "sigmaCm": 1.04,
+          "confidence": "high"
+        },
+        "H": {
+          "valueM": 0.8799,
+          "sigmaCm": 0.46,
+          "confidence": "medium"
+        },
+        "bottom": {
+          "valueM": 0.0,
+          "sigmaCm": 0.44,
+          "confidence": "medium"
+        }
+      },
+      "highlight": false,
+      "confidence": "medium",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "high"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "high"
+        },
+        "left": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "high"
+        },
+        "right": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "high"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "medium"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "high"
+        }
+      }
+    },
+    "f19145c1-e40d-5a5e-9e4e-1b8023d5aa6d": {
+      "centerNative": [
+        0.212016,
+        -0.099237,
+        1.233781
+      ],
+      "axes": [
+        [
+          0.971548,
+          -0.004376,
+          0.236801
+        ],
+        [
+          -0.235942,
+          -0.10494,
+          0.966084
+        ],
+        [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.235942,
+          0.10494,
+          -0.966084
+        ],
+        "back": [
+          -0.235942,
+          -0.10494,
+          0.966084
+        ],
+        "left": [
+          -0.971548,
+          0.004376,
+          -0.236801
+        ],
+        "right": [
+          0.971548,
+          -0.004376,
+          0.236801
+        ],
+        "bottom": [
+          -0.020623,
+          0.994469,
+          0.102987
+        ],
+        "top": [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      },
+      "sizeM": [
+        0.3069,
+        3.0402,
+        2.5972
+      ],
+      "bottomM": 0.0845,
+      "topM": 2.6818,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 0.3069,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 3.0402,
+          "sigmaCm": null,
+          "confidence": "unverified"
+        },
+        "H": {
+          "valueM": 2.5972,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.0845,
+          "sigmaCm": null,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            3
+          ],
+          "status": "seen",
+          "confidence": "unverified"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "unverified"
+        },
+        "left": {
+          "photos": [
+            1,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "unverified"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        }
+      }
+    },
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c": {
+      "centerNative": [
+        -0.336934,
+        -0.318218,
+        1.9578
+      ],
+      "axes": [
+        [
+          0.971011,
+          -0.004613,
+          0.23899
+        ],
+        [
+          -0.238143,
+          -0.10493,
+          0.965545
+        ],
+        [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.238143,
+          0.10493,
+          -0.965545
+        ],
+        "back": [
+          -0.238143,
+          -0.10493,
+          0.965545
+        ],
+        "left": [
+          -0.971011,
+          0.004613,
+          -0.23899
+        ],
+        "right": [
+          0.971011,
+          -0.004613,
+          0.23899
+        ],
+        "bottom": [
+          -0.020623,
+          0.994469,
+          0.102987
+        ],
+        "top": [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      },
+      "sizeM": [
+        1.0022,
+        1.2261,
+        1.7776
+      ],
+      "bottomM": 0.9213,
+      "topM": 2.6989,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 1.0022,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 1.2261,
+          "sigmaCm": null,
+          "confidence": "unverified"
+        },
+        "H": {
+          "valueM": 1.7776,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.9213,
+          "sigmaCm": null,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "unverified"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "unverified"
+        },
+        "left": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            2
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        }
+      }
+    },
+    "70bf794d-0e00-50a2-9871-abe4d5ad76cc": {
+      "centerNative": [
+        -0.502636,
+        -0.093165,
+        1.188851
+      ],
+      "axes": [
+        [
+          0.956407,
+          -0.010391,
+          0.291853
+        ],
+        [
+          -0.291309,
+          -0.104516,
+          0.950903
+        ],
+        [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.291309,
+          0.104516,
+          -0.950903
+        ],
+        "back": [
+          -0.291309,
+          -0.104516,
+          0.950903
+        ],
+        "left": [
+          -0.956407,
+          0.010391,
+          -0.291853
+        ],
+        "right": [
+          0.956407,
+          -0.010391,
+          0.291853
+        ],
+        "bottom": [
+          -0.020623,
+          0.994469,
+          0.102987
+        ],
+        "top": [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      },
+      "sizeM": [
+        0.3627,
+        3.3977,
+        2.6668
+      ],
+      "bottomM": -0.0025,
+      "topM": 2.6643,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 0.3627,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 3.3977,
+          "sigmaCm": null,
+          "confidence": "unverified"
+        },
+        "H": {
+          "valueM": 2.6668,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": -0.0025,
+          "sigmaCm": null,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "unverified"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "unverified"
+        },
+        "left": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        }
+      }
+    },
+    "a370512f-4db9-5231-bc7f-5851d1ce8fb9": {
+      "centerNative": [
+        -0.175062,
+        0.159516,
+        1.368437
+      ],
+      "axes": [
+        [
+          0.969552,
+          -0.005248,
+          0.244829
+        ],
+        [
+          -0.244015,
+          -0.1049,
+          0.964081
+        ],
+        [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.244015,
+          0.1049,
+          -0.964081
+        ],
+        "back": [
+          -0.244015,
+          -0.1049,
+          0.964081
+        ],
+        "left": [
+          -0.969552,
+          0.005248,
+          -0.244829
+        ],
+        "right": [
+          0.969552,
+          -0.005248,
+          0.244829
+        ],
+        "bottom": [
+          -0.020623,
+          0.994469,
+          0.102987
+        ],
+        "top": [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      },
+      "sizeM": [
+        1.2456,
+        1.6809,
+        0.919
+      ],
+      "bottomM": 0.0199,
+      "topM": 0.9389,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 1.2456,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 1.6809,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.919,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.0199,
+          "sigmaCm": null,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [
+            2
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        }
+      }
+    },
+    "ed56fff4-3362-59ae-a09a-bc54bf4515e2": {
+      "centerNative": [
+        -0.169539,
+        0.07152,
+        1.437184
+      ],
+      "axes": [
+        [
+          0.990481,
+          0.0063,
+          0.137505
+        ],
+        [
+          -0.136096,
+          -0.104842,
+          0.985132
+        ],
+        [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.136096,
+          0.104842,
+          -0.985132
+        ],
+        "back": [
+          -0.136096,
+          -0.104842,
+          0.985132
+        ],
+        "left": [
+          -0.990481,
+          -0.0063,
+          -0.137505
+        ],
+        "right": [
+          0.990481,
+          0.0063,
+          0.137505
+        ],
+        "bottom": [
+          -0.020623,
+          0.994469,
+          0.102987
+        ],
+        "top": [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      },
+      "sizeM": [
+        2.1504,
+        2.0629,
+        0.6359
+      ],
+      "bottomM": 0.4222,
+      "topM": 1.0581,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 2.1504,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "W": {
+          "valueM": 2.0629,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 0.6359,
+          "sigmaCm": null,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.4222,
+          "sigmaCm": null,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "left": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "right": {
+          "photos": [],
+          "status": "occluded",
+          "confidence": "low"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "low"
+        }
+      }
+    },
+    "da08d580-8968-52e0-8782-10e6f5e50988": {
+      "centerNative": [
+        -0.262609,
+        0.061307,
+        0.621948
+      ],
+      "axes": [
+        [
+          0.997791,
+          0.013966,
+          0.064941
+        ],
+        [
+          -0.063144,
+          -0.104099,
+          0.992561
+        ],
+        [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.063144,
+          0.104099,
+          -0.992561
+        ],
+        "back": [
+          -0.063144,
+          -0.104099,
+          0.992561
+        ],
+        "left": [
+          -0.997791,
+          -0.013966,
+          -0.064941
+        ],
+        "right": [
+          0.997791,
+          0.013966,
+          0.064941
+        ],
+        "bottom": [
+          -0.020623,
+          0.994469,
+          0.102987
+        ],
+        "top": [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      },
+      "sizeM": [
+        0.0584,
+        0.1211,
+        1.5786
+      ],
+      "bottomM": 0.2493,
+      "topM": 1.8279,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 0.0584,
+          "sigmaCm": 0.38,
+          "confidence": "medium"
+        },
+        "W": {
+          "valueM": 0.1211,
+          "sigmaCm": 0.63,
+          "confidence": "low"
+        },
+        "H": {
+          "valueM": 1.5786,
+          "sigmaCm": 0.42,
+          "confidence": "medium"
+        },
+        "bottom": {
+          "valueM": 0.2493,
+          "sigmaCm": 0.32,
+          "confidence": "medium"
+        }
+      },
+      "highlight": false,
+      "confidence": "medium",
+      "faces": {
+        "front": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "unverified"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "medium"
+        },
+        "left": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "medium"
+        },
+        "right": {
+          "photos": [
+            1,
+            2,
+            3
+          ],
+          "status": "seen",
+          "confidence": "medium"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "medium"
+        },
+        "top": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "medium"
+        }
+      }
+    },
+    "e17c9fdc-e0bc-5df2-9626-73756bf2995c": {
+      "centerNative": [
+        0.263551,
+        0.061198,
+        0.758318
+      ],
+      "axes": [
+        [
+          0.970431,
+          -0.004868,
+          0.241331
+        ],
+        [
+          -0.240497,
+          -0.104918,
+          0.964963
+        ],
+        [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      ],
+      "faceNormals": {
+        "front": [
+          0.240497,
+          0.104918,
+          -0.964963
+        ],
+        "back": [
+          -0.240497,
+          -0.104918,
+          0.964963
+        ],
+        "left": [
+          -0.970431,
+          0.004868,
+          -0.241331
+        ],
+        "right": [
+          0.970431,
+          -0.004868,
+          0.241331
+        ],
+        "bottom": [
+          -0.020623,
+          0.994469,
+          0.102987
+        ],
+        "top": [
+          0.020623,
+          -0.994469,
+          -0.102987
+        ]
+      },
+      "sizeM": [
+        0.0682,
+        0.0678,
+        1.5848
+      ],
+      "bottomM": 0.2362,
+      "topM": 1.821,
+      "floorContact": false,
+      "dims": {
+        "L": {
+          "valueM": 0.0682,
+          "sigmaCm": 0.27,
+          "confidence": "medium"
+        },
+        "W": {
+          "valueM": 0.0678,
+          "sigmaCm": null,
+          "confidence": "unverified"
+        },
+        "H": {
+          "valueM": 1.5848,
+          "sigmaCm": 0.51,
+          "confidence": "low"
+        },
+        "bottom": {
+          "valueM": 0.2362,
+          "sigmaCm": 0.41,
+          "confidence": "low"
+        }
+      },
+      "highlight": true,
+      "confidence": "low",
+      "faces": {
+        "front": {
+          "photos": [
+            2
+          ],
+          "status": "seen",
+          "confidence": "unverified"
+        },
+        "back": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "unverified"
+        },
+        "left": {
+          "photos": [
+            2
+          ],
+          "status": "seen",
+          "confidence": "medium"
+        },
+        "right": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "medium"
+        },
+        "bottom": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "low"
+        },
+        "top": {
+          "photos": [],
+          "status": "not_facing",
+          "confidence": "medium"
+        }
+      }
+    }
+  },
+  "confidence": {
+    "9c5a1063-7e72-51e4-996f-40ed2182181b": "medium",
+    "9b760eac-397b-5663-a245-843f6b11c350": "medium",
+    "f19145c1-e40d-5a5e-9e4e-1b8023d5aa6d": "low",
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c": "low",
+    "70bf794d-0e00-50a2-9871-abe4d5ad76cc": "low",
+    "a370512f-4db9-5231-bc7f-5851d1ce8fb9": "low",
+    "ed56fff4-3362-59ae-a09a-bc54bf4515e2": "low",
+    "da08d580-8968-52e0-8782-10e6f5e50988": "medium",
+    "e17c9fdc-e0bc-5df2-9626-73756bf2995c": "low"
+  }
+}

@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ehs_spatial.providers import geometry_mvs, sam3d, service_client
+from argus.providers import geometry_mvs, sam3d, service_client
 
 INFO = {"model_id": "fake/model", "model_revision": "abc", "code_revision": "def", "weights_sha256": {}, "licence": "test",
         "code_sha": "0", "seed_policy": "seed in request"}
@@ -339,135 +339,48 @@ def test_frames_for_reads_a_run_manifest(tmp_path):
     assert [f["frame_id"] for f in out] == ["frame_0001"] and out[0]["alpha"].dtype == bool and out[0]["canonical_png"][:4] == b"\x89PNG"
 
 
-# ---------------------------------------------------------------- local / modal backends: the plumbing, with fakes
-FAKE_RUN_STAGE = '''
-import importlib.util, sys
-CALLS = []
-def use_stub(): CALLS.append("use_stub")
-def pin_torch_hub(): CALLS.append("pin_torch_hub")
-def link_weights(cache): CALLS.append(("link_weights", str(cache))); return {}
-def load_app(path):
-    CALLS.append(("load_app", path.name))
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    module = importlib.util.module_from_spec(spec); sys.modules[path.stem] = module; spec.loader.exec_module(module)
-    return module
-'''
-FAKE_SAM3D_RESEARCH = '''
-import numpy as np
-LOADS = []
-class _Method:
-    def __init__(self, f): self.f = f
-    def remote(self, *a, **k): return self.f(*a, **k)
-class SAM3DObjects:
-    def __init__(self): LOADS.append(1)
-    @property
-    def run(self): return _Method(self._run)
-    def _run(self, rgb, mask, pointmap, seed):
-        assert rgb.dtype == np.uint8 and mask.dtype == bool and pointmap.dtype == np.float32
-        return {"vertices": np.zeros((3, 3), np.float32), "faces": np.zeros((1, 3), np.uint32), "colors": np.zeros((3, 3), np.uint8),
-                "objectToCamera": np.eye(4) * seed, "pins": {"model": "facebook/sam-3d-objects", "modelRevision": "m", "codeRevision": "c"},
-                "gpu": "FAKE-GPU", "seconds": 1.5}
-'''
-FAKE_FAIR = '''
-import contextlib, os
-from pathlib import Path
-SCR = Path(os.environ["SWAP_SCRATCH"]); X0, XW = 63, 392
-CALLS = []
-def frames_for(cell): raise AssertionError("the provider must point frames_for at the request")
-def main(stage, cells="090,030", only=""):
-    fr = frames_for(cells); CALLS.append((stage, cells, sorted(fr["padded"])))
-    for c in cells.split(","):
-        d = SCR / f"checks/da3fair-geom/{c}-da3-base-padded/geometry"; (d / "frames").mkdir(parents=True); (d / "candidate_manifest.json").write_text("{}")
-class App:
-    def __init__(self): self.registered_entrypoints = {"main": main}; self.runs = 0
-    def run(self): self.runs += 1; return contextlib.nullcontext(self)
-app = App()
-'''
-FAKE_GEOMETRY_CLEAN_AB = '''
-import contextlib, io
-from pathlib import Path
-import fair_ab_modal as fam
-from PIL import Image
-SCR = fam.SCR; GPUD, GEOM = SCR / "checks/clean-gpu", SCR / "checks/clean-geom"
-INIT = {"da3-base": lambda c: SCR / f"checks/da3fair-geom/{c}-da3-base-padded/geometry"}
-CALLS = []
-def main(stage, cells="090,030", bases="moge,da3-base,mapanything,pi3x", only="", vggt=False, ba="numpy"):
-    fr = fam.frames_for(cells); CALLS.append((stage, cells, bases, only, vggt))
-    for c in cells.split(","):
-        if stage == "infer":
-            (GPUD / c).mkdir(parents=True); (GPUD / c / "roma-0-1.npz").write_bytes(b"roma")
-            for name, data in fr["unpadded"].items():
-                (GPUD / c / f"moge-{Path(name).stem}.npz").write_bytes(repr(Image.open(io.BytesIO(data)).size).encode())
-        if stage == "refine":
-            assert INIT["da3-base"](c).exists()
-            for name in only.split(","):
-                d = GEOM / name / "geometry"; (d / "frames/frame_0001").mkdir(parents=True); (d / "candidate_manifest.json").write_text("{}")
-        if stage == "dense-infer":
-            (GPUD / c / "dense-0-1.npz").write_bytes(b"dense")
-class App:
-    def __init__(self): self.registered_entrypoints = {"main": main}; self.runs = 0
-    def run(self): self.runs += 1; return contextlib.nullcontext(self)
-app = App()
-'''
+FAKE_SAM3D_RESEARCH = '\nimport numpy as np\nLOADS = []\nclass _Method:\n    def __init__(self, f): self.f = f\n    def remote(self, *a, **k): return self.f(*a, **k)\nclass SAM3DObjects:\n    def __init__(self): LOADS.append(1)\n    @property\n    def run(self): return _Method(self._run)\n    def _run(self, rgb, mask, pointmap, seed):\n        assert rgb.dtype == np.uint8 and mask.dtype == bool and pointmap.dtype == np.float32\n        return {"vertices": np.zeros((3, 3), np.float32), "faces": np.zeros((1, 3), np.uint32), "colors": np.zeros((3, 3), np.uint8),\n                "objectToCamera": np.eye(4) * seed, "pins": {"model": "facebook/sam-3d-objects", "modelRevision": "m", "codeRevision": "c"},\n                "gpu": "FAKE-GPU", "seconds": 1.5}\n'
 
+FAKE_FAIR = '\nimport contextlib, os\nfrom pathlib import Path\nSCR = Path(os.environ["PANOPTES_DATA_ROOT"]); X0, XW = 63, 392\nCALLS = []\ndef frames_for(cell): raise AssertionError("the provider must point frames_for at the request")\ndef main(stage, cells="090,030", only=""):\n    fr = frames_for(cells); CALLS.append((stage, cells, sorted(fr["padded"])))\n    for c in cells.split(","):\n        d = SCR / f"checks/da3fair-geom/{c}-da3-base-padded/geometry"; (d / "frames").mkdir(parents=True); (d / "candidate_manifest.json").write_text("{}")\nclass App:\n    def __init__(self): self.registered_entrypoints = {"main": main}; self.runs = 0\n    def run(self): self.runs += 1; return contextlib.nullcontext(self)\napp = App()\n'
 
-@pytest.fixture
-def fake_kit(tmp_path, monkeypatch):
-    """A fake ehs-spatial checkout (run_stage.py, modal_apps) and fake swap notes; sys.modules / sys.path restored after."""
-    kit, notes = tmp_path / "kit", tmp_path / "notes"
-    (kit / "scripts/onprem").mkdir(parents=True)
-    (kit / "modal_apps").mkdir()
-    (notes / "geometry-licence-ab-fair-2026-10-05").mkdir(parents=True)
-    (kit / "scripts/onprem/run_stage.py").write_text(FAKE_RUN_STAGE)
-    (kit / "modal_apps/sam3d_research.py").write_text(FAKE_SAM3D_RESEARCH)
-    (kit / "modal_apps/geometry_clean_ab.py").write_text(FAKE_GEOMETRY_CLEAN_AB)
-    (notes / "geometry-licence-ab-fair-2026-10-05/fair_ab_modal.py").write_text(FAKE_FAIR)
-    monkeypatch.setenv("PANOPTES_WORKCELL", str(kit))
-    monkeypatch.setenv("SWAP_NOTES", str(notes))
-    monkeypatch.setenv("WEIGHTS", str(tmp_path / "weights"))
-    monkeypatch.setattr(sys, "path", list(sys.path))
-    before = dict(sys.modules)   # the fakes may REPLACE real modules another test imported (run_stage, sam3d_research, ...): restore those too
+FAKE_GEOMETRY_CLEAN_AB = '\nimport contextlib, io\nfrom pathlib import Path\nfrom PIL import Image\nSCR = fam.SCR; GPUD, GEOM = SCR / "checks/clean-gpu", SCR / "checks/clean-geom"\nINIT = {"da3-base": lambda c: SCR / f"checks/da3fair-geom/{c}-da3-base-padded/geometry"}\nCALLS = []\ndef main(stage, cells="090,030", bases="da3-base", only="", vggt=False, ba="numpy"):\n    fr = fam.frames_for(cells); CALLS.append((stage, cells, bases, only, vggt))\n    for c in cells.split(","):\n        if stage == "infer":\n            (GPUD / c).mkdir(parents=True); (GPUD / c / "roma-0-1.npz").write_bytes(b"roma")\n            for name, data in fr["unpadded"].items():\n                (GPUD / c / f"moge-{Path(name).stem}.npz").write_bytes(repr(Image.open(io.BytesIO(data)).size).encode())\n        if stage == "refine":\n            assert INIT["da3-base"](c).exists()\n            for name in only.split(","):\n                d = GEOM / name / "geometry"; (d / "frames/frame_0001").mkdir(parents=True); (d / "candidate_manifest.json").write_text("{}")\n        if stage == "dense-infer":\n            (GPUD / c / "dense-0-1.npz").write_bytes(b"dense")\nclass App:\n    def __init__(self): self.registered_entrypoints = {"main": main}; self.runs = 0\n    def run(self): self.runs += 1; return contextlib.nullcontext(self)\napp = App()\n'
+
+def test_modal_sam3d_uses_canonical_source_and_keeps_one_runner(monkeypatch):
+    from types import ModuleType
+    import argus.providers as providers
+    module = ModuleType('argus.providers.sam3d_modal')
+    exec(FAKE_SAM3D_RESEARCH, module.__dict__)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(providers, 'sam3d_modal', module, raising=False)
+    monkeypatch.setenv('SAM3D_BACKEND', 'modal')
     sam3d._runner.cache_clear()
-    yield kit
-    fakes = ('run_stage', 'sam3d_research', 'geometry_clean_ab', 'fair_ab_modal', 'completion_ab', 'modal')
-    for name in [k for k in sys.modules if k not in before and (k in fakes or k.startswith('modal.'))]:
-        sys.modules.pop(name, None)  # only the fakes: third-party modules first imported here stay (C extensions load once per process)
-    sys.modules.update(before)   # every module object exactly as it was (the fakes replace run_stage, sam3d_research, modal, ...)
-    sam3d._runner.cache_clear()
+    try:
+        out = sam3d.generate(*inputs(seed=5))
+        assert out['object_to_camera_p3d'][0, 0] == 5 and out['model_info']['backend'] == 'modal'
+        sam3d.generate(*inputs(seed=6))
+        assert module.LOADS == [1]
+    finally:
+        sam3d._runner.cache_clear()
 
+def test_modal_geometry_runs_selected_original_stages(monkeypatch, tmp_path):
+    from types import ModuleType, SimpleNamespace
+    monkeypatch.setenv('PANOPTES_DATA_ROOT', str(tmp_path))
+    monkeypatch.setenv('GEOMETRY_MVS_BACKEND', 'modal')
+    fam = ModuleType('argus.pipeline.field_evaluator');exec(FAKE_FAIR, fam.__dict__)
+    gc = ModuleType('argus.pipeline.geometry_clean_ab');gc.fam = fam;exec(FAKE_GEOMETRY_CLEAN_AB, gc.__dict__)
+    modules = {fam.__name__: fam, gc.__name__: gc}
+    monkeypatch.setattr(geometry_mvs, 'importlib', SimpleNamespace(import_module=modules.__getitem__, reload=lambda module:module))
+    result = geometry_mvs.run('090', frames(size=518), dest=tmp_path)
+    assert result == tmp_path and all(p.is_dir() for p in geometry_mvs.outputs('090', result))
+    assert fam.CALLS == [('infer', '090', ['frame_0001.png', 'frame_0002.png'])]
+    assert [(stage, cell, bases, only) for stage, cell, bases, only, _ in gc.CALLS] == [
+        ('infer', '090', 'da3-base', ''), ('refine', '090', 'da3-base', '090-da3-base-ba-f'), ('dense-infer', '090', 'da3-base', '')]
+    assert (result / 'checks/clean-gpu/090/moge-frame_0001.npz').read_bytes() == b'(392, 518)'
+    with pytest.raises(Exception, match='function bodies only know'):
+        geometry_mvs.run('090', frames(size=518), {'roma': 'indoor'}, dest=tmp_path)
 
-def test_sam3d_local_backend_runs_the_class_in_process(monkeypatch, fake_kit):
-    monkeypatch.setenv("SAM3D_BACKEND", "local")
-    out = sam3d.generate(*inputs(seed=3))
-    assert out["object_to_camera_p3d"][2, 2] == 3 and out["gpu"] == "FAKE-GPU" and out["seconds"] == 1.5
-    assert out["model_info"] == {"model_id": "facebook/sam-3d-objects", "model_revision": "m", "code_revision": "c", "backend": "local"}
-    assert set(out) == {"vertices", "faces", "colors", "object_to_camera_p3d", "pins", "seconds", "gpu", "model_info"}
-    run_stage = sys.modules["run_stage"]
-    assert run_stage.CALLS == ["use_stub", "pin_torch_hub", ("link_weights", str(fake_kit.parent / "weights")), ("load_app", "sam3d_research.py")]
-    sam3d.generate(*inputs(seed=4))
-    assert sys.modules["sam3d_research"].LOADS == [1]  # the weights load once per process
-
-
-def test_sam3d_modal_backend_uses_the_research_module(monkeypatch, fake_kit):
-    monkeypatch.setenv("SAM3D_BACKEND", "modal")
-    out = sam3d.generate(*inputs(seed=5))
-    assert out["object_to_camera_p3d"][0, 0] == 5 and out["model_info"]["backend"] == "modal"
-    assert "run_stage" not in sys.modules
-
-
-@pytest.mark.parametrize("backend", ["local", "modal"])
-def test_geometry_local_and_modal_backends_run_the_stage_bodies(monkeypatch, fake_kit, tmp_path, backend):
-    monkeypatch.setenv("GEOMETRY_MVS_BACKEND", backend)
-    dest = tmp_path / f"scratch-{backend}"
-    out = geometry_mvs.run("090", frames(size=518), dest=dest)
-    assert out == dest and all(p.is_dir() for p in geometry_mvs.outputs("090", dest))
-    gc, fam = sys.modules["geometry_clean_ab"], sys.modules["fair_ab_modal"]
-    assert fam.CALLS == [("infer", "090", ["frame_0001.png", "frame_0002.png"])]  # the DA3-BASE start was missing
-    assert gc.CALLS == [("infer", "090", "moge,da3-base,mapanything,pi3x", "", False),
-                        ("refine", "090", "da3-base", "090-da3-base-ba-f", False),
-                        ("dense-infer", "090", "moge,da3-base,mapanything,pi3x", "", False)]
-    assert (dest / "checks/clean-gpu/090/moge-frame_0001.npz").read_bytes() == b"(392, 518)"  # the content crop of the request's frame
-    assert gc.app.runs == 1 and fam.app.runs == 1
-    assert ("run_stage" in sys.modules) == (backend == "local")
-    with pytest.raises(Exception, match="function bodies only know"):
-        geometry_mvs.run("090", frames(size=518), {"roma": "indoor"}, dest=tmp_path / "other")
+@pytest.mark.parametrize('provider,key,args', [(sam3d, 'SAM3D_BACKEND', inputs()), (geometry_mvs, 'GEOMETRY_MVS_BACKEND', ('090', frames()))])
+def test_local_emulation_is_not_a_delivery_backend(monkeypatch, provider, key, args):
+    monkeypatch.setenv(key, 'local')
+    with pytest.raises(ValueError, match='local'):
+        provider.generate(*args) if provider is sam3d else provider.run(*args)

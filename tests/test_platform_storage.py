@@ -7,8 +7,8 @@ from botocore.response import StreamingBody
 from botocore.stub import Stubber
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError
-from ehs_spatial.platform.storage import S3BlobStore
+from argus.platform.contracts import PlatformError
+from argus.platform.storage import S3BlobStore
 
 
 def test_content_addressed_s3_subset_reuse_integrity_and_access_errors(monkeypatch):

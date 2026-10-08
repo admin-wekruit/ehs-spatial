@@ -12,10 +12,11 @@ let language='en';
 function load(filename){
   if(cache.has(filename))return cache.get(filename).exports;
   const module={exports:{}};cache.set(filename,module);
-  const code=ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+  if (filename.endsWith('.json')) { module.exports = JSON.parse(fs.readFileSync(filename, 'utf8')); return module.exports; }
+  const code=ts.transpileModule(fs.readFileSync(filename,'utf8'),{fileName:filename,compilerOptions:{esModuleInterop:true,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   function dependency(name){
     if(name.endsWith('.css'))return {};
-    if(name==='./i18n')return {useI18n:()=>({language,t:key=>key})};
+    if(name==='./i18n') { const messages = load(path.join(root, 'src/translate.ts')); return {...messages, useI18n:()=>({language,t:(key,params)=>messages.translate(language,key,params)})}; }
     if(name==='./api')return {request(){throw Error('sidebar must not issue an API/model request');}};
     if(name==='./App')return {ErrorNotice:()=>null};
     if(name==='./WorkcellReport')return {ReportDownload:()=>null};
@@ -57,7 +58,7 @@ assert.doesNotMatch(render('a',{revision:{...revision,id:'different'}}),/A curre
 const unknown={...publication,snapshot:{...snapshot,evaluations:[evaluation('unknown','current',[{...finding('a','Unknown applicability'),machineResult:'PASS',applicability:'unknown'}])]}};
 assert.match(render('a',{publication:unknown}),/rr-applicability_unknown/);assert.doesNotMatch(render('a',{publication:unknown}),/rr-pass/);
 assert.equal(JSON.stringify({revision,publication}),before,'selection and filtering leave the saved snapshot unchanged');
-language='zh';assert.match(render(),/此对象的判定|仍需哪些证据/);
+language='zh';assert.match(render(),/\u6b64\u5bf9\u8c61\u7684\u5224\u5b9a|\u4ecd\u9700\u54ea\u4e9b\u8bc1\u636e/);
 if(process.env.PANOPTES_TEST_PUBLICATION_URL){
   const response=await fetch(process.env.PANOPTES_TEST_PUBLICATION_URL);assert.equal(response.status,200);const actual=await response.json();
   const historical=actual.snapshot.revision.document.reportEvidence.historical;
@@ -66,7 +67,7 @@ if(process.env.PANOPTES_TEST_PUBLICATION_URL){
   assert.equal(result.total,9);assert.equal(result.linked.length,0,'CAD inventory association alone does not identify the historical safety entity IDs');
   console.log(`Real snapshot ${actual.id}: 9 historical rules, no invented object-finding links.`);
 }
-console.log('Object findings checks passed: A/B and project/revision isolation, fixed snapshot priority, unknown applicability, explicit same-run inventory links, no name matching, no requests, immutable evidence, zh/en.');
+console.log('Object findings checks passed: A/B and project/revision isolation, fixed snapshot priority, unknown applicability, explicit same-run inventory links, no name matching, no requests, immutable evidence, en/zh/nl.');
 
 const splitRevision=structuredClone(revision);
 splitRevision.document.entities=[{id:'a',observationRefs:['oa']},{id:'b',observationRefs:['ob']}];
@@ -75,3 +76,12 @@ splitRevision.document.identityDecisions=[{id:'split',decision:'different',entit
 splitRevision.document.reportEvidence.historical.inventory=[{inventoryIndex:7,entityIds:['a','b']}];
 splitRevision.document.reportEvidence.historical.findings=[{id:'aggregate',facts:[{inventoryIndex:7},{entityId:'retired-parent'}]}];
 for(const child of ['a','b']) assert.equal(historicalObjectFindings(splitRevision,child).linked.length,0,'An unscoped historical source conclusion cannot be attached to both split children');
+
+// The same saved evidence renders in each locale, then returns to English.
+for (const locale of ['en', 'zh', 'nl', 'en']) {
+  language = locale;
+  const html = render();
+  const {translate} = load(path.join(root, 'src/translate.ts'));
+  assert.ok(html.includes(translate(locale, 'objectFindings.title')), `localized heading in ${locale}`);
+  if (locale !== 'zh') assert.doesNotMatch(html, /[\u3400-\u9fff]/);
+}

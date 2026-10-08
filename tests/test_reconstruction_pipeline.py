@@ -7,17 +7,17 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError, digest
-from ehs_spatial.platform.recgen import RECGEN_PINS
-from ehs_spatial.platform.reconstruction import run_research_job
-from ehs_spatial.platform.reconstruction_pipeline import run_reconstruction_pipeline
+from argus.platform.contracts import PlatformError, digest
+from argus.platform.recgen import RECGEN_PINS
+from argus.platform.reconstruction import run_research_job
+from argus.platform.reconstruction_pipeline import run_reconstruction_pipeline
 from test_platform_reconstruction import provider
 from test_platform_research_inputs import source
 
 
 @pytest.mark.parametrize('status', ['succeeded', 'incomplete', 'failed', 'outcome_unknown'])
 def test_final_result_preserves_ancestor_analysis_even_when_all_models_are_accepted(status):
-    from ehs_spatial.platform.reconstruction_pipeline import _result
+    from argus.platform.reconstruction_pipeline import _result
     analysis = {'jobId': 'analysis-job', 'baseRevisionId': 'capture-revision', 'result': {
         'status': status, 'checkpointAssetId': 'analysis-checkpoint',
         'stages': [{'stage': 'discovery', 'assetId': 'source-evidence'}],
@@ -64,7 +64,7 @@ def researched(pipeline, monkeypatch):
                 'colors': np.ones((4, 4)), 'objectToCamera': np.eye(4),
                 'officialPosedVertices': vertices.copy(), 'pins': RECGEN_PINS,
                 'telemetry': {'actualCostUsd': 0}, 'providerRequestId': 'fake-no-network'}
-    monkeypatch.setitem(sys.modules, 'ehs_spatial.platform.recgen_transport', SimpleNamespace(invoke=invoke))
+    monkeypatch.setitem(sys.modules, 'argus.platform.recgen_transport', SimpleNamespace(invoke=invoke))
     repo.paid_budget = 10
     research['result'] = run_research_job(repo, blobs, research)
     research['status'] = research['result']['status']
@@ -146,7 +146,7 @@ def test_attach_unknown_research_outcome_never_continues(pipeline, monkeypatch):
 
 
 def test_attach_initializes_only_configured_model_review_factory(pipeline, monkeypatch):
-    from ehs_spatial.platform import reconstruction_pipeline
+    from argus.platform import reconstruction_pipeline
     repo, blobs, job, entity = pipeline
     review_config = {'provider': 'configured-reviewer'}
     job['config']['providerManifest']['model_review'] = review_config
@@ -216,7 +216,7 @@ def test_unknown_review_outcome_keeps_candidate_and_stops_next_generation(pipeli
 
 
 def test_unavailable_quality_geometry_keeps_output_reference_and_next_eligible_target(pipeline, monkeypatch):
-    from ehs_spatial.platform import reconstruction_pipeline
+    from argus.platform import reconstruction_pipeline
     repo, blobs, job, entity = pipeline
     another = {**deepcopy(entity), 'id': str(uuid4()), 'observationRefs': []}
     repo.document['entities'].append(another)

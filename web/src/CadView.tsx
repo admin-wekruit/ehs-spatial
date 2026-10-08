@@ -3,7 +3,6 @@ import { cameraPath, planHits, planShapes, planPolygonPath } from "./core";
 import { useI18n } from "./i18n";
 import { isReferenceSurface } from "./scene-semantics";
 import type { SceneDocument } from "./types";
-import { cadViewMessages } from "./cad-view-messages";
 import type { SceneMeasurement, MeasureRegion } from "./SpatialMeasurements";
 import "./cad-view.css";
 
@@ -90,8 +89,7 @@ export function CadView({ document, selectedId, onSelect, geometryOptions, measu
   onSelect: (id: string) => void;
   geometryOptions?: Parameters<typeof planShapes>[1];
 }) {
-  const { language } = useI18n();
-  const t = (key: string) => cadViewMessages[key]?.[language === "zh" ? 0 : 1] || key;
+  const { t: T } = useI18n(), t = (key: string) => T("cad." + key);  // this view's ids live under cad.*
   const stage = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null), picker = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<CadSize>({ width: 600, height: 400 });
   const [camera, setCamera] = useState<CadCamera | null>(null), [candidates, setCandidates] = useState<string[]>([]);
@@ -180,7 +178,7 @@ export function CadView({ document, selectedId, onSelect, geometryOptions, measu
         <button type="button" aria-label={t("zoomOut")} onClick={() => zoom(1 / 1.4)}>−</button>
         <button type="button" aria-label={t("zoomIn")} onClick={() => zoom(1.4)}>＋</button></div>
     </div>
-    {drawingRegion && <div className="cad-measure-guide" role="status">{language === "zh" ? "圈定区域：点击两个对角，或方向键移动十字光标后按 Enter；Esc 取消。" : "Draw region: click two opposite corners, or use arrow keys and Enter. Esc cancels."}</div>}
+    {drawingRegion && <div className="cad-measure-guide" role="status">{t("drawGuide")}</div>}
     <div className="cad-stage" ref={stage}>
       {!shapes.length ? <p className="cad-empty" role="status">{t("empty")}</p> : <svg ref={svg} role="group" tabIndex={0} viewBox={`0 0 ${size.width} ${size.height}`} aria-label={t("title")} data-frame-id={shapes[0]?.coordinateFrameId} data-cad-shapes={shapes.length}
         onKeyDown={event => {

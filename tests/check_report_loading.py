@@ -8,8 +8,8 @@ from uuid import UUID
 
 from check_publication_site import fixture
 from fastapi.testclient import TestClient
-from ehs_spatial.platform.api import create_app as create_api
-from ehs_spatial.platform.publication_site import compile_catalog, create_app
+from argus.platform.api import create_app as create_api
+from argus.platform.publication_site import compile_catalog, create_app
 
 
 with tempfile.TemporaryDirectory() as temporary:
@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory() as temporary:
     (directory / "bundle.json").write_text(json.dumps(bundle))
     compile_catalog(catalog, prepared)
     # Serving must not scan/parse history or rehash the catalog at startup.
-    with patch("ehs_spatial.platform.publication_site.read_catalog", side_effect=AssertionError("Runtime catalog scan")):
+    with patch("argus.platform.publication_site.read_catalog", side_effect=AssertionError("Runtime catalog scan")):
         app = create_app(catalog, prepared_dir=prepared, allowed_origins=["https://report.example"])
     with TestClient(app) as client:
         for encoding in ("gzip", "identity", "gzip;q=0"):

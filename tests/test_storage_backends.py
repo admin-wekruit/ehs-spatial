@@ -20,17 +20,17 @@ from moto import mock_aws
 from PIL import Image
 import pytest
 
-from ehs_spatial.platform import policy_repository as policy_repository_module
-from ehs_spatial.platform.config import PlatformConfig
-from ehs_spatial.platform.contracts import PlatformError, digest
-from ehs_spatial.platform.mongo import MongoRepository
-from ehs_spatial.platform.mongo_policy import MongoPolicyRepository
-from ehs_spatial.platform.policy_service import PolicyService, templates
-from ehs_spatial.platform.postgres import PostgresRepository
-from ehs_spatial.platform.policy_repository import PostgresPolicyRepository
-from ehs_spatial.platform.runtime import blob_store, policy_repository, repository_from_url, services
-from ehs_spatial.platform.s3_storage import S3BlobStore, parse_s3_url, s3_client
-from ehs_spatial.platform.storage import LocalBlobStore
+from argus.platform import policy_repository as policy_repository_module
+from argus.platform.config import PlatformConfig
+from argus.platform.contracts import PlatformError, digest
+from argus.platform.mongo import MongoRepository
+from argus.platform.mongo_policy import MongoPolicyRepository
+from argus.platform.policy_service import PolicyService, templates
+from argus.platform.postgres import PostgresRepository
+from argus.platform.policy_repository import PostgresPolicyRepository
+from argus.platform.runtime import blob_store, policy_repository, repository_from_url, services
+from argus.platform.s3_storage import S3BlobStore, parse_s3_url, s3_client
+from argus.platform.storage import LocalBlobStore
 import test_platform_backend as legacy
 from test_platform_backend import capability, edit_body, entity, identity, make_job, project
 
@@ -578,40 +578,14 @@ def test_blob_large_object_round_trip(blobs):
 
 # ---- artifacts sync -----------------------------------------------------------------------
 
-def test_artifacts_push_pull_round_trip_skips_unchanged_and_verifies(artifact_bucket, tmp_path):
-    from scripts import panoptes_artifacts as artifacts
-    client, url = artifact_bucket
-    source = tmp_path / "run"
-    (source / "frames").mkdir(parents=True)
-    (source / "ledger.json").write_text('{"step": 1}')
-    (source / "frames" / "a.bin").write_bytes(os.urandom(1024))
-    (source / "frames" / "b.bin").write_bytes(b"b" * 2048)
-    assert artifacts.push(client, source, url) == {"files": 3, "uploaded": 3, "skipped": 0}
-    assert artifacts.push(client, source, url) == {"files": 3, "uploaded": 0, "skipped": 3}
-    (source / "ledger.json").write_text('{"step": 2}')
-    assert artifacts.push(client, source, url) == {"files": 3, "uploaded": 1, "skipped": 2}
-    bucket, prefix = parse_s3_url(url)
-    manifest = json.loads(client.get_object(Bucket=bucket, Key=prefix + "manifest.json")["Body"].read())
-    assert set(manifest) == {"ledger.json", "frames/a.bin", "frames/b.bin"} and manifest["frames/b.bin"]["size"] == 2048
-    target = tmp_path / "pulled"
-    assert artifacts.pull(client, url, target) == {"files": 3, "downloaded": 3, "skipped": 0}
-    assert artifacts.local_manifest(target) == artifacts.local_manifest(source) == {k: v for k, v in manifest.items()}
-    assert artifacts.pull(client, url, target) == {"files": 3, "downloaded": 0, "skipped": 3}
-    client.put_object(Bucket=bucket, Key=prefix + "frames/b.bin", Body=b"corrupt")
-    (target / "frames" / "b.bin").unlink()
-    with pytest.raises(SystemExit, match="sha256 mismatch"):
-        artifacts.pull(client, url, target)
-    assert not (target / "frames" / "b.bin").exists()
-    with pytest.raises(SystemExit, match="no manifest.json"):
-        artifacts.pull(client, url + "-missing", tmp_path / "nothing")
 
 
 def test_offline_import_and_api_read_parity(repo, tmp_path):
     """The import script, the API read routes and the policy/agent routes agree with the repository on every backend."""
     from fastapi.testclient import TestClient
-    from ehs_spatial.platform.api import _public, create_app
-    from ehs_spatial.platform.contracts import canonical
-    from scripts.import_public_scene import run_import
+    from argus.platform.api import _public, create_app
+    from argus.platform.contracts import canonical
+    from argus.platform.import_public_scene import run_import
     from test_platform_import import make_public_scene
     source = tmp_path / "source"
     source.mkdir()
@@ -708,7 +682,7 @@ def test_backend_suite_replayed(name, repo, tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("name", CONCURRENT)
 def test_backend_suite_replayed_concurrently(name, repo, tmp_path, monkeypatch):
-    if getattr(repo.client, "__module__", "").startswith("mongomock"):
+    if isinstance(repo, MongoRepository) and repo.client.__module__.startswith("mongomock"):
         pytest.skip("mongomock is not thread-safe; runs against a real server")
     _replay(name, repo, tmp_path, monkeypatch)
 

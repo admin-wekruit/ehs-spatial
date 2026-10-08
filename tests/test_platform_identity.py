@@ -4,9 +4,9 @@ from uuid import uuid4
 
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError, SceneDocument, digest, empty_document, validate_document
-from ehs_spatial.platform.identity import migrate_document, resolve_entity_id
-from ehs_spatial.platform.repository import apply_operations
+from argus.platform.contracts import PlatformError, SceneDocument, digest, empty_document, validate_document
+from argus.platform.identity import migrate_document, resolve_entity_id
+from argus.platform.repository import apply_operations
 
 
 BASE = str(uuid4())
@@ -72,7 +72,7 @@ def test_explicit_migration_preserves_frozen_source_and_builds_evidence_and_bind
 
 
 def test_source_equivalence_preserves_each_observation_and_prefers_existing_source_group():
-    from ehs_spatial.platform.identity import apply_source_equivalences
+    from argus.platform.identity import apply_source_equivalences
     source = source_scene()
     extra = deepcopy(source['observations'][1])
     extra['id'] = 'observation-3'
@@ -125,7 +125,7 @@ def test_source_equivalence_preserves_each_observation_and_prefers_existing_sour
 
 
 def test_measurement_source_binding_is_exact_and_repairs_only_selected_records():
-    from ehs_spatial.platform.identity import repair_measurement_sources, source_observation_ids
+    from argus.platform.identity import repair_measurement_sources, source_observation_ids
     source = source_scene()
     source['assets'].append({'id':'source-json', 'sha256':'a'*64})
     for observation in source['observations']:
@@ -260,7 +260,7 @@ def test_primitive_edits_preserve_evidence_and_require_confirmation_only_on_chan
 
 
 def test_primitive_bounds_follow_actual_cylinder_mesh_and_new_primitives_need_confirmation():
-    from ehs_spatial.platform.spatial import primitive_mesh
+    from argus.platform.spatial import primitive_mesh
     doc = migrate_document(source_scene(), base_revision_id=BASE)
     doc['coordinateFrames'][0]['source'] = 'manual_assertion'
     item = doc['entities'][0]
@@ -375,7 +375,7 @@ def test_cad_reference_follows_merge_and_split_observation_ownership():
         assert ref['sourceRefs'] == [{'observationId': child['observationRefs'][0], 'revision': 1}]
         assert ref['source'] == ('single_source_image' if image_id == 'image-2' else reference['source'])
     assert split['observations'] == doc['observations'] and split['assets'] == doc['assets']
-    from ehs_spatial.platform.identity import refresh_cad_reference
+    from argus.platform.identity import refresh_cad_reference
     ambiguous = {'observationRefs': ['observation-1', 'observation-2']}
     refresh_cad_reference(doc, ambiguous)
     assert ambiguous['cadReference']['status'] == 'unresolved' and ambiguous['cadReference']['source'] == 'ambiguous_sources'
@@ -478,8 +478,8 @@ def test_revise_observation_box_rejects_wrong_source_or_invalid_bounds(change, c
 
 
 def test_revised_box_flows_to_existing_segmentation_worker_with_new_revision(tmp_path):
-    from ehs_spatial.platform.reconstruction import run_analysis, run_segmentation
-    from ehs_spatial.platform.storage import LocalBlobStore
+    from argus.platform.reconstruction import run_analysis, run_segmentation
+    from argus.platform.storage import LocalBlobStore
     from test_platform_reconstruction import Repo, bundle, provider
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
@@ -579,7 +579,7 @@ def test_manual_identity_without_observations_still_has_entity_scope_and_exclusi
 
 
 def test_export_after_merge_and_transform_contains_only_the_active_model(tmp_path):
-    from ehs_spatial.platform.blender_export import prepare_export, write_glb
+    from argus.platform.blender_export import prepare_export, write_glb
     merged, _ = merge(migrate_document(source_scene(), base_revision_id=BASE))
     entity = merged['entities'][0]
     entity.pop('material',None)
@@ -600,7 +600,7 @@ def test_export_after_merge_and_transform_contains_only_the_active_model(tmp_pat
 
 
 def test_split_retains_cross_group_measurement_as_source_without_copying_to_children():
-    from ehs_spatial.platform.identity import snapshot_measurements
+    from argus.platform.identity import snapshot_measurements
     doc, _ = merge(migrate_document(source_scene(), base_revision_id=BASE))
     parent = doc['entities'][0]
     parent['measurements']['span'] = {'value': 7, 'sourceRefs': [{'observationId': oid} for oid in parent['observationRefs']]}
@@ -617,7 +617,7 @@ def test_split_retains_cross_group_measurement_as_source_without_copying_to_chil
 
 
 def test_evidence_fulfillment_requires_exact_source_observations_after_identity_change():
-    from ehs_spatial.platform.policy_repository import _identity_evidence_binding
+    from argus.platform.policy_repository import _identity_evidence_binding
     source = migrate_document(source_scene(), base_revision_id=BASE)
     target, _ = merge(source)
     original = {'id': 'old-finding', 'entityId': 'entity-2', 'facts': []}
@@ -692,7 +692,7 @@ def part_operation(child='entity-2', parent='entity-1', observations=('observati
 
 
 def test_part_relation_requires_current_reviewed_observations_and_rejects_invalid_graphs():
-    from ehs_spatial.platform.identity import model_family
+    from argus.platform.identity import model_family
     source = migrate_document(source_scene(), base_revision_id=BASE)
     source['futureExtension'] = {'retained': True}
     source['entities'][0]['futureExtension'] = {'sourceDetail': 'retained'}
@@ -727,7 +727,7 @@ def test_part_relation_requires_current_reviewed_observations_and_rejects_invali
 
 def test_parent_edits_expand_absolute_transforms_atomically_and_child_edits_stay_local():
     import numpy as np
-    from ehs_spatial.platform.spatial import transform_matrix
+    from argus.platform.spatial import transform_matrix
     source = migrate_document(source_scene(), base_revision_id=BASE)
     document, _ = apply_operations(source, [part_operation()], base_revision_id=BASE)
     parent, child = document['entities']
@@ -818,7 +818,7 @@ def test_workcell_scope_preserves_sources_and_restores_visibility():
 
 
 def test_safety_targets_respect_workcell_scope_but_not_display_visibility(monkeypatch):
-    from ehs_spatial.platform import policy_engine
+    from argus.platform import policy_engine
     source = source_scene()
     source['annotations'].append({'id': 'applicable', 'kind': 'policy_applicability',
         'policyId': 'policy', 'value': 'applicable', 'sourceRefs': [{'observationId': 'observation-1'}]})

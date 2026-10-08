@@ -28,6 +28,7 @@ function load(filename){
   const code=ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   function dependency(name){
     if(name==='react')return hooks;
+    if(name==='./SceneResources')return {useSceneResources:()=>({resolveAsset:async()=> 'https://example.invalid/photo.png'})};
     if(name==='./api')return {resolveAsset:async()=> 'https://example.invalid/photo.png'};
     if(name==='./i18n')return {useI18n:()=>({t:key=>key})};
     if(!name.startsWith('.'))return require(name);

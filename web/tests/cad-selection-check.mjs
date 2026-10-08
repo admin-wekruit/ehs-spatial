@@ -6,7 +6,7 @@ import ts from 'typescript';
 import React from 'react';
 import * as core from '../src/core.ts';
 import * as semantics from '../src/scene-semantics.ts';
-import {cadViewMessages} from '../src/cad-view-messages.ts';
+import {translate} from '../src/translate.ts';
 const require=createRequire(import.meta.url),slots=[];let cursor=0;
 const hooks={useEffect(){},useMemo:fn=>fn(),useRef(initial){const i=cursor++;return slots[i]??={current:initial};},
   useState(initial){const i=cursor++;if(!Object.hasOwn(slots,i))slots[i]=typeof initial==='function'?initial():initial;return [slots[i],v=>{slots[i]=typeof v==='function'?v(slots[i]):v;}];}};
@@ -16,8 +16,8 @@ const code=ts.transpileModule(fs.readFileSync(new URL('../src/CadView.tsx',impor
 new Function('require','module','exports',code)(name=>{
   if(name==='react')return hooks;if(name.endsWith('.css'))return {};
   if(name==='./core')return core;if(name==='./scene-semantics')return semantics;
-  if(name==='./i18n')return {useI18n:()=>({language:'en'})};
-  if(name==='./cad-view-messages')return {cadViewMessages};return require(name);
+  if(name==='./i18n')return {useI18n:()=>({language:'en',t:(key,params)=>translate('en',key,params)})};
+  return require(name);
 },module,module.exports);
 const transform={coordinateFrameId:'frame',position:[0,0,0],quaternion:[0,0,0,1],scale:[1,1,1]},plane=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
 const ring=(lo,hi)=>[[lo,lo],[hi,lo],[hi,hi],[lo,hi],[lo,lo]];

@@ -8,10 +8,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ehs_spatial.providers.map_anything import decode_encoded_array, parse_frame_json
+from argus.providers.map_anything import decode_encoded_array, parse_frame_json
 
 SPEC = importlib.util.spec_from_file_location(
-    "candidate_geometry_backend", Path(__file__).parents[1] / "scripts/candidate_geometry_backend.py")
+    "candidate_geometry_backend", Path(__file__).parents[1] / "argus/pipeline/candidate_geometry_backend.py")
 backend = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(backend)
 

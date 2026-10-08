@@ -6,10 +6,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError
-from ehs_spatial.platform.identity import model_family
-from ehs_spatial.platform.repository import apply_operations
-from ehs_spatial.platform.spatial import transform_matrix
+from argus.platform.contracts import PlatformError
+from argus.platform.identity import model_family
+from argus.platform.repository import apply_operations
+from argus.platform.spatial import transform_matrix
 
 FIXTURE = json.loads((Path(__file__).parents[1] / 'web/checks/fixtures/model-family.json').read_text())
 

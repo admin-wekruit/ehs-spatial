@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import numpy as np
-from ehs_spatial.platform.planar_surfaces import extract_planar_surfaces, surface_inclinations
+from argus.platform.planar_surfaces import extract_planar_surfaces, surface_inclinations
 
 CONFIG={'minAreaNative2':.02,'distanceToleranceNative':.003,'normalToleranceDeg':10.}
 def panel(deg, width=1., length=2., offset=(0,0,0), splits=1):
@@ -68,8 +68,8 @@ from copy import deepcopy
 from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from ehs_spatial.platform.spatial import MeshData
-from ehs_spatial.platform.scene_measurements import analyze_inclinations,saved_inclinations,register_measurement_routes
+from argus.platform.spatial import MeshData
+from argus.platform.scene_measurements import analyze_inclinations, saved_inclinations, register_measurement_routes
 entity={'id':'object','activeModelRepresentationId':'rep','representations':[{'id':'rep','kind':'generated_mesh','assetId':'mesh','coordinateFrameId':'frame','transform':{'coordinateFrameId':'frame','position':[0,0,0],'quaternion':[0,0,0,1],'scale':[1,1,1]}}]}
 revision={'id':'revision','document':{'entities':[entity,{'id':'hidden','visible':False}],'assets':[{'id':'mesh','sha256':'bound-hash'}],'coordinateFrames':[{'id':'frame','ground':ground}]}}
 mesh=MeshData(multi.reshape(-1,3),np.arange(len(multi)*3).reshape(-1,3))
@@ -104,7 +104,7 @@ print('PASS: exact-input caching, immutable source, ground/pose invalidation, un
 def exhausted(*args,diagnostics,**kwargs):
  diagnostics['limitReached']=True
  return []
-with patch('ehs_spatial.platform.planar_surfaces.extract_planar_surfaces',side_effect=exhausted):
+with patch('argus.platform.planar_surfaces.extract_planar_surfaces',side_effect=exhausted):
  limited=analyze_inclinations(original,load,config=CONFIG)['items'][0]
  assert limited['status']=='partial' and limited['reason']=='measurement_complexity_limit'
 # A retried failed row must not retain its obsolete error after success.
@@ -116,8 +116,8 @@ print('PASS: incomplete detector outcomes and retry error clearing')
 
 # Interactive requests retain their resource guard; offline processing must not
 # reject an otherwise valid model merely for having many (including empty) faces.
-from ehs_spatial.platform.scene_measurements import measure_scene
-from ehs_spatial.platform.contracts import PlatformError
+from argus.platform.scene_measurements import measure_scene
+from argus.platform.contracts import PlatformError
 large_mesh=MeshData(np.array([[0,0,0],[2,0,0],[2,1,0],[0,1,0]],float),np.vstack([[[0,1,2],[0,2,3]],np.zeros((500000,3),dtype=int)]))
 try:measure_scene(original,'inclination','object',None,None,lambda _:large_mesh)
 except PlatformError as exc:assert exc.code=='measurement_complexity_limit'
@@ -125,7 +125,7 @@ else:raise AssertionError('Interactive work must remain bounded')
 large=analyze_inclinations(original,lambda _:large_mesh,config=CONFIG)['items'][0]
 assert large['status']=='measured' and len(large['surfaces'])==1,large
 print('PASS: offline large models and interactive resource guard')
-from ehs_spatial.platform.scene_measurements import analyze_bends
+from argus.platform.scene_measurements import analyze_bends
 large_bend=analyze_bends(original,lambda _:large_mesh)['items'][0]
 assert large_bend['status']=='unsupported' and large_bend['reason']=='measurement_no_stable_bend',large_bend
 print('PASS: offline bend batch also processes full meshes')

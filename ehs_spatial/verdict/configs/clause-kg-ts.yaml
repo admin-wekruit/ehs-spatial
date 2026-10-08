@@ -1,4 +1,0 @@
-# Variant: L4 clause graph = ISO v0 + the customer's TS-0011963 Rev 10 requirements (transcribed from the safety concept tool, 2026-10-08).
-# L5 is still the handwritten pack, so verdict counts do not change yet; the run records alignment / retrieval of the merged graph.
-extends: baseline.yaml
-L4: {plugin: clause-kg, clauses_file: [clauses-v0.json, clauses-ts0011963-v0.json]}
