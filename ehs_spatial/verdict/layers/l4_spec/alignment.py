@@ -25,7 +25,7 @@ def clause_terms(graph: ClauseGraph) -> set[tuple[str, str]]:
         for a in c.applicability:
             terms.update((p, "predicate") for p in _CALL.findall(a))
         r = c.requirement
-        if r.get("predicate"):
+        if r.get("predicate") and r["predicate"] != "exists":   # "exists" is an operator keyword, not a Signature predicate
             terms.add((str(r["predicate"]), "predicate"))
         if r.get("attribute"):
             terms.add((str(r["attribute"]), "attribute"))

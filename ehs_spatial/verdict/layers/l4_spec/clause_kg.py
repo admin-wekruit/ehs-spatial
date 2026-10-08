@@ -22,6 +22,13 @@ class ClauseKG:
 
     def run(self, inputs: dict[str, Any], cfg: dict[str, Any], workdir: Path) -> dict[str, Any]:
         spec_dir = Path(inputs.get("spec_dir") or SPEC_DIR)
-        clauses = ClauseGraph.load(spec_dir / cfg.get("clauses_file", "clauses-v0.json"))
+        files = cfg.get("clauses_file", "clauses-v0.json")
+        files = [files] if isinstance(files, str) else list(files)
+        graphs = [ClauseGraph.load(spec_dir / f) for f in files]
+        clauses = graphs[0]
+        for g in graphs[1:]:   # merge: clauses and tables append, standards by id, definitions by term (later files win on a term)
+            clauses.clauses += g.clauses; clauses.tables += g.tables
+            seen = {st["id"] for st in clauses.standards}; clauses.standards += [st for st in g.standards if st["id"] not in seen]
+            clauses.definitions.update(g.definitions); clauses.version = clauses.version + "+" + g.version
         signature = inputs.get("signature") or Signature.load(SIGNATURE_PATH)
         return {"clauses": clauses, "alignment": align(clauses, signature), "retrieved": retrieve(clauses, inputs.get("scene"))}

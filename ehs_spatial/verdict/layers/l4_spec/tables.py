@@ -118,3 +118,14 @@ def iso13854_gap(body_part: str) -> int:
     """ISO 13854:2017 Table 1: minimum gap (mm) so that the named body part cannot be crushed. Crushing only, not impact or
     shearing; when several parts can enter, the caller takes the largest. KeyError for an unknown body part."""
     return ISO13854_GAP_MM[_BODY_PART_ALIAS.get(body_part, body_part)]
+
+
+def ts0011963_table10_3(payload_kg: float) -> int:
+    """TS-0011963 Rev 10 Table 10-3 (as cited by the customer's safety concept tool, 2026-10-08): payload stopping distance added to the
+    reach-over distance at the robot-cell perimeter. 150 mm below 150 kg, 500 mm from 150 kg to below 300 kg, 700 mm (or the
+    manufacturer's worst case) from 300 kg. Unverified: the standard's text is not on file."""
+    if payload_kg < 150:
+        return 150
+    if payload_kg < 300:
+        return 500
+    return 700

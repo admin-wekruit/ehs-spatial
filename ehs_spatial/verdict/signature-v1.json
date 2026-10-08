@@ -14,6 +14,9 @@
     "floor_marking",
     "person",
     "agv",
+    "stack_light",
+    "area_scanner",
+    "safety_door",
     "floor",
     "other"
   ],
@@ -178,7 +181,9 @@
     "colour",
     "mesh_pitch_mm",
     "beam_heights_mm",
-    "climbing_aids"
+    "climbing_aids",
+    "orientation",
+    "operator_interaction"
   ],
   "declared_inputs": [
     "stop_time_ms",
@@ -187,6 +192,8 @@
     "restricted_space",
     "reach_radius_mm",
     "body_part",
-    "table_lookup"
+    "table_lookup",
+    "payload_kg",
+    "zone_depth_mm"
   ]
 }
