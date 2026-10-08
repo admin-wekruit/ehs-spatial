@@ -20,7 +20,7 @@ import time
 import numpy as np
 
 NOTE = Path(__file__).resolve().parent
-sys.path[:0] = [str(NOTE), os.environ.get('PANOPTES_WORKCELL', '/Users/adam/.codex/worktrees/panoptes-workcell-photo-speed') + '/modal_apps']
+sys.path[:0] = [str(NOTE), os.environ['PANOPTES_WORKCELL'] + '/modal_apps']   # env.sh (env.template section 6)
 import geometry_clean_ab as gc  # noqa: E402
 import backbones as bb  # noqa: E402
 

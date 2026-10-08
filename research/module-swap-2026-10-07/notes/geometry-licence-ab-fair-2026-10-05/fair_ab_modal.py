@@ -14,17 +14,23 @@ from pathlib import Path
 import shutil
 import sys
 import tarfile
+import tempfile
 import time
 
 import modal
 
+
+def env(key):  # env.template section 6, set by env.sh; a Modal container has none of them and uses nothing read through here
+    return os.environ[key] if modal.is_local() else os.environ.get(key, '')
+
+
 NOTE = Path(__file__).resolve().parent
-SERV = Path(os.environ.get('PANOPTES_SERVING', '/Users/adam/Desktop/panoptes-public/panoptes-serving'))
-WT = Path(os.environ.get('PANOPTES_WORKCELL', '/Users/adam/.codex/worktrees/panoptes-workcell-photo-speed'))
-CELL030 = Path(os.environ.get('SWAP_NOTES', '/Users/adam/Desktop/panoptes-public/research-notes')) / 'cell030-sept-pipeline-2026-10-05'
-CLEARB = Path(os.environ.get('SWAP_NOTES', '/Users/adam/Desktop/panoptes-public/research-notes')) / 'workcell-clearance-b-2026-10-05/clearance_b.py'
-GEOMAB = Path(os.environ.get('SWAP_NOTES', '/Users/adam/Desktop/panoptes-public/research-notes')) / 'geometry-licence-ab-2026-10-05/geometry_ab.py'
-SCR = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))
+SERV = Path(env('PANOPTES_SERVING'))
+WT = Path(env('PANOPTES_WORKCELL'))
+CELL030 = Path(env('SWAP_NOTES')) / 'cell030-sept-pipeline-2026-10-05'
+CLEARB = Path(env('SWAP_NOTES')) / 'workcell-clearance-b-2026-10-05/clearance_b.py'
+GEOMAB = Path(env('SWAP_NOTES')) / 'geometry-licence-ab-2026-10-05/geometry_ab.py'
+SCR = Path(env('SWAP_SCRATCH'))
 DATA, GEOM, OUT = SCR / 'checks/da3fair-data', SCR / 'checks/da3fair-geom', SCR / 'checks/da3fair-analyse'
 RUNS = SERV / 'outputs/candidate-evaluation'
 GPU_RATE = .000694 + 8 * .0000131 + 32 * .00000222  # A100-80GB + 8 CPU + 32 GiB list rate (USD/s); not an invoice
@@ -83,9 +89,9 @@ def infer(inputs: dict) -> dict:
     from candidate_geometry_backend import DA3Runner
     from candidate_pi3x_backend import Pi3XRunner
     from ehs_spatial.providers.map_anything import MapAnythingAdapter
-    start = time.monotonic(); timing = {}; root = Path('/tmp/out')
+    start = time.monotonic(); timing = {}; root = Path(tempfile.mkdtemp(prefix='fair-ab-out-')); indir = Path(tempfile.mkdtemp(prefix='fair-ab-in-'))
     for bb, (repo, rev) in BACKBONES.items():
-        t0 = time.monotonic(); wdir = Path('/tmp/w') / bb
+        t0 = time.monotonic(); wdir = Path(tempfile.mkdtemp(prefix='fair-ab-weights-')) / bb
         if bb == 'pi3x':
             hf_hub_download(repo, 'model.safetensors', revision=rev, local_dir=wdir)
             runner = Pi3XRunner('/vendor/pi3', wdir, device='cuda')
@@ -97,7 +103,7 @@ def infer(inputs: dict) -> dict:
             for variant, frames in variants.items():
                 paths = []
                 for name, data in sorted(frames.items()):
-                    p = Path('/tmp/in') / cell / variant / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(data); paths.append(str(p))
+                    p = indir / cell / variant / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(data); paths.append(str(p))
                 out = root / f'{cell}-{bb}-{variant}' / 'geometry'
                 MapAnythingAdapter(runner=runner).run(paths, out)
                 meta = json.loads(json.dumps(runner.metadata, default=str)); meta['gpu'] = torch.cuda.get_device_name(0); meta['inputVariant'] = variant

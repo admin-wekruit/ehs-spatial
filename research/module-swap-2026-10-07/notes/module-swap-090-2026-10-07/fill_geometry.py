@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 import os
-SP = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))
+SP = Path(os.environ['SWAP_SCRATCH'])   # env.sh (env.template section 6)
 CELL = os.environ.get('FILL_CELL', '090')                 # FILL_CELL=030: the same module on the 030 cell's MVS export
 SRC = SP / f'checks/bbab-export-{CELL}-mvs-scipyba'      # the GPL-free MVS run (geometry + masks)
 MOGE = SP / f'checks/clean-gpu/{CELL}'                   # moge-frame_000N.npz on the same frozen 518 frames (content crop at X0)

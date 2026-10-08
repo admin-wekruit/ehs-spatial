@@ -30,10 +30,15 @@ import time
 
 import modal
 
+
+def env(key):  # env.template section 6, set by env.sh; a Modal container has none of them and uses nothing read through here
+    return os.environ[key] if modal.is_local() else os.environ.get(key, '')
+
+
 NOTE = Path(__file__).resolve().parent
-KIT = Path(os.environ.get('PANOPTES_WORKCELL', '/Users/adam/.codex/worktrees/panoptes-workcell-photo-speed'))
+KIT = Path(env('PANOPTES_WORKCELL'))
 sys.path[:0] = [str(NOTE), str(KIT / 'modal_apps'), str(KIT / 'scripts/onprem'), str(NOTE.parent / 'geometry-licence-ab-fair-2026-10-05')]
-SCR = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))
+SCR = Path(env('SWAP_SCRATCH'))
 GEOM, OUT, ROMA_CPU = SCR / 'checks/prod-geom', SCR / 'checks/prod-analyse', SCR / 'checks/prod-cpuroma'
 REF_GEOM, REF_OUT = SCR / 'checks/scipyba-geom', SCR / 'checks/scipyba-analyse'  # the scipyba run the exports came from
 RATE = 8 * .0000131 + 32 * .00000222  # 8 CPU + 32 GiB list rate (USD/s); not an invoice

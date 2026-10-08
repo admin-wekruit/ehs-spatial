@@ -11,7 +11,7 @@ import statistics as st
 import sys
 
 NOTE = Path(__file__).resolve().parent
-SCR = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))
+SCR = Path(os.environ['SWAP_SCRATCH'])   # env.sh (env.template section 6)
 sys.path.insert(0, str(NOTE))
 import fair_ab as fa  # noqa: E402
 

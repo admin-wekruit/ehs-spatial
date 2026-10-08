@@ -8,7 +8,7 @@ The published layer is read only and stays the report's own; the comparison open
 Facts and confidence that described the RecGen model are dropped for those entities and replaced by one note with the SAM 3D
 numbers; photo measurements (现场对照) are kept, with the model's lowest point rewritten. Scale, floor and e-stop facts unchanged.
 
-  /Users/adam/Desktop/panoptes-public/panoptes-serving/.venv/bin/python build_layer.py
+  $PY build_layer.py
 
 Reused for other reports (defaults unchanged): compare.py's environment (AB_RUN, AB_OUT, CMP_NOTES, CMP_BOXES); BL_PAGES = the
 directory pipeline sheets are copied to, BL_PUB / BL_VIEW = the publication and its view file, BL_GEOMETRY = the '相机与深度'
@@ -31,11 +31,11 @@ import trimesh
 
 import compare as C
 
-sys.path.insert(0, os.environ.get('PANOPTES_SERVING', '/Users/adam/Desktop/panoptes-public/panoptes-serving') + '/scripts/research')
+sys.path.insert(0, os.environ['PANOPTES_SERVING'] + '/scripts/research')   # env.sh (env.template section 6)
 from assemble_lucida_scene import mesh_bytes  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-PAGES = Path(os.environ.get('BL_PAGES') or '/Users/adam/Desktop/panoptes-public/panoptes-workcell-pages/workcell-photo-direct/report/measurement-layer')
+PAGES = Path(os.environ.get('BL_PAGES') or os.environ['PANOPTES_PAGES'])
 PUB = os.environ.get('BL_PUB') or '4b58dbd2-3846-47f2-af97-57eaa108753c'
 VIEW = json.loads(Path(os.environ.get('BL_VIEW') or C.CHECKS / '4b58-view.json').read_text())['publication']['snapshot']['revision']['document']
 MAX_FACES = 80000

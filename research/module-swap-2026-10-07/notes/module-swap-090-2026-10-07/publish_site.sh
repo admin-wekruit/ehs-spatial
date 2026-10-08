@@ -5,8 +5,8 @@
 # (the viewer's API base is https://wekruit-livekit-agents--panoptes-publications-estop-web.modal.run).
 #   ./publish_site.sh VARIANT [VARIANT ...]      VARIANT = a folder of .platform/swap-20261007 (v2-mvs-fill-sam3d, ...)
 set -e
-SP=${SWAP_SCRATCH:-/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad}
-PLAT=${PANOPTES_PLATFORM:-/Users/adam/Desktop/Tesla/panoptes-platform}
+SP=${SWAP_SCRATCH:?source research/module-swap-2026-10-07/env.sh}
+PLAT=${PANOPTES_PLATFORM:?source research/module-swap-2026-10-07/env.sh}
 PY=${PY:-$PLAT/.venv/bin/python}
 LIVE="25686138-ba21-475f-81f0-c2818bc4ab6a cd84d3fb-7d1f-4736-8ffa-d44855e59fab 4b58dbd2-3846-47f2-af97-57eaa108753c"
 CAT=$SP/publication-catalog-live

@@ -211,6 +211,24 @@ def _pipeline(tmp_path, *, map_adapter=None, gemini=None):
     return pipeline, store, map_adapter, sam, gemini, scene_builder
 
 
+@pytest.fixture
+def real_viewer():
+    """Request this to keep the real build_viewer_html (see _viewer_stub)."""
+
+
+@pytest.fixture(autouse=True)
+def _viewer_stub(request, monkeypatch):
+    """The standard fakes (2x2 frames, no arrays, observations without a mask file) cannot feed the real viewer, and since
+    2026-10-08 a failed viewer build fails the run (ehs_spatial/pipeline.py, customer review) instead of warning: every test
+    here that does not build the real viewer gets a no-op in its place. The real one is covered by the evidence test below
+    (real_viewer) and tests/test_viewer.py."""
+    if "real_viewer" in request.fixturenames:
+        return
+    import ehs_spatial.viewer as viewer_module
+
+    monkeypatch.setattr(viewer_module, "build_viewer_html", lambda *args, **kwargs: {})
+
+
 def test_run_assessment_executes_one_map_call_and_stable_44_sam_calls(tmp_path):
     pipeline, store, map_adapter, sam, gemini, scene_builder = _pipeline(tmp_path)
 
@@ -642,7 +660,7 @@ def test_run_assessment_writes_a_provenance_manifest(tmp_path):
     assert manifest.providers.moge_version.startswith("jasonod888/")
 
 
-def test_run_assessment_emits_reviewer_evidence_artifacts(tmp_path):
+def test_run_assessment_emits_reviewer_evidence_artifacts(tmp_path, real_viewer):
     """Every run gets its visual evidence from the standard pipeline: mask
     overlays per frame plus the interactive viewer.html."""
     from test_viewer import write_box_mask, write_synthetic_frame
@@ -707,30 +725,33 @@ def test_run_assessment_emits_reviewer_evidence_artifacts(tmp_path):
     assert '"label":"pallet"' in paths.viewer_html.read_text(encoding="utf-8")
 
 
-def test_evidence_failures_warn_but_never_fail_the_run(tmp_path, monkeypatch):
-    """Fail-soft: a broken overlay renderer and an unbuildable viewer both
-    reduce to warnings; the assessment itself is untouched."""
+def test_evidence_failures_fail_the_run(tmp_path, monkeypatch):
+    """A broken overlay renderer or an unbuildable viewer fails the run, the
+    message naming the stage (customer review 2026-10-08: no step exits 0 on
+    a failure). Until then both only warned and the run continued."""
     import ehs_spatial.viewer as viewer_module
 
-    pipeline, store, *_ = _pipeline(tmp_path)
+    def broken(*args, **kwargs):
+        raise RuntimeError("renderer exploded")
 
-    def broken_overlays(*args, **kwargs):
-        raise RuntimeError("overlay renderer exploded")
-
-    monkeypatch.setattr(viewer_module, "render_frame_overlays", broken_overlays)
-
-    with pytest.warns(UserWarning) as caught:
-        result = pipeline.run_assessment(_capture(tmp_path))
-
-    messages = [str(warning.message) for warning in caught]
-    assert any("evidence overlays failed" in message for message in messages)
-    # The standard fakes have no reconstructed geometry on disk, so the
-    # viewer build also degrades to a warning here.
-    assert any("3D viewer build failed" in message for message in messages)
-    assert result.status.value == "FAIL"
+    (tmp_path / "overlays").mkdir()
+    pipeline, store, *_ = _pipeline(tmp_path / "overlays")
+    with monkeypatch.context() as patch:
+        patch.setattr(viewer_module, "render_frame_overlays", broken)
+        with pytest.raises(RuntimeError, match="evidence overlays failed"):
+            pipeline.run_assessment(_capture(tmp_path / "overlays"))
     paths = store.paths("run-1")
-    assert paths.assessment_json.is_file()
+    assert not paths.assessment_json.exists()
     assert not paths.evidence_dir.exists()
+
+    (tmp_path / "viewer").mkdir()
+    pipeline, store, *_ = _pipeline(tmp_path / "viewer")
+    with monkeypatch.context() as patch:
+        patch.setattr(viewer_module, "build_viewer_html", broken)
+        with pytest.raises(RuntimeError, match="3D viewer build failed"):
+            pipeline.run_assessment(_capture(tmp_path / "viewer"))
+    paths = store.paths("run-1")
+    assert paths.assessment_json.is_file()  # the viewer is the last step: the assessment is already on disk
     assert not paths.viewer_html.exists()
 
 

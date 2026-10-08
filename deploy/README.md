@@ -1,11 +1,11 @@
 # Model services on the GPU boxes
 
 One model = one FastAPI service = one container; one compose stack per card (`serving/registry.yaml` says which services sit on
-which card). Contract: `docs/BACKENDS-v1.md`. Config: `.env` only (`.env.example`, the "model services" block).
+which card). Contract: `docs/BACKENDS-v1.md`. Config: `.env` only (`env.template` section 1, the GPU services keys).
 
 ```sh
 git clone -b main https://github.com/admin-wekruit/ehs-spatial.git && cd ehs-spatial   # one repository: services, function bodies, docker recipes, pipeline
-cp .env.example .env                                         # PANOPTES_SERVICE_API_KEY, WEIGHTS
+make env                                                     # .env from env.template: PANOPTES_SERVICE_API_KEY, WEIGHTS (section 1)
 python3 scripts/onprem/fetch_weights_sam3d.py    --cache $WEIGHTS   # card A (HF_TOKEN; gated facebook/sam-3d-objects)
 python3 scripts/onprem/fetch_weights_geometry.py --cache $WEIGHTS   # card B (da3-base, roma_outdoor, roma_dinov2, moge3)
 make images GPU=a && make up GPU=a && make smoke GPU=a       # sam3d :8805 + sam3 :8801

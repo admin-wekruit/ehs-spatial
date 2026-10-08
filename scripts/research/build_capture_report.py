@@ -24,7 +24,7 @@ import sys
 import cv2
 import numpy as np
 
-PAGES = Path(os.environ.get('PANOPTES_PAGES_ROOT', '/Users/adam/Desktop/panoptes-public/panoptes-workcell-pages'))
+PAGES = Path(os.environ['PANOPTES_PAGES_ROOT']) if os.environ.get('PANOPTES_PAGES_ROOT') else None   # else --pages-root is required (no machine-path fallback: customer review 2026-10-08)
 
 
 def sha(path):
@@ -38,6 +38,8 @@ def helpers(pages):
 
 
 def build(run, label, pages=PAGES):
+    if pages is None:
+        raise SystemExit('--pages-root DIR (or PANOPTES_PAGES_ROOT) is required')
     run = run.resolve(); out = run / 'public'
     missing = [n for n in ('pack-model.py', 'build-unified-data.py') if not (pages / n).is_file()]
     if missing:

@@ -1,6 +1,5 @@
 import json
 import subprocess
-import warnings
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
@@ -204,14 +203,14 @@ class EHSAssessmentPipeline:
             ):
                 observations.extend(unit_observations)
         self.store.save_json(paths.observations_json, observations)
-        # Reviewer evidence is fail-soft like the plan-view renders: a broken
-        # overlay must never fail an otherwise sound assessment.
+        # Reviewer evidence is part of the run: a broken overlay fails it
+        # (customer review 2026-10-08: no step exits 0 on a failure).
         try:
             from .viewer import render_frame_overlays
 
             render_frame_overlays(frames, observations, paths.evidence_dir)
         except Exception as error:
-            warnings.warn(f"evidence overlays failed ({error}); run continues")
+            raise RuntimeError(f"evidence overlays failed ({error})") from error
 
         scale = self._resolve_scale(prepared, frames, paths.geometry_dir)
         scene, assessment = self.scene_builder(
@@ -288,7 +287,7 @@ class EHSAssessmentPipeline:
                 out_path=paths.viewer_html,
             )
         except Exception as error:
-            warnings.warn(f"3D viewer build failed ({error}); run continues")
+            raise RuntimeError(f"3D viewer build failed ({error})") from error
         return final_assessment
 
     def _policy_facts(self, paths) -> list[SpatialFact]:

@@ -7,7 +7,7 @@ Both meshes are placed by the same unchanged assembly (completion_ab.py --stage 
              collapse: any gravity extent < 0.5x or > 2x the measured box, or IoU < 0.5 in any photo
              fix shown: floor-contact snap (lift/drop along up so lowest = box bottom); collapse -> measured box replaces model
 
-  /Users/adam/Desktop/panoptes-public/panoptes-serving/.venv/bin/python compare.py left_light_curtain [...]
+  $PY compare.py left_light_curtain [...]
 
 Any run (defaults unchanged): AB_RUN / AB_OUT as completion_ab.py; CMP_NOTES = where results.json and the sheets go;
 CMP_BOXES = a boxes file (box_faces layer format; its 'objectIds' {object_id: entity id} maps run objects to boxes) or 'none'
@@ -28,9 +28,9 @@ import numpy as np  # noqa: E402
 import trimesh  # noqa: E402
 
 HERE = Path(os.environ.get('CMP_NOTES') or Path(__file__).resolve().parent)
-CHECKS = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad')) / 'checks'
+CHECKS = Path(os.environ['SWAP_SCRATCH']) / 'checks'   # env.sh (env.template section 6)
 OUT = Path(os.environ['AB_OUT']) if os.environ.get('AB_OUT') else CHECKS / 'completionAB-090'
-RUN = Path(os.environ['AB_RUN']) if os.environ.get('AB_RUN') else Path(os.environ.get('PANOPTES_RUNS', '/Users/adam/Desktop/panoptes-public/panoptes-serving/outputs/candidate-evaluation')) / 'lucida-replica-01'
+RUN = Path(os.environ['AB_RUN']) if os.environ.get('AB_RUN') else Path(os.environ['PANOPTES_RUNS']) / 'lucida-replica-01'
 # another run (AB_RUN) is another world: never the Pi3X-world boxes or a RecGen arm by default
 _BOXES = os.environ.get('CMP_BOXES') or ('none' if os.environ.get('AB_RUN') else str(CHECKS / 'mvp-final/boxes-090.v3.json'))
 BOXES = None if _BOXES == 'none' else json.loads(Path(_BOXES).read_text())
@@ -114,7 +114,7 @@ def plane_anchor(mesh, oid):
     5 cm, or 5 % of the extent), the model moves along that plane's normal by the median signed distance, over those plane
     samples, from the model's first hit to the sample (the model's photographed face onto its own plane). Returns (mesh, note,
     {photo: relative depth residual p50 after}, shift cm) or (mesh, [], None, None) when no plane holds most samples."""
-    sys.path.insert(0, os.environ.get('PANOPTES_WORKCELL', '/Users/adam/.codex/worktrees/panoptes-workcell-photo-speed') + '/scripts')
+    sys.path.insert(0, os.environ['PANOPTES_WORKCELL'] + '/scripts')
     from workcell_checks.box_faces import dominant_plane, PLANE_TOL_M, PLANE_MAJORITY, PLANE_VERTICAL
     hits = model_hits(mesh, oid)
     P = np.concatenate([h[1] for h in hits]) if hits else np.zeros((0, 3))

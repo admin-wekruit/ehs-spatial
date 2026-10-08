@@ -1,0 +1,924 @@
+{
+ "left_light_curtain": {
+  "sam3d": {
+   "perPhoto": {
+    "frame_0003": {
+     "iou": 0.842,
+     "depthP50": 0.0129
+    },
+    "frame_0001": {
+     "iou": 0.804,
+     "depthP50": 0.0152
+    },
+    "frame_0002": {
+     "iou": 0.841,
+     "depthP50": 0.0128
+    }
+   },
+   "minCm": 26.1,
+   "extentM": [
+    0.14,
+    0.099,
+    1.571
+   ],
+   "bodyM": [
+    0.118,
+    0.086
+   ],
+   "lowestCm": 26.2,
+   "topCm": 183.3,
+   "meanIou": 0.829,
+   "meanDepthP50": 0.0136,
+   "freeSpace": {
+    "frame_0003": 0.0,
+    "frame_0001": 0.008,
+    "frame_0002": 0.0
+   },
+   "gates": [],
+   "fix": [],
+   "coverage": 0.751,
+   "fieldErrorCm": 2.2
+  },
+  "sam3dFixed": {
+   "perPhoto": {
+    "frame_0003": {
+     "iou": 0.842,
+     "depthP50": 0.0129
+    },
+    "frame_0001": {
+     "iou": 0.804,
+     "depthP50": 0.0152
+    },
+    "frame_0002": {
+     "iou": 0.841,
+     "depthP50": 0.0128
+    }
+   },
+   "minCm": 26.1,
+   "extentM": [
+    0.14,
+    0.099,
+    1.571
+   ],
+   "bodyM": [
+    0.118,
+    0.086
+   ],
+   "lowestCm": 26.2,
+   "topCm": 183.3,
+   "meanIou": 0.829,
+   "meanDepthP50": 0.0136,
+   "freeSpace": {
+    "frame_0003": 0.0,
+    "frame_0001": 0.008,
+    "frame_0002": 0.0
+   },
+   "gates": [],
+   "fix": [],
+   "coverage": 0.751,
+   "fieldErrorCm": 2.2
+  },
+  "decision": "SAM 3D 原样",
+  "variant": "sam3d",
+  "generationPhoto": "1",
+  "tried": {
+   "sam3d": {
+    "meanIou": 0.829,
+    "meanDepthP50": 0.0136,
+    "coverage": 0.751,
+    "gates": []
+   },
+   "sam3d-frame_0002": {
+    "meanIou": 0.768,
+    "meanDepthP50": 0.0071,
+    "coverage": 0.673,
+    "gates": []
+   },
+   "sam3d-frame_0003": {
+    "meanIou": 0.765,
+    "meanDepthP50": 0.0049,
+    "coverage": 0.847,
+    "gates": []
+   }
+  },
+  "coverageWeight": 0.0
+ },
+ "right_light_curtain": {
+  "sam3d": {
+   "perPhoto": {
+    "frame_0003": {
+     "iou": 0.789,
+     "depthP50": 0.0109
+    },
+    "frame_0001": {
+     "iou": 0.709,
+     "depthP50": 0.0098
+    },
+    "frame_0002": {
+     "iou": 0.659,
+     "depthP50": 0.0076
+    }
+   },
+   "minCm": 10.6,
+   "extentM": [
+    0.365,
+    0.15,
+    1.705
+   ],
+   "bodyM": [
+    0.24,
+    0.093
+   ],
+   "lowestCm": 11.3,
+   "topCm": 181.7,
+   "meanIou": 0.719,
+   "meanDepthP50": 0.0094,
+   "freeSpace": {
+    "frame_0003": 0.059,
+    "frame_0001": 0.071,
+    "frame_0002": 0.013
+   },
+   "gates": [],
+   "fix": [],
+   "coverage": 0.682,
+   "fieldErrorCm": -12.7
+  },
+  "sam3dFixed": {
+   "perPhoto": {
+    "frame_0003": {
+     "iou": 0.789,
+     "depthP50": 0.0109
+    },
+    "frame_0001": {
+     "iou": 0.709,
+     "depthP50": 0.0098
+    },
+    "frame_0002": {
+     "iou": 0.659,
+     "depthP50": 0.0076
+    }
+   },
+   "minCm": 10.6,
+   "extentM": [
+    0.365,
+    0.15,
+    1.705
+   ],
+   "bodyM": [
+    0.24,
+    0.093
+   ],
+   "lowestCm": 11.3,
+   "topCm": 181.7,
+   "meanIou": 0.719,
+   "meanDepthP50": 0.0094,
+   "freeSpace": {
+    "frame_0003": 0.059,
+    "frame_0001": 0.071,
+    "frame_0002": 0.013
+   },
+   "gates": [],
+   "fix": [],
+   "coverage": 0.682,
+   "fieldErrorCm": -12.7
+  },
+  "decision": "SAM 3D 原样",
+  "variant": "sam3d-frame_0003",
+  "generationPhoto": "3",
+  "tried": {
+   "sam3d": {
+    "meanIou": 0.717,
+    "meanDepthP50": 0.0116,
+    "coverage": 0.689,
+    "gates": []
+   },
+   "sam3d-frame_0002": {
+    "meanIou": 0.676,
+    "meanDepthP50": 0.0128,
+    "coverage": 0.857,
+    "gates": []
+   },
+   "sam3d-frame_0003": {
+    "meanIou": 0.719,
+    "meanDepthP50": 0.0094,
+    "coverage": 0.682,
+    "gates": []
+   }
+  },
+  "coverageWeight": 0.0
+ },
+ "left_fence": {
+  "sam3d": {
+   "perPhoto": {
+    "frame_0002": {
+     "iou": 0.808,
+     "depthP50": 0.0206
+    },
+    "frame_0003": {
+     "iou": 0.84,
+     "depthP50": 0.0354
+    }
+   },
+   "minCm": -33.7,
+   "extentM": [
+    3.37,
+    0.319,
+    3.094
+   ],
+   "bodyM": [
+    3.006,
+    0.141
+   ],
+   "lowestCm": -31.9,
+   "topCm": 277.4,
+   "meanIou": 0.824,
+   "meanDepthP50": 0.028,
+   "freeSpace": {
+    "frame_0002": 0.0,
+    "frame_0003": 0.001
+   },
+   "gates": [
+    "下沉 33.7 cm"
+   ],
+   "fix": [],
+   "coverage": 0.894,
+   "fieldErrorCm": -51.9
+  },
+  "sam3dFixed": {
+   "perPhoto": {
+    "frame_0002": {
+     "iou": 0.808,
+     "depthP50": 0.0206
+    },
+    "frame_0003": {
+     "iou": 0.84,
+     "depthP50": 0.0354
+    }
+   },
+   "minCm": -0.0,
+   "extentM": [
+    3.363,
+    0.162,
+    2.776
+   ],
+   "bodyM": [
+    2.995,
+    0.138
+   ],
+   "lowestCm": 0.0,
+   "topCm": 277.6,
+   "meanIou": 0.824,
+   "meanDepthP50": 0.028,
+   "freeSpace": {
+    "frame_0002": 0.0,
+    "frame_0003": 0.001
+   },
+   "gates": [],
+   "fix": [
+    "切掉地面以下 33.7 cm"
+   ],
+   "coverage": 0.894,
+   "fieldErrorCm": -20.0
+  },
+  "decision": "SAM 3D + 地面修正（切掉地面以下 33.7 cm）",
+  "variant": "sam3d",
+  "generationPhoto": "2",
+  "tried": {
+   "sam3d": {
+    "meanIou": 0.824,
+    "meanDepthP50": 0.028,
+    "coverage": 0.894,
+    "gates": []
+   },
+   "sam3d-frame_0003": {
+    "meanIou": 0.76,
+    "meanDepthP50": 0.0858,
+    "coverage": 0.792,
+    "gates": [
+     "深度与照片不符（p50 8.6%）"
+    ]
+   }
+  },
+  "coverageWeight": 0.0
+ },
+ "right_fence": {
+  "sam3d": {
+   "perPhoto": {
+    "frame_0001": {
+     "iou": 0.908,
+     "depthP50": 0.05
+    },
+    "frame_0003": {
+     "iou": 0.919,
+     "depthP50": 0.0548
+    }
+   },
+   "minCm": 4.8,
+   "extentM": [
+    3.012,
+    0.173,
+    2.554
+   ],
+   "bodyM": [
+    2.75,
+    0.153
+   ],
+   "lowestCm": 9.5,
+   "topCm": 264.9,
+   "meanIou": 0.913,
+   "meanDepthP50": 0.0524,
+   "freeSpace": {
+    "frame_0001": 0.0,
+    "frame_0003": 0.0
+   },
+   "gates": [],
+   "fix": [],
+   "coverage": 0.921,
+   "fieldErrorCm": -10.5
+  },
+  "sam3dFixed": {
+   "perPhoto": {
+    "frame_0001": {
+     "iou": 0.908,
+     "depthP50": 0.05
+    },
+    "frame_0003": {
+     "iou": 0.919,
+     "depthP50": 0.0548
+    }
+   },
+   "minCm": 4.8,
+   "extentM": [
+    3.012,
+    0.173,
+    2.554
+   ],
+   "bodyM": [
+    2.75,
+    0.153
+   ],
+   "lowestCm": 9.5,
+   "topCm": 264.9,
+   "meanIou": 0.913,
+   "meanDepthP50": 0.0524,
+   "freeSpace": {
+    "frame_0001": 0.0,
+    "frame_0003": 0.0
+   },
+   "gates": [],
+   "fix": [],
+   "coverage": 0.921,
+   "fieldErrorCm": -10.5
+  },
+  "decision": "SAM 3D 原样",
+  "variant": "sam3d-frame_0003",
+  "generationPhoto": "3",
+  "tried": {
+   "sam3d": {
+    "meanIou": 0.894,
+    "meanDepthP50": 0.0693,
+    "coverage": 0.94,
+    "gates": [
+     "深度与照片不符（p50 6.9%）"
+    ]
+   },
+   "sam3d-frame_0003": {
+    "meanIou": 0.913,
+    "meanDepthP50": 0.0524,
+    "coverage": 0.921,
+    "gates": []
+   }
+  },
+  "coverageWeight": 0.0
+ },
+ "left_post": {
+  "sam3d": {
+   "perPhoto": {
+    "frame_0001": {
+     "iou": 0.954,
+     "depthP50": 0.0109
+    },
+    "frame_0003": {
+     "iou": 0.959,
+     "depthP50": 0.0127
+    },
+    "frame_0002": {
+     "iou": 0.756,
+     "depthP50": 0.0086
+    }
+   },
+   "minCm": -11.9,
+   "extentM": [
+    0.284,
+    0.188,
+    1.008
+   ],
+   "bodyM": [
+    0.199,
+    0.117
+   ],
+   "lowestCm": -11.3,
+   "topCm": 89.5,
+   "meanIou": 0.89,
+   "meanDepthP50": 0.0107,
+   "freeSpace": {
+    "frame_0001": 0.0,
+    "frame_0003": 0.0,
+    "frame_0002": 0.001
+   },
+   "gates": [
+    "下沉 11.9 cm"
+   ],
+   "fix": [],
+   "coverage": 0.792
+  },
+  "sam3dFixed": {
+   "perPhoto": {
+    "frame_0001": {
+     "iou": 0.954,
+     "depthP50": 0.0109
+    },
+    "frame_0003": {
+     "iou": 0.959,
+     "depthP50": 0.0127
+    },
+    "frame_0002": {
+     "iou": 0.756,
+     "depthP50": 0.0086
+    }
+   },
+   "minCm": -0.0,
+   "extentM": [
+    0.229,
+    0.123,
+    0.896
+   ],
+   "bodyM": [
+    0.177,
+    0.109
+   ],
+   "lowestCm": 0.0,
+   "topCm": 89.6,
+   "meanIou": 0.89,
+   "meanDepthP50": 0.0107,
+   "freeSpace": {
+    "frame_0001": 0.0,
+    "frame_0003": 0.0,
+    "frame_0002": 0.001
+   },
+   "gates": [],
+   "fix": [
+    "切掉地面以下 11.9 cm"
+   ],
+   "coverage": 0.792
+  },
+  "decision": "SAM 3D + 地面修正（切掉地面以下 11.9 cm）",
+  "variant": "sam3d-frame_0002",
+  "generationPhoto": "2",
+  "tried": {
+   "sam3d": {
+    "meanIou": 0.856,
+    "meanDepthP50": 0.0045,
+    "coverage": 0.875,
+    "gates": []
+   },
+   "sam3d-frame_0002": {
+    "meanIou": 0.89,
+    "meanDepthP50": 0.0107,
+    "coverage": 0.792,
+    "gates": []
+   },
+   "sam3d-frame_0003": {
+    "meanIou": 0.847,
+    "meanDepthP50": 0.0068,
+    "coverage": 0.864,
+    "gates": []
+   }
+  },
+  "coverageWeight": 0.0
+ },
+ "right_post": {
+  "sam3d": {
+   "perPhoto": {
+    "frame_0001": {
+     "iou": 0.91,
+     "depthP50": 0.0074
+    },
+    "frame_0003": {
+     "iou": 0.929,
+     "depthP50": 0.0072
+    },
+    "frame_0002": {
+     "iou": 0.96,
+     "depthP50": 0.0033
+    }
+   },
+   "minCm": 2.4,
+   "extentM": [
+    0.125,
+    0.111,
+    0.864
+   ],
+   "bodyM": [
+    0.108,
+    0.105
+   ],
+   "lowestCm": 2.5,
+   "topCm": 88.9,
+   "meanIou": 0.933,
+   "meanDepthP50": 0.006,
+   "freeSpace": {
+    "frame_0001": 0.0,
+    "frame_0003": 0.0,
+    "frame_0002": 0.0
+   },
+   "gates": [],
+   "fix": [],
+   "coverage": 0.872
+  },
+  "sam3dFixed": {
+   "perPhoto": {
+    "frame_0001": {
+     "iou": 0.91,
+     "depthP50": 0.0074
+    },
+    "frame_0003": {
+     "iou": 0.929,
+     "depthP50": 0.0072
+    },
+    "frame_0002": {
+     "iou": 0.96,
+     "depthP50": 0.0033
+    }
+   },
+   "minCm": 2.4,
+   "extentM": [
+    0.125,
+    0.111,
+    0.864
+   ],
+   "bodyM": [
+    0.108,
+    0.105
+   ],
+   "lowestCm": 2.5,
+   "topCm": 88.9,
+   "meanIou": 0.933,
+   "meanDepthP50": 0.006,
+   "freeSpace": {
+    "frame_0001": 0.0,
+    "frame_0003": 0.0,
+    "frame_0002": 0.0
+   },
+   "gates": [],
+   "fix": [],
+   "coverage": 0.872
+  },
+  "decision": "SAM 3D 原样",
+  "variant": "sam3d",
+  "generationPhoto": "2",
+  "tried": {
+   "sam3d": {
+    "meanIou": 0.933,
+    "meanDepthP50": 0.006,
+    "coverage": 0.872,
+    "gates": []
+   },
+   "sam3d-frame_0001": {
+    "meanIou": 0.832,
+    "meanDepthP50": 0.0104,
+    "coverage": 0.937,
+    "gates": []
+   },
+   "sam3d-frame_0003": {
+    "meanIou": 0.853,
+    "meanDepthP50": 0.0107,
+    "coverage": 0.963,
+    "gates": []
+   }
+  },
+  "coverageWeight": 0.0
+ },
+ "robot": {
+  "sam3d": {
+   "perPhoto": {
+    "frame_0003": {
+     "iou": 0.745,
+     "depthP50": 0.0318
+    },
+    "frame_0001": {
+     "iou": 0.743,
+     "depthP50": 0.0179
+    },
+    "frame_0002": {
+     "iou": 0.797,
+     "depthP50": 0.0157
+    }
+   },
+   "minCm": 90.1,
+   "extentM": [
+    1.315,
+    1.045,
+    1.787
+   ],
+   "bodyM": [
+    0.873,
+    0.716
+   ],
+   "lowestCm": 92.0,
+   "topCm": 270.7,
+   "meanIou": 0.762,
+   "meanDepthP50": 0.0218,
+   "freeSpace": {
+    "frame_0003": 0.007,
+    "frame_0001": 0.007,
+    "frame_0002": 0.007
+   },
+   "gates": [],
+   "fix": [],
+   "coverage": 0.876
+  },
+  "sam3dFixed": {
+   "perPhoto": {
+    "frame_0003": {
+     "iou": 0.745,
+     "depthP50": 0.0318
+    },
+    "frame_0001": {
+     "iou": 0.743,
+     "depthP50": 0.0179
+    },
+    "frame_0002": {
+     "iou": 0.797,
+     "depthP50": 0.0157
+    }
+   },
+   "minCm": 90.1,
+   "extentM": [
+    1.315,
+    1.045,
+    1.787
+   ],
+   "bodyM": [
+    0.873,
+    0.716
+   ],
+   "lowestCm": 92.0,
+   "topCm": 270.7,
+   "meanIou": 0.762,
+   "meanDepthP50": 0.0218,
+   "freeSpace": {
+    "frame_0003": 0.007,
+    "frame_0001": 0.007,
+    "frame_0002": 0.007
+   },
+   "gates": [],
+   "fix": [],
+   "coverage": 0.876
+  },
+  "decision": "SAM 3D 原样",
+  "variant": "sam3d-frame_0002",
+  "generationPhoto": "2",
+  "tried": {
+   "sam3d": {
+    "meanIou": 0.702,
+    "meanDepthP50": 0.0436,
+    "coverage": 0.937,
+    "gates": []
+   },
+   "sam3d-frame_0002": {
+    "meanIou": 0.762,
+    "meanDepthP50": 0.0218,
+    "coverage": 0.876,
+    "gates": []
+   },
+   "sam3d-frame_0003": {
+    "meanIou": 0.738,
+    "meanDepthP50": 0.1266,
+    "coverage": 0.976,
+    "gates": [
+     "深度与照片不符（p50 12.7%）"
+    ]
+   }
+  },
+  "coverageWeight": 0.0
+ },
+ "cart": {
+  "sam3d": {
+   "perPhoto": {
+    "frame_0003": {
+     "iou": 0.851,
+     "depthP50": 0.01
+    },
+    "frame_0001": {
+     "iou": 0.771,
+     "depthP50": 0.0151
+    },
+    "frame_0002": {
+     "iou": 0.839,
+     "depthP50": 0.0131
+    }
+   },
+   "minCm": -2.6,
+   "extentM": [
+    1.7,
+    1.224,
+    0.907
+   ],
+   "bodyM": [
+    1.541,
+    1.129
+   ],
+   "lowestCm": 1.0,
+   "topCm": 91.6,
+   "meanIou": 0.82,
+   "meanDepthP50": 0.0127,
+   "freeSpace": {
+    "frame_0003": 0.0,
+    "frame_0001": 0.003,
+    "frame_0002": 0.002
+   },
+   "gates": [
+    "下沉 2.6 cm"
+   ],
+   "fix": [],
+   "coverage": 0.903
+  },
+  "sam3dFixed": {
+   "perPhoto": {
+    "frame_0003": {
+     "iou": 0.851,
+     "depthP50": 0.01
+    },
+    "frame_0001": {
+     "iou": 0.771,
+     "depthP50": 0.0151
+    },
+    "frame_0002": {
+     "iou": 0.839,
+     "depthP50": 0.0131
+    }
+   },
+   "minCm": 0.0,
+   "extentM": [
+    1.697,
+    1.224,
+    0.883
+   ],
+   "bodyM": [
+    1.539,
+    1.129
+   ],
+   "lowestCm": 3.3,
+   "topCm": 91.7,
+   "meanIou": 0.82,
+   "meanDepthP50": 0.0127,
+   "freeSpace": {
+    "frame_0003": 0.0,
+    "frame_0001": 0.003,
+    "frame_0002": 0.002
+   },
+   "gates": [],
+   "fix": [
+    "切掉地面以下 2.6 cm"
+   ],
+   "coverage": 0.903
+  },
+  "decision": "SAM 3D + 地面修正（切掉地面以下 2.6 cm）",
+  "variant": "sam3d-frame_0003",
+  "generationPhoto": "3",
+  "tried": {
+   "sam3d": {
+    "meanIou": 0.811,
+    "meanDepthP50": 0.0112,
+    "coverage": 0.845,
+    "gates": []
+   },
+   "sam3d-frame_0001": {
+    "meanIou": 0.778,
+    "meanDepthP50": 0.0165,
+    "coverage": 0.867,
+    "gates": []
+   },
+   "sam3d-frame_0003": {
+    "meanIou": 0.82,
+    "meanDepthP50": 0.0127,
+    "coverage": 0.903,
+    "gates": []
+   }
+  },
+  "coverageWeight": 0.0
+ },
+ "guard": {
+  "sam3d": {
+   "perPhoto": {
+    "frame_0003": {
+     "iou": 0.833,
+     "depthP50": 0.0952
+    },
+    "frame_0001": {
+     "iou": 0.818,
+     "depthP50": 0.086
+    },
+    "frame_0002": {
+     "iou": 0.775,
+     "depthP50": 0.078
+    }
+   },
+   "minCm": 40.9,
+   "extentM": [
+    2.16,
+    2.074,
+    0.644
+   ],
+   "bodyM": [
+    2.108,
+    1.949
+   ],
+   "lowestCm": 41.8,
+   "topCm": 106.3,
+   "meanIou": 0.809,
+   "meanDepthP50": 0.0864,
+   "freeSpace": {
+    "frame_0003": 0.0,
+    "frame_0001": 0.0,
+    "frame_0002": 0.0
+   },
+   "gates": [
+    "深度与照片不符（p50 8.6%）"
+   ],
+   "fix": [],
+   "coverage": 0.87
+  },
+  "sam3dFixed": {
+   "perPhoto": {
+    "frame_0003": {
+     "iou": 0.833,
+     "depthP50": 0.0952
+    },
+    "frame_0001": {
+     "iou": 0.818,
+     "depthP50": 0.086
+    },
+    "frame_0002": {
+     "iou": 0.775,
+     "depthP50": 0.078
+    }
+   },
+   "minCm": 40.9,
+   "extentM": [
+    2.16,
+    2.074,
+    0.644
+   ],
+   "bodyM": [
+    2.108,
+    1.949
+   ],
+   "lowestCm": 41.8,
+   "topCm": 106.3,
+   "meanIou": 0.809,
+   "meanDepthP50": 0.0864,
+   "freeSpace": {
+    "frame_0003": 0.0,
+    "frame_0001": 0.0,
+    "frame_0002": 0.0
+   },
+   "gates": [
+    "深度与照片不符（p50 8.6%）"
+   ],
+   "fix": [],
+   "coverage": 0.87
+  },
+  "decision": "用测量盒替代（深度与照片不符（p50 8.6%））",
+  "variant": "sam3d",
+  "generationPhoto": "1",
+  "tried": {
+   "sam3d": {
+    "meanIou": 0.809,
+    "meanDepthP50": 0.0864,
+    "coverage": 0.87,
+    "gates": [
+     "深度与照片不符（p50 8.6%）"
+    ]
+   },
+   "sam3d-frame_0002": {
+    "meanIou": 0.712,
+    "meanDepthP50": 0.1911,
+    "coverage": 0.842,
+    "gates": [
+     "深度与照片不符（p50 19.1%）"
+    ]
+   },
+   "sam3d-frame_0003": {
+    "meanIou": 0.673,
+    "meanDepthP50": 0.09,
+    "coverage": 0.963,
+    "gates": [
+     "深度与照片不符（p50 9.0%）"
+    ]
+   }
+  },
+  "coverageWeight": 0.0
+ }
+}

@@ -8,7 +8,7 @@ refine(), bounded 9-DOF silhouette + depth render-and-compare on every photo of 
   TRELLIS  no pose: fast_report.r5_bench.align_free (z/y up x 24 yaws, silhouette scale, translation ICP), unchanged
 Generation input for TRELLIS and SAM 3D: the photo with the object's largest mask (here photo 1 for all six objects).
 
-  M=/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/modal
+  M=$PANOPTES_PLATFORM/.venv/bin/modal      # on-prem: $MODAL_RUN (env.sh, the in-process runner) in place of "$M run"
   $M run completion_ab.py --stage prepare    # TRELLIS @ pinned HF revision + DINOv2 -> volume panoptes-completion-ab (CPU)
   $M run completion_ab.py --stage trellis    # one A100, block_network: six meshes
   $M run completion_ab.py --stage trellis --variants trellis2v   # the same from every photo's crop (run_multi_image, stochastic)
@@ -25,19 +25,25 @@ import os
 from pathlib import Path
 import sys
 import tarfile
+import tempfile
 import time
 
 import modal
 
+
+def env(key):  # env.template section 6, set by env.sh; a Modal container has none of them and uses nothing read through here
+    return os.environ[key] if modal.is_local() else os.environ.get(key, '')
+
+
 HERE = Path(__file__).resolve().parent
-WT = Path(os.environ.get('PANOPTES_WORKCELL', '/Users/adam/.codex/worktrees/panoptes-workcell-photo-speed'))
-SERVING = Path(os.environ.get('PANOPTES_SERVING', '/Users/adam/Desktop/panoptes-public/panoptes-serving'))
+WT = Path(env('PANOPTES_WORKCELL'))
+SERVING = Path(env('PANOPTES_SERVING'))
 CELL = os.environ.get('AB_CELL', '030')  # AB_CELL=090: the September cell (run lucida-replica-01, all nine RecGen objects)
 # AB_RUN=DIR AB_OUT=DIR [AB_OBJECTS=a,b,...]: any run in the lucida-replica-01 layout (e.g. a rebuilt geometry), its own output
 # directory, and the objects to complete (default: every object of its evidence/objects.json); the 030 / 090 defaults are unchanged
 RUN = Path(os.environ['AB_RUN']) if os.environ.get('AB_RUN') else SERVING / 'outputs/candidate-evaluation' / {'030': 'bor1-030-01', '090': 'lucida-replica-01'}[CELL]
 OUT = Path(os.environ['AB_OUT']) if os.environ.get('AB_OUT') else Path(
-    os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad') + '/checks/'
+    env('SWAP_SCRATCH') + '/checks/'
     + {'030': 'completionAB-out', '090': 'completionAB-090'}[CELL])
 OBJECTS = (os.environ['AB_OBJECTS'].split(',') if os.environ.get('AB_OBJECTS') else
            [o['object_id'] for o in json.loads((RUN / 'evidence/objects.json').read_text())['objects']] if os.environ.get('AB_RUN') else
@@ -248,7 +254,7 @@ def assemble_variants(archive: bytes, variants: list, iterations: int = 100, eva
     import fast_report.x7 as x7m
     from fast_report.r5_bench import align_free
     started = time.monotonic()
-    work = Path('/tmp/w')
+    work = Path(tempfile.mkdtemp(prefix='completion-ab-'))
     with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as bundle:
         bundle.extractall(work, filter='data')
     shared = work / 'shared'
@@ -256,7 +262,7 @@ def assemble_variants(archive: bytes, variants: list, iterations: int = 100, eva
     up = np.asarray(json.loads((shared / 'evidence/floor.json').read_text())['up_native'], float)
     results = {}
     for variant in variants:
-        root = Path('/tmp/runs') / variant
+        root = Path(tempfile.mkdtemp(prefix='completion-ab-runs-')) / variant
         (root / 'generation').mkdir(parents=True)
         for name in ['manifest.json', 'evidence', 'geometry']:
             (root / name).symlink_to(shared / name)

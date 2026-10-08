@@ -17,15 +17,21 @@ import os
 from pathlib import Path
 import sys
 import tarfile
+import tempfile
 import time
 
 import modal
 
+
+def env(key):  # env.template section 6, set by env.sh; a Modal container has none of them and uses nothing read through here
+    return os.environ[key] if modal.is_local() else os.environ.get(key, '')
+
+
 NOTE = Path(__file__).resolve().parent
 FAIR = NOTE.parent / 'geometry-licence-ab-fair-2026-10-05'
-SERV = Path(os.environ.get('PANOPTES_SERVING', '/Users/adam/Desktop/panoptes-public/panoptes-serving'))  # = fair_ab_modal's paths (it is imported locally only:
-SCR = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))  # not in the images)
-RUNS = Path(os.environ.get('PANOPTES_RUNS', '/Users/adam/Desktop/panoptes-public/panoptes-serving/outputs/candidate-evaluation'))
+SERV = Path(env('PANOPTES_SERVING'))  # = fair_ab_modal's paths (it is imported locally only:
+SCR = Path(env('SWAP_SCRATCH'))  # not in the images)
+RUNS = Path(env('PANOPTES_RUNS'))
 GEOM, OUT = SCR / 'checks/bbab-geom', SCR / 'checks/bbab-analyse'
 L4_RATE = .000222 + 4 * .0000131 + 16 * .00000222  # L4 + 4 CPU + 16 GiB list rate (USD/s); not an invoice
 VGGT = ('facebook/VGGT-1B-Commercial', 'ebb29a532abe92960eeb6903a5530f16990ef4ab')
@@ -88,12 +94,12 @@ def classic(inputs: dict) -> dict:
     sys.path[:0] = ['/serving', '/serving/scripts']
     import backbones as bb
     from ehs_spatial.providers.map_anything import MapAnythingAdapter
-    start = time.monotonic(); root = Path('/tmp/out'); report = {}
+    start = time.monotonic(); root = Path(tempfile.mkdtemp(prefix='backbone-ab-out-')); indir = Path(tempfile.mkdtemp(prefix='backbone-ab-in-')); report = {}
     moge = bb.MoGe3('cuda'); t_load = time.monotonic() - start; focal = None
     for cell, frames in sorted(inputs.items(), key=lambda kv: -len(kv[1])):  # the three-view cell first: it sets the device focal
         paths = []
         for name, data in sorted(frames.items()):
-            p = Path('/tmp/in') / cell / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(data); paths.append(str(p))
+            p = indir / cell / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(data); paths.append(str(p))
         runner = bb.ClassicRunner(moge, device='cuda', focal=focal)
         out = root / f'{cell}-classic-padded' / 'geometry'
         MapAnythingAdapter(runner=runner).run(paths, out)

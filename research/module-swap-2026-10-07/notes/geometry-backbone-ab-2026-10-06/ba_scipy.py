@@ -26,7 +26,7 @@ from scipy.optimize import least_squares
 from scipy.sparse import csr_matrix
 from scipy.spatial.transform import Rotation
 
-sys.path[:0] = [str(Path(__file__).resolve().parent), os.environ.get('PANOPTES_WORKCELL', '/Users/adam/.codex/worktrees/panoptes-workcell-photo-speed') + '/modal_apps']
+sys.path[:0] = [str(Path(__file__).resolve().parent), os.environ['PANOPTES_WORKCELL'] + '/modal_apps']   # env.sh (env.template section 6)
 import geometry_clean_ab as gc  # noqa: E402  helpers; refine = the production stage (numpy BA, no pycolmap)
 from bundle_adjust import BEHIND, CAUCHY, EPS, _project, bundle_adjust, point_errors  # noqa: E402,F401  the production BA
 

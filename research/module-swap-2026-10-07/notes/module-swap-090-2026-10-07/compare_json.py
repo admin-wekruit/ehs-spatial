@@ -11,9 +11,9 @@ import os
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SP = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))
-RN = Path(os.environ.get('SWAP_NOTES', '/Users/adam/Desktop/panoptes-public/research-notes'))
-LUCIDA = Path(os.environ.get('PANOPTES_RUNS', '/Users/adam/Desktop/panoptes-public/panoptes-serving/outputs/candidate-evaluation')) / 'lucida-replica-01'
+SP = Path(os.environ['SWAP_SCRATCH'])   # env.sh (env.template section 6)
+RN = Path(os.environ['SWAP_NOTES'])
+LUCIDA = Path(os.environ['PANOPTES_RUNS']) / 'lucida-replica-01'
 MVS = SP / 'checks/bbab-export-090-mvs-scipyba'
 FILL = SP / 'checks/bbab-export-090-mvs-fill'          # geometry module v2: the same MVS run + MoGe-3 in-mask hole fill (fill_geometry.py)
 OBJECTS =['left_light_curtain', 'right_light_curtain', 'left_fence', 'right_fence', 'left_post', 'right_post', 'robot', 'cart', 'guard']
@@ -44,6 +44,9 @@ def first_existing(*paths):
     return next((p for p in paths if p.exists()), paths[-1])
 
 
+# cmp-pi3x / cmp-mvs / cmp-mvs-fill results.json (compare.py's uniform selections of 2026-10-06/07, 15-21 KB each) are shipped in
+# this directory: the published table.md was computed from them, a clean clone has no other copy and S8 failed without them
+# (customer review 2026-10-08).
 VERSIONS = {
     'pi3x+recgen': dict(geometry='pi3x', completion='recgen', run=LUCIDA, comps=lambda: comps(LUCIDA / 'result/comparisons.json'),
                         record=lambda oid: load(LUCIDA / 'generation' / oid / 'output.json'), variant=lambda oid: 'recgen'),

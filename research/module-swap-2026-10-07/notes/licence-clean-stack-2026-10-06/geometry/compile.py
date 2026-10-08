@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 NOTE = Path(__file__).resolve().parent
-FAIR = Path(os.environ.get('SWAP_NOTES', '/Users/adam/Desktop/panoptes-public/research-notes')) / 'geometry-licence-ab-fair-2026-10-05'
+FAIR = Path(os.environ['SWAP_NOTES']) / 'geometry-licence-ab-fair-2026-10-05'   # env.sh (env.template section 6)
 sys.path.insert(0, str(FAIR))
 import compile as fc  # noqa: E402  fair A/B scoring (config), unchanged
 

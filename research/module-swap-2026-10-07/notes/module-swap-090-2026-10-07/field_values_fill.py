@@ -11,7 +11,7 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 RN = HERE.parent
-SP = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))
+SP = Path(os.environ['SWAP_SCRATCH'])   # env.sh (env.template section 6)
 AN = SP / 'checks/bbab-analyse'
 sys.path.insert(0, str(RN / 'geometry-backbone-ab-2026-10-06'))
 _spec = importlib.util.spec_from_file_location('clean_compile', RN / 'licence-clean-stack-2026-10-06/geometry/compile.py')

@@ -10,8 +10,8 @@ from pathlib import Path
 import shutil
 import sys
 
-SP = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))
-PLATFORM = Path(os.environ.get('PANOPTES_PLATFORM', '/Users/adam/Desktop/Tesla/panoptes-platform'))
+SP = Path(os.environ['SWAP_SCRATCH'])   # env.sh (env.template section 6)
+PLATFORM = Path(os.environ['PANOPTES_PLATFORM'])
 
 
 def main(variant):

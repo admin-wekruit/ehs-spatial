@@ -26,7 +26,7 @@ fc = clean.fc  # the fair compile module, unchanged (config, RULES, LICENCE); cl
 
 SCR = fc.SCR
 ANALYSE = [SCR / 'checks/da3fair-analyse', SCR / 'checks/clean-analyse', SCR / 'checks/bbab-analyse']
-RUNS = Path(os.environ.get('PANOPTES_RUNS', '/Users/adam/Desktop/panoptes-public/panoptes-serving/outputs/candidate-evaluation'))
+RUNS = Path(os.environ['PANOPTES_RUNS'])   # env.sh (env.template section 6)
 CELL_RUN = {'090': RUNS / 'lucida-replica-01', '030': RUNS / 'bor1-030-01'}
 CLEAN_MVS = 'MIT / BSD-3 / Apache-2.0 (RoMa outdoor, pycolmap, OpenCV; the start backbone only initialises the BA)'
 # (backbone key, label, licence, licence clean, group)

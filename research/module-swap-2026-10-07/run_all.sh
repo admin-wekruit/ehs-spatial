@@ -5,7 +5,7 @@
 #   S4 completion SAM 3D Objects candidates from every masked photo -> uniform selection -> generation/ contract
 #   S5-S14       assembly v2 (floor-contact hinge) -> report -> platform import/export -> original checks -> layer -> tables
 #   source env.sh; ./run_all.sh 090 | 030            (idempotent: finished steps are skipped)
-set -e
+set -e -o pipefail   # a failed step fails the chain even behind `| tail` (customer review 2026-10-08: no step exits 0 on a failure)
 : ${SWAP_ROOT:?source env.sh first}
 CELL=${1:?cell: 090 or 030}
 N=$SWAP_NOTES; SP=$SWAP_SCRATCH

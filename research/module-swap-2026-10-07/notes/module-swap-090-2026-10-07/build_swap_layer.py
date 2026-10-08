@@ -14,9 +14,9 @@ import shutil
 import sys
 
 HERE = Path(__file__).resolve().parent
-SP = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))
-PLATFORM = Path(os.environ.get('PANOPTES_PLATFORM', '/Users/adam/Desktop/Tesla/panoptes-platform'))
-PAGES = Path(os.environ.get('PANOPTES_PAGES', '/Users/adam/Desktop/panoptes-public/panoptes-workcell-pages/workcell-photo-direct/report/measurement-layer'))
+SP = Path(os.environ['SWAP_SCRATCH'])   # env.sh (env.template section 6)
+PLATFORM = Path(os.environ['PANOPTES_PLATFORM'])
+PAGES = Path(os.environ['PANOPTES_PAGES'])
 ZH = {'left_light_curtain': '左光幕', 'right_light_curtain': '右光幕', 'left_fence': '左围栏', 'right_fence': '右围栏', 'left_post': '左防撞柱',
       'right_post': '右防撞柱', 'robot': '机器人', 'cart': '料车', 'guard': '防护板', 'observed_floor': '观测地面'}
 EN = {'left_light_curtain': 'left light curtain', 'right_light_curtain': 'right light curtain', 'left_fence': 'left fence', 'right_fence': 'right fence',

@@ -12,12 +12,11 @@ from pathlib import Path
 import subprocess
 import sys
 
-SP = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))
-RN = Path(os.environ.get('SWAP_NOTES', '/Users/adam/Desktop/panoptes-public/research-notes'))
-WT = Path(os.environ.get('PANOPTES_WORKCELL', '/Users/adam/.codex/worktrees/panoptes-workcell-photo-speed'))
+SP = Path(os.environ['SWAP_SCRATCH'])   # env.sh (env.template section 6)
+RN = Path(os.environ['SWAP_NOTES'])
+WT = Path(os.environ['PANOPTES_WORKCELL'])
 HERE = Path(__file__).resolve().parent
-MODAL = '/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/modal'
-MODAL_RUN = os.environ.get('MODAL_RUN', MODAL + ' run').split()   # on-prem: 'python WT/scripts/onprem/run_stage.py --weights DIR'
+MODAL_RUN = os.environ['MODAL_RUN'].split()   # env.sh: 'python WT/scripts/onprem/run_stage.py --weights DIR' on-prem ('modal run' on the original machine)
 API = 'https://layer-trial.invalid/report/api'
 CELL = os.environ.get('STAGES_CELL', '090')                # STAGES_CELL=030: the published 030 report's view; no click part masks there
 OLD_VIEW = SP / ('sept/new-view.json' if CELL == '090' else 'checks/cd84-view.json')   # the published report: entity -> object for the lower-edge targets
@@ -86,9 +85,11 @@ def main(variant, stages):
             procs = []
     for n, p, l in procs:
         p.wait(); l.close(); print(n, 'exit', p.returncode, flush=True)
+    missing = [name for name in stages or list(STAGES) if not (out_root / name / 'results.json').exists()]
     for name in stages or list(STAGES):
-        r = out_root / name / 'results.json'
-        print(name, 'ok' if r.exists() else 'MISSING')
+        print(name, 'MISSING' if name in missing else 'ok')
+    if missing:  # a check without results.json failed: exit non-zero so no report is built from it (customer review 2026-10-08)
+        sys.exit(f'run_stages: {len(missing)} check(s) without results.json: {" ".join(missing)}')
 
 
 if __name__ == '__main__':

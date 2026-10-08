@@ -6,15 +6,15 @@
 # then S6-S14 unchanged (report -> local import/export as variant 030-v2-<name> -> original checks -> layer).
 #   ./run_030_chain.sh [NAME ...]
 set -e
-SP=${SWAP_SCRATCH:-/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad}
-PY=${PY:-/Users/adam/Desktop/panoptes-public/panoptes-serving/.venv/bin/python}
-MS=${MS:-/Users/adam/Desktop/panoptes-public/panoptes-serving/.venv/bin/modal}
-M=${M:-/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/modal}
-RN=${SWAP_NOTES:-/Users/adam/Desktop/panoptes-public/research-notes}
+SP=${SWAP_SCRATCH:?source research/module-swap-2026-10-07/env.sh}
+PY=${PY:?source research/module-swap-2026-10-07/env.sh}
+MS=${MS:?source research/module-swap-2026-10-07/env.sh}
+M=${M:?source research/module-swap-2026-10-07/env.sh}
+RN=${SWAP_NOTES:?source research/module-swap-2026-10-07/env.sh}
 HERE=$RN/module-swap-090-2026-10-07
-SERV=${PANOPTES_SERVING:-/Users/adam/Desktop/panoptes-public/panoptes-serving}
-PLAT=${PANOPTES_PLATFORM:-/Users/adam/Desktop/Tesla/panoptes-platform}
-PG=${PG:-/opt/homebrew/opt/postgresql@16/bin}
+SERV=${PANOPTES_SERVING:?source research/module-swap-2026-10-07/env.sh}
+PLAT=${PANOPTES_PLATFORM:?source research/module-swap-2026-10-07/env.sh}
+PG=${PG:?source research/module-swap-2026-10-07/env.sh}
 BOR=$SERV/outputs/candidate-evaluation/bor1-030-01
 FILLX=$SP/checks/bbab-export-030-mvs-fill
 OBJS="cart guard left_light_curtain left_post right_fence right_light_curtain right_post robot"
@@ -69,14 +69,14 @@ for NAME in ${=NAMES}; do
   step "$NAME: local platform import + export"
   cd $PLAT
   if [ ! -f .platform/swap-20261007/$V/result.json ]; then
-    LC_ALL=en_US.UTF-8 $PG/pg_ctl -D ${PGDATA_DIR:-/opt/homebrew/var/postgresql@16} -o "-p 55432 -c listen_addresses=127.0.0.1" -l ${SWAP_SCRATCH:-/private/tmp/claude-501}/pg55432.log start 2>&1 | filt | tail -1 || true
+    LC_ALL=en_US.UTF-8 $PG/pg_ctl -D ${PGDATA_DIR:?source research/module-swap-2026-10-07/env.sh} -o "-p 55432 -c listen_addresses=127.0.0.1" -l $SP/pg55432.log start 2>&1 | filt | tail -1 || true
     for i in $(seq 1 40); do $PG/pg_isready -h 127.0.0.1 -p 55432 -q && break; $PY -c "import time; time.sleep(1)"; done
     $PG/pg_isready -h 127.0.0.1 -p 55432
     set +e
     .venv/bin/python .platform/publish-swap-20261007.py $V $RUN $SCALE "$TITLE" 2>&1 | filt | tail -2
     RC=${pipestatus[1]}
     set -e
-    LC_ALL=en_US.UTF-8 $PG/pg_ctl -D ${PGDATA_DIR:-/opt/homebrew/var/postgresql@16} stop -m fast 2>&1 | filt | tail -1 || true
+    LC_ALL=en_US.UTF-8 $PG/pg_ctl -D ${PGDATA_DIR:?source research/module-swap-2026-10-07/env.sh} stop -m fast 2>&1 | filt | tail -1 || true
     for i in $(seq 1 40); do $PG/pg_isready -h 127.0.0.1 -p 55432 -q || break; $PY -c "import time; time.sleep(1)"; done
     test $RC -eq 0
   fi

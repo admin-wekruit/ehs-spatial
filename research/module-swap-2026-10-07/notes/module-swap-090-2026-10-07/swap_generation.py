@@ -15,12 +15,12 @@ import sys
 import numpy as np
 import trimesh
 
-sys.path.insert(0, os.environ.get('PANOPTES_SERVING', '/Users/adam/Desktop/panoptes-public/panoptes-serving') + '/scripts/research')
+sys.path.insert(0, os.environ['PANOPTES_SERVING'] + '/scripts/research')   # env.sh (env.template section 6)
 import assemble_lucida_scene as als  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-SP = Path(os.environ.get('SWAP_SCRATCH', '/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad'))
-LUCIDA = Path(os.environ.get('PANOPTES_RUNS', '/Users/adam/Desktop/panoptes-public/panoptes-serving/outputs/candidate-evaluation')) / 'lucida-replica-01'
+SP = Path(os.environ['SWAP_SCRATCH'])
+LUCIDA = Path(os.environ['PANOPTES_RUNS']) / 'lucida-replica-01'
 VARIANTS = {
     'pi3x-sam3d': dict(src=LUCIDA, cands=SP / 'checks/completionAB-090', sel=HERE / 'cmp-pi3x/results.json'),
     'mvs-sam3d': dict(src=SP / 'checks/bbab-export-090-mvs-scipyba', cands=SP / 'swap-runs/mvs-recgen-ab', sel=HERE / 'cmp-mvs/results.json'),
