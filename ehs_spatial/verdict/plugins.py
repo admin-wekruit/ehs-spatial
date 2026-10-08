@@ -8,8 +8,8 @@ Layer I/O (all values are contract models or plain dicts; files are written by t
   L1  inputs: {'source': <path or dict the producer understands>}            -> {'scene': Scene}
   L2  inputs: {'scene': Scene}                                               -> {'facts': Facts}
   L3  inputs: {'scene': Scene, 'facts': Facts}                               -> {'facts': Facts}   (annotated: quality + 'untrusted' flags)
-  L4  inputs: {'spec_dir': Path, 'signature': Signature, 'scene': Scene|None} -> {'clauses': dict, 'alignment': dict, 'retrieved': list[str]}
-  L5  inputs: {'clauses': dict, 'alignment': dict, 'retrieved': list[str], 'signature': Signature} -> {'rule_pack': RulePack}
+  L4  inputs: {'spec_dir': Path, 'signature': Signature, 'scene': Scene|None} -> {'clauses': ClauseGraph, 'alignment': Alignment, 'retrieved': list[str]}
+  L5  inputs: {'clauses': ClauseGraph, 'alignment': Alignment, 'retrieved': list[str], 'signature': Signature} -> {'rule_pack': RulePack}
   L6  inputs: {'facts': Facts, 'rule_pack': RulePack, 'scene': Scene}         -> {'verdicts': VerdictSet}
   L7  inputs: {'verdicts': VerdictSet, 'facts': Facts, 'scene': Scene, 'workdir': Path} -> {'report': Path}
 """
