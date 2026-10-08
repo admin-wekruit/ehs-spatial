@@ -13,6 +13,12 @@ Panoptes：工位（机器人单元）照片 → 米制 3D 重建（RoMa + DA3-B
 已交付（Phase 3，`1.0.0-rc1`，2026-10-07）：客户一个 `git clone` → `.env` → `make up`（两张 A100 上的 GPU 服务）→ `panoptes run --cell 090 | 030`，报告站。发布的两个工位：090（`4b58dbd2…`）、030（`cd84d3fb…`），这两个测量层是所有改动的回归标准（117/117 字段、盒子 9 / 8）。
 报告里今天**没有机器合规判定**（策略引擎按设计弃权）——判定层就是 Phase 4 要补的东西。
 
+**为什么客户在弄 Linux 和 Docker**：我们开发在这台 Mac 上，GPU 推理走 Modal 云。Phase 3 交付把 GPU 推理搬到**客户自己的两张 A100**（`HANDOFF.md` §0–§3）：
+GPU 机是 Linux + Docker + NVIDIA Container Toolkit，每个模型一个容器服务（`make up GPU=a` = sam3d :8805 + sam3 :8801；`make up GPU=b` = geometry-mvs :8804 +
+moge :8803 + mapanything :8802；镜像来自 `deploy/Dockerfile.serving`、`docker/{sam3d,geometry,workcell-gpu}.Dockerfile`）；流程机是一台 CPU Linux 跑 `panoptes run`，经 jump VM 的端口转发
+调 GPU 服务（http provider）。所以他们的一切都在 Linux + Docker 上跑，而我们从没在 Linux 上跑过测试、`Dockerfile.serving` 交付时是坏的（CUDA 标签不存在、缺 `python3-dev`、pip
+断言）——这就是审查里"Linux 上 11 个测试失败 / macOS 专用路径 / Dockerfile 三处修复 / 验收门在干净 Linux 克隆上过"的来历。Docker 只用于 GPU 服务；流程机和报告站不需要。
+
 ---
 
 ## 2. 研究：问了什么、结论是什么、在哪（全在 `docs/research/`，索引 `docs/research/README.md`）
@@ -52,6 +58,34 @@ L1 感知 / 重建 → **C1 Scene**（米制盒、σ、置信度、可见视角�
 **记分卡 v1 说了什么**：基线等五组数字与 v0 一致；`function-library@0` 在合并图 38 条上 12 编译 / 9 需输入 / 17 拒绝，但编译的 9 条在 090 / 030 上**一条没绑定**（L2 不算 `perimeter_of` / `covers_opening`）；22 / 18 条 NEEDS_INPUT 缺的正是标注面板要收的声明输入；LLM 三行没跑（本机无凭证）。
 
 **判定层下一步（按序）**：① L2 从声明的限制空间算 `perimeter_of` / `covers_opening`（`labels declared` → `scene-json declared:` → `Scene.zones` → `relations@3`）；② 第一次真跑 Haiku（命令见 §8）→ 记分卡 v2；③ 用 html 报告标一轮金标 → `benchmark/v1`；④ 按 ponytail-review 的 todo 瘦身；⑤ 判定层不在交付路径上，Phase 5 归档时随研究走，除非客户要 Phase 4。
+
+---
+
+## 3b. 计划（两条线，含现在走到哪）
+
+**线一：判定层（`verdict-layer-plan-2026-10-08.md` §4 的五个阶段）**
+
+| 阶段 | 计划内容 | 产出 / 验收 | 现在 |
+|---|---|---|---|
+| A 契约与实验台 | C1–C5 契约、每层插件协议、注册表、台账、记分卡、试跑的 L2 / L6 注册为基线、跨层 import lint | 记分卡 v0：基线在 090 / 030 的五态分布与试跑逐条一致 | **完成**（v0、v1） |
+| B 让引擎能判 | 所有盒给 σ；coverage（按照片深度空间雕刻）；区域与声明输入文件（受限空间、操作站、T、d）；L3 感知规约 v1 | "NEEDS / CANNOT → 判定"的前后表；090 右围栏离地缝变可判 | **一半**：σ 策略、coverage 工具、`stpl@1` 都有，但 coverage / σ 没接进基线运行；区域 / 声明输入的入口 = html 标注面板（已做）→ `labels declared` → `scene-json declared:`（已做）→ `Scene.zones`（未做） |
+| C 规范侧多方案 | L4 条款图（表 → 函数、定义、例外、版本）+ 对齐 + 检索；L5 三种合成 + 验证（冗余差分、性质测试、签名验证、蜕变）；审阅屏静态 HTML；对照组 | 方案 × 指标表：编译率、误拒率、与手写包差分、每条审阅分钟、LLM 调用数；至少一种方案编译率 > 80 % | **已建未跑完**：条款图（ISO 20 + TS 18）、`llm-extract@0`、三种 L5、验证 harness、html 审阅屏都在；`function-library` 跑了（12/9/17）；LLM 两种 + 抽取没跑（无凭证） |
+| D 严格化与消融 | 金标集（安全工程师）；蜕变套件；决策规则变体；L6 引擎等价；对 12 条教训逐条消融 | 消融表 + 记分卡（含 5×5 混淆矩阵） | **未开始**（等价和决策变体已有；金标工具已有，金标没标） |
+| E 泛化与扩展 | 客户站点规则包；更多合成原型；未见工位 / 未见规范；视频 spike（DAAAM → C1 adapter + 逐帧 L6 + RTAMT） | 泛化退化表；视频事件级 P / R | 未开始 |
+
+下一个 session 的判定层顺序：B 的区域 → L2 `perimeter_of` / `covers_opening`（否则 TS 条款永远不绑定）→ 拿到凭证跑 C 的三行 → 用 html 面板标第一轮金标 → D。
+
+**线二：交付回去（`docs/REVIEW-ARGUS-2026-10-08.md` §2 的 11 步；大小是估计）**
+
+| 顺序 | 步 | 大小 | 为什么这个顺序 |
+|---|---|---|---|
+| 已做 | 1 去重、2 失败语义、3 机器路径、5 点名修复 | 小 | 今天 |
+| 下一个 | 4 测试 0 失败 + Linux 可移植 | 中（1 天） | 客户验收门的第一条；和别的步互不干扰 |
+| 并行 | 8 i18n 后半段（WIP 分支） | 中（1 天） | 只碰 `web/src`；之后流水线消息码（1 天）要等第 6 步搬完再做，避免改两遍 |
+| 然后 | 6 一个包 + 归档 → 7 去 Modal 仿真 | 大（2–3 天） | 先出交付路径清单，再搬；回归 = 两工位测量层逐字段一致 |
+| 随 6 | 9 数据出库（sha 清单 + 拉取脚本；交付用新仓库） | 中 | 搬家时顺手 |
+| 之后 | 10 服务去重（MoGe 一份；v0 去留问客户） | 中 | 需要客户答复 |
+| 收尾 | 11 CI 验收门（ubuntu） | 小–中 | 第 4 步后就能开始跑，第 8 步后全绿 |
 
 ---
 
