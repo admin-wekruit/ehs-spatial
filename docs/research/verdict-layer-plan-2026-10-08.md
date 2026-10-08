@@ -17,7 +17,7 @@
 ```
 registry.yaml            每层的变体：L1.photo-v2 | L1.daaam ; L2.relations-v1 ; L3.none | L3.stpl-v1 ; L4.template(baseline) | L4.clause-kg ;
                          L5.funclib | L5.codegen | L5.redundant ; L6.clingo | L6.prolog | L6.python ; decision.guard_k2 | decision.simple
-benchmark/<snapshot>/    冻结的 (工位, 照片 / 场景契约, 规范包, 金标)；哈希清单
+benchmark/<snapshot>/    冻结的 (工位, 照片 / 场景契约, 规范包, 金标)；进 git，改了就升版本号（v0, v1…）
 runs/<run_id>/           config.yaml（每层选哪个变体 + 版本三元组）→ verdicts.json / coverage.json / gaps.json → score.json
 ledger.jsonl             run_id（时间戳 + git 短 sha）、配置文件名、基准快照名、时长、LLM 调用数
 scorecard.md             变体 × 指标，自动从 ledger 生成；差异列 = 配置文件的 diff（哪一层换了什么）
@@ -95,7 +95,7 @@ def register(layer, name): ...              # 装饰器；第三方包用 entry 
 
 ```yaml
 # configs/run-c-codegen.yaml        一次 run = 每层选一个插件 + 参数；Hydra 式组合：base + 覆盖
-benchmark: benchmark/v0            # 冻结快照（哈希清单）
+benchmark: benchmark/v0            # 冻结快照，按版本号引用
 L1: {plugin: photo-v2, cached: true}
 L2: {plugin: box-sampling-v1, cell_m: 0.10}
 L3: {plugin: stpl-v1}
