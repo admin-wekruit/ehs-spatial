@@ -12,11 +12,8 @@ SIGNATURE = ROOT / "ehs_spatial/verdict/signature-v1.json"
 _CALL = re.compile(r"\b([a-z_][a-z0-9_]*)\(")
 
 # Terms the clauses need that signature-v1 does not have. Each is a deliberate 0.0 row in the alignment (see l4_spec/README.md).
-KNOWN_GAPS = {
-    "aisle_width",    # OSHA 1910.36(g)(2) / NFPA 101: clear width of an aisle zone; planned in the trial vocabulary, not in signature-v1
-    "climbing_aids",  # ISO 14120 5.18: footholds on a guard; needs a per-object attribute from L1
-}
-KNOWN_TAG_GAPS = {"agv"}   # ISO 3691-4 is about driverless trucks, which are not a signature-v1 class
+KNOWN_GAPS: set[str] = set()   # aisle_width / climbing_aids are in signature-v1 now
+KNOWN_TAG_GAPS: set[str] = set()   # agv is a signature-v1 class now
 
 EXPECTED_IDS = {
     "ISO13857:2019/4.4", "ISO13857:2019/Table2", "ISO13857:2019/Table2-min-height", "ISO13857:2019/Table4", "ISO13857:2019/Table7",

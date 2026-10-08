@@ -1,0 +1,495 @@
+{
+ "version": "v0",
+ "provisional": true,
+ "source": "trial 2026-10-07, not human-labelled",
+ "verdicts": [
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "70bf794d-0e00-50a2-9871-abe4d5ad76cc"
+   ],
+   "labels": [
+    "robot",
+    "left fence"
+   ],
+   "status": "NEEDS_MEASUREMENT"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "9b760eac-397b-5663-a245-843f6b11c350"
+   ],
+   "labels": [
+    "robot",
+    "right bollard"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "9c5a1063-7e72-51e4-996f-40ed2182181b"
+   ],
+   "labels": [
+    "robot",
+    "left bollard"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "da08d580-8968-52e0-8782-10e6f5e50988"
+   ],
+   "labels": [
+    "robot",
+    "left light curtain"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "e17c9fdc-e0bc-5df2-9626-73756bf2995c"
+   ],
+   "labels": [
+    "robot",
+    "right light curtain"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "ed56fff4-3362-59ae-a09a-bc54bf4515e2"
+   ],
+   "labels": [
+    "robot",
+    "safety guard"
+   ],
+   "status": "FAIL"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "f19145c1-e40d-5a5e-9e4e-1b8023d5aa6d"
+   ],
+   "labels": [
+    "robot",
+    "right fence"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "enclosure",
+   "subjects": [
+    "hazard_zone"
+   ],
+   "labels": [],
+   "status": "CANNOT_DETERMINE"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "fence_height",
+   "subjects": [
+    "70bf794d-0e00-50a2-9871-abe4d5ad76cc"
+   ],
+   "labels": [
+    "left fence"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "fence_height",
+   "subjects": [
+    "f19145c1-e40d-5a5e-9e4e-1b8023d5aa6d"
+   ],
+   "labels": [
+    "right fence"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "floor_gap",
+   "subjects": [
+    "70bf794d-0e00-50a2-9871-abe4d5ad76cc"
+   ],
+   "labels": [
+    "left fence"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "floor_gap",
+   "subjects": [
+    "ed56fff4-3362-59ae-a09a-bc54bf4515e2"
+   ],
+   "labels": [
+    "safety guard"
+   ],
+   "status": "FAIL"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "floor_gap",
+   "subjects": [
+    "f19145c1-e40d-5a5e-9e4e-1b8023d5aa6d"
+   ],
+   "labels": [
+    "right fence"
+   ],
+   "status": "NEEDS_MEASUREMENT"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "lc_lowest_beam",
+   "subjects": [
+    "da08d580-8968-52e0-8782-10e6f5e50988"
+   ],
+   "labels": [
+    "left light curtain"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "lc_lowest_beam",
+   "subjects": [
+    "e17c9fdc-e0bc-5df2-9626-73756bf2995c"
+   ],
+   "labels": [
+    "right light curtain"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "70bf794d-0e00-50a2-9871-abe4d5ad76cc"
+   ],
+   "labels": [
+    "robot",
+    "left fence"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "9b760eac-397b-5663-a245-843f6b11c350"
+   ],
+   "labels": [
+    "robot",
+    "right bollard"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "9c5a1063-7e72-51e4-996f-40ed2182181b"
+   ],
+   "labels": [
+    "robot",
+    "left bollard"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "da08d580-8968-52e0-8782-10e6f5e50988"
+   ],
+   "labels": [
+    "robot",
+    "left light curtain"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "e17c9fdc-e0bc-5df2-9626-73756bf2995c"
+   ],
+   "labels": [
+    "robot",
+    "right light curtain"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "ed56fff4-3362-59ae-a09a-bc54bf4515e2"
+   ],
+   "labels": [
+    "robot",
+    "safety guard"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "090-a9a6e0a0",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9dbdabee-616c-5dc7-bb1c-89435d48f15c",
+    "f19145c1-e40d-5a5e-9e4e-1b8023d5aa6d"
+   ],
+   "labels": [
+    "robot",
+    "right fence"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "0d84459c-3591-55ef-966e-b1b17475f94b"
+   ],
+   "labels": [
+    "robot",
+    "right fence"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "1ed52346-0777-5939-b935-d5e48f44b333"
+   ],
+   "labels": [
+    "robot",
+    "safety guard"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "4339d261-6523-5a1f-afa5-9fbc3f834fc6"
+   ],
+   "labels": [
+    "robot",
+    "right light curtain"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "738b8922-a8b0-5f80-997f-8b4148b1f1ab"
+   ],
+   "labels": [
+    "robot",
+    "right bollard"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "b3806b16-7f37-541b-8650-468598d7ed5f"
+   ],
+   "labels": [
+    "robot",
+    "left bollard"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "crush_gap",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "bf0b0ae8-19fb-562e-a80c-7fabea0895a5"
+   ],
+   "labels": [
+    "robot",
+    "left light curtain"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "enclosure",
+   "subjects": [
+    "hazard_zone"
+   ],
+   "labels": [],
+   "status": "CANNOT_DETERMINE"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "fence_height",
+   "subjects": [
+    "0d84459c-3591-55ef-966e-b1b17475f94b"
+   ],
+   "labels": [
+    "right fence"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "floor_gap",
+   "subjects": [
+    "0d84459c-3591-55ef-966e-b1b17475f94b"
+   ],
+   "labels": [
+    "right fence"
+   ],
+   "status": "NEEDS_MEASUREMENT"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "floor_gap",
+   "subjects": [
+    "1ed52346-0777-5939-b935-d5e48f44b333"
+   ],
+   "labels": [
+    "safety guard"
+   ],
+   "status": "FAIL"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "lc_lowest_beam",
+   "subjects": [
+    "4339d261-6523-5a1f-afa5-9fbc3f834fc6"
+   ],
+   "labels": [
+    "right light curtain"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "lc_lowest_beam",
+   "subjects": [
+    "bf0b0ae8-19fb-562e-a80c-7fabea0895a5"
+   ],
+   "labels": [
+    "left light curtain"
+   ],
+   "status": "PASS"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "0d84459c-3591-55ef-966e-b1b17475f94b"
+   ],
+   "labels": [
+    "robot",
+    "right fence"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "1ed52346-0777-5939-b935-d5e48f44b333"
+   ],
+   "labels": [
+    "robot",
+    "safety guard"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "4339d261-6523-5a1f-afa5-9fbc3f834fc6"
+   ],
+   "labels": [
+    "robot",
+    "right light curtain"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "738b8922-a8b0-5f80-997f-8b4148b1f1ab"
+   ],
+   "labels": [
+    "robot",
+    "right bollard"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "b3806b16-7f37-541b-8650-468598d7ed5f"
+   ],
+   "labels": [
+    "robot",
+    "left bollard"
+   ],
+   "status": "NEEDS_INPUT"
+  },
+  {
+   "scene_id": "030-fafdeb6b",
+   "rule_id": "reach_over",
+   "subjects": [
+    "9c76c044-a985-5c1e-b8b0-61cc098a4537",
+    "bf0b0ae8-19fb-562e-a80c-7fabea0895a5"
+   ],
+   "labels": [
+    "robot",
+    "left light curtain"
+   ],
+   "status": "NEEDS_INPUT"
+  }
+ ]
+}

@@ -13,7 +13,7 @@ TRIAL_OUT = ROOT / "research/verdict-layer-trial-2026-10-07/out"
 GRAPH = ROOT / "ehs_spatial/verdict/spec/clauses-v0.json"
 SIGNATURE = ROOT / "ehs_spatial/verdict/signature-v1.json"
 
-GAP_TERMS = {"aisle_width", "aisle width", "climbing_aids", "climbing aids", "AGV"}   # the only 0.0 rows allowed (see README)
+GAP_TERMS: set[str] = set()   # every term aligns since signature-v1 gained aisle_width / climbing_aids / agv
 GEOMETRY_CLAUSES = {   # what the fence / guard / light-curtain / robot scenes must retrieve
     "ISO13857:2019/4.4", "ISO13857:2019/Table2", "ISO13857:2019/Table2-min-height", "ISO13857:2019/Table4", "ISO13857:2019/Table7",
     "ISO13855:2010/normal-approach", "ISO13855:2010/parallel-approach", "ISO13855:2010/multi-beam",

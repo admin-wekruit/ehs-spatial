@@ -1297,8 +1297,14 @@
   "floor marking": [
    "floor_marking"
   ],
-  "aisle width": [],
-  "climbing aids": [],
-  "AGV": []
+  "aisle width": [
+   "aisle_width"
+  ],
+  "climbing aids": [
+   "climbing_aids"
+  ],
+  "AGV": [
+   "agv"
+  ]
  }
 }

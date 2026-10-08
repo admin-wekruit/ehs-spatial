@@ -1,0 +1,9 @@
+# Baseline: the 2026-10-07 trial as plugins. One run = this file x one benchmark item (--item 090 | 030; default: the first).
+benchmark: ../benchmark/v0
+L1: {plugin: scene-json}
+L2: {plugin: relations}
+L3: {plugin: none}
+L4: {plugin: none}
+L5: {plugin: handwritten}
+L6: {plugin: clingo, k: 2}
+L7: {plugin: markdown}

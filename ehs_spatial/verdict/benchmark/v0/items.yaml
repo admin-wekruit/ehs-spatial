@@ -1,0 +1,12 @@
+# Benchmark v0: the two workcells of the 2026-10-07 trial as contract Scenes (scenes/*.json converted from the trial's
+# research/verdict-layer-trial-2026-10-07/out/scene-*.json: views as strings, producer added). Frozen: bump the version to change it.
+version: v0
+items:
+  - id: "090"
+    source: scenes/scene-090.json
+    scene_id: 090-a9a6e0a0
+    note: lucida replica 01, measurement layer 090-v2-mvs-fill-sam3d through the trial adapter
+  - id: "030"
+    source: scenes/scene-030.json
+    scene_id: 030-fafdeb6b
+    note: bor1 030 01, measurement layer 030-v2-mvs-fill-sam3d through the trial adapter

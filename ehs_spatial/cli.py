@@ -3,6 +3,7 @@ which stays unchanged as the reference.
 
   panoptes run --cell 090|030 [--from STEP] [--only STEP] [--dry-run]
   panoptes status --cell 090
+  panoptes verdict run --config ehs_spatial/verdict/configs/baseline.yaml --runs-dir runs   (verdict-layer lab: ehs_spatial/verdict/lab)
 
 Same steps, same scripts (run through subprocess with env.sh's variables: env.sh is sourced, so PANOPTES_WORKCELL,
 SWAP_SCRATCH, MODAL_RUN, PY, ... mean what they mean there), same idempotent skip rules. The GPU stages go through the
@@ -365,6 +366,9 @@ def cmd_run(ctx: Ctx, items: list[Item]) -> None:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="panoptes", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
+    from .verdict.lab.cli import add_arguments as add_verdict_arguments, dispatch as dispatch_verdict   # argparse-only at import
+
+    add_verdict_arguments(sub.add_parser("verdict", help="verdict-layer lab: plugins | run | matrix | scorecard"))
     for name in ("run", "status"):
         p = sub.add_parser(name)
         p.add_argument("--cell", required=True, choices=sorted(CELLS))
@@ -373,6 +377,8 @@ def main(argv: list[str] | None = None) -> None:
         if name == "run":
             p.add_argument("--dry-run", action="store_true", help="list the steps, their done / todo state and their commands; run nothing")
     args = parser.parse_args(argv)
+    if args.command == "verdict":
+        return dispatch_verdict(args)
     ctx = Ctx(args.cell, load_env(), dry_run=getattr(args, "dry_run", False))
     items = select(args.from_step, args.only)
     (cmd_run if args.command == "run" else cmd_status)(ctx, items)

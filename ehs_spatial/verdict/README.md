@@ -22,7 +22,7 @@ benchmark/v0/         frozen inputs + gold (versioned folder, in git; bump the v
 
 ## Rules of the lab
 
-1. A plugin imports `ehs_spatial.verdict.contracts` and its own package only. `tests/verdict/test_imports.py` fails otherwise.
+1. A plugin imports `ehs_spatial.verdict.contracts`, `plugins.register`, its own package and the lab-shared `ehs_spatial.verdict.synth` only. `tests/verdict/test_imports.py` fails otherwise.
 2. A plugin is a class with `run(inputs, cfg, workdir) -> dict`, registered with `@register('L6', 'clingo', '1')`; `tag()` = `clingo@1`
    goes into every verdict's provenance and the scorecard. Bump `version` when the output can change.
 3. Determinism: same config, same inputs -> byte-identical outputs. The runner's test runs twice and diffs. No clocks, no random
