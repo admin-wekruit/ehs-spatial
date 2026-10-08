@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — 2026-10-08
+
+### Verdict layer lab (`ehs_spatial/verdict/`, branch verdict-lab merged)
+- Contracts C1–C5 (`contracts.py`), plugin registry (`plugins.py`), signature v1, lab runner / matrix / ledger / scorecard and
+  `panoptes verdict run|matrix|scorecard|plugins`; baseline plugins ported from the 2026-10-07 trial with per-rule parity on 090 / 030;
+  python@1 parity engine and decision-rule variants; synthetic cells, threshold grid, metamorphic / differential harness; space-carved
+  coverage from the frozen frames; sigma policy; L3 perception monitor; clause graph v0 (20 clauses, unverified numbers) with table
+  functions, alignment and retrieval. `tests/verdict`: 66 passed. Scorecard v0: `docs/research/verdict-lab-scorecard-v0-2026-10-08.md`.
+  New optional extra `verdict` (clingo, pyyaml). Reports still carry no machine verdicts; the lab is research tooling.
+
+### Test baseline note
+- At c9da31a (docs reorganisation; also touched `scripts/workcell_checks/box_faces.py`, `lower_edge.py`, `scripts/workcell_photo_oneshot.py`,
+  README) the full suite went from the 6 known failures to 23 (`tests/test_app.py::test_readme_links_each_provider_credential_source`,
+  `tests/test_report_runner_{decisions,lightning,reproduce,stages}.py`). Verified by running the 23 ids on 75ac212 (main) and on
+  verdict-lab: identical. Not caused by the verdict lab; to be triaged separately.
+
 ## 1.0.0-rc1 — 2026-10-07 (enterprise handoff candidate; `VERSION`)
 
 The first release a customer runs end to end on their own GPUs and storage: one `git clone` → `.env` → `make up` → `panoptes run --cell 090`
