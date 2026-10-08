@@ -73,3 +73,60 @@ scorecard.md             变体 × 指标，自动从 ledger 生成；差异归�
 2. 金标：安全工程师是谁、每周能给多少时间。
 3. 规范：先给 ISO 13857 / 13855 的正文（或确认用厂商复述），站点规则何时给。
 4. 模型 key：C 阶段用哪家（Gemini 已有 provider；其它要加一个 adapter）。
+
+## 7. 插件化、并行、报告可见（2026-10-08 补）
+
+用户要求：全部按可插拔（plugin）设计；能并行；报告要看得出是哪套插件产的结果。这正是数据 / 推理流水线的通行做法
+（Detectron2 / OpenMMLab 的 Registry、Hydra 的 config 组合、Kedro / Dagster / Metaflow 的节点 + 内容寻址缓存、MLflow 的 run 台账、Lightning 的 plugin）。
+我们不引入这些框架（Mac 内存有限、依赖重、我们的 DAG 只有 7 个节点），用它们的四个机制自己写薄的一层，并复用平台已有的 `scripts/report_runner`
+（journal = 台账、profile = 配置、stage pins = 版本）和 10 月初 `swap_generation.py` 的变体表——那次"同一流水线换一个模块、出对比表"就是这套设计的手工版。
+
+### 7.1 插件 = 每层一个 Protocol + 注册表 + 配置
+
+```python
+# verdict/contracts.py        四个契约的 pydantic 模型（C1 Scene, C2 Facts, C3 Signature, C4 RulePack, C5 Verdict）
+# verdict/plugins.py
+class Layer(Protocol):                      # 每层同一形状
+    name: str; version: str                 # 进台账和每条判定的 provenance
+    def run(self, inputs, cfg) -> outputs   # 只认契约类型，不认其它层
+REGISTRY = {}                               # {"L2.relations": {"box-sampling-v1": cls, "mesh-trimesh-v1": cls}, ...}
+def register(layer, name): ...              # 装饰器；第三方包用 entry point "panoptes.verdict.plugins" 注册，不改核心代码
+```
+
+```yaml
+# configs/run-c-codegen.yaml        一次 run = 每层选一个插件 + 参数；Hydra 式组合：base + 覆盖
+benchmark: benchmark/v0            # 冻结快照（哈希清单）
+L1: {plugin: photo-v2, cached: true}
+L2: {plugin: box-sampling-v1, cell_m: 0.10}
+L3: {plugin: stpl-v1}
+L4: {plugin: clause-kg-v1, align: ginsign-v1, retrieve: taxonomy-v1}
+L5: {plugin: codegen-v1, k_redundant: 3, tests: proptest}
+L6: {plugin: clingo-v1, decision: guard_band, k: 2}
+L7: {plugin: html-v1}
+```
+
+规则：插件只能 import `verdict.contracts`；跨层 import 由 lint（import-linter 或一个 10 行的 AST 检查）禁止；每个插件目录自带 README（来源论文 / 参数）和等价测试。
+
+### 7.2 并行：DAG + 内容寻址缓存 + 任务矩阵
+
+- 节点 = 层，边 = 契约。每个节点的输出以 `hash(输入哈希 + 插件名 + 版本 + 参数)` 为键缓存（Kedro / Dagster 的做法）。换 L5 的插件时，L1–L4 直接命中缓存，不重算。
+- 任务矩阵 = 基准项 × 配置。两级并行：**跨基准项**（工位 / 规范包互不依赖）和**跨配置**（变体互不依赖），每个任务只读缓存、只写自己的 run 目录，无共享状态 → `joblib` 本机多进程；要 GPU 或大批量时 `modal` map（同一函数体），互不冲突。
+- LLM 类插件（L4 抽取、L5 合成）并行时限流 + 结果缓存（按 prompt 哈希），同一条款在不同配置下不重复付费。
+- 同一 run 内的层是串行的（契约依赖），没必要并行；并行的收益全在矩阵上。
+
+```
+panoptes verdict matrix --benchmark benchmark/v0 --configs configs/*.yaml --jobs 8      # 本机
+panoptes verdict matrix ... --backend modal                                              # 云端
+```
+
+### 7.3 报告：每条判定带"谁产的"，比较表带"差在哪一层"
+
+- **C5 判定对象**已有 `provenance` 字段，扩成：`{run_id, benchmark_hash, plugins: {L1: photo-v2@1.3, L2: box-sampling-v1@0.2, ..., L6: clingo-v1@5.8.2}, config_hash}`。报告里每条判定可展开看到这一行，审核员能回答"这个 FAIL 是哪套插件、哪个规则包版本、哪次 run 出的"。
+- **记分卡**（`scorecard.md` / HTML）：行 = 配置，列 = 指标；每行附插件签名（7 个插件名@版本缩写），和上一行比较时自动标出**差异所在层**（配置 diff），这样表格本身就能看出"换了 L5 从 funclib 到 codegen，编译率 +23、审阅分钟 −6、FAIL 精确率不变"。
+- **逐项对比视图**：同一 (工位, 规则, 对象) 在不同配置下的判定并排，翻转的标红，点开看两边的证据链（值 ± U、边、照片）。这是 10 月初 `compare_layers.py` 的推广。
+- **消融视图**：以某配置为基线，每个开关一行 delta。
+- 所有报告由台账生成，不手写；每份报告顶部印 benchmark 哈希和生成命令，可复现。
+
+### 7.4 在五个阶段里的位置
+
+阶段 A 交付 7.1–7.3 的骨架（注册表、配置、缓存、矩阵运行、带 provenance 的记分卡），基线插件 = 今天试跑的实现；之后每个阶段只是往注册表里加插件、往矩阵里加配置。
