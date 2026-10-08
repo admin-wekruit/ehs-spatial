@@ -13,11 +13,10 @@ Panoptes：工位（机器人单元）照片 → 米制 3D 重建（RoMa + DA3-B
 已交付（Phase 3，`1.0.0-rc1`，2026-10-07）：客户一个 `git clone` → `.env` → `make up`（两张 A100 上的 GPU 服务）→ `panoptes run --cell 090 | 030`，报告站。发布的两个工位：090（`4b58dbd2…`）、030（`cd84d3fb…`），这两个测量层是所有改动的回归标准（117/117 字段、盒子 9 / 8）。
 报告里今天**没有机器合规判定**（策略引擎按设计弃权）——判定层就是 Phase 4 要补的东西。
 
-**为什么客户在弄 Linux 和 Docker**：我们开发在这台 Mac 上，GPU 推理走 Modal 云。Phase 3 交付把 GPU 推理搬到**客户自己的两张 A100**（`HANDOFF.md` §0–§3）：
-GPU 机是 Linux + Docker + NVIDIA Container Toolkit，每个模型一个容器服务（`make up GPU=a` = sam3d :8805 + sam3 :8801；`make up GPU=b` = geometry-mvs :8804 +
-moge :8803 + mapanything :8802；镜像来自 `deploy/Dockerfile.serving`、`docker/{sam3d,geometry,workcell-gpu}.Dockerfile`）；流程机是一台 CPU Linux 跑 `panoptes run`，经 jump VM 的端口转发
-调 GPU 服务（http provider）。所以他们的一切都在 Linux + Docker 上跑，而我们从没在 Linux 上跑过测试、`Dockerfile.serving` 交付时是坏的（CUDA 标签不存在、缺 `python3-dev`、pip
-断言）——这就是审查里"Linux 上 11 个测试失败 / macOS 专用路径 / Dockerfile 三处修复 / 验收门在干净 Linux 克隆上过"的来历。Docker 只用于 GPU 服务；流程机和报告站不需要。
+**和客户的关系（2026-10-08 晚定，最重要的一条）**：**这个仓库是 Modal 版，是源头**。客户的内部 app 克隆我们，只把 Modal 的 GPU 调用换成他们的 A100（经 jumpbox 端口转发，
+`ehs_spatial/providers/` 的 http 后端），其余一行不改。他们那边的 Linux、Docker 容器服务（`serving/`、`deploy/`）、on-prem 运行器（`scripts/onprem/run_stage.py` + `modal_stub`）
+是**他们克隆后的适配**：不是我们的工作，不由我们验证，审查里关于 Linux 测试 / macOS 路径 / Dockerfile / 验收门的条目都归他们。我们在自己的仓库里继续用 Modal 开发；
+我们的清理只为一个目的：仓库干净、英文、三语、研究不混在交付路径里，让『克隆 + 换 GPU 调用』简单。
 
 ---
 
@@ -75,17 +74,17 @@ L1 感知 / 重建 → **C1 Scene**（米制盒、σ、置信度、可见视角�
 
 下一个 session 的判定层顺序：B 的区域 → L2 `perimeter_of` / `covers_opening`（否则 TS 条款永远不绑定）→ 拿到凭证跑 C 的三行 → 用 html 面板标第一轮金标 → D。
 
-**线二：交付回去（`docs/REVIEW-ARGUS-2026-10-08.md` §2 的 11 步；大小是估计）**
+**线二：我们自己仓库的清理（`docs/REVIEW-ARGUS-2026-10-08.md` §2 的 11 步里属于我们的部分；大小是估计。Linux / Docker / on-prem 运行器 / Linux 验收 = 他们的，不做不验）**
 
 | 顺序 | 步 | 大小 | 为什么这个顺序 |
 |---|---|---|---|
 | 已做 | 1 去重、2 失败语义、3 机器路径、5 点名修复 | 小 | 今天 |
-| 下一个 | 4 测试 0 失败 + Linux 可移植 | 中（1 天） | 客户验收门的第一条；和别的步互不干扰 |
+| 下一个 | 4 Mac 上测试 0 失败（23 个）、`node` 缺失跳过、README 链接测试 | 中（1 天） | 我们自己的门；Linux 可移植性归他们 |
 | 并行 | 8 i18n 后半段（WIP 分支） | 中（1 天） | 只碰 `web/src`；之后流水线消息码（1 天）要等第 6 步搬完再做，避免改两遍 |
-| 然后 | 6 一个包 + 归档 → 7 去 Modal 仿真 | 大（2–3 天） | 先出交付路径清单，再搬；回归 = 两工位测量层逐字段一致 |
+| 然后 | 6 一个包 + 归档（保持 Modal 调用，GPU 调用点集中在 `providers/`） | 大（2–3 天） | 先出交付路径清单，再搬；回归 = 两工位测量层逐字段一致。第 7 步（去 Modal 仿真）不做：那是他们的 on-prem 套件 |
 | 随 6 | 9 数据出库（sha 清单 + 拉取脚本；交付用新仓库） | 中 | 搬家时顺手 |
 | 之后 | 10 服务去重（MoGe 一份；v0 去留问客户） | 中 | 需要客户答复 |
-| 收尾 | 11 CI 验收门（ubuntu） | 小–中 | 第 4 步后就能开始跑，第 8 步后全绿 |
+| 收尾 | 11 我们自己的 CI 门（`make test` 0 失败、无 CJK、无机器路径、无 > 10 MB） | 小 | 第 4 步后；Linux 验收门归他们 |
 
 ---
 
@@ -103,23 +102,23 @@ L1 感知 / 重建 → **C1 Scene**（米制盒、σ、置信度、可见视角�
 
 ## 5. 文件 / 代码结构清理（Phase 5，客户审查）
 
-客户（仓库 `digital-experience/argus` = 我们交付的这份）用 `/ponytail-review` + `/ponytail-debt` 审了：交付路径只占全部代码三成（~135 个 py / 53k 行 在路径上，127k 行不在），生产流水线散在 10 个日期目录里靠 `sys.path` 串联，中文写在代码和输出数据里。**要求**：代码只用英文（中 / 荷兰语只在 `web/src/locales/*.json`）；查看器 en / zh / nl 切换默认 en；一个干净布局（`argus/` 包：pipeline / checks / platform / providers；`services/`、`web/`、`deploy/`、`tests/`）；研究进归档分支或独立仓库；验收门在干净 Linux 克隆上过（`make test` 0 失败、`panoptes run` 两工位结果字段一致、代码无 CJK、交付路径无 `import modal` / `/Users/`、无 > 10 MB 文件、一个 Makefile / env 模板 / deploy / agent 文件）。原文和我们的 11 条决定：`docs/REVIEW-ARGUS-2026-10-08.md`。
+范围先说清：客户克隆我们、只换 GPU 调用；他们的 Linux / Docker / on-prem 适配不是我们的事。下面是他们审查里**属于我们仓库**的部分。客户（仓库 `digital-experience/argus` = 我们的克隆）用 `/ponytail-review` + `/ponytail-debt` 审了：交付路径只占全部代码三成（~135 个 py / 53k 行 在路径上，127k 行不在），生产流水线散在 10 个日期目录里靠 `sys.path` 串联，中文写在代码和输出数据里。**要求**：代码只用英文（中 / 荷兰语只在 `web/src/locales/*.json`）；查看器 en / zh / nl 切换默认 en；一个干净布局（`argus/` 包：pipeline / checks / platform / providers；`services/`、`web/`、`deploy/`、`tests/`）；研究进归档分支或独立仓库；验收门在干净 Linux 克隆上过（`make test` 0 失败、`panoptes run` 两工位结果字段一致、代码无 CJK、交付路径无 `import modal` / `/Users/`、无 > 10 MB 文件、一个 Makefile / env 模板 / deploy / agent 文件）。原文和我们的 11 条决定：`docs/REVIEW-ARGUS-2026-10-08.md`。
 
 | 步 | 状态 | 怎么接 |
 |---|---|---|
 | 1 去重 | **已做**（`3116dff`） | 一个 `Makefile`（`Makefile.handoff` 并入）、`.env.example` 删、`AGENTS.md` → `CLAUDE.md` 软链接、`.impeccable.md` 删 |
 | 2 失败语义 | **已做** | `ehs_spatial/pipeline.py` 失败抛错；`run_stages.py` 缺结果退出 1；`run_all.sh` `pipefail`；S8 的 `cmp-*/results.json` 基线随码发 |
 | 3 机器路径 / 固定 `/tmp` | **已做**（交付路径） | 25 个文件改成必需 env 键；`mkdtemp`；研究目录的回退随第 6 步归档 |
-| 5 他们点名的修复 | **已做** | `deploy/Dockerfile.serving`：22.04 CUDA 标签、`python3-dev`、先升级 pip |
-| 4 测试 0 失败 + Linux 可移植 | 未开始 | 23 个失败 id 在 `CHANGELOG.md` "Test baseline note"（c9da31a 之后出现；它改了 `box_faces.py` / `lower_edge.py` / `workcell_photo_oneshot.py` / README）；macOS 专用 `store.py:187 st_birthtime`、`publish.py` `cp -c`；`tests/test_viewer*.py` 缺 `node` 时跳过；`tests/test_cli.py` 用数据临时副本；`test_app.py` README 链接测试；`test_cell_rect.py` 容差先找原因；`scripts/report_runner/publish.py:30`、`adopt.py:36` 的机器路径 |
+| 5 他们点名的修复 | 他们的 | `deploy/Dockerfile.serving` 的三处改动照他们的描述抄了一份，未验证（on-prem 镜像归他们）|
+| 4 Mac 上测试 0 失败 | 未开始 | 23 个失败 id 在 `CHANGELOG.md` "Test baseline note"（c9da31a 之后出现；它改了 `box_faces.py` / `lower_edge.py` / `workcell_photo_oneshot.py` / README）；`tests/test_viewer*.py` 缺 `node` 时跳过；`tests/test_cli.py` 用数据临时副本；`test_app.py` README 链接测试；`scripts/report_runner/publish.py:30`、`adopt.py:36` 的机器路径。Linux 可移植（`st_birthtime`、`cp -c`、Linux 上的容差）归他们 |
 | 6 一个包 + 归档 | 未开始 | 先出交付路径清单（import 闭包：`ehs_spatial/cli.py` 的子进程脚本列表在 `research/module-swap-2026-10-07/run_all.sh`；`run_stages.py` 调的检查；`serving/`、`deploy/`、`ehs_spatial/platform|providers`、`containers/onprem`），写成 `docs/DELIVERY-PATH-<date>.md`；然后 `argus/pipeline|checks|platform|providers`，每工位一个配置文件（代替 `cli.py CELLS` / `swap_generation.py VARIANTS` / `build_swap_layer.py cmp_dir` / `run_stages.py:23` 四处硬编码和 090 无前缀 / 030 有前缀）、一个 `ROOT`；其余删除（历史在 `archive/research-2026-10`）；`ehs_spatial` 留一个发布周期的导入兼容壳。回归：`panoptes run --cell 090/030` 的测量层和已发布的逐字段一致 |
-| 7 去 Modal 仿真 | 未开始 | 随第 6 步：步骤进包时去掉 `@app.function`，GPU 只走 `providers/` HTTP，然后删 `scripts/onprem/run_stage.py` + `modal_stub/` |
+| 7 去 Modal 仿真 | 不做 | 我们的流水线就是 Modal；`scripts/onprem/run_stage.py` + `modal_stub/` 是他们的 on-prem 套件 |
 | 8 i18n | **做到一半**（`wip/viewer-i18n-2026-10-08`） | 见 §6 |
 | 9 数据出库 | 未开始 | 冻结输入（0.5 GB `data/`、`incoming/`）改 sha 清单 + `fetch_inputs.py`（同 `fetch_weights*.py`），放客户 S3 兼容存储；交付回去用新仓库（干净历史） |
 | 10 服务 | 未开始 | MoGe 四份只留 `serving/moge_service.py`；v0 服务（sam3 / mapanything / moge）去留问客户（采集工具是否保留） |
-| 11 CI 验收门 | 未开始 | ubuntu 任务：`make check-env` + `make test` + CJK / `/Users/` / `import modal` / 10 MB 扫描 |
+| 11 我们的 CI 门 | 未开始 | `make test` 0 失败 + CJK / `/Users/` / 10 MB 扫描（Linux 验收归他们） |
 
-`CLAUDE.md` 已加硬规则：代码只用英文、不留机器路径回退、失败非零退出、测试在干净 Linux 上过；**算法参数照旧不改**。
+`CLAUDE.md` 已加硬规则：仓库是 Modal 版源头、客户只换 GPU 调用、他们的适配不由我们验证；代码只用英文、不留机器路径回退、失败非零退出、一个干净布局；**算法参数照旧不改**。
 
 ---
 
@@ -135,7 +134,7 @@ L1 感知 / 重建 → **C1 Scene**（米制盒、σ、置信度、可见视角�
 
 ## 7. 需要用户的
 
-Claude 凭证（`.env` 的 `ANTHROPIC_API_KEY=` 或 `brew install anthropics/tap/ant && ant auth login`）；荷兰语目录谁填；v0 服务是否保留；客户在干净 Linux + A100 上跑一次验收门；是否要 Phase 4 成果进交付（否则判定层随研究归档）。
+Claude 凭证（`.env` 的 `ANTHROPIC_API_KEY=` 或 `brew install anthropics/tap/ant && ant auth login`）；荷兰语目录谁填；是否要 Phase 4 成果进交付（否则判定层随研究归档）。
 
 ---
 

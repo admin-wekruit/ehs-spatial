@@ -12,7 +12,7 @@
 | Phase 1 工位照片流程基线（Sept）：四视角 WorkcellReport、RecGen、对象流水线视图、measurement layer | 2026-09 | 完成 | 发布 090 `4b58dbd2…`、030 `cd84d3fb…`、`25686138…`；Pages `admin-wekruit/panoptes-workcell-report` |
 | Phase 2 同一流程换模块：SAM 3D 替 RecGen；MVS + MoGe-3 补洞替 Pi3X；组装 v2 地面接触 | 2026-10-01 → 10-07 | 完成，结论已给 | 090 五版 + 030 三版上线；推荐组合 090 明显错误 0（原 8）、IoU 0.823、现场值 MAE 0.50 cm；030 明显错误 1；链接 `research/module-swap-2026-10-07/REVIEW-LINKS-2026-10-06.md` |
 | Phase 3 企业版交接：一个仓库、GPU 模型服务 v1 契约、provider http/local/modal、`panoptes run` CLI、Mongo / S3、HANDOFF、CI | 2026-10-07 | 交付；等客户验收 | ehs-spatial `main` 4ce0880；`HANDOFF.md`、`CHANGELOG.md` 1.0.0-rc1、`docs/E2E-2026-10-07.md`（真 A100 上 sam3d 服务经 http provider 端到端）；panoptes-serving 冻结（dfae8fa） |
-| Phase 5 交付回去（handoff back）：按客户 2026-10-08 审查做英文化 / 三语 / 一个干净布局 / 合并他们的 26 个提交 / Linux 验收门 | 2026-10-08 开工 | 进行中 | `docs/REVIEW-ARGUS-2026-10-08.md`（审查 + 11 条决定）；今天：去重（Makefile / env 模板 / AGENTS.md）、失败语义、Linux 可移植测试、Dockerfile.serving 修复；接着：流水线进一个包、归档分支、i18n、数据出库、CI 门 |
+| Phase 5 仓库清理（客户克隆我们、只换 GPU 调用；他们的 Linux / Docker / on-prem 适配不归我们）：英文化 / 三语 / 一个干净布局 / 去重 / 研究出交付路径 | 2026-10-08 开工 | 进行中 | `docs/REVIEW-ARGUS-2026-10-08.md`（审查 + 11 条决定）；今天：去重（Makefile / env 模板 / AGENTS.md）、失败语义、Linux 可移植测试、Dockerfile.serving 修复；接着：流水线进一个包、归档分支、i18n、数据出库、CI 门 |
 | Phase 4 判定层（verdict layer）：安全规范 → 规则 → 带不确定度的判定 | 2026-10-07 开工 | 进行中 | 调研 `docs/research/verdict-layer-rules-2026-10-07.md`（+ 附录 A / B）；试跑 `research/verdict-layer-trial-2026-10-07/`（clingo 规则包 v0 对 090 / 030：15 + 12 条判定） |
 
 ## Phase 3 客户侧未关闭项（我们等）

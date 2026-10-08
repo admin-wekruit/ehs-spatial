@@ -115,7 +115,11 @@ net: about **−128k lines possible** (≈127k Python lines off the delivery pat
 
 ## 2. Our response（决定、顺序、大小）
 
-总体：接受。这个仓库就是他们收到的那份交付；审查是对它的意见，我们按意见改好再交回去。这份审查说的就是 `docs/STATE.md` 和 `HANDOFF.md` 早已承认的事（一个仓库里堆着研究、实验和交付三层）。交付回去的形态按他们的目标布局做，
+范围（2026-10-08 晚定）：**这个仓库是 Modal 版，是源头**；客户的内部 app 克隆它，只把 Modal 的 GPU 调用换成 A100 经 jumpbox，其余不改。所以审查里关于
+Linux / Docker / on-prem 运行器的部分（Linux 上的测试、macOS 专用路径、Dockerfile、Modal 仿真、干净 Linux 克隆上的验收门）是**他们克隆后的适配**，不是我们的工作，
+也不由我们验证；我们只做让自己的仓库干净、让『克隆 + 换 GPU 调用』变简单的部分：英文化、三语目录、一个干净布局、去重、研究出交付路径、数据出库。
+
+总体：接受我们范围内的部分。这份审查说的就是 `docs/STATE.md` 和 `HANDOFF.md` 早已承认的事（一个仓库里堆着研究、实验和交付三层）。交付回去的形态按他们的目标布局做，
 分六步，先小后大；**算法和参数一行不改**（CLAUDE.md 规则），回归标准就是他们的验收门：117/117 字段、090 九个盒 / 030 八个盒逐字节一致。
 
 | # | 他们的要求 / 发现 | 决定 | 大小 | 何时 |
@@ -124,14 +128,14 @@ net: about **−128k lines possible** (≈127k Python lines off the delivery pat
 | 1 | 两个 Makefile / 两个 env 模板 / CLAUDE.md = AGENTS.md / 根目录 `.impeccable.md` | 合成一个 Makefile；删 `.env.example`（引用改到 `env.template`）；`AGENTS.md` 变成指向 `CLAUDE.md` 的软链接；删 `.impeccable.md`。根目录 `app.py` 随工作台一起走（第 4 步） | 小 | 今天（WP-6） |
 | 2 | 失败语义：`run_stages.py` 退出码、`pipeline.py:214,291` 警告继续、`compare_json.py` 每次都失败 | 失败就非零退出；覆盖图 / 查看器构建失败直接 fail；S8 基线随代码发（小）或移出交付路径（大）——按大小定 | 小 | 今天（WP-6） |
 | 3 | 固定 `/tmp/w` 等路径；`/Users/adam` 回退（交付路径上） | `tempfile.mkdtemp()`；交付路径上的回退全部改成读 env.template 的键、缺了就报错；归档脚本不动（随第 4 步归档） | 小–中 | 今天（WP-6） |
-| 4 | Linux 上的测试失败：macOS 专用路径、`node` 未声明、数据状态假设、README 链接测试、`test_cell_rect` 容差；以及我们 Mac 上 c9da31a 之后的 23 个失败 | 全部修到 0 失败；`node` 缺失时跳过并在 README 声明；容差只在找到原因后放宽 | 中 | 今天（WP-5） |
-| 5 | 他们在 `argus` main 上 c9da31a 之后的 26 个提交（含 `Dockerfile.serving` 三处修复、`run_stages.py` 退出码） | 这个仓库就是交付给他们的那份：我们按审查把它改好再交，他们在新版本上重放自己的提交。审查里点名的修复我们直接做（`Dockerfile.serving` 的 CUDA 标签 / `get_topological_weights` 的 pip 断言 / `python3-dev`；`run_stages.py` 非零退出）；其余 23 个提交等他们交付时给补丁集或 bundle 核对，不阻塞 | 小 | 今天（Dockerfile + 退出码） |
+| 4 | Linux 上的测试失败：macOS 专用路径、`node` 未声明、数据状态假设、README 链接测试、`test_cell_rect` 容差；以及我们 Mac 上 c9da31a 之后的 23 个失败 | **我们的部分**：Mac 上 23 个失败修到 0、`node` 缺失时跳过、`test_app` README 链接测试。**他们的部分**：Linux 可移植性（macOS 专用路径、Linux 上的容差），克隆后自行适配，我们不验证 | 中 | 下一个 session（我们的部分） |
+| 5 | 他们在 `argus` main 上 c9da31a 之后的 26 个提交（含 `Dockerfile.serving` 三处修复、`run_stages.py` 退出码） | **他们的**：on-prem 适配留在他们的克隆里，我们不合并也不验证。`run_stages.py` 非零退出我们顺手做了（通用代码质量）；`Dockerfile.serving` 的三处改动按他们的描述照抄了一份，未验证（on-prem 镜像是他们的） | — | 已做（不验证） |
 | 6 | 一个干净布局：`argus/` 包（pipeline / checks / platform / providers）、`services/`、`web/`、`deploy/`、`tests/`；研究和实验进归档分支或独立仓库 | 接受目标布局，包名 `argus`；交付路径上的 10 个日期目录里的步骤搬进 `argus/pipeline/`（S1–S14 为可导入函数 + 每工位一个配置文件 = 同时解决"工位名硬编码四次"和"三个 ROOT 变量"）；`research/`、`scripts/`（非交付）、`modal_apps/`、`fast_report/` 研究部分、工作台 / agent / 策略引擎 / 视频进 `archive/research-2026-10` 分支；`docs/archive` 同去。`ehs_spatial` 保留一个发布周期的导入兼容壳 | 大（2–3 天） | 第 4 步之后 |
-| 7 | Modal 仿真（`run_stage.py` + `modal_stub`）：步骤改成普通函数 / CLI 后删除；删掉 `panoptes run` 不调用的 GPU 函数 | 随第 6 步：步骤进 `argus/pipeline/` 时去掉 `@app.function`，GPU 只走 `providers/` HTTP | 大（含在 6） | 同 6 |
+| 7 | Modal 仿真（`run_stage.py` + `modal_stub`）：步骤改成普通函数 / CLI 后删除；删掉 `panoptes run` 不调用的 GPU 函数 | **不做**：我们的流水线就是 Modal；`scripts/onprem/run_stage.py` + `modal_stub` 是 on-prem 套件，归他们维护或删除。我们第 6 步搬包时保持 Modal 调用，GPU 调用点集中在 `providers/`（他们换这一处） | — | 他们的 |
 | 8 | i18n：`en / zh / nl` 目录，默认 `en`；15 个组件的内联中文进目录；流水线输出改消息码 + 参数；22 个交付路径 py 文件去中文 | 接受。顺序：(a) `web/src/locales/{en,zh,nl}.json` + `Language` 三值 + 回退；(b) 组件字符串迁入；(c) 流水线输出改 `{"code", ...}`（查看器翻译；measurement layer 的 `labels/labelsEn` 等成对字段在一个发布周期内并存）；(d) py 文件注释 / 日志 / 异常改英文。荷兰语目录由他们填或先机器翻译后他们校 | 大（2–3 天） | 第 6 步之后（避免搬家时改两遍） |
 | 9 | 数据不进 git：0.5 GB 冻结输入 + `incoming/`；单文件 ≤ 10 MB | 冻结输入改为 sha 清单 + `fetch_inputs.py`（和 `fetch_weights*.py` 同一机制），数据放他们的 S3 兼容存储；历史不重写——交付回去的是新仓库（干净历史），本仓库保留为归档 | 中 | 与 6 同期 |
 | 10 | 服务：MoGe 四份、v0 服务是否保留、`Dockerfile.serving` 修复 | MoGe 只留 `serving/moge_service.py` 一份（geometry-mvs 内部调用它）；v0 服务（sam3 / mapanything / moge）去留取决于采集工具是否保留——**问他们**；Dockerfile 修复随第 5 步合并 | 中 | 5 之后 |
-| 11 | 验收门在干净 Linux 克隆上通过 | 加 CI 任务（ubuntu，`make check-env` + `make test` + CJK 扫描 + `/Users/` 扫描 + 10 MB 扫描），作为 handoff-back 的硬门 | 小–中 | 第 4 步后开始，第 8 步后全绿 |
+| 11 | 验收门在干净 Linux 克隆上通过 | **他们的**（Linux 验收是克隆后的事）。我们自己的门：Mac 上 `make test` 0 失败、代码无 CJK（目录除外）、无机器路径回退、无 > 10 MB 文件，放进我们的 CI | 小 | 第 4 步后 |
 
 对审查的两点补充（不是反对）：
 

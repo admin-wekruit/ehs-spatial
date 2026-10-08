@@ -27,10 +27,13 @@ Facts that sessions have hallucinated before — do not:
   `CHANGELOG.md`); anything else failing is a regression.
 - Do not deploy, do not call cloud GPUs beyond what `HANDOFF.md` describes, do not run `fly`/`modal deploy`.
 
-Handoff-back rules (customer review 2026-10-08, `docs/REVIEW-ARGUS-2026-10-08.md`): code is English only (identifiers, comments,
-docstrings, logs, exceptions, JSON keys; Chinese / Dutch only in `web/src/locales/*.json`); no machine path (`/Users/...`,
-`/private/tmp/...`) as a fallback on the delivery path — read the `env.template` key and fail fast; a failed step exits non-zero;
-tests must pass on a clean Linux clone (no macOS-only calls, no data-state assumptions). Algorithms and parameters still never change
-during the cleanup: the regression standard is the published measurement layers (117/117 fields, boxes 9 and 8).
+Relationship with the customer (2026-10-08): THIS repository is the Modal version and the source of truth. The customer's internal app
+clones it and replaces only the Modal GPU calls with their A100s behind the jumpbox; nothing else changes. Their Linux / Docker /
+on-prem adaptation and its verification are theirs: not our work, never something we verify here.
+Cleanup rules we apply to our own repo (from their review, `docs/REVIEW-ARGUS-2026-10-08.md`): code is English only (identifiers,
+comments, docstrings, logs, exceptions, JSON keys; Chinese / Dutch only in `web/src/locales/*.json`); no machine path (`/Users/...`,
+`/private/tmp/...`) as a fallback: read the `env.template` key and fail fast; a failed step exits non-zero; one clean layout, research
+out of the delivery path. Algorithms and parameters still never change during the cleanup: the regression standard is the published
+measurement layers (117/117 fields, boxes 9 and 8).
 
 Commit messages end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` when a Claude session authors the commit.
