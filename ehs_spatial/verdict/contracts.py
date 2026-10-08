@@ -131,6 +131,59 @@ class Signature(_Model):
     declared_inputs: list[str]
 
 
+# ---------------------------------------------------------------- L4 output: clause graph + alignment (consumed by L5)
+class Table(_Model):
+    id: str                          # e.g. 'ISO13857:2019/Table2'
+    standard: str
+    edition: str
+    function: str                    # import path 'ehs_spatial.verdict.layers.l4_spec.tables:iso13857_table2'
+    inputs: list[str]                # argument names, e.g. ['hazard_height_mm', 'structure_height_mm', 'risk_level']
+    output_unit: str = "mm"
+    verified: bool = False           # True only when checked against the purchased text
+    source_url: str = ""
+
+
+class Clause(_Model):
+    id: str                          # 'ISO13857:2019/4.4'
+    standard: str
+    edition: str
+    title: str
+    paraphrase: str                  # our words, not the text (short quotes only inside rules' source_text)
+    rule_class: Literal["geometry", "topology", "semantic", "procedural"]
+    selection: dict[str, list[str]] = Field(default_factory=dict)      # variable -> Signature classes / zones
+    applicability: list[str] = Field(default_factory=list)             # Signature predicates / zones that must hold, e.g. 'perimeter_of(F, Z)'
+    requirement: dict[str, object] = Field(default_factory=dict)       # {predicate, args, operator, threshold|table|formula, unit, inputs}
+    exceptions: list[str] = Field(default_factory=list)                # Signature attributes that switch the clause off
+    definitions: list[str] = Field(default_factory=list)               # terms defined elsewhere (keys of ClauseGraph.definitions)
+    tags: list[str] = Field(default_factory=list)                      # retrieval anchors: classes / zones the clause is about
+    photo_checkable: bool = True
+    verified: bool = False
+    source_url: str = ""
+
+
+class ClauseGraph(_Model):
+    schema: str = SCHEMA_VERSION
+    version: str
+    standards: list[dict[str, str]] = Field(default_factory=list)      # [{id, title, edition, url}]
+    clauses: list[Clause]
+    tables: list[Table] = Field(default_factory=list)
+    definitions: dict[str, list[str]] = Field(default_factory=dict)    # term -> aliases (used by alignment)
+
+
+class AlignmentRow(_Model):
+    term: str                        # a word / phrase of the clauses
+    kind: Literal["class", "zone", "predicate", "attribute", "input"]
+    target: str                      # Signature entry
+    confidence: float
+    source: str = ""                 # 'exact' | 'synonym' | 'embedding' | 'classifier' | 'reviewer'
+
+
+class Alignment(_Model):
+    schema: str = SCHEMA_VERSION
+    signature_version: str
+    rows: list[AlignmentRow]
+
+
 # ---------------------------------------------------------------- C4 RulePack
 RuleStatus = Literal["compiled", "needs_input", "vocabulary_gap", "refused"]
 
@@ -143,7 +196,9 @@ class Rule(_Model):
     edition: str
     rule_class: Literal["geometry", "topology", "semantic"]
     source_text: str = ""
-    asp: str = ""                    # the rule's ASP text; must only use Signature predicates
+    spec: dict[str, object] = Field(default_factory=dict)   # machine-readable semantics every engine evaluates: selection {var: [classes]},
+                                                            # applicability [predicate(args)], requirement {predicate, args, operator, threshold|table|formula, unit, inputs}, exceptions [attributes]
+    asp: str = ""                    # the rule's ASP text rendered from spec (clingo engine); must only use Signature predicates
     inputs: list[str] = Field(default_factory=list)      # declared inputs it needs
     thresholds: dict[str, float] = Field(default_factory=dict)
     status: RuleStatus = "compiled"
