@@ -1,15 +1,16 @@
 import type { Representation, Revision, Transform } from "./types";
 import type { BendOutcome } from "./SpatialMeasurements";
-import type { Language } from "./i18n";
+import type { Language } from "./translate";
 
 /** A static measurement layer published next to a frozen report: the frame's reference-object scale, a corrected ground plane,
  * reference-object models built from their specification, and per-object facts measured from the photos. It applies to exactly
  * the revision it names; any other revision is shown unchanged. Each Chinese text may carry an English sibling, the same name
- * with "En" appended; the viewer shows it in English mode and falls back to the Chinese text without it (layerText). */
+ * with "En" appended; the viewer shows it in every language but Chinese and falls back to the Chinese text without it (layerText). */
 export type LayerFact = { label: string; labelEn?: string; text: string; textEn?: string; kind: string; method?: string };
 export type LayerConfidence = { level: "high" | "medium" | "low" | "unverified"; label: string; labelEn?: string; missing?: string[]; missingEn?: string[]; reasons?: string[]; reasonsEn?: string[] };
-/** A layer text in the viewer's language: its English sibling in English mode when the layer has one, else the Chinese text. */
-export const layerText = <T>(language: Language, zh: T, en?: T | null): T => language === "en" && en != null ? en : zh;
+/** A layer text in the viewer's language: the Chinese field in Chinese, else its English sibling when the layer has one, else the
+ * Chinese field. The one place the viewer picks a data-side text by language (the message-code wave replaces this function). */
+export const layerText = <T>(language: Language, zh: T, en?: T | null): T => language !== "zh" && en != null ? en : zh;
 export type MeasurementLayer = {
   schemaVersion: 1;
   publicationId: string;
@@ -86,7 +87,7 @@ export function validBox(box: unknown): box is LayerBox {
 
 /** Corner i of the box is on the positive side of axis k (l, w, u) when bit k is set; each face lists its four corners in order,
  * picked by the face's layer normal. With a floor the box spans bottomM..topM above it along u, so the drawn box always agrees with
- * the 离地 figures; null when u is not that floor's up normal (its heights belong to another floor). Without a floor: centre ± size / 2. */
+ * the clearance figures; null when u is not that floor's up normal (its heights belong to another floor). Without a floor: centre ± size / 2. */
 export function boxGeometry(box: LayerBox, nativeToMeters: number, ground: { normal: number[]; offset: number } | null | undefined) {
   const s = nativeToMeters, c = box.centerNative, [l, w, u] = box.axes, half = box.sizeM.map(v => v / s / 2), n = ground?.normal;
   const norm = vec(n, 3) && Number.isFinite(ground!.offset) ? Math.hypot(...n) : 0;
@@ -107,10 +108,10 @@ export function withLayerAssets<T extends { resolveAsset: (id: string) => Promis
   return { ...resources, layerBends: layer?.bends, layerConfidence: layer?.confidence, resolveAsset: async (id: string) => urls.get(id) ?? resources.resolveAsset(id) };
 }
 
-/** The revision with the layer's English entity names in English mode. The load already applied its Chinese names (labels);
+/** The revision with the layer's English entity names outside Chinese mode. The load already applied its Chinese names (labels);
  * an entity without an English one keeps that. Unchanged in Chinese mode or for a revision the layer does not name. */
 export function withEnglishLabels(revision: Revision, layer: MeasurementLayer | null, language: Language): Revision {
-  const en = language === "en" && layer?.revisionId === revision.id ? layer.labelsEn : undefined;
+  const en = language !== "zh" && layer?.revisionId === revision.id ? layer.labelsEn : undefined;
   if (!en) return revision;
   const entities = revision.document.entities.map(entity => { const label = layerText(language, entity.label, en[entity.id]); return label === entity.label ? entity : { ...entity, label }; });
   return { ...revision, document: { ...revision.document, entities } };

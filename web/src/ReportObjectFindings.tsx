@@ -2,25 +2,9 @@ import { useI18n } from "./i18n";
 import { currentEntityId, jsonObject } from "./core";
 import { EvidenceValue } from "./ReportEvidence";
 import { exactReviewEvidence, findingResult, missingKeys } from "./ReportReview";
-import { reportReviewMessages } from "./report-review-messages";
 import type { Evaluation, Publication, Revision } from "./types";
 import "./report-object-findings.css";
 
-const messages: Record<string, [string, string]> = {
-  title: ["此对象的判定", "Findings for this object"],
-  unavailable: ["尚未取得本版本评估记录。", "Assessment records for this revision are unavailable."],
-  noObjectFinding: ["本版本已有评估，但没有明确指向此对象的判定。", "This revision has assessments, but no finding explicitly targets this object."],
-  review: ["补充证据 / 复核判定", "Add evidence / review findings"],
-  details: ["详细事实与判定依据", "Facts and assessment details"],
-  historical: ["相关历史资料", "Related historical evidence"],
-  historicalCount: ["条明确关联 /", "explicitly linked /"],
-  historicalTotal: ["条历史检查", "historical checks"],
-  historicalScope: ["历史规则的整体结果，不是此对象在当前版本的判定。", "The historical rule’s overall result, not a finding for this object in the current revision."],
-  noHistoricalLink: ["尚无证据将这些历史判定关联到此对象；同名或同类不构成关联。", "No evidence links these historical findings to this object; matching names or categories do not establish a link."],
-  allHistorical: ["查看全部历史规则与理由", "View all historical rules and reasoning"],
-  historicalFacts: ["与此对象关联的历史事实", "Historical facts linked to this object"],
-  historicalViolations: ["与此对象关联的历史违反记录", "Historical violation records linked to this object"],
-};
 const records = (value: unknown): Record<string, unknown>[] => Array.isArray(value) ? value.map(jsonObject).filter((item): item is Record<string, unknown> => !!item) : [];
 
 // Match only IDs or explicit inventory references within the same source run.
@@ -54,8 +38,7 @@ export function ReportObjectFindings({ revision, publication, entityId, evaluati
   readOnly?: boolean;
   onReview: () => void;
 }) {
-  const { language, t: globalT } = useI18n();
-  const t = (key: string) => (messages[key] || reportReviewMessages[key])?.[language === "zh" ? 0 : 1] || globalT(key);
+  const { t } = useI18n();
   const scene = publication?.snapshot.revision || revision;
   const scopeMatches = scene.id === revision.id && scene.projectId === revision.projectId && (!publication || publication.projectId === scene.projectId);
   const source = publication ? publication.snapshot.evaluations : evaluations;
@@ -63,10 +46,10 @@ export function ReportObjectFindings({ revision, publication, entityId, evaluati
   const rows = exact.flatMap(evaluation => evaluation.document.findings.filter(finding => finding.entityId === entityId).map(finding => ({ evaluation, finding })));
   const historical = historicalObjectFindings(scene, entityId);
   const entity = scene.document.entities.find(value => value.id === entityId);
-  if (!scopeMatches || !entity) return <section className="report-object-findings"><h3>{t("title")}</h3><p>{t("unavailable")}</p></section>;
-  return <section className="report-object-findings" aria-label={t("title")}>
-    <h3>{t("title")}</h3>
-    {!source ? <p role="status">{t(loading ? "loading" : "unavailable")}</p> : !exact.length ? <p>{t("rrEmpty")}</p> : !rows.length ? <p>{t("noObjectFinding")}</p> : null}
+  if (!scopeMatches || !entity) return <section className="report-object-findings"><h3>{t("objectFindings.title")}</h3><p>{t("objectFindings.unavailable")}</p></section>;
+  return <section className="report-object-findings" aria-label={t("objectFindings.title")}>
+    <h3>{t("objectFindings.title")}</h3>
+    {!source ? <p role="status">{t(loading ? "loading" : "objectFindings.unavailable")}</p> : !exact.length ? <p>{t("rrEmpty")}</p> : !rows.length ? <p>{t("objectFindings.noObjectFinding")}</p> : null}
     {rows.map(({ evaluation, finding }) => {
       const result = findingResult(finding);
       const reasonKey = result === "APPLICABILITY_UNKNOWN" ? "rrUnknownReason" : result === "NOT_APPLICABLE" ? "rrNotApplicableReason" : result === "PASS" ? "rrPassReason" : result === "FAIL" ? "rrFailReason" : result === "NEEDS_REVIEW" ? "rrReviewReason" : "rrInsufficientReason";
@@ -78,18 +61,18 @@ export function ReportObjectFindings({ revision, publication, entityId, evaluati
           const [kind, relatedId] = missing.split(":");
           return <li key={i}>{t(missingKeys[kind] || kind)}{relatedId && <> · {scene.document.entities.find(value => value.id === relatedId)?.label || t("rrObjectMissing")}</>}</li>;
         })}</ul></div>}
-        <details><summary>{t("details")}</summary><p>{reason}</p><EvidenceValue value={finding.facts} />{finding.comparison && <EvidenceValue value={finding.comparison} />}<small>{t("rrAssessment")} · {evaluation.id}<br />{t("rrSavedCheck")} · {finding.policyRevisionId}</small></details>
+        <details><summary>{t("objectFindings.details")}</summary><p>{reason}</p><EvidenceValue value={finding.facts} />{finding.comparison && <EvidenceValue value={finding.comparison} />}<small>{t("rrAssessment")} · {evaluation.id}<br />{t("rrSavedCheck")} · {finding.policyRevisionId}</small></details>
       </article>;
     })}
-    <button type="button" onClick={onReview}>{t(readOnly ? "details" : "review")} ↗</button>
-    {!!historical.total && <details className="rof-history"><summary>{t("historical")} · {historical.linked.length} {t("historicalCount")} {historical.total} {t("historicalTotal")}</summary>
-      {!historical.linked.length && <p>{t("noHistoricalLink")}</p>}
+    <button type="button" onClick={onReview}>{t(readOnly ? "objectFindings.details" : "objectFindings.review")} ↗</button>
+    {!!historical.total && <details className="rof-history"><summary>{t("objectFindings.historical")} · {historical.linked.length} {t("objectFindings.historicalCount")} {historical.total} {t("objectFindings.historicalTotal")}</summary>
+      {!historical.linked.length && <p>{t("objectFindings.noHistoricalLink")}</p>}
       {historical.linked.map(({ finding, facts, violations }, index) => <article key={String(finding.id || index)}>
-        <strong>{String(finding.title || finding.id || "")}</strong><p>{t("historicalScope")}</p>
+        <strong>{String(finding.title || finding.id || "")}</strong><p>{t("objectFindings.historicalScope")}</p>
         <small>{historical.runId} · {t(typeof finding.status === "string" ? finding.status : "unknown")}</small>
-        <details><summary>{t("details")}</summary>{typeof finding.summary === "string" && <p>{finding.summary}</p>}<h4>{t("historicalFacts")}</h4><EvidenceValue value={facts} /><h4>{t("historicalViolations")}</h4><EvidenceValue value={violations} /></details>
+        <details><summary>{t("objectFindings.details")}</summary>{typeof finding.summary === "string" && <p>{finding.summary}</p>}<h4>{t("objectFindings.historicalFacts")}</h4><EvidenceValue value={facts} /><h4>{t("objectFindings.historicalViolations")}</h4><EvidenceValue value={violations} /></details>
       </article>)}
-      <button type="button" onClick={onReview}>{t("allHistorical")} ↗</button>
+      <button type="button" onClick={onReview}>{t("objectFindings.allHistorical")} ↗</button>
     </details>}
   </section>;
 }

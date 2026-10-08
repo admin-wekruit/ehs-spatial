@@ -97,7 +97,7 @@ function AgentConversation({
     imageId,
     box,
     canWrite,
-    language,
+    language: language === "zh" ? "zh" : "en",  // the agent API speaks zh or en
     policyId,
     policyRevisionId,
     historyReady,

@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { resolveAsset } from "./api";
 import { cameraForImage, currentEntityId, observationOwner, jsonObject } from "./core";
 import { useI18n } from "./i18n";
+import { hasMessage } from "./translate";
+import { layerText } from "./measurement-layer";
 import { ReportDownload } from "./WorkcellReport";
 import { ErrorNotice } from "./App";
-import { reportEvidenceMessages } from "./report-evidence-messages";
 import type { SceneDocument } from "./types";
 import "./report-evidence.css";
 
@@ -237,8 +238,7 @@ function InterpretationPhoto({ source, label }: {
   source: NonNullable<ReturnType<typeof interpretationSourcePhoto>>;
   label: string;
 }) {
-  const { language, t: globalT } = useI18n();
-  const t = (key: string) => reportEvidenceMessages[key]?.[language === "zh" ? 0 : 1] || globalT(key);
+  const { t } = useI18n();
   const [open, setOpen] = useState(false), [full, setFull] = useState(false);
   const [url, setURL] = useState<string>(), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -282,43 +282,9 @@ export function comparisonSource(bundle: ReportBundle, sourceRecordId: string) {
   );
   return matches.length === 1 ? matches[0] : undefined;
 }
-const labels: Record<string, [string, string]> = {
-  visibleObjects: ["可见对象", "Visible objects"],
-  location: ["位置", "Location"],
-  reason: ["理由", "Reason"],
-  reasons: ["理由", "Reasons"],
-  summary: ["总结", "Summary"],
-  description: ["说明", "Description"],
-  assessment: ["分析", "Assessment"],
-  limitations: ["局限", "Limitations"],
-  scale: ["尺度依据", "Scale basis"],
-  confidence: ["置信分数", "Confidence score"],
-  threshold: ["阈值", "Threshold"],
-  value: ["数值", "Value"],
-  unit: ["单位", "Unit"],
-  predicate: ["规则谓词", "Predicate"],
-  evidence: ["证据", "Evidence"],
-  source: ["来源", "Source"],
-  sourceRunId: ["来源 run", "Source run"],
-  reconstructionRunId: ["重建 run", "Reconstruction run"],
-  meaning: ["含义", "Meaning"],
-  missingEvidence: ["缺少依据", "Missing evidence"],
-  warnings: ["注意事项", "Warnings"],
-  violations: ["原始发现", "Original findings"],
-  facts: ["输入事实", "Input facts"],
-  measurement: ["测量", "Measurement"],
-  distance: ["距离", "Distance"],
-  status: ["状态", "Status"],
-  scope: ["覆盖范围", "Scope"],
-  sceneSummary: ["场景理解", "Scene interpretation"],
-  overallAssessment: ["总体分析", "Overall assessment"],
-  observations: ["照片观察", "Photo observations"],
-};
-function readable(key: string, language: string) {
-  return (
-    labels[key]?.[language === "zh" ? 0 : 1] ||
-    key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ")
-  );
+/** A field name of the evidence JSON: its catalog text (evidence.<key>) when it has one, else the key split into words. */
+function readable(key: string, t: (id: string) => string) {
+  return hasMessage("evidence." + key) ? t("evidence." + key) : key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ");
 }
 export function EvidenceValue({ value }: { value: unknown }) {
   const { language, t } = useI18n();
@@ -341,7 +307,7 @@ export function EvidenceValue({ value }: { value: unknown }) {
     <dl className="report-evidence-fields">
       {Object.entries(object).map(([key, v]) => (
         <div key={key}>
-          <dt>{readable(key, language)}</dt>
+          <dt>{readable(key, t)}</dt>
           <dd>
             <EvidenceValue value={v} />
           </dd>
@@ -410,8 +376,7 @@ function HistoricalCAD({ cad, runId, document, onSelect, embedded = false, selec
   embedded?: boolean;
   selectedId?: string | null;
 }) {
-  const { language, t: globalT } = useI18n();
-  const t = (key: string) => reportEvidenceMessages[key]?.[language === "zh" ? 0 : 1] || globalT(key);
+  const { t } = useI18n();
   const [url, setURL] = useState<string>(), [error, setError] = useState<unknown>();
   const [attempt, setAttempt] = useState(0), [imageReady, setImageReady] = useState(false);
   const [imageFailed, setImageFailed] = useState(false), [choices, setChoices] = useState<string[]>([]);
@@ -556,9 +521,7 @@ export function ReportEvidence({
   onSelectEvidence?: (context: ReportEvidenceSelection) => void;
   currentImageId?: string | null;
 }) {
-  const { t: globalT, language } = useI18n();
-  const t = (key: string) =>
-    reportEvidenceMessages[key]?.[language === "zh" ? 0 : 1] || globalT(key);
+  const { t, language } = useI18n();
   const raw = jsonObject(document.reportEvidence),
     bundle =
       raw?.schemaVersion === 1 ? (raw as unknown as ReportBundle) : undefined;
@@ -589,7 +552,7 @@ export function ReportEvidence({
             <div className="report-detection-notes">
               {items.map(({ item, contexts, sourcePhoto }, i) => {
                 const label =
-                  language === "zh" && item.labelZh ? item.labelZh : item.label;
+                  layerText(language, item.labelZh || item.label, item.label);
                 return (
                   <div className="report-detection-note" key={i}>
                     <strong>
@@ -870,7 +833,7 @@ export function ReportEvidence({
                 {!!finding.warnings?.length && (
                   <details className="report-source-details">
                     <summary>
-                      {readable("warnings", language)} ·{" "}
+                      {readable("warnings", t)} ·{" "}
                       {finding.warnings.length}
                     </summary>
                     <EvidenceValue value={finding.warnings} />

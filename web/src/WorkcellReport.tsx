@@ -27,7 +27,7 @@ import {
   sourceDimensions,
   sourceScale,
 } from "./core";
-import { useI18n } from "./i18n";
+import { LOCALE_TAG, useI18n } from "./i18n";
 import { ErrorNotice } from "./App";
 import { ModelEvidence } from "./ModelEvidence";
 import { IdentityReview } from "./IdentityReview";
@@ -102,7 +102,7 @@ export function ReportDate({ value }: { value: string }) {
   const { language } = useI18n();
   return (
     <time dateTime={value}>
-      {new Date(value).toLocaleString(language === "zh" ? "zh-CN" : "en-US", {
+      {new Date(value).toLocaleString(LOCALE_TAG[language], {
         dateStyle: "medium",
         timeStyle: "short",
       })}
@@ -842,7 +842,7 @@ export function WorkcellReport({
                   <h4>{t("layerFactsTitle")}</h4>
                   <dl>{layer.facts[entity.id].map((fact, i) => <div key={i} data-fact-kind={fact.kind}><dt>{layerText(language, fact.label, fact.labelEn)}</dt><dd>{layerText(language, fact.text, fact.textEn)}</dd></div>)}</dl>
                   {layer.models?.[entity.id] && <p>{layerText(language, layer.models[entity.id].note, layer.models[entity.id].noteEn)}</p>}
-                  <p>{t("layerScale").replace("{cm}", (layer.scale.nativeToMeters * 100).toFixed(1))}{layer.scale.uncertaintyRelative ? t("layerScaleSpread").replace("{pct}", (layer.scale.uncertaintyRelative * 100).toFixed(1)) : ""}{t("layerScaleSource").replace("{source}", () => layer.scale.source)}</p>
+                  <p>{t("layerScale", { cm: (layer.scale.nativeToMeters * 100).toFixed(1) })}{layer.scale.uncertaintyRelative ? t("layerScaleSpread", { pct: (layer.scale.uncertaintyRelative * 100).toFixed(1) }) : ""}{t("layerScaleSource", { source: layer.scale.source })}</p>
                 </section>}
                 {pipeline && <section className="report-object-pipeline" data-object-pipeline={entity.id}>
                   <h4>{t("layerPipelineTitle")}</h4>

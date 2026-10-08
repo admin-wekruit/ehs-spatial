@@ -58,7 +58,7 @@ import {
   cameraPath,
   cameraView,
 } from "./core";
-import { useI18n } from "./i18n";
+import { LanguageSwitch, LOCALE_TAG, useI18n } from "./i18n";
 import { WorkcellReport } from "./WorkcellReport";
 import { PhotoView } from "./PhotoView";
 import { IdentityReview } from "./IdentityReview";
@@ -206,7 +206,7 @@ function DateLabel({ value }: { value: string }) {
   const { language } = useI18n();
   return (
     <time dateTime={value}>
-      {new Date(value).toLocaleString(language === "zh" ? "zh-CN" : "en-US", {
+      {new Date(value).toLocaleString(LOCALE_TAG[language], {
         dateStyle: "medium",
         timeStyle: "short",
       })}
@@ -215,7 +215,7 @@ function DateLabel({ value }: { value: string }) {
 }
 export default function App() {
   const route = useRoute(),
-    { t, language, setLanguage } = useI18n();
+    { t } = useI18n();
   const [importError, setImportError] = useState<unknown>();
   const parts = route.pathname.split("/").filter(Boolean);
   let content: ReactNode;
@@ -299,14 +299,7 @@ export default function App() {
               }}
             />
           </label>}
-          <select
-            aria-label="Language"
-            value={language}
-            onChange={(e) => setLanguage(e.target.value as "zh" | "en")}
-          >
-            <option value="zh">中文</option>
-            <option value="en">EN</option>
-          </select>
+          <LanguageSwitch />
         </div>
       </header>
       <ErrorNotice error={importError} />
@@ -1109,7 +1102,7 @@ export function SpatialView({
   }, [revision.id]);
   const followable = showSplats && mode === "free" && timedCameras.length > 0;
   // While the view follows the video camera, the camera path would run through the eye and across the view: hidden until
-  // the user takes the view back (the 相机路线 switch decides otherwise).
+  // the user takes the view back (the camera-path switch decides otherwise).
   const viewLayers = follow && followable ? { ...layers, cameraPath: false } : layers;
   function refreshModelPreview() {
     const current = callbacks.current, request = current.modelPreview;
@@ -2242,7 +2235,7 @@ function TaskStrip({
               <Badge value={job.status} />
               {!!result.errors.length && (
                 <span className="job-error">
-                  {result.errors.map(t).join(" · ")}
+                  {result.errors.map((code) => t(code)).join(" · ")}
                 </span>
               )}
               {result.workerSeconds !== undefined && (

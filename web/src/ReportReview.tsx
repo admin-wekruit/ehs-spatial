@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { id, request } from "./api";
-import { useI18n } from "./i18n";
+import { LOCALE_TAG, useI18n } from "./i18n";
 import { ErrorNotice } from "./App";
 import { SafetyEvidence } from "./SafetyEvidence";
 import { EvidenceLedger } from "./EvidenceLedger";
-import { reportReviewMessages } from "./report-review-messages";
 import type { Commit, Evaluation, EvidenceRequest, Policy, PolicyDetail, PolicyRevision, PolicyTemplate, ProjectDetail, Publication, Review } from "./types";
 import "./report-review.css";
 
@@ -60,8 +59,7 @@ function sourceURL(value: unknown) {
 }
 
 export function ReportReview({ detail, publication, reviewMode, canWrite, onSelect, onSaved, onError, onSummary, onEvaluations }: ReportReviewProps) {
-  const { language, t: globalT } = useI18n();
-  const t = (key: string) => reportReviewMessages[key]?.[language === "zh" ? 0 : 1] || globalT(key);
+  const { language, t } = useI18n();
   const revision = publication?.snapshot.revision || detail.revision;
   const projectId = publication?.projectId || detail.project.id;
   const scope = `${projectId}:${revision.id}:${publication?.id || "live"}`;
@@ -148,7 +146,7 @@ export function ReportReview({ detail, publication, reviewMode, canWrite, onSele
     catch (e) { reportError(e); }
     finally { if (current.current === scope) setBusy(false); }
   }
-  const when = (value: string) => new Date(value).toLocaleString(language === "zh" ? "zh-CN" : "en-US");
+  const when = (value: string) => new Date(value).toLocaleString(LOCALE_TAG[language]);
   const objectButton = (entityId: string) => {
     const entity = revision.document.entities.find(e => e.id === entityId);
     return entity ? <button type="button" className="rr-object" onClick={() => onSelect(entityId)}>{entity.label} <span aria-hidden="true">↗</span><span className="rr-sr-only"> · {t("rrObject")}</span></button> : <span className="rr-muted">{t("rrObjectMissing")}</span>;
