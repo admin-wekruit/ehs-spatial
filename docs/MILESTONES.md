@@ -4,7 +4,7 @@
 
 ## 当前位置
 
-**Phase 3（企业版交接 1.0.0-rc1）已交付，等客户侧验收；Phase 4（判定层）开工 2026-10-08：分支 `verdict-lab`（`ehs_spatial/verdict/`：契约 C1–C5、插件注册表、签名 v1），四个工作包并行（lab 核心 + 基线插件 / coverage + σ + 感知规约 / 规范侧条款图 + 查表 + 对齐 + 检索 / 规则验证 harness + Python 等价引擎 + 决策规则变体），四包已合并到 `verdict-lab`（tests/verdict 66 通过）；记分卡 v0 已出（`docs/research/verdict-lab-scorecard-v0-2026-10-08.md`：基线 / python 引擎等价 / stpl + k=1 三配置 × 两工位）。第二轮（10-08 下午）：五个决定已定（包围无 coverage → CANNOT_DETERMINE、L5 三方案、Claude Haiku、金标在报告里标、规范为概念文本）；L4 `llm-extract@0` + EHS safety subagent、L5 三种合成 + `asp.py`、L7 `html@1` 标注报告 + `labels merge`、`relations@2` 朝向谓词；tests/verdict 95 通过；记分卡 v1（`verdict-lab-scorecard-v1-2026-10-08.md`）。**阻塞**：本机没有 Claude 凭证，LLM 抽取 / 合成的实跑等 key 或 `ant auth login`。**
+**Phase 3（企业版交接 1.0.0-rc1）已交付，等客户侧验收；Phase 4（判定层）开工 2026-10-08：分支 `verdict-lab`（`ehs_spatial/verdict/`：契约 C1–C5、插件注册表、签名 v1），四个工作包并行（lab 核心 + 基线插件 / coverage + σ + 感知规约 / 规范侧条款图 + 查表 + 对齐 + 检索 / 规则验证 harness + Python 等价引擎 + 决策规则变体），四包已合并到 `verdict-lab`（tests/verdict 66 通过）；记分卡 v0 已出（`docs/research/verdict-lab-scorecard-v0-2026-10-08.md`：基线 / python 引擎等价 / stpl + k=1 三配置 × 两工位）。第二轮（10-08 下午）：五个决定已定（包围无 coverage → CANNOT_DETERMINE、L5 三方案、Claude Haiku、金标在报告里标、规范为概念文本）；L4 `llm-extract@0` + EHS safety subagent、L5 三种合成 + `asp.py`、L7 `html@1` 标注报告 + `labels merge`、`relations@2` 朝向谓词；tests/verdict 95 通过；记分卡 v1（`verdict-lab-scorecard-v1-2026-10-08.md`）。**阻塞**：本机没有 Claude 凭证，LLM 抽取 / 合成的实跑等 key 或 `ant auth login`。**2026-10-08 晚全部暂停**，交接文件 `docs/HANDOFF-SESSION-2026-10-08.md`。**
 
 | 阶段 | 时间 | 状态 | 里程碑 / 证据 |
 |---|---|---|---|

@@ -44,6 +44,15 @@
 - `tests/verdict`: 95 passed (fake model: every LLM plugin is tested through a monkeypatched `llm.complete`; no live call was possible
   on the development Mac — no Claude credentials). Scorecard v1: `docs/research/verdict-lab-scorecard-v1-2026-10-08.md`.
 
+### Handoff back, day 1 (2026-10-08, evening; customer review `docs/REVIEW-ARGUS-2026-10-08.md`)
+- One `Makefile` (`Makefile.handoff` merged, same 13 targets), one env template (`.env.example` deleted), `AGENTS.md` → symlink to
+  `CLAUDE.md`, `.impeccable.md` deleted. `deploy/Dockerfile.serving`: `ubuntu22.04` CUDA tag, `python3-dev`, pip upgraded first.
+- Failure semantics: `ehs_spatial/pipeline.py` raises on failed overlays / viewer build; `run_stages.py` exits 1 on missing check
+  results; `run_all.sh` uses `pipefail`. Fixed `/tmp/{w,runs,in,out}` → `tempfile.mkdtemp`; 25 delivery-path files lost their
+  `/Users/...` fallbacks (env keys required). S8 (cell 090) baselines `cmp-{pi3x,mvs,mvs-fill}/results.json` ship with the code.
+- Branches: `archive/research-2026-10` (snapshot before the cleanup), `wip/viewer-i18n-2026-10-08` (half-done en/zh/nl viewer
+  catalogs, not merged). Session handoff: `docs/HANDOFF-SESSION-2026-10-08.md`.
+
 ### Test baseline note
 - At c9da31a (docs reorganisation; also touched `scripts/workcell_checks/box_faces.py`, `lower_edge.py`, `scripts/workcell_photo_oneshot.py`,
   README) the full suite went from the 6 known failures to 23 (`tests/test_app.py::test_readme_links_each_provider_credential_source`,
@@ -74,7 +83,7 @@ The first release a customer runs end to end on their own GPUs and storage: one 
 - `env.template`: the one configuration surface — every key the system reads, grouped (GPU services, client backends, storage,
   publication hosting, weights fetch, pipeline paths, tests), one comment line each, in sync with `research/module-swap-2026-10-07/env.sh`.
 - `scripts/check_env.py` (+ `tests/test_check_env.py`): validates `.env` offline (`--strict`) and against the live services (`--live`).
-- `Makefile.handoff`: `env`, `check-env`, `check-env-live`, `lint`, `test`, `run CELL=090` (to be included by WP3's `Makefile`).
+- `Makefile.handoff`: `env`, `check-env`, `check-env-live`, `lint`, `test`, `run CELL=090` (to be included by WP3's `Makefile`; merged into `Makefile` on 2026-10-08).
 - `HANDOFF.md` rewritten: 4-step path, jump VM section, two-A100 layout, credentials, acceptance A1–A6 with commands, troubleshooting,
   one-line rollback; the previous handoff kept under "History".
 - `deploy/README.md`, `deploy/jumpbox/`: socat systemd unit template + one env file per service port (what the customer runs today),
