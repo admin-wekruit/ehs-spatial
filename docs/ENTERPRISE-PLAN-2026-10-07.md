@@ -1,6 +1,8 @@
 # Panoptes 企业版工程计划（2026-10-07）
 
-目标一句话：**clone 两个仓库 + 一份 `.env`（三组凭证）= 跑通**。GPU 在他们那边（两张 A100），存储是他们的 Mongo + S3 兼容对象存储，
+> 状态（2026-10-08）：计划已于 2026-10-07 交付为 1.0.0-rc1（一个仓库 ehs-spatial `main`）。现状看 `docs/STATE.md`；本文件是计划原文。
+
+目标一句话：**clone 一个仓库 + 一份 `.env`（三组凭证）= 跑通**。GPU 在他们那边（两张 A100），存储是他们的 Mongo + S3 兼容对象存储，
 算法一行不改。以后每个新站点 = 复制 `.env`；每个新模型 = 一个服务 + 一个 provider，流程不动。
 
 ## 0. 验收标准
@@ -18,7 +20,7 @@
 
 | 已有 | 在哪 | 状态 |
 |---|---|---|
-| 模型服务 + 合同：SAM 3 `:8801`、MapAnything `:8802`、MoGe-3 `:8803`，FastAPI，一次 JSON POST | `serving/{sam3,mapanything,moge}_service.py`，`docs/BACKENDS.md`，`serving/HANDOFF.md` | **已在他们 Azure A100 上跑**（jump `10.21.72.251` socat 8080/8090 → `172.184.217.34`） |
+| 模型服务 + 合同：SAM 3 `:8801`、MapAnything `:8802`、MoGe-3 `:8803`，FastAPI，一次 JSON POST | `serving/{sam3,mapanything,moge}_service.py`，`docs/BACKENDS.md`，`docs/archive/serving-HANDOFF-v0-services.md` | **已在他们 Azure A100 上跑**（jump `10.21.72.251` socat 8080/8090 → `172.184.217.34`） |
 | 客户端切换：`SAM3_BACKEND / GEOMETRY_BACKEND / MOGE_BACKEND = http \| modal \| fal \| replicate` + `*_HTTP_URL` | `ehs_spatial/providers/{sam3,map_anything,moge}.py` | 在用 |
 | 平台数据层接口：`Repository`（32 方法）、`PolicyRepository`（12）、`BlobStore`（7） | `ehs-spatial/ehs_spatial/platform/{repository,storage}.py` | 只有 Postgres + 本地目录实现 |
 | 离线 runner：任何 Modal 应用在本进程跑，权重本地，不联网 | `ehs-spatial/scripts/onprem/run_stage.py`、`fetch_weights*.py`、`airgap.sh`、`docker/*.Dockerfile` | 自检通过 |

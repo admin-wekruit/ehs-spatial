@@ -59,7 +59,7 @@ OWL / SWRL / SPARQL / SHACL / STL 这些能不能用？现在有没有 harness�
   **ZEN 只收适用性事实和标签列表**，输出 `check`：`manual`（要人工 `manual_evidence` 注释，带 `passed`）或 `geometry`（上面那 7 谓词之一）。
   数值判断全在 Python，"编辑决策表不可能造出第二个几何评价器"。适用性只能由审核员带证据断言（`policy_applicability` 注释），否则引擎弃权。
   模板 5 条 OSHA 1910（3 条 manual、2 条 `not_inside`）。
-- **VLM 的位置**：只在"为什么不合格"的解释里（`docs/demos/2026-08-25-poc-policy-vlm.md`：Gemini 引用 fact id 解释，数字本地渲染），
+- **VLM 的位置**：只在"为什么不合格"的解释里（`docs/archive/demos/2026-08-25-poc-policy-vlm.md`：Gemini 引用 fact id 解释，数字本地渲染），
   以及方向判定 / 补测定位等感知环节。判定本身从不经过模型权重。
 
 ### A4. 今天的 090 / 030 报告：引擎按设计弃权
@@ -80,8 +80,8 @@ OWL / SWRL / SPARQL / SHACL / STL 这些能不能用？现在有没有 harness�
 |---|---|---|---|
 | 单元测试 | `tests/test_policy.py`(32) `test_rules.py`(11) `test_rule_semantics.py`(7) `test_policy_compile.py`(3) `tests/check_platform_policy_geometry.py` | 7 谓词的边界三元组（阈值 ±2 cm，手搭 `Entity3D`）、误差带、证据门、编译缓存键、平台几何分支的证据契约 | 拓扑 / 语义规则（不存在）、真实场景 |
 | 合成场景基准 | `ehs_spatial/eval_pack.py`（13 测试 + 1 live） | 程序生成围栏 / 机器人 / 梯子 / 平台，按设计距离摆、正常 / 遮挡相机，跑全流程比 `expected_status` 和 `expected_distance_m` | 只有间距一族；不含光幕 / 急停 / 开口 |
-| 编译器考试 | `docs/reviews/2026-08-25-osha-compiler-exam.md`，`docs/policies/osha1910.md` + `tests/fixtures/oshacorpus/corpus.json` | 13 条 29 CFR 原文：该拒的 10/10 拒了，0 条错编译，该编的 1/3 编对、2 条过度拒绝 | 只跑过一次（live），没有进 CI |
-| 推断政策 | `docs/phase2/INFERENCE-POLICY.md` | 视频报告哪些几何可以参与规则（只有"观察到"的；结构推断的最多 需复核） | — |
+| 编译器考试 | `docs/archive/reviews/2026-08-25-osha-compiler-exam.md`，`docs/policies/osha1910.md` + `tests/fixtures/oshacorpus/corpus.json` | 13 条 29 CFR 原文：该拒的 10/10 拒了，0 条错编译，该编的 1/3 编对、2 条过度拒绝 | 只跑过一次（live），没有进 CI |
+| 推断政策 | `docs/archive/phase2/INFERENCE-POLICY.md` | 视频报告哪些几何可以参与规则（只有"观察到"的；结构推断的最多 需复核） | — |
 
 LLM-as-judge 不存在于判定路径，所以也没有对应的评测；缺的是：真实工位的逐规则金标判定集、拓扑 / 语义规则的测试、蜕变测试
 （整体平移 / 旋转不改判定，挪 1 cm 过阈值必翻），以及把每维 `sigmaCm` 真正传播到判定（现在是固定带）。

@@ -15,8 +15,8 @@ from .contracts import (
 FENCE_LABEL = "safety fence"
 
 # Measured accuracy of the two capture tiers, from real laser-GT evals:
-# multi-view real-photo MAE 14-18 cm (docs/reviews/2026-07-21-mvp-boundary-map.md),
-# mono ~30-46 cm (docs/reviews/2026-08-24-moge-auto-anchor.md). A distance
+# multi-view real-photo MAE 14-18 cm (docs/archive/reviews/2026-07-21-mvp-boundary-map.md),
+# mono ~30-46 cm (docs/archive/reviews/2026-08-24-moge-auto-anchor.md). A distance
 # inside the budget around the threshold cannot honestly pick a side, so
 # the verdict says NEEDS_REVIEW instead of flipping on noise.
 ERROR_BUDGET_MULTIVIEW_M = 0.20

@@ -5,7 +5,7 @@ scale; MoGe-2 (MIT) is an independent metric model. The ratio of their
 median camera-frame ranges over the same view is a single scalar that
 re-gauges MapAnything to metres with no operator input. Validated against
 laser/synthetic ground truth on three packs
-(docs/reviews/2026-08-24-moge-auto-anchor.md): warehouse 9.0% median
+(docs/archive/reviews/2026-08-24-moge-auto-anchor.md): warehouse 9.0% median
 relative error vs the 8.5% operator-anchor upper bound; ETH3D 14.7 cm vs
 14.4; Redwood 22.9 cm vs 27.5 (the auto anchor WINS there — the measured
 camera height was the weaker number).

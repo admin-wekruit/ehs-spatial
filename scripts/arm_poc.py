@@ -3,7 +3,7 @@
 Ground truth ($0, deterministic): Franka Panda forward kinematics from the
 episode's recorded joint positions. The standard modified-DH table reproduces
 the h5's own cartesian_position record with 0.00 mm error on every frame
-(docs/research/2026-08-25-robotcell-data.md), so FK link positions ARE the
+(docs/archive/research/2026-08-25-robotcell-data.md), so FK link positions ARE the
 exact arm geometry. Camera extrinsics come from the h5 (camera pose in the
 robot base frame, extrinsic-xyz euler — the convention was proven by the
 wrist camera, whose extrinsics stay a constant rigid transform from the FK

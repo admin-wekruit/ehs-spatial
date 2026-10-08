@@ -1,4 +1,4 @@
-"""Lower edge (下沿) of an object, or of a part of it: the defined measurement of docs/workcell-photo/LOWER-EDGE.md.
+"""Lower edge (下沿) of an object, or of a part of it: the defined measurement of docs/archive/workcell-photo/LOWER-EDGE.md.
 
 Part (click exemplar): one click {entityId, part (a label), clickPhoto (1-based), clickXY [u, v]} on the part. The click ray's
 first hit on the object's displayed model is the 3D anchor (the report's Pi3X point on that ray where the model misses or

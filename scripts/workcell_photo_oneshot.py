@@ -28,7 +28,7 @@ import trimesh
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-# Three.js 0.178.0 npm package, MIT. See docs/workcell-photo/HANDOFF.md for acquisition.
+# Three.js 0.178.0 npm package, MIT. See docs/archive/workcell-photo/HANDOFF.md for acquisition.
 VIEWER_ASSET_SHA256 = {
     "LICENSE": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601",
     "three.core.js": "562b72799ef1145f77997ece49a34f578422873757b0a13e41d76dcbfb776f06",
@@ -676,7 +676,7 @@ def main():
     parser.add_argument("--images", type=Path, nargs="+", help="Two or more photos of ONE scene, in photo order")
     parser.add_argument("--reference-photo", type=int, help="1-based photo for left/right, posts and the button scale reference (default: the last)")
     parser.add_argument("--out", type=Path)
-    parser.add_argument("--viewer-assets", type=Path, help="Three.js 0.178.0 runtime directory; see docs/workcell-photo/HANDOFF.md")
+    parser.add_argument("--viewer-assets", type=Path, help="Three.js 0.178.0 runtime directory; see docs/archive/workcell-photo/HANDOFF.md")
     parser.add_argument("--button-diameter-m", type=float, help="Legacy whole-envelope width; cannot combine with --measurements")
     parser.add_argument("--button-height-m", type=float)
     parser.add_argument("--measurements", type=Path, help="Measured reference and independent evaluation JSON")

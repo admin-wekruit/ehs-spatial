@@ -280,7 +280,7 @@ def _voxel_downsample(points: np.ndarray) -> np.ndarray:
 # Conservative on purpose: nb=20/std=2.0 leaves dense uniform structure
 # untouched, while harsher settings (nb=50/std=0.8) measurably shrink
 # single-view smear but delete most real fence points too — tradeoff
-# numbers in docs/reviews/2026-07-20-sor-preclustering.md.
+# numbers in docs/archive/reviews/2026-07-20-sor-preclustering.md.
 _OUTLIER_NB_NEIGHBORS = 20
 _OUTLIER_STD_RATIO = 2.0
 

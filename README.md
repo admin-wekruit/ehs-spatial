@@ -1,121 +1,25 @@
-# EHS Spatial MVP
+# ehs-spatial（Panoptes）
 
-当前 Platform 算法与运行状态统一见 [算法与分析流程总表](docs/algorithms/README.md)。下文保留早期四图 MVP 的说明。
+工位照片 → 3D 重建（对象、盒、尺寸、离地高、不确定度）→ 测量报告。企业版交接 1.0.0-rc1（2026-10-07）：一个仓库、客户自己的 GPU 与存储。
 
-A local, single-process inspection workbench that turns exactly four workcell
-images into approximate 3D fence-clearance evidence, a deterministic demo
-assessment, and fact-grounded follow-up answers. The fixed `0.6 m` criterion is
-a demo rule, not an official EHS standard. This is not a certified safety tool,
-CAD/SLAM system, production monitoring service, or replacement for an EHS
-professional.
+**读的顺序（新 session 从这里开始，不要跳）**
 
-## Stack and provider IDs
+1. `docs/STATE.md` — 系统现在是什么：流程、服务与端口、已发布结果、什么不在交付里、正在做的研究。有冲突以它为准。
+2. `HANDOFF.md` — 怎么跑：clone（`-b main`）、`.env`、GPU 机 `make up GPU=a|b`、`make smoke`、`panoptes run --cell 090`、验收 A1–A6。
+3. `research/module-swap-2026-10-07/REPRODUCE-PROMPT.md` — 怎么复现已发布的数字（本机 GPU，不用 Modal）。
+4. `docs/MILESTONES.md` — 阶段与里程碑；`CHANGELOG.md` — 变更。
 
-- Python `3.12`; Gradio `6.20.0`; NumPy `2.5.1`; Pydantic `2.13.4`;
-  Open3D `0.19.0`; Shapely `2.1.2`; Pillow `12.3.0`.
-- Provider clients: `replicate==1.0.7`, `fal-client==1.0.0`, and
-  `google-genai==2.11.0`.
-- Replicate Map Anything:
-  `vufinder/map-anything:bb68c254a65d3ce6b173909181d2dfbd044300b3ebca25ab63f07aa7eb1eebff`
-  using the `map-anything-apache` checkpoint.
-- fal SAM 3.1 endpoint: `fal-ai/sam-3-1/image-rle`.
-- Gemini model: `gemini-3.5-flash` through the Interactions API.
+**其它目录**：`docs/research/`（研究与提案，未交付；索引 `docs/research/README.md`）；`docs/archive/`（历史，只读；索引 `docs/archive/README.md`）；
+`research/module-swap-2026-10-07/notes/`（冻结实验记录）；`docs/platform/OPERATIONS.md`（平台运维）；`docs/BACKENDS-v1.md` / `docs/BACKENDS.md`（服务契约）；`docs/STORAGE.md`。
 
-Provider pages:
-[Map Anything](https://replicate.com/vufinder/map-anything),
-[SAM 3.1 image RLE](https://fal.ai/models/fal-ai/sam-3-1/image-rle), and
-[Gemini 3.5 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash).
+**给 agent / 自动化 session 的硬规则**：`CLAUDE.md`（同 `AGENTS.md`）。
 
-## Install and run
+Quick start:
 
 ```bash
-uv sync --extra dev --frozen
-cp .env.example .env
-```
-
-Fill `REPLICATE_API_TOKEN`, `FAL_KEY`, and `GEMINI_API_KEY` in `.env`, then use
-uv's native environment-file support:
-
-- `REPLICATE_API_TOKEN`: [Replicate API tokens](https://replicate.com/account/api-tokens)
-- `FAL_KEY`: [fal API keys](https://fal.ai/dashboard/keys)
-- `GEMINI_API_KEY`: [Google AI Studio API keys](https://aistudio.google.com/apikey)
-
-```bash
-uv run --env-file .env python app.py
-```
-
-No custom `.env` loader is used.
-
-## Reproducible EHS evaluation
-
-Generate the four calibrated CPU scenes and validate the deterministic
-SceneMap/rule path without any provider calls:
-
-```bash
-uv run python scripts/ehs_eval.py generate --output outputs/ehs_v1
-uv run python scripts/ehs_eval.py offline --pack outputs/ehs_v1
-```
-
-Then run one explicit paid end-to-end case:
-
-```bash
-uv run --env-file .env python scripts/ehs_eval.py live \
-  --pack outputs/ehs_v1 --case ladder_050 --live
-```
-
-See [the calibrated eval guide](eval/README.md) for truth boundaries, exact
-artifacts, call counts, and the opt-in four-case benchmark command.
-
-## Capture and evidence
-
-Upload four local images in the labeled front/right/rear/left slots. Capture the
-same workcell from four sides with useful overlap, stable lighting, a visible
-factory floor, safety fence, and staged movable objects. Enter the measured lens
-height above the floor. The app intentionally rejects incomplete four-view runs.
-
-Each successful run remains local under `runs/{run_id}/`, including copied
-inputs, provider geometry, masks, `point_cloud.glb`, `observations.json`,
-`scene.json`, `assessment.json`, `topdown.png`, and `chat.jsonl`. Geometry and
-rendering run on CPU; CUDA is neither required nor configured.
-
-There is no fallback path. A provider, decoding, grounding, or artifact error is
-shown as an error and the run does not invent a result.
-
-## Cost, privacy, and data restrictions
-
-One analysis makes **1 paid Map Anything call, 28 paid fal segmentation calls
-(7 object labels × 4 frames; the floor is fitted geometrically, not segmented)
-plus up to 3 extra calls per frame-label whose canonical prompt returns nothing
-(synonym fallback), and at least 1 paid Gemini interaction**; each chat question
-adds another Gemini interaction. fal listed SAM 3.1 at `$0.01/request` on
-2026-07-15, making segmentation roughly `$0.28–0.5/case`. Review current
-provider pricing before use.
-
-Gemini requests use `store=True` so follow-up questions can chain through the
-stored interaction ID. Provider retention therefore applies. Do not upload Tesla
-images or any real factory, employee, customer, confidential, or regulated data
-until the relevant vendor terms, retention policy, and internal approvals have
-been reviewed and accepted.
-
-## Tests
-
-Offline verification never calls a provider:
-
-```bash
-uv run pytest -q
-uv run python -m compileall -q app.py ehs_spatial scripts tests
-uv lock --check
-uv pip check
-```
-
-The live smoke is paid and opt-in. It requires the three API variables from
-`.env` and exactly four explicit local image variables:
-
-```bash
-EHS_LIVE_SMOKE=1 \
-EHS_SMOKE_IMAGE_1=/absolute/path/front.jpg \
-EHS_SMOKE_IMAGE_2=/absolute/path/right.jpg \
-EHS_SMOKE_IMAGE_3=/absolute/path/rear.jpg \
-EHS_SMOKE_IMAGE_4=/absolute/path/left.jpg \
-uv run --env-file .env pytest -q tests/test_live_smoke.py
+git clone -b main https://github.com/admin-wekruit/ehs-spatial.git && cd ehs-spatial
+make env            # -> .env; fill credentials + jump endpoints; make check-env
+make up GPU=a       # on GPU card A: sam3d :8805 + sam3 :8801      (card B: geometry-mvs :8804 + moge :8803 + mapanything :8802)
+make smoke
+make run CELL=090   # ~40 min; prints the report URL
 ```

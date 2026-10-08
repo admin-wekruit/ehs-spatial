@@ -11,7 +11,7 @@ verdicts never depend on model weights, only on the reviewed spec plus the
 measured scene.
 
 MIN_HEIGHT closes the 1910.36(g)(1)-class vertical-clearance gap called out
-in docs/reviews/2026-08-25-osha-compiler-exam.md: rules that demand a
+in docs/archive/reviews/2026-08-25-osha-compiler-exam.md: rules that demand a
 minimum height (guarding fences, exit-route headroom) were previously
 inexpressible because the vocabulary only bounded height from above.
 """

@@ -16,7 +16,7 @@ make images GPU=b && make up GPU=b && make smoke GPU=b       # geometry-mvs :880
   `SRC/serving`, its `.dockerignore` whitelist) plus this repo's `serving/` and `deploy/`.
 - `deploy/Dockerfile.sam3d` and `deploy/Dockerfile.geometry` build FROM the ehs-spatial images (`docker/sam3d.Dockerfile`,
   `docker/{da3,geometry,workcell-gpu}.Dockerfile`), so every pin is the audited one and lives in one place; `make images` builds
-  the bases first. `deploy/Dockerfile.serving` is the three `docs/BACKENDS.md` services as `serving/HANDOFF.md` installs them.
+  the bases first. `deploy/Dockerfile.serving` is the three `docs/BACKENDS.md` services as `docs/archive/serving-HANDOFF-v0-services.md` installs them.
 - Air-gapped boxes: build on a connected machine, then ehs-spatial `scripts/onprem/airgap.sh save / load`.
 - Verify: `make test` (fake backends, no GPU) and `serving/smoke_v1.sh URL` (a running service; the real model when deployed).
   `PANOPTES_CONTRACT_URL=http://<gpu-a>:8805 pytest tests/contract/live.py` runs the contract tests against the live service.

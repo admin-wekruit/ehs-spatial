@@ -18,7 +18,7 @@ hit there, else the near side of the box + 5 cm. 'Unknown' pixels count for neit
 another displayed model (same margin) or a non-floor Pi3X point (10 cm + 5 %) in front of ours (an occluder; with the
 model as reference also a cart inside a U-shaped guard's box); for a part, the rest of its object's mask (an internal
 boundary). Floor points never occlude. An occluded lower boundary therefore only bounds the bottom from below (the box must contain the mask) and never sets it: the lower edge
-of docs/workcell-photo/LOWER-EDGE.md (lower boundary along verticals, occlusion boundaries excluded) as a silhouette edge.
+of docs/archive/workcell-photo/LOWER-EDGE.md (lower boundary along verticals, occlusion boundaries excluded) as a silhouette edge.
 Best-improvement pattern search over the faces from the prior, weak pull to it (1 px^2 per cm), a bounded Powell polish for faces that trade
 off (depth against height along the rays), occlusion recomputed for the fitted box and the fit repeated.
 Evidence (R1, shared with capture_plan.py: sides / outline_px / face_grade / dim_grade / grade_box): a photo credits a face's
@@ -617,7 +617,7 @@ def face_centre(t, x, f):
 
 
 def need_of(t, x, name, f, g, px, good, apart, why, nomask, depth, loose=None):
-    """(zh, en) of what would make face f high (None when high), in the words of docs/workcell-photo/CAPTURE-PROTOCOL.md: a photo
+    """(zh, en) of what would make face f high (None when high), in the words of docs/archive/workcell-photo/CAPTURE-PROTOCOL.md: a photo
     without a mask that sees it asks for a mask, not a photo; the bottom face itself is never photographed (its lower edge is);
     a lower edge below 0.5 m needs a crouched photo; depth (front / back while W is low) needs a side view 45-75 deg off (the back
     edge on the outline); why = {photo: why its outline edge does not count}; loose = the sigma (cm) of a face credited well that

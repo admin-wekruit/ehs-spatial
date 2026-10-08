@@ -20,7 +20,7 @@ Accuracy tiers — be honest about which one this is:
   floor-fit error; feet-on-ground is a load-bearing assumption.
 - **calibrated fixed camera (the measurement tier)**: the same pipeline
   through a real KRTD model measured 0.45 m median person ATE on MEVA
-  (docs/demos/2026-08-25-poc-video.md). An installed camera with a real
+  (docs/archive/demos/2026-08-25-poc-video.md). An installed camera with a real
   calibration is what turns states into measurements.
 """
 
@@ -86,7 +86,7 @@ RULE_NAMES = ("R1_zone", "R2_min_distance", "R3_speed")
 
 CALIBRATED_REFERENCE = (
     "calibrated fixed-camera tier reference: 0.45 m median person ATE on "
-    "MEVA with a real KRTD model (docs/demos/2026-08-25-poc-video.md)"
+    "MEVA with a real KRTD model (docs/archive/demos/2026-08-25-poc-video.md)"
 )
 TIER_NOTE = (
     "uncalibrated video-mono tier: floor plane and intrinsics are recovered "
