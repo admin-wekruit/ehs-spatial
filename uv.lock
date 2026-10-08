@@ -270,6 +270,27 @@ wheels = [
 ]
 
 [[package]]
+name = "clingo"
+version = "5.8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/be/60/7da1a4516cf7c29d7160bb5c2c2ab4fd94a51a0d5cbcaf5a6d0beaa0955e/clingo-5.8.2.tar.gz", hash = "sha256:242c15483cc0dcfe91ab72f843c9d4fdbb55277a1149c88267740ff3c37d77f6", size = 1912059, upload-time = "2026-08-14T14:04:26.747Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/34/c8086f433f6d2927c3b21d7186d8b6531117a3a9b015a645492b3c958e95/clingo-5.8.2-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:c06d6d1c22f0224bc739ac86d2ea86bbfbc3335f640d73d7dd59b29f359f49df", size = 1722986, upload-time = "2026-08-14T14:03:20.016Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/81/dff34d80aa65996334e0fce74b038872522a15578e3a3cc9dc04179d503c/clingo-5.8.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:452684bc279f96606af4529d1d9c342997c247087c13a12ffacae632a916d82e", size = 1623709, upload-time = "2026-08-14T14:03:21.198Z" },
+    { url = "https://files.pythonhosted.org/packages/70/6c/dbc635690ebe2cf66393adc1a46a77e032b6e34f1771f0561b49e61501f9/clingo-5.8.2-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:e18a9b183e12dde07eaa4945c61719c088cc289d9f427e27d95ff3d1164e4a08", size = 2122695, upload-time = "2026-08-14T14:03:22.426Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/74/0866ed3d1dbe4818b54306152a480dda75f3963a6333ac2d596922f30526/clingo-5.8.2-cp312-cp312-manylinux_2_26_i686.manylinux_2_28_i686.whl", hash = "sha256:b481ec637fd2f28f00e9007047681a8ba15323649d84dc4480d5743618a19bbc", size = 2419096, upload-time = "2026-08-14T14:03:23.783Z" },
+    { url = "https://files.pythonhosted.org/packages/af/75/2bd68f72050b13d5366501a6797bc7f4d094c267b7633e870c66bbb455e5/clingo-5.8.2-cp312-cp312-manylinux_2_26_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:de106d5ea77d360688027c35bc50d6eef88cb74c8ceb83b4e892a4491dfea6bd", size = 2527395, upload-time = "2026-08-14T14:03:25.177Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/ad/90f963573c3ed841d76a7a60624ab0422336ad55651bc34cd590f036d1d3/clingo-5.8.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:98ac327ae5182deb57488f323f9c719a648becf27100a04705201263bddadced", size = 2257780, upload-time = "2026-08-14T14:03:26.323Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/05/e4e0d08d991bb61ca758b7953879037111d6392f8a10c45ec8499c008760/clingo-5.8.2-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:daf0ab70f8380cc9b23cc694dbe865449346100d8acb70102773210c537b2e1d", size = 3624811, upload-time = "2026-08-14T14:03:27.495Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/04/95c5d86ae2d95c23735f2a971d60aa341b3f558082c8943942f43afd50b1/clingo-5.8.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:b84da3d8c62dbbbaf340508d9a24491fc8693c2d74f0d0d9703c83f9343390f3", size = 3341543, upload-time = "2026-08-14T14:03:28.91Z" },
+    { url = "https://files.pythonhosted.org/packages/27/a2/efce38c815c0c1828e9a8cd657e1847108051e1a0ba622a528959a542c2e/clingo-5.8.2-cp312-cp312-win32.whl", hash = "sha256:012fb1c0bbbc0d1060a1cb0f3552ca8c6d13586f78b8baaf8358bf5cdf34099c", size = 1347744, upload-time = "2026-08-14T14:03:30.158Z" },
+    { url = "https://files.pythonhosted.org/packages/83/ea/54e274afbfd7c86a956d2704185300eed04d954f5e9d49611aadc6b21773/clingo-5.8.2-cp312-cp312-win_amd64.whl", hash = "sha256:8f7144443bd938aa3f8cd6934ab8c5134600b17ea8dfc983cec3ebb4b193ba2b", size = 1621287, upload-time = "2026-08-14T14:03:31.528Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -431,10 +452,15 @@ photo = [
     { name = "scipy" },
     { name = "trimesh" },
 ]
+verdict = [
+    { name = "clingo" },
+    { name = "pyyaml" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.35,<2" },
+    { name = "clingo", marker = "extra == 'verdict'", specifier = ">=5.7,<6" },
     { name = "fal-client", specifier = "==1.0.0" },
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "google-genai", specifier = "==2.11.0" },
@@ -452,6 +478,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=6,<7" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "==9.1.1" },
     { name = "python-multipart", specifier = ">=0.0.20" },
+    { name = "pyyaml", marker = "extra == 'verdict'", specifier = ">=6,<7" },
     { name = "replicate", specifier = "==1.0.7" },
     { name = "scipy", marker = "extra == 'photo'", specifier = "==1.18.0" },
     { name = "shapely", specifier = "==2.1.2" },
@@ -459,7 +486,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.30,<1" },
     { name = "zen-engine", specifier = ">=0.50,<1" },
 ]
-provides-extras = ["dev", "photo"]
+provides-extras = ["dev", "photo", "verdict"]
 
 [[package]]
 name = "fal-client"
