@@ -10,7 +10,7 @@
 ## 1. 项目一句话 + 现状
 
 Panoptes：工位（机器人单元）照片 → 米制 3D 重建（RoMa + DA3-BASE + numpy BA + MoGe-3 补洞 = **geometry-mvs**；SAM 3 掩码；SAM 3D Objects 补全；急停参照物定尺度）→ 测量层（盒、面、离地缝、距离）→ 报告站。
-已交付（Phase 3，`1.0.0-rc1`，2026-10-07）：客户一个 `git clone` → `.env` → `make up`（两张 A100 上的 GPU 服务）→ `panoptes run --cell 090 | 030`，报告站。发布的两个工位：090（`4b58dbd2…`）、030（`cd84d3fb…`），这两个测量层是所有改动的回归标准（117/117 字段、盒子 9 / 8）。
+已交付（Phase 3，`1.0.0-rc1`，2026-10-07）：客户一个 `git clone` → `.env` → `make up`（两张 A100 上的 GPU 服务）→ `panoptes run --cell 090 | 030`，报告站。每个工位发布了多个版本；**回归标准是推荐版本**（MVS + MoGe-3 补洞 + SAM 3D + 组装 v2）：090 `a9a6e0a0…`、030 `fafdeb6b…`（`docs/STATE.md` §4；数值 / 几何字段逐字段一致，文本字段可改消息码）。原版 `4b58dbd2…` / `cd84d3fb…`（Pi3X + RecGen）冻结但不是目标。
 报告里今天**没有机器合规判定**（策略引擎按设计弃权）——判定层就是 Phase 4 要补的东西。
 
 **和客户的关系（2026-10-08 晚定，最重要的一条）**：**这个仓库是 Modal 版，是源头**。客户的内部 app 克隆我们，只把 Modal 的 GPU 调用换成他们的 A100（经 jumpbox 端口转发，
@@ -155,6 +155,22 @@ L1 感知 / 重建 → **C1 Scene**（米制盒、σ、置信度、可见视角�
 **（c）客户对 UI 的要求**：查看器 en / zh / nl 切换包括盒、面、流水线面板文本；无其他 UI 要求。
 
 ---
+
+## 6b. 另一个 session 的只读审计（Codex，worktree `/Users/adam/Desktop/panoptes-public/phase5-portability`，分支 `codex/phase5-portability`）核对结果（2026-10-08 晚）
+
+核对过的、**成立**的发现：
+- 回归版本：本文原先写的 `4b58dbd2… / cd84d3fb…` 是 Pi3X + RecGen 原版；推荐版本是 `a9a6e0a0… / fafdeb6b…`。已改（§1、`CLAUDE.md`）。
+- `run_all.sh` 的 `pipefail` 和第 53 / 61 行的 `| grep -E …` 冲突：步骤成功且没有匹配行时 grep 退出 1，整段被判失败。**是今天引入的回归，已修**（`{ grep … || true; }`）。
+- `env.sh:18` 默认 `MODAL_RUN` = on-prem 仿真器、第 20 行无条件 `PANOPTES_ONPREM=1`：和"我们是 Modal 源头"不一致。第 6 步搬包时默认改回 `modal run`，on-prem 只作覆盖。
+- 090 比较目录错接：`ehs_spatial/cli.py:82` 和 `run_all.sh` 写 `cmp-090-mvs-fill`，`build_swap_layer.py:41-45` 对 090 读 `cmp-mvs-fill`（冻结的研究结果）；`build_swap_layer.py:65` 只认 `v2-` 开头，CLI 的 `090-v2-…` / `030-v2-…` 都被标成"组装 v1"（只影响标签文本）。第 6 步每工位配置文件时一起修。
+- `research/module-swap-2026-10-07/data/sept/new-view.json` 21,566,301 字节在 git 里（> 10 MB）；本文之前的"无 > 10 MB 文件"是检查脚本写错了。第 9 步数据出库。
+- `CLAUDE.md` 的测试基线还写 6 个已知失败；实际 23。已改。
+- 双引擎分歧（python@2 vs clingo@2）五例全部成立，原因：① `untrusted(ID)` 原子有渲染但 ASP 没有任何规则用它（python 出 CANNOT_DETERMINE，clingo PASS）；② 布尔事实为假（value=0）clingo 不渲染 → 无原子 → cannot_determine，python 看到假 → FAIL；③ value=None 的事实 clingo 当成立渲染 → PASS，python 当无值 → CANNOT_DETERMINE；④ 公式型要求 ASP 一律渲染成 needs_input，python 在输入已声明时会算；⑤ k=1、U=1 时 clingo 取整 `round(1*1/2)=0` → PASS，python 用 0.5 → NEEDS_MEASUREMENT。修法：共享判定语义先定（untrusted → cannot_determine 进 COMMON_ASP；假事实渲染为 `not_<pred>` 或 `pred(..., 0)`；None 不渲染；公式在渲染前求值；U 取整用 ceil），再加最小的双引擎反例测试。**判定层回来后的第一件事**（线一第 ①' 条，在 L2 区域谓词之前）。
+- 该 worktree 里已有未提交的新判定链路（`scene-json@2 → Scene.zones → relations@3 → function-library@1 → engines@3`，35 个测试）和三语进度（en/zh 1552 键、nl 260）：**先推到一个分支再做任何归档**。那是另一个 session 的工作树，本 session 没有碰。
+
+审计里**不成立 / 不适用**的：无。两处口径差异：它说 CHANGELOG 没列全 23 个 id（CHANGELOG 列的是文件，本文 §5 第 4 步也只列文件）；它的测试数和目录键数是它自己工作树的状态，不是 `main` 的。
+
+它提的两项用户决定，本文的立场：迁包基准 = 推荐版本（`a9a6e0a0… / fafdeb6b…`）；判定实验台保留为研究、不进客户交付，除非客户要 Phase 4。它建议的顺序（冻结基准 → 三路并行：失败传播 + 测试契约 / UI 目录 / 依赖闭包清单 → 集中迁包 → 消息码 + 英文化 + CI 门 → 判定层）和本文 §3b 一致。
 
 ## 7. 需要用户的
 

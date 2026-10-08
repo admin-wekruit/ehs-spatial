@@ -5,7 +5,7 @@
 #   S4 completion SAM 3D Objects candidates from every masked photo -> uniform selection -> generation/ contract
 #   S5-S14       assembly v2 (floor-contact hinge) -> report -> platform import/export -> original checks -> layer -> tables
 #   source env.sh; ./run_all.sh 090 | 030            (idempotent: finished steps are skipped)
-set -e -o pipefail   # a failed step fails the chain even behind `| tail` (customer review 2026-10-08: no step exits 0 on a failure)
+set -e -o pipefail   # a failed step fails the chain even behind `| tail`; grep filters are wrapped `{ grep ... || true; }` so a clean run is not a failure
 : ${SWAP_ROOT:?source env.sh first}
 CELL=${1:?cell: 090 or 030}
 N=$SWAP_NOTES; SP=$SWAP_SCRATCH
@@ -50,7 +50,7 @@ step "S4b candidate assembly (CPU) + uniform selection -> cmp-$CELL-mvs-fill"
 [ -f $AB/assembly/sam3d/comparisons.json ] || AB_CELL=$CELL AB_RUN=$FILLX AB_OUT=$AB ${=MODAL_RUN} completion_ab.py --stage assemble --variants $VARS 2>&1 | tail -2
 CMP=$N/module-swap-090-2026-10-07/cmp-$CELL-mvs-fill; mkdir -p $CMP; cd $N/completion-ab-090-2026-10-06
 SCALE=$([ $CELL = 090 ] && echo $SP/mvs090/estop-scale2.json || echo $SP/mvs030/estop-scale.json)
-[ -f $CMP/results.json ] || CMP_NOTES=$CMP CMP_SCALE=$SCALE AB_CELL=$CELL AB_RUN=$FILLX AB_OUT=$AB $PY compare.py ${=OBJS} 2>&1 | grep -E "Traceback|rror:" | tail -3
+[ -f $CMP/results.json ] || CMP_NOTES=$CMP CMP_SCALE=$SCALE AB_CELL=$CELL AB_RUN=$FILLX AB_OUT=$AB $PY compare.py ${=OBJS} 2>&1 | { grep -E "Traceback|rror:" || true; } | tail -3
 step "S4c generation/ contract + pins"
 cd $N/module-swap-090-2026-10-07
 [ -d $RUN/generation ] || $PY swap_generation.py $CELL/mvs-fill-sam3d 2>&1 | tail -2
@@ -58,7 +58,7 @@ $PY pin_run.py $RUN | tail -1
 
 step "S5 assembly v2 (CPU, floor-contact hinge) + S6 report"
 cd $PANOPTES_SERVING
-[ -f $RUN/result/comparisons.json ] || ${=MODAL_RUN} modal_apps/assemble_scene.py --run $RUN 2>&1 | grep -E "estimateUsd|rror" | tail -2
+[ -f $RUN/result/comparisons.json ] || ${=MODAL_RUN} modal_apps/assemble_scene.py --run $RUN 2>&1 | { grep -E "estimateUsd|rror" || true; } | tail -2
 [ -f $RUN/public/scene.json ] || $PY scripts/research/build_capture_report.py --run $RUN --label "$CELL: MVS + MoGe-3 fill + SAM 3D, assembly v2" --pages-root $PANOPTES_WORKCELL/web 2>&1 | tail -1
 
 step "S7 platform import + export (Postgres at 127.0.0.1:55432)"

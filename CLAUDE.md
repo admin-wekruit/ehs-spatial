@@ -23,7 +23,8 @@ Facts that sessions have hallucinated before — do not:
 - Gemini is used by the Gradio workbench, report chat and the refine agent; `panoptes run` never calls it; on-prem leaves `GEMINI_API_KEY` unset.
 - Reports contain measurements, boxes and facts; they contain **no machine compliance verdicts** today (the policy engine abstains by design).
 - Do not change algorithms or parameters to make numbers match; record differences against the tolerances in `REPRODUCE-PROMPT.md` §5.
-- Test baseline: `PANOPTES_FAKE_MODEL=1 PANOPTES_WORKCELL=$PWD pytest tests` → 6 known failures (platform version pins, listed in
+- Test baseline: `PANOPTES_FAKE_MODEL=1 PANOPTES_WORKCELL=$PWD pytest tests` → 23 known failures since c9da31a (2026-10-08; the
+  files are listed in `CHANGELOG.md` "Test baseline note", the ids in `docs/HANDOFF-SESSION-2026-10-08.md`); before that 6 (platform version pins, listed in
   `CHANGELOG.md`); anything else failing is a regression.
 - Do not deploy, do not call cloud GPUs beyond what `HANDOFF.md` describes, do not run `fly`/`modal deploy`.
 
@@ -33,7 +34,9 @@ on-prem adaptation and its verification are theirs: not our work, never somethin
 Cleanup rules we apply to our own repo (from their review, `docs/REVIEW-ARGUS-2026-10-08.md`): code is English only (identifiers,
 comments, docstrings, logs, exceptions, JSON keys; Chinese / Dutch only in `web/src/locales/*.json`); no machine path (`/Users/...`,
 `/private/tmp/...`) as a fallback: read the `env.template` key and fail fast; a failed step exits non-zero; one clean layout, research
-out of the delivery path. Algorithms and parameters still never change during the cleanup: the regression standard is the published
-measurement layers (117/117 fields, boxes 9 and 8).
+out of the delivery path. Algorithms and parameters still never change during the cleanup: the regression standard is the RECOMMENDED published
+measurement layers of the module-swap pipeline, 090 `a9a6e0a0…` and 030 `fafdeb6b…` (MVS + MoGe-3 fill + SAM 3D + assembly v2; the
+numeric / geometry fields identical, text fields may move to message codes). The originals `4b58dbd2… / cd84d3fb… / 25686138…`
+(Pi3X + RecGen) stay frozen but are not the target.
 
 Commit messages end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` when a Claude session authors the commit.
