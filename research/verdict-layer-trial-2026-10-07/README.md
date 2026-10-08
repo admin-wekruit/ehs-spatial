@@ -120,3 +120,10 @@ ROOMS 层 = 一个 workcell 节点，是所有 place 的父节点，每个对象
 places 层带 observed 标记。
 
 **实时阶段怎么接**：到了视频，直接用 Hydra / Khronos 产 Spark-DSG，判定层读同一种图，规则不改；照片阶段我们自己产同格式的图。这就是之前说的"按增量方式设计"的落点。
+
+## 2026-10-08 更新：整理（arrange）这一步被取代
+
+`vocabulary.json` / `rase_schema.py` / `compiled_v1_draft.json` / `compile_prompt.md` 展示的"逐句整理进固定模板、词表缺口即拒绝"已被
+`docs/research/verdict-spec-to-check-2026-10-08.md` 的架构取代：文档 → 条款图（表变查表函数、定义变别名、例外变 defeater）→ 概念对齐表 →
+按场景检索适用条款 → 对有类型的场景 API（= 这里的关系库）合成检查 → 自动验证（冗余翻译差分执行、性质测试、签名验证、蜕变）→ 字面化审阅 → clingo 确定性执行。
+保留的是：场景契约、场景图和关系库、clingo 引擎、护带和五个判定状态；`rase_schema.py` 的验证器思路保留为"签名验证器"。

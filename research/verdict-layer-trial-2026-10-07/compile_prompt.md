@@ -1,3 +1,6 @@
+> **已被取代（2026-10-08）**：逐句整理进固定 RASE 模板 + 词表缺口即拒绝的做法被 `docs/research/verdict-spec-to-check-2026-10-08.md` 的架构取代
+> （条款图抽取 → 对齐表 → 按场景检索 → 对有类型场景 API 合成检查 → 自动验证 → 字面化审阅 → 确定性执行）。本文件留作历史。
+
 # Compile prompt (production): natural-language safety rule → arranged RASE rule over the closed vocabulary
 
 Use with the customer's model key (the August path: `scripts/policy_compile.py --live` calls Gemini; swap the prompt for this one and
