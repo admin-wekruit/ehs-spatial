@@ -281,7 +281,7 @@ def write_metrics(output, run_id, comparisons, unavailable):
             f'<img loading="lazy" style="width:100%;height:auto;margin-top:18px" '
             f'src="{html.escape(comparison["object_id"])}-alignment.png" '
             f'alt="{html.escape(comparison["label"])}: input segmentation and before/after projections"></section>')
-    missing = (f'<p>The remaining {len(unavailable)} candidates are unavailable. Per-object states are in the <a href="comparisons.json">complete record</a>。</p>') if unavailable else ''
+    missing = (f'<p>The remaining {len(unavailable)} candidates are unavailable. Per-object states are in the <a href="comparisons.json">complete record</a>.</p>') if unavailable else ''
     document = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
     document += '<title>Workcell reconstruction · same-view comparison</title><style>body{font:15px/1.6 system-ui;margin:0;background:#f3f4ef;color:#253b38}main{max-width:1280px;margin:40px auto;padding:0 24px}h1{font-size:30px}h2{font-size:20px}p{max-width:960px}section{background:white;border:1px solid #d3dcd4;border-radius:12px;padding:20px;margin:22px 0}.scroll{overflow:auto}table{border-collapse:collapse;white-space:nowrap;width:100%;font-variant-numeric:tabular-nums}td,th{padding:12px;text-align:right;border-bottom:1px solid #e0e6e1}td:first-child,th:first-child{text-align:left}a{color:#176c62}</style><main>'
     document += f'<h1>The same photos, objects and metrics</h1><p>Run: {html.escape(run_id)}</p>'

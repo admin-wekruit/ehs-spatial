@@ -12,7 +12,7 @@ def main():
         catalog = path.resolve().parent == checkout / 'web/src/locales'
         if path.is_file() and path.suffix in ('.py', '.ts', '.tsx', '.mjs', '.js', '.html', '.sh', '.json', '.css') and not catalog:
             for number, line in enumerate(path.read_text().splitlines(), 1):
-                if re.search(r'[\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef]', line):
+                if re.search(r'[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef]', line):
                     problems.append(f'{name}:{number}: CJK outside locale catalog')
                 if re.search(r'/(?:Users|private/tmp)/', line):
                     problems.append(f'{name}:{number}: machine-specific source path')

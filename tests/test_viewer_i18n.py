@@ -25,7 +25,7 @@ def test_source_display_strings_do_not_bypass_catalogs():
             if path.suffix not in (".ts", ".tsx", ".mjs", ".css", ".html"):
                 continue
             for line in path.read_text().splitlines():
-                assert not re.search(r"[\u3400-\u9fff\uff00-\uffef]", line), (path.relative_to(ROOT), line)
+                assert not re.search(r"[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]", line), (path.relative_to(ROOT), line)
 
 
 def test_mounted_viewers_receive_language_changes():
