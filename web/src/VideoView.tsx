@@ -190,7 +190,7 @@ export function VideoMemory({ document, onSelect }: { document: SceneDocument; o
   const memory = (document.annotations || []).find((a) => a.kind === "video_events") as { model?: string; windows?: MemoryWindow[]; note?: string } | undefined;
   if (!memory?.windows?.length) return null;
   const seek = (at?: number) => { if (Number.isFinite(at)) window.dispatchEvent(new CustomEvent("panoptes:seek", { detail: at })); };
-  const ppe = (value?: Record<string, string>) => value ? Object.entries(value).filter(([, v]) => v && v !== "unknown").map(([k, v]) => `${k === "helmet" ? (t("VideoViewtsx.265")) : (t("VideoViewtsx.266"))}：${v === "yes" ? (t("LiveReporttsx.150")) : v === "no" ? (t("VideoViewtsx.267")) : v}`).join(" · ") : "";
+  const ppe = (value?: Record<string, string>) => value ? Object.entries(value).filter(([, v]) => v && v !== "unknown").map(([k, v]) => `${k === "helmet" ? (t("VideoViewtsx.265")) : (t("VideoViewtsx.266"))}: ${v === "yes" ? (t("LiveReporttsx.150")) : v === "no" ? (t("VideoViewtsx.267")) : v}`).join(" · ") : "";
   return <section className="report-memory" aria-label={t("LiveReporttsx.018")}>
     <header><h3>{t("VideoViewtsx.268")}</h3>
       <p>{t("VideoViewtsx.text027", {p0: memory.model ?? "—"})}</p></header>

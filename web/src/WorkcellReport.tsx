@@ -749,7 +749,7 @@ export function WorkcellReport({
               jump("spatial");
             }}
           >
-            {t("reportMissingObject")} ＋
+            {t("reportMissingObject")} +
           </button>
             <button disabled={busy} onClick={copy}>
               {t("copy")}

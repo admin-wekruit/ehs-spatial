@@ -554,7 +554,7 @@ export default function PolicyPage({
               location.hash = "/policies/new/edit";
             }}
           >
-            {t("newPolicy")} ＋
+            {t("newPolicy")} +
           </button>
         </div>
         <p className="lede">{t("policyIntro")}</p>

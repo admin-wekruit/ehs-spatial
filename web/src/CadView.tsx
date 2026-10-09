@@ -176,7 +176,7 @@ export function CadView({ document, selectedId, onSelect, geometryOptions, measu
       <div><button type="button" onClick={() => { setCamera(null); setFocusMode(false); setCandidates([]); }}>{t("fit")}</button>
         <button type="button" disabled={!selected} onClick={focus}>{t("focus")}</button>
         <button type="button" aria-label={t("zoomOut")} onClick={() => zoom(1 / 1.4)}>−</button>
-        <button type="button" aria-label={t("zoomIn")} onClick={() => zoom(1.4)}>＋</button></div>
+        <button type="button" aria-label={t("zoomIn")} onClick={() => zoom(1.4)}>+</button></div>
     </div>
     {drawingRegion && <div className="cad-measure-guide" role="status">{t("drawGuide")}</div>}
     <div className="cad-stage" ref={stage}>

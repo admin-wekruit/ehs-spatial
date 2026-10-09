@@ -20,7 +20,7 @@ make check-env
 uv run --env-file .env python scripts/fetch_inputs.py
 ```
 
-Every input is verified against `data-manifest.json` before replacement. A bad download leaves the prior destination unchanged. The current frozen set contains both workcells and their original geometry artifacts. Model weights remain in the existing Modal images/volumes.
+Every input is verified against `data-manifest.json` before replacement. A bad download leaves the prior destination unchanged. The current frozen set contains both workcells and their original geometry artifacts, plus two reference-only schema-1 published layers under `baselines/published`. It does not contain the genuine S8 check outputs needed to rebuild those old layers as schema 2. Model weights remain in the existing Modal images/volumes.
 
 ## Verify and run
 
@@ -39,7 +39,7 @@ uv run --env-file .env panoptes run --cell 090
 uv run --env-file .env panoptes run --cell 030
 ```
 
-The CLI supports `--from` and `--only` for its existing stages. Failed children exit nonzero even when a partial result file exists. S4a requires a real candidate for every configured object, and stale or partial S4b selection is recomputed. S4c refreshes metadata for the same selected candidate; a changed candidate requires recomputing that cell's S4c–S8 outputs. Later stages reuse their recorded result files, but publication and layer building reject incomplete configured object inventories. Use the dry-run paths to clear only the deliberately selected stage outputs before recomputation.
+The CLI supports `--from` and `--only` for its existing stages. Failed children exit nonzero even when a partial result file exists. Modal commands run through the current Python interpreter (`python -m modal`). S2d reads only the selected cell's two analysis files and writes `pipeline/field-values-<cell>-mvs-fill.json`; the field-value gate keeps its existing thresholds and scores that cell's two values. S4a requires a real candidate for every configured object, and stale or partial S4b selection is recomputed. S4c refreshes metadata for the same selected candidate; a changed candidate requires recomputing that cell's S4c–S8 outputs. Later stages reuse their recorded result files, but publication and layer building reject incomplete configured comparisons, entity mappings and boxes. Use the dry-run paths to clear only the deliberately selected stage outputs before recomputation.
 
 Measurement files are written to `PANOPTES_PAGES` (default `<data root>/measurement-layer`). Publication manifests are under `<data root>/publications/<variant>/result.json`; stage evidence is under `<data root>/swap-runs/<variant>-stages`. The formal variant names are `090-v2-mvs-fill-sam3d` and `030-v2-mvs-fill-sam3d`.
 
@@ -50,7 +50,9 @@ uv run python scripts/check_measurement_regression.py tests/fixtures/measurement
 uv run python scripts/check_measurement_regression.py tests/fixtures/measurements/030.json PATH_TO_030_LAYER
 ```
 
-Keep published scales and algorithm parameters unchanged. Record a numerical difference and its evidence rather than tuning the implementation to force agreement. Schema-2 display messages change prose only.
+Keep published scales and algorithm parameters unchanged. Record a numerical difference and its evidence rather than tuning the implementation to force agreement. Schema-2 display messages change prose only. The published-cell regression checks builder serialization using frozen boxes; the separate two-scene self-check exercises the box computation itself. Neither check reruns the original field reconstruction.
+
+The delivered viewer requires schema 2. Replacing the existing report site before genuine old-report stage outputs are supplied and its layers regenerated would hide its two schema-1 measurement layers. This delivery has not upgraded or deployed that site.
 
 The independent verdict project has its own README, tests, configs and results. Research declarations and provisional gold labels do not become observed workcell facts merely by running a matrix.
 
@@ -68,6 +70,6 @@ The independent verdict project has its own README, tests, configs and results. 
 
 The clean source and independent verdict repositories each start with a fresh root commit; the migration branch retains the original history. The delivery remote is [admin-wekruit/argus](https://github.com/admin-wekruit/argus), branch `codex/phase5-delivery`; the independent research remote is [admin-wekruit/panoptes-verdict-lab](https://github.com/admin-wekruit/panoptes-verdict-lab), branch `codex/verdict-lab`. Both new repositories are private. The migration checkpoint is pushed to [admin-wekruit/ehs-spatial](https://github.com/admin-wekruit/ehs-spatial), branch `codex/phase5-portability`. The pre-migration working patch and untracked archive are preserved in `phase5-artifacts/pre-migration`. Obtain current commit identities with `git log -1 --format=fuller` in each repository.
 
-First read [acceptance](docs/ACCEPTANCE-2026-10-08.md) and inspect `git status`. Use the existing input mirror and actual console dry-run before choosing any paid reconstruction or publication. The isolated PostgreSQL test cluster is retained at `/private/tmp/panoptes-phase5-postgres/db`, port 55439, database `phase5test_utf8`, and is stopped after acceptance; the acceptance document records its restart and replay command. The user's existing database was not used for these checks.
+First read [review follow-up](docs/REVIEW-FOLLOWUP-2026-10-08.md), [initial acceptance](docs/ACCEPTANCE-2026-10-08.md) and inspect `git status`. Use the existing input mirror and actual console dry-run before choosing any paid reconstruction or publication. The isolated PostgreSQL test cluster is retained at `/private/tmp/panoptes-phase5-postgres/db`, port 55439, database `phase5test_utf8`, and is stopped after acceptance; the acceptance document records its restart and replay command. Start it with `LC_ALL=en_US.UTF-8`. The user's existing database was not used for these checks.
 
 For verdict continuation, read the independent lab's `RESULTS.md` and its authoritative runset metadata. The next evidence work is reviewer-confirmed polygons, observed floor coverage and engineering gold in a new benchmark version. Live Haiku remains unrun; it needs the required real inputs and credentials. No GPU reconstruction or deployment was performed during this source migration.

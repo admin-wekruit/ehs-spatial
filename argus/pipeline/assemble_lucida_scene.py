@@ -272,7 +272,7 @@ def write_metrics(output, run_id, comparisons, unavailable):
             cells.append(f"{view['observed_surface']['visible_iou'] * 100:.2f}%")
             rows.append('<tr>' + ''.join(f'<td>{cell}</td>' for cell in cells) + '</tr>')
         sections.append(f'<section><h2>{html.escape(comparison["label"])}</h2>'
-            f'<p>{comparison["faces"]:,} triangles · watertight mesh：{"yes" if comparison["watertight"] else "no"} · '
+            f'<p>{comparison["faces"]:,} triangles · watertight mesh:{"yes" if comparison["watertight"] else "no"} · '
             f'<a href="{html.escape(comparison["object_id"])}-comparison.json">complete record</a></p>'
             '<div class="scroll"><table><thead><tr><th>input photo</th><th>role</th>'
             '<th>silhouette IoU before ↑</th><th>after ↑</th><th>boundary distance before ↓</th><th>after ↓</th>'

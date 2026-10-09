@@ -1,6 +1,6 @@
 import { createElement, useEffect, useRef, useState } from "react";
 import { ApiError, feedbackSession, id, request, type FeedbackInput, type IdentitySuggestion } from "./api";
-import { useI18n } from "./i18n";
+import { useI18n, type Language } from "./i18n";
 import { observationsFor } from "./core";
 import { ErrorNotice } from "./App";
 import type { AgentRequest, AgentTurn, Branch, Operation, Revision } from "./types";
@@ -32,7 +32,7 @@ type AgentPanelProps = {
 };
 type FeedbackTurn = {
   id: string; requestId: string; conversationId: string; publicationId: string; revisionId: string; entityId: string;
-  message: string; language: "zh" | "en"; status: "saved" | "succeeded" | "failed" | "outcome_unknown";
+  message: string; language: Language; status: "saved" | "succeeded" | "failed" | "outcome_unknown";
   identitySuggestion?: IdentitySuggestion | null; assistantMessage: string | null; errorCode: string | null; createdAt: string;
 };
 function feedbackReply(turn: FeedbackTurn, t: (key: string) => string) {
@@ -97,7 +97,7 @@ function AgentConversation({
     imageId,
     box,
     canWrite,
-    language: language === "zh" ? "zh" : "en",  // the agent API speaks zh or en
+    language,
     policyId,
     policyRevisionId,
     historyReady,

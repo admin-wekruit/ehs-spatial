@@ -474,7 +474,7 @@
   line-height: 1.7;
 }
 .report-historical-finding > summary::after {
-  content: "＋";
+  content: "+";
   color: var(--report-muted);
 }
 .report-historical-finding[open] > summary::after {

@@ -73,11 +73,11 @@ def build(v):
     shape_rows = {r['entityId']: r for r in shape.get('rows', [])}
     comps = {c['object_id']: c for c in load(run / 'result/comparisons.json')['objects']}
     required = set(json.loads((ROOT / 'argus/pipeline/cells' / f"{v.split('-', 1)[0]}.json").read_text())['objects'])
-    missing = required - comps.keys() | required - ents.keys()
+    missing = required - comps.keys() | required - ents.keys() | {oid for oid in required & ents.keys() if not boxes.get(ents[oid])}
     if missing:
         raise RuntimeError(f'Missing required workcell objects in measurements: {sorted(missing)}')
     fl = load(run / 'evidence/floor.json'); S = res['nativeToMeters']
-    fv = json.loads((HERE / 'field-values-mvs-fill.json').read_text())['mvs-fill']
+    fv = json.loads((HERE / f"field-values-{v.split('-', 1)[0]}-mvs-fill.json").read_text())['mvs-fill']
     field = {'right_light_curtain': ('housing030R', 'housingRight', 24), 'left_light_curtain': ('housing030L', 'housingLeft', 24)} if v.startswith('030-') else FIELD
     cmp = load(cmp_dir(v) / 'results.json')
     version = v.split('-')[1].removeprefix('v')

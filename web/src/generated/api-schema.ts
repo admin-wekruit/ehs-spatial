@@ -668,7 +668,7 @@ export interface components {
              * @default en
              * @enum {string}
              */
-            language: "zh" | "en";
+            language: "zh" | "en" | "nl";
             /** Policyid */
             policyId?: string | null;
             /** Policyrevisionid */

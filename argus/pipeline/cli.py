@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 import shlex
-import shutil
 import socket
 import subprocess
 import sys
@@ -42,7 +41,7 @@ class Ctx:
         self.N = self.SP / 'pipeline'
         self.RUNS = Path(env['PANOPTES_RUNS'])
         self.PY = env['PY']
-        self.MODAL_RUN = [shutil.which('modal') or str(Path(sys.executable).parent / 'modal'), 'run']
+        self.MODAL_RUN = [sys.executable, '-m', 'modal', 'run']
         c = CELLS[cell]
         self.RUNNAME, self.OBJS, self.FRAMES = c["run"], c["objects"], c["frames"]
         self.FILLX = self.SP / f"checks/bbab-export-{cell}-mvs-fill"
@@ -66,6 +65,7 @@ class Ctx:
         subprocess.run(argv, cwd=cwd, env={**self.env, **env}, check=True)
 
     def modal_run(self, argv: list, cwd: Path, env: dict | None = None) -> None:
+        self.backend = self.backend or 'modal'
         self.sh([*self.MODAL_RUN, *argv], cwd, env)
 
     def py(self, argv: list, cwd: Path, env: dict | None = None) -> None:
@@ -111,16 +111,17 @@ def s2c_export(ctx: Ctx) -> None:
 
 
 def s2d_gate(ctx: Ctx) -> None:
-    ctx.py(["-m", "argus.pipeline.field_values_fill"], ROOT)
+    ctx.py(["-m", "argus.pipeline.field_values_fill", "--cell", ctx.cell], ROOT)
 
     def gate():
-        f = json.loads((ctx.N / "field-values-mvs-fill.json").read_text())
+        f = json.loads((ctx.N / f"field-values-{ctx.cell}-mvs-fill.json").read_text())
         a, b = f["mvs-da3-base"], f["mvs-fill"]
         for k in GATE_KEYS:
-            print(f"  {k:24s} mvs {a.get(k)}  fill {b.get(k)}")
-        if not (b["maeCm4values"] <= 1.56 and b["maxAbsErrCm"] <= 3.0):
+            if ctx.cell in k:
+                print(f"  {k:24s} mvs {a.get(k)}  fill {b.get(k)}")
+        if not (b["maeCm"] <= 1.56 and b["maxAbsErrCm"] <= 3.0):
             raise SystemExit("field-value gate failed: the fill changed a measurement")
-        print("  GATE PASSED (MAE %.2f cm, max %.2f cm)" % (b["maeCm4values"], b["maxAbsErrCm"]))
+        print("  GATE PASSED (MAE %.2f cm, max %.2f cm)" % (b["maeCm"], b["maxAbsErrCm"]))
 
     ctx.do("field-value gate (MAE <= 1.56 cm, max <= 3.0 cm)", gate)
 

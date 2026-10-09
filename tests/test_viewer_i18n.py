@@ -20,13 +20,12 @@ def test_catalogs_have_the_same_keys_and_placeholders():
 
 
 def test_source_display_strings_do_not_bypass_catalogs():
-    for path in SOURCE.rglob("*.ts*"):
-        for line in path.read_text().splitlines():
-            assert not re.search(r"[\u3400-\u9fff]", line), (path.relative_to(SOURCE), line)
-            if line.lstrip().startswith(("//", "*")):
+    for directory in (SOURCE, ROOT / "web" / "tests", ROOT / "web" / "checks"):
+        for path in directory.rglob("*"):
+            if path.suffix not in (".ts", ".tsx", ".mjs", ".css", ".html"):
                 continue
-            for match in re.finditer(r'''(["'`])(?:\\.|(?!\1).)*?\1''', line):
-                assert not re.search(r"[\u3400-\u9fff]", match.group()), (path.relative_to(SOURCE), line)
+            for line in path.read_text().splitlines():
+                assert not re.search(r"[\u3400-\u9fff\uff00-\uffef]", line), (path.relative_to(ROOT), line)
 
 
 def test_mounted_viewers_receive_language_changes():

@@ -99,8 +99,9 @@ def test_frozen_geometry_contract(cell, count):
 
 
 @pytest.mark.parametrize('cell', ['090', '030'])
-def test_published_geometry_through_schema2_builder(cell, tmp_path, monkeypatch):
-    """Replay frozen physical outputs through the real builder; this does not rerun GPU reconstruction."""
+@pytest.mark.parametrize('missing_box', [False, True])
+def test_published_geometry_through_schema2_builder(cell, missing_box, tmp_path, monkeypatch):
+    """Verify serialization and required inventory; the real-cell boxes are frozen stage outputs, not recomputed."""
     monkeypatch.setenv('PANOPTES_DATA_ROOT', str(tmp_path))
     from argus.pipeline import build_swap_layer as builder
     frozen = json.loads((FIXTURES / f'{cell}.json').read_text())
@@ -131,6 +132,8 @@ def test_published_geometry_through_schema2_builder(cell, tmp_path, monkeypatch)
             face['need'] = None if face['confidence'] == 'high' else builder.message('measurement.need.second', photos='1')
     # G5 preserves the guard's already-low report confidence, while exercising structured gate messages.
     failures = {entity: dict(failed=[dict(gate='G5', iou={'frame_0001': .1})]) for entity, level in frozen['confidence'].items() if level == 'low' and boxes[entity]['confidence'] != 'low'}
+    if missing_box:
+        boxes.pop(next(iter(boxes)))
     results = {'box_faces': {'boxes': boxes}, 'floor': {'objects': {}}, 'shape': {'rows': []}, 'obvious_errors': {'objects': failures}, 'lower_edge': {}}
     for name, result in results.items():
         write(stage.relative_to(tmp_path) / name / 'results.json', {'result': result})
@@ -138,9 +141,14 @@ def test_published_geometry_through_schema2_builder(cell, tmp_path, monkeypatch)
     write(run.relative_to(tmp_path) / 'result/comparisons.json', {'objects': [dict(object_id=oid, views=[dict(frame_id='frame_0001', generated_refined=dict(visible_iou=.8, relative_depth_p50=.01))], refinement={'final': {'floor': {'lowest_native': 0, 'penalty': .001}}}) for oid in entities]})
     for oid in entities:
         write(run.relative_to(tmp_path) / f'generation/{oid}/output.json', {'selection': {'decision': builder.message('measurement.selection.unchanged'), 'generationPhoto': 'frame_0001'}})
-    write('pipeline/field-values-mvs-fill.json', {'mvs-fill': {f'housing{cell}R_cm': 24.6, f'housing{cell}R_err': .6}})
+    write(f'pipeline/field-values-{cell}-mvs-fill.json', {'mvs-fill': {f'housing{cell}R_cm': 24.6, f'housing{cell}R_err': .6}})
     # A historical row must never replace the explicitly selected geometry field values.
     write('pipeline/results.json', {'fieldValues': {'mvs-fill': {f'housing{cell}R_cm': 999}}})
+    if missing_box:
+        with pytest.raises(RuntimeError, match='Missing required workcell objects'):
+            builder.build(variant)
+        assert not (pages / (source['publicationId'] + '.json')).exists()
+        return
     builder.build(variant)
     layer = json.loads((pages / (source['publicationId'] + '.json')).read_text())
     assert layer['schemaVersion'] == 2

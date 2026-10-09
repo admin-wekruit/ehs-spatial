@@ -1,46 +1,51 @@
-"""Field values from the unchanged fair evaluator for both MVS+fill workcells."""
-from argus import ROOT
+"""Field values from the unchanged fair evaluator for one MVS+fill workcell."""
+import argparse
 import json
 import os
 from pathlib import Path
-import sys
+import statistics as st
 
-HERE = Path(os.environ['PANOPTES_DATA_ROOT']) / 'pipeline'
-HERE.mkdir(parents=True, exist_ok=True)
-RN = HERE.parent
-SP = Path(os.environ['PANOPTES_DATA_ROOT'])   # env.sh (env.template section 6)
+from argus.checks.field_geometry import FIELD_CM
+from argus.pipeline.field_summary import SCORED, NAMES
+
+SP = Path(os.environ['PANOPTES_DATA_ROOT'])
+HERE = SP / 'pipeline'
 AN = SP / 'checks/bbab-analyse'
-import argus.pipeline.field_summary_safe as clean
-fc = clean.fc
 
 
 def main():
-    runs = {}
-    fill030 = '030-mvs-fill-padded'
-    for name, key in (('090-mvs-fill-padded', 'mvs-fill'), (fill030, 'mvs-fill'),
-                      ('090-mvs-da3-base-padded', 'mvs-da3-base'), ('030-mvs-da3-base-padded', 'mvs-da3-base')):
-        r = json.loads((AN / f'{name}.json').read_text()); r = dict(r, backbone=key)
-        runs[(r['cell'], key, r['variant'])] = r
-    fc.LICENCE.setdefault('mvs-fill', 'MIT / BSD-3 / Apache-2.0 + MoGe-3 (MIT) in-mask fill')
-    fc.LICENCE.setdefault('mvs-da3-base', 'MIT / BSD-3 / Apache-2.0')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--cell', required=True, choices=sorted({c for c, _, _ in SCORED}))
+    cell = parser.parse_args().cell
     out = {}
     for key in ('mvs-da3-base', 'mvs-fill'):
-        r = clean.safe_config(runs, key, 'padded', 'maxInlier', 'heightCm')
-        v = r['values']
-        out[key] = {'housing090R_cm': round(v['090R housing']['cm'], 1), 'housing090R_err': round(v['090R housing']['errCm'], 1),
-                    'fence090R_cm': round(v['090R fence']['cm'], 1), 'fence090R_err': round(v['090R fence']['errCm'], 1),
-                    'housing090L_cm': round(r['listed090L'], 1), 'estopMaxDevPct090': round(r['gate']['090']['maxDeviationPct'], 2),
-                    'maeCm4values': round(r['maeCm'], 2), 'maxAbsErrCm': round(r['maxAbsErrCm'], 2),
-                    'floorP95Cm090': r['floorP95Cm']['090'], 'cameraHeightRangeCm': round(r['cameraHeightRangeCm'], 1),
-                    'housing030L_cm': round(v['030L housing']['cm'], 1), 'housing030L_err': round(v['030L housing']['errCm'], 1),
-                    'housing030R_cm': round(v['030R housing']['cm'], 1), 'housing030R_err': round(v['030R housing']['errCm'], 1),
-                    'estopMaxDevPct030': round(r['gate']['030']['maxDeviationPct'], 2), 'floorP95Cm030': r['floorP95Cm']['030'],
-                    'label': {'mvs-da3-base': 'MVS, CERT 0.05 (DA3-BASE start)', 'mvs-fill': 'MVS + MoGe-3 in-mask fill'}[key],
-                    'estopNativeToMeters090': runs[('090', key, 'padded')]['floors']['maxInlier']['estop']['nativeToMeters'],
-                    'estopNativeToMeters030': runs[('030', key, 'padded')]['floors']['maxInlier']['estop']['nativeToMeters'],
-                    'note': ('030 side = ' + fill030) if key == 'mvs-fill' else 'the geometry-backbone-ab row, recomputed here'}
+        name = f'{cell}-{key}-padded'
+        floor = json.loads((AN / f'{name}.json').read_text())['floors']['maxInlier']
+        if not floor['gatePassed']:
+            raise RuntimeError(f'{name}: e-stop reference gate failed')
+        values, errors = {}, []
+        for c, eid, kind in SCORED:
+            if c != cell:
+                continue
+            value = floor[kind][eid]['heightCm']
+            if value is None:
+                raise RuntimeError(f'{name}: missing scored field value: {eid}')
+            error = value - FIELD_CM[kind]
+            field = kind + NAMES[eid].split()[0]
+            values.update({field + '_cm': round(value, 1), field + '_err': round(error, 1)})
+            errors.append(abs(error))
+        out[key] = dict(values, maeCm=round(st.mean(errors), 2), maxAbsErrCm=round(max(errors), 2),
+                        cameraHeightRangeCm=round(max(floor['cameraHeightsCm']) - min(floor['cameraHeightsCm']), 1),
+                        label={'mvs-da3-base': 'MVS, CERT 0.05 (DA3-BASE start)', 'mvs-fill': 'MVS + MoGe-3 in-mask fill'}[key],
+                        note=name)
+        out[key].update({f'estopMaxDevPct{cell}': round(100 * floor['estop']['maxDeviation'], 2),
+                         f'floorP95Cm{cell}': floor['residualP95Cm'],
+                         f'estopNativeToMeters{cell}': floor['estop']['nativeToMeters']})
+        if cell == '090':
+            out[key]['housing090L_cm'] = round(floor['housing']['5163a9b0']['heightCm'], 1)
         print(key, json.dumps(out[key]))
-    (HERE / 'field-values-mvs-fill.json').write_text(json.dumps(out, indent=1) + '\n')
+    HERE.mkdir(parents=True, exist_ok=True)
+    (HERE / f'field-values-{cell}-mvs-fill.json').write_text(json.dumps(out, indent=1) + '\n')
 
 
 if __name__ == '__main__':

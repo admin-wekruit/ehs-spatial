@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Frozen module-swap input and geometry artifacts; source mirror is configured explicitly outside the repository.",
+  "description": "Frozen module-swap inputs, geometry artifacts and original schema-1 published baselines. Baselines are reference-only, not active schema-2 outputs. The source mirror is configured explicitly outside Git.",
   "files": [
     {
       "path": "checks/bbab-analyse/030-classic-mogeK-padded.json",
@@ -5111,6 +5111,16 @@
       "path": "sept/new-view.json",
       "sha256": "f1f7085f8d9df14c3566252d8f166566ad60d40c289075774a7bdec24cee08a1",
       "sizeBytes": 21566301
+    },
+    {
+      "path": "baselines/published/a9a6e0a0-a77e-4ca0-b460-aa6f18d72698.json",
+      "sha256": "b59cc113c4e652df0864d2eda36fdf4a5d3ee4dbb3e96f45a8956ca72cd68c4b",
+      "sizeBytes": 61129
+    },
+    {
+      "path": "baselines/published/fafdeb6b-7122-4434-a62d-676b3ff9e50a.json",
+      "sha256": "7b05eb3094d50be88024d3479d0fa5dc077243e0c9f30093e54f315739fa50c1",
+      "sizeBytes": 53918
     }
   ]
 }

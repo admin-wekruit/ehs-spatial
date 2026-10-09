@@ -1,7 +1,7 @@
 name: ci
 on:
   push:
-    branches: [main, staging]
+    branches: [main, staging, codex/phase5-delivery, codex/phase5-portability]
   pull_request:
 concurrency:
   group: ci-${{ github.ref }}

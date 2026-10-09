@@ -3,14 +3,85 @@ import importlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import pytest
 from argus import ROOT
 from argus.pipeline import cli
 
+@pytest.mark.parametrize('cell', ['090', '030'])
+def test_modal_uses_running_interpreter_when_path_has_foreign_client(tmp_path, cell):
+    foreign = tmp_path / 'foreign-bin'
+    foreign.mkdir()
+    modal = foreign / 'modal'
+    modal.write_text('#!/bin/sh\nexit 99\n')
+    modal.chmod(0o755)
+    result = subprocess.run([sys.executable, '-m', 'argus.pipeline.cli', 'run', '--cell', cell,
+                             '--only', 'S4a', '--dry-run'], cwd=ROOT, capture_output=True, text=True,
+                            env={**os.environ, 'PYTHONPATH': str(ROOT), 'PATH': str(foreign),
+                                 'PANOPTES_DATA_ROOT': str(tmp_path / 'data'), 'SAM3D_BACKEND': 'modal'})
+    assert result.returncode == 0, result.stderr
+    assert f'{sys.executable} -m modal run ' in result.stdout
+    assert str(modal) not in result.stdout
+
 def write(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value))
+
+@pytest.mark.parametrize('cell', ['090', '030'])
+@pytest.mark.parametrize('failure', [None, 'scale', 'missing', 'mae', 'threshold'])
+def test_field_values_gate_requires_only_current_cell(tmp_path, cell, failure):
+    import copy
+    values = {'090': {'housing': {'169518d8': {'heightCm': 24.02809251557601}, '5163a9b0': {'heightCm': 18.25}},
+                      'fence': {'ce9516a5': {'heightCm': 20.99378058509537}}},
+              '030': {'housing': {'606109af': {'heightCm': 23.596051952984602}, 'd72e25ef': {'heightCm': 24.575678599910155}},
+                      'fence': {}}}
+    floor = dict(values[cell], gatePassed=True, residualP95Cm=1.25, cameraHeightsCm=[150.12, 155.34],
+                 estop={'maxDeviation': .0123, 'nativeToMeters': .25})
+    for model in ('mvs-da3-base', 'mvs-fill'):
+        selected = copy.deepcopy(floor)
+        if model == 'mvs-fill':
+            if failure == 'scale':
+                selected['gatePassed'] = False
+            elif failure == 'missing':
+                next(iter(selected['housing'].values()))['heightCm'] = None
+            elif failure in ('mae', 'threshold'):
+                for kind, reference in (('housing', 24), ('fence', 20)):
+                    for row in selected[kind].values():
+                        row['heightCm'] = reference + (1.57 if failure == 'mae' else 0)
+                if failure == 'threshold':
+                    next(iter(selected['housing'].values()))['heightCm'] = 27.01
+        write(tmp_path / f'checks/bbab-analyse/{cell}-{model}-padded.json',
+              {'cell': cell, 'backbone': model, 'variant': 'padded', 'floors': {'maxInlier': selected}})
+    (tmp_path / f'checks/bbab-geom/{cell}-mvs-fill-padded/geometry').mkdir(parents=True)
+    (tmp_path / f'checks/bbab-export-{cell}-mvs-fill').mkdir(parents=True)
+    result = subprocess.run([sys.executable, '-m', 'argus.pipeline.cli', 'run', '--cell', cell, '--only', 'S2d'],
+                            cwd=ROOT, capture_output=True, text=True,
+                            env={**os.environ, 'PYTHONPATH': str(ROOT), 'PANOPTES_DATA_ROOT': str(tmp_path), 'PY': sys.executable})
+    assert (result.returncode == 0) is (failure is None), result.stdout + result.stderr
+    ledger = json.loads((tmp_path / f'swap-runs/{cell}/ledger.json').read_text())
+    assert ledger['entries'][-1]['status'] == ('error' if failure else 'ok')
+    path = tmp_path / f'pipeline/field-values-{cell}-mvs-fill.json'
+    if failure in ('scale', 'missing'):
+        assert not path.exists()
+        return
+    rows = json.loads(path.read_text())
+    fill = rows['mvs-fill']
+    assert 'maeCm4values' not in fill
+    assert not any(('030' if cell == '090' else '090') in key for key in fill)
+    assert fill[f'estopNativeToMeters{cell}'] == .25 and fill[f'floorP95Cm{cell}'] == 1.25
+    if failure == 'threshold':
+        assert fill['maxAbsErrCm'] == 3.01 and fill['maeCm'] == 1.51
+    elif failure == 'mae':
+        assert fill['maeCm'] == 1.57 and fill['maxAbsErrCm'] == 1.57
+    else:
+        expected = {'090': {'housing090R_cm': 24.0, 'housing090R_err': 0.0, 'fence090R_cm': 21.0, 'fence090R_err': 1.0,
+                            'maeCm': .51, 'maxAbsErrCm': .99},
+                    '030': {'housing030L_cm': 23.6, 'housing030L_err': -.4, 'housing030R_cm': 24.6, 'housing030R_err': .6,
+                            'maeCm': .49, 'maxAbsErrCm': .58}}[cell]
+        assert {key: fill[key] for key in expected} == expected
+    if failure:
+        assert 'field-value gate failed' in result.stdout + result.stderr
 
 @pytest.mark.parametrize('exit_code,results', [(0, True), (7, True), (0, False)])
 def test_checks_require_successful_process_and_results(tmp_path, monkeypatch, exit_code, results):
@@ -79,11 +150,14 @@ def test_generation_and_builder_share_current_workcell_paths(tmp_path, monkeypat
     write(scratch / f"swap-runs/{ctx.V}-stages/entity-map.json", {"guard": "guard-eid"})
     for stage in ('box_faces', 'floor', 'shape', 'obvious_errors', 'lower_edge'):
         write(scratch / f'swap-runs/{ctx.V}-stages/{stage}/results.json', {'result': {}})
-    write(scratch / 'pipeline/field-values-mvs-fill.json', {'mvs-fill': {}})
+    write(scratch / f'pipeline/field-values-{cell}-mvs-fill.json', {'mvs-fill': {}})
     with pytest.raises(RuntimeError, match='Missing required workcell objects in measurements'):
         builder.build(ctx.V)
     write(tmp_path / f'argus/pipeline/cells/{cell}.json', {'objects': ['guard']})
     monkeypatch.setattr(builder, 'ROOT', tmp_path)
+    write(scratch / f'swap-runs/{ctx.V}-stages/box_faces/results.json', {'result': {'boxes': {'guard-eid': {
+        'dims': {key: {'confidence': 'low'} for key in ('L', 'W', 'H', 'bottom')},
+        'sizeM': [1, 1, 1], 'bottomM': 0, 'confidence': 'low'}}}})
     builder.build(ctx.V)
     layer = json.loads((pages / f"pub-{cell}.json").read_text())
     assert layer["schemaVersion"] == 2

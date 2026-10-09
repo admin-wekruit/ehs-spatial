@@ -1,4 +1,5 @@
 import type { Asset } from "./types";
+import type { Language } from "./translate";
 export type PendingRequest = {
   id: string;
   url: string;
@@ -9,7 +10,7 @@ export type PendingRequest = {
 type Owner = { id: string; capability: string };
 export type IdentitySuggestion = { decision: "same" | "different" | "undecided"; entityIds: [string, string]; observationGroups: string[][]; reason: string; shareForReview: true };
 export type FeedbackInput = {
-  requestId: string; conversationId: string; message: string; language: "zh" | "en";
+  requestId: string; conversationId: string; message: string; language: Language;
   imageId?: string | null; observationId?: string | null; identitySuggestion?: IdentitySuggestion;
 };
 type FeedbackSession = Owner & { conversationId: string; pending?: FeedbackInput };

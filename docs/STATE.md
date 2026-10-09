@@ -23,11 +23,13 @@ Pi3X, RecGen, DA3-LARGE and TRELLIS are historical comparisons. They are not mod
 
 These are locally preserved published MVS+fill/SAM3D/v2 reports. The earlier `4b58dbd2…` / `cd84d3fb…` references belong to Pi3X/RecGen comparison reports. A published reconstruction is evidence of the recorded computation, not independently verified field calibration.
 
-`scripts/check_measurement_regression.py` compares exact physical geometry, object identities, scale, floor, dimensions, uncertainty and confidence. Display prose is replaced by localized messages, so whole-file byte identity is not the schema-migration criterion. `tests/fixtures/measurements` records the frozen projection and publication metadata.
+`scripts/check_measurement_regression.py` compares exact physical geometry, object identities, scale, floor, dimensions, uncertainty and confidence. Display prose is replaced by localized messages, so whole-file byte identity is not the schema-migration criterion. `tests/fixtures/measurements` records the frozen projection and publication metadata. Published-cell tests replay frozen boxes into the real builder to verify serialization; the existing independent two-scene self-check recomputes synthetic boxes. Original field reconstruction has not been rerun.
+
+The input mirror now preserves both schema-1 published layers as reference-only baselines. It lacks their genuine S8 stage outputs. The strict schema-2 viewer cannot replace the existing report site until those outputs are supplied and its layers regenerated.
 
 ## Localization
 
-Schema 2 uses `{"code":"stable.catalog.key","params":{...}}` for names, confidence explanations, capture advice, pipeline stages and sources. Nested messages are rendered recursively using the existing translation function. Every retained consumer uses the same schema; language-specific sibling fields have been removed. Operator-entered names remain operator text. The current three catalogs have the same keys and placeholders. Dutch terminology still warrants a customer language review.
+Schema 2 uses `{"code":"stable.catalog.key","params":{...}}` for names, confidence explanations, capture advice, pipeline stages and sources. Nested messages are rendered recursively using the existing translation function. Every retained consumer uses the same schema; language-specific sibling fields have been removed. Operator-entered names remain operator text. The current three catalogs have the same 1,777 keys and placeholders. Agent and feedback requests retain all three languages. Dutch terminology still warrants a customer language review.
 
 ## Preservation and evidence status
 
@@ -35,4 +37,4 @@ The original source was preserved before migration. Frozen inputs are outside th
 
 Phase 4 is the independent `panoptes-verdict-lab` project. Its observed scenes still lack verified zones, coverage and reviewed gold labels. Compilation counts are not actual rule bindings. Live Haiku execution requires credentials and separately supplied real declarations; offline playback is not a live model result.
 
-See [final acceptance](ACCEPTANCE-2026-10-08.md) for executed checks and remaining external validation. No fresh GPU reconstruction or deployment is implied by offline checks.
+See [independent-review follow-up](REVIEW-FOLLOWUP-2026-10-08.md) for the current repairs and **747 passed / 51 skipped** source gate, and [initial acceptance](ACCEPTANCE-2026-10-08.md) for historical checks. No fresh GPU reconstruction or deployment is implied by offline checks.

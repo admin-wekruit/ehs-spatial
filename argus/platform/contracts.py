@@ -122,7 +122,7 @@ class AgentRequest(DTO):
     observationId: str | None = None
     imageId: UUID | None = None
     box: list[float] | None = None
-    language: Literal["zh", "en"] = "en"
+    language: Literal["zh", "en", "nl"] = "en"
     policyId: UUID | None = None
     policyRevisionId: UUID | None = None
 

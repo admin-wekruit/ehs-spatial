@@ -1,5 +1,7 @@
 # Source delivery acceptance — 2026-10-08
 
+This records the initial `2d8a419` acceptance. See [independent-review follow-up](REVIEW-FOLLOWUP-2026-10-08.md) for subsequent repairs, current checks and the old-report stage-data gap; the counts and wheel identity below are historical.
+
 The clean delivery repository is `phase5-delivery`, branch `codex/phase5-delivery`. The retained Modal pipeline, measurement producers and viewer have passed the checks below in a fresh checkout and a newly installed locked Python environment. The independent verdict lab, frozen inputs and archived research remain outside this repository.
 
 ## Final checks
@@ -30,7 +32,7 @@ The fresh Python install used the unchanged `uv.lock`: a cache-only attempt stop
 | 090 | `a9a6e0a0-a77e-4ca0-b460-aa6f18d72698` / `86207849-d672-4df4-b453-22584f491894` | `3c0cfc31-267a-53db-a2b3-e5338e6ade3c` | 9 | 3.2371372068568487 |
 | 030 | `fafdeb6b-7122-4434-a62d-676b3ff9e50a` / `f464b25e-9e27-4966-aca1-e21472fa2962` | `d9e3265b-74e3-54b7-84a4-cc91e69ab4db` | 8 | 3.5616493184162774 |
 
-The actual layer builder is exercised against both frozen scenes, and its serialized output is consumed by the actual Node loader, box/face geometry and localized message renderer. Source frame, scale, floor, object identity, box/face coordinates, dimensions, uncertainty and confidence match exactly. The original two-scene numerical box self-check remains executable. Display text changes to schema 2 do not change these physical fields.
+The actual layer builder is exercised against both frozen scenes with their recorded boxes replayed as stage inputs, and its serialized output is consumed by the actual Node loader, box/face geometry and localized message renderer. Source frame, scale, floor, object identity, box/face coordinates, dimensions, uncertainty and confidence match exactly. A separate existing regression executes the original two-scene numerical box self-check and compares its recomputed synthetic values. This does not recompute the original published field scenes. Display text changes to schema 2 do not change these physical fields.
 
 Read-only AST comparison against the preserved source confirmed identical selection scoring/candidate construction, extent/observed-height/free-space/model-hit/coverage calculations and numerical floor/plane/size/photo gate conditions. The only removed numerical-model branch was historical RecGen. No threshold, model pin or publication scale was adjusted to force agreement.
 
@@ -74,7 +76,7 @@ The isolated test cluster was created at `/private/tmp/panoptes-phase5-postgres/
 
 ```sh
 cd /Users/adam/Desktop/panoptes-public/phase5-delivery
-/opt/homebrew/opt/postgresql@16/bin/pg_ctl -D /private/tmp/panoptes-phase5-postgres/db \
+LC_ALL=en_US.UTF-8 /opt/homebrew/opt/postgresql@16/bin/pg_ctl -D /private/tmp/panoptes-phase5-postgres/db \
   -l /private/tmp/panoptes-phase5-postgres/server.log \
   -o "-h 127.0.0.1 -p 55439 -k /private/tmp/panoptes-phase5-postgres/socket" start
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. \

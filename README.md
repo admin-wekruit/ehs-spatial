@@ -4,7 +4,7 @@ Workcell photographs → metric reconstruction → measured boxes, faces and cle
 
 This repository is the Modal source. The shipped geometry is DA3-BASE + RoMa + NumPy bundle adjustment + MoGe-3 masked fill; completion uses SAM 3D Objects and assembly v2. Customer Linux, Docker and on-prem service adaptation belongs in the customer's clone.
 
-Read [current state](docs/STATE.md), then [run instructions](HANDOFF.md) and [delivery closure](docs/DELIVERY-PATH-2026-10-08.md). [Final acceptance](docs/ACCEPTANCE-2026-10-08.md) records the checks and remaining limits. [Agent rules](CLAUDE.md) apply throughout.
+Read [current state](docs/STATE.md), then [run instructions](HANDOFF.md) and [delivery closure](docs/DELIVERY-PATH-2026-10-08.md). [Initial acceptance](docs/ACCEPTANCE-2026-10-08.md) and [independent-review follow-up](docs/REVIEW-FOLLOWUP-2026-10-08.md) record the executed checks and remaining limits. [Agent rules](CLAUDE.md) apply throughout.
 
 ```sh
 make env

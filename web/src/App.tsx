@@ -443,7 +443,7 @@ function ProjectLibrary() {
         </div>
       ) : (
         <div className="empty-state">
-          <span className="large-symbol">＋</span>
+          <span className="large-symbol">+</span>
           <p>{t("noProjects")}</p>
           <a href={path("/projects/new")} className="button primary">
             {t("choosePhotos")}
@@ -547,7 +547,7 @@ function NewProject() {
           ))}
         </fieldset>
         <label className="upload-zone">
-          <span>＋</span>
+          <span>+</span>
           <strong>{t("choosePhotos")}</strong>
           <small>{t("photoHint")}</small>
           <input
@@ -974,7 +974,7 @@ function Workbench({
           <button
             onClick={() => setAction(action === "planning" ? "" : "planning")}
           >
-            ＋ {t("newPlan")}
+            + {t("newPlan")}
           </button>
         )}
         <div className="branch-end">
@@ -1384,7 +1384,7 @@ function Workspace({
               onClick={() => setCreatingModel(true)}
               aria-label={t("addModel")}
             >
-              ＋
+              +
             </button>
           )}
         </div>
@@ -2059,7 +2059,7 @@ export function PlanView({
           </button>
           <button onClick={() => setZoom(1)}>{t("fit")}</button>
           <button onClick={() => setZoom((z) => Math.min(4, z * 1.2))}>
-            ＋
+            +
           </button>
         </div>
       )}

@@ -116,7 +116,7 @@ export function SpatialMeasurements({ revision, selectedId, savedBend, savedSurf
         <option value="distance">{t("measure.kind.distance")}</option>
         <option value="occupancy">{t("measure.kind.occupancy")}</option></>}
       </select></label>
-      <p>{pointMode ? (points.length ? points.map((point, i) => `${i + 1} · ${revision.document.entities.find(entity => entity.id === point.entityId)?.label || point.entityId}`).join("；") : t("measure.pointsAnyObject")) : <><b>{t("measure.objectA")}</b>{selected?.label}</>}</p>
+      <p>{pointMode ? (points.length ? points.map((point, i) => `${i + 1} · ${revision.document.entities.find(entity => entity.id === point.entityId)?.label || point.entityId}`).join(t("spatial.sentenceSeparator")) : t("measure.pointsAnyObject")) : <><b>{t("measure.objectA")}</b>{selected?.label}</>}</p>
       {kind === "bend" && savedBend && <p className="saved-bend-status">{t("measure.savedBend." + savedBend.status)}{savedBend.status === "failed" && <small> {errors[savedBend.reason || ""] || savedBend.reason}</small>}</p>}
       {pointMode ? <>
         <p>{kind === "point_ground" ? t("measure.guide.point_ground") : kind === "point_distance" ? t("measure.guide.point_distance") : kind === "region_ground" ? t("measure.guide.region_ground") : kind === "edge_vertical" ? t("measure.guide.edge_vertical") : t("measure.guide.edge_angle")}</p>

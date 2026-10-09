@@ -100,7 +100,7 @@ class FeedbackRequest(BaseModel):
     requestId: UUID
     conversationId: UUID
     message: str = Field(min_length=1, max_length=8000)
-    language: Literal["zh", "en"] = "en"
+    language: Literal["zh", "en", "nl"] = "en"
     imageId: UUID | None = None
     observationId: UUID | None = None
     identitySuggestion: IdentitySuggestion | None = None
