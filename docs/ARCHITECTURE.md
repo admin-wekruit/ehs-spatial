@@ -35,6 +35,16 @@ S2a `providers.geometry_mvs.run`（DA3-BASE + RoMa + MoGe-3，Modal GPU）→ S2
 
 真实工位现状：`zones=[]`、`coverage=null`、`declared_inputs={}` → 基线 030 = 9/1/1/6/1，090 = 10/2/2/7/1（PASS/FAIL/NEEDS_MEASUREMENT/NEEDS_INPUT/CANNOT_DETERMINE），金标是**试跑输出**（provisional）；function-library 编译 9 条、绑定 0 条（缺 `perimeter_of` / `covers_opening` 区域谓词）→ 全部 NEEDS_INPUT；至今 0 次真实 LLM 调用（Mac 上没有 Claude 凭证）。计划阶段（`docs/research/verdict-layer-plan-2026-10-08.md`）：A 完成，B 一半，C 代码在 / 没真跑，D、E 未开始。
 
+为什么三个字段是空的（每个字段一个产出者；空 = 产出者没交付，不是 bug）：
+
+| 字段 | 含义 | 唯一产出者 | 现状 |
+|---|---|---|---|
+| `zones` | 受限空间 / 操作站等平面多边形 | 工程声明（控制器限位、风险评估）；照片算不出 | 声明路径存在（html 标注面板 → `labels declared` → `scene-json@2` 把 `restricted_space` 变成 Zone），没人声明；两个实验台的 configs 都没传 `declared:`；argus 没有 zone 概念 |
+| `coverage` | 照片实际观测到的平面格（空间雕刻） | 实验台对冻结帧雕刻：`l1_scene/coverage.py::coverage_from_frames` | 代码在（两个实验台都有），从没对 benchmark 跑；argus 没有此阶段 |
+| `declared_inputs` | `stop_time_ms`、`resolution_mm`、`risk_level`、`body_part`… | 工程师 / 规范条款 | 同 zones：路径在，内容空 |
+
+因此之前 session 的判定层工作全是软件层：引擎语义（clingo@5 / python@6）、合成用例、实验台管线。没有任何真实输入进入系统。benchmark v0 的 030 / 090 场景是 2026-10-07 试跑输出的一次性导入（`benchmark/v0/README.md`），不是 argus S8 的输出；矩阵 configs 没有一个引用 `measurement-layer` 适配器。PASS / FAIL 计数对照的金标 = 试跑自己的输出。原则见 `CLAUDE.md`"Verdict inputs"。
+
 ## 4. 文件管理（客户审查的 11 步）
 
 在 argus 里**已完成**：一个包布局、研究出交付路径、数据出库（`data-manifest.json`，无 >10 MB 文件）、三语目录、门全过（见 §5）。在 ehs-spatial 里**没做**（4/6/8/9/10/11），也不必再做：交付角色已经在 argus。

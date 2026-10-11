@@ -41,4 +41,14 @@ numeric / geometry fields identical, text fields may move to message codes). The
 
 Before ending a session that changed any repository's state, re-measure and overwrite the status table in `docs/ARCHITECTURE.md` §5 (date, command, result); never update it from memory.
 
+Verdict inputs (principle, 2026-10-11): every input a verdict depends on has exactly one producer: a pipeline stage (measured, with the
+publication/revision id), a human declaration (declared, with who and when), or the specification (cited clause). No agent or session fills,
+estimates, defaults or "fixes" an input; a missing input stays empty and must surface as NEEDS_INPUT / CANNOT_DETERMINE naming the input.
+On the real cells `zones`, `coverage` and `declared_inputs` are empty because no producer has delivered them: zones and declared inputs come
+only from the engineer / spec (declaration path `labels declared` -> `scene-json@2`); coverage comes from the lab's space carving of the frozen
+frames (`verdict/layers/l1_scene/coverage.py`, written, never run on the benchmark); the measurement pipeline produces none of the three.
+Counts obtained against provisional gold (= the trial's own output) or synthetic scenes are software evidence, not safety evidence. A lab run
+is a result for a cell only when L1 consumed that cell's actual schema-2 measurement layer (named publication + revision); benchmark scenes
+are fixtures and their numbers are regression numbers.
+
 Commit messages end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` when a Claude session authors the commit.
