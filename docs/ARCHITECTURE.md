@@ -91,3 +91,18 @@ PANOPTES_FAKE_MODEL=1 python -m pytest tests -q -p no:cacheprovider
 1. **已定（用户，2026-10-11）：argus 是唯一源头。** ehs-spatial 冻结（README 横幅 + CLAUDE.md），只改文档；判定研究只在 panoptes-verdict-lab 继续，是否并入 argus 的 `research/` 见下一次 MVP 范围讨论。
 2. 自动部件继续之前先撤 S7 的 Gemini/FAL 硬前置（§2）。
 3. 判定层下一步仍是 2026-10-08 定的顺序：L2 区域谓词 → 凭证到位跑 L5 三行 → html 面板标第一轮金标。
+
+## 9. MVP 计划（2026-10-11 提案，含代码清理；argus 唯一）
+
+顺序：W0 统一 → W1 MVP-1 打 tag（先冻结一个已知好的版本）→ W2 清理（在 main 上，回归门把关）→ W3 MVP-2（围栏下沿链，在清理后的 main 上重做 877 的内容）。W4 判定层研究并行，不进 MVP。
+
+| 工作流 | 内容 | 验收 | 状态 |
+|---|---|---|---|
+| W0 统一 | ehs-spatial 冻结；argus 建 `main`（默认分支）+ tag；判定实验台留独立仓库并在 argus 文档链接 | 三个仓库各一句话角色，CLAUDE.md 一致 | 冻结已做（a4d4a19）；分支 / tag 待用户点头 |
+| W1 MVP-1（测量报告交付） | 基线 922c8ce（或 dd80ce5）；补完第二轮独立复核（P1 闭环）；真库 `make test` 或写明 skip；新查看器 + 两张推荐层；tag `mvp-1` | 回归：两工位数值字段 == a9a6e0a0 / fafdeb6b；`check_measurement_regression` 通过；门 0/0/0 | 待开工，1–2 天 |
+| W2 代码清理（argus，量过的债） | C1 Modal 只在 `providers/`（现在 9 个文件 `import modal`，8 个在路径上，含 `pipeline/completion.py`、`platform/reconstruction.py`）；C2 历史 / 研究模块还在交付 import 链上：`platform/recgen_transport.py`（RecGen 是历史对照）、`pipeline/geometry_clean_ab.py`（A/B）、`reconstruction.py` 里的 Gemini/FAL adapter；C3 `panoptes run` 静态不可达 18 个模块 / 2,963 行（`checks/lines.py`、`plane_stereo.py`、`plane_facets.py`、`pipeline/object_evidence.py`、`platform/publication_site.py`、`feedback.py` …）删或移研究仓库；C4 手工 `partMasks` 代码路径（`lower_edge.py:462`、`box_faces.py:952/1074`、`shape_core.py:102`、`geometry_engine.py:83`）在自动观察成为唯一输入后删除；C5 撤 S7 Gemini/FAL 硬前置，分割走 `SAM3_BACKEND` 路由；C6 测试：干净环境 194 个 skip（82 缺 PostgreSQL、15 Mongo）→ `make test` 自带一次性 Postgres 或标 integration；C7 文档：`DELIVERY-PATH-2026-10-08.md` 的 S7/S8 过期、`GEOMETRY-ENGINE.md` 把 overlay 说成 selected model、`STATE.md` 写死 Gemini/FAL；C8 `reconstruction.py` 2,600+ 行拆分 | 每步回归门：测试 + `check_measurement_regression` + 门 0/0/0；算法参数不动 | 待开工，2–3 天，在 W1 tag 之后 |
+| W3 MVP-2（围栏下沿一致进交付） | 在清理后的 main 上重做 877：自动部件观察（自托管 SAM3 box prompt，每目标 ≥2 视角）→ 关联 → 直线拟合 → 晋升为选定模型 → 发布 → S8 → 站点；coverage / σ / 尺度不确定度有值 | 090 右围栏 floor_gap 有 `value`（现在估计 19.65 cm，untrusted）；030 五条目标有观察；换上游模型（Pi3X 输入）同链路数值版本化 | 待 W2，3–5 天 + GPU |
+| W4 判定层（研究） | L2 区域谓词 → coverage 对冻结帧真跑（benchmark v1）→ 工程师声明受限空间 / stop_time / resolution → 凭证到位跑 L5 三行 → html 面板标金标 | 真实工位出现第一条非 provisional 的 PASS / FAIL，输入产出者可追溯 | 并行，不进 MVP |
+
+测量依据（2026-10-11，argus @ 87796eb 临时克隆）：`argus/` 116 个模块、31,526 行；从 `panoptes run` 静态可达 98 个；`import modal` 9 处；`scripts/` 5 个文件；`tests/` 57 个文件；干净环境 688 passed / 194 skipped。
+
