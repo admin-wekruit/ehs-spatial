@@ -94,6 +94,8 @@ PANOPTES_FAKE_MODEL=1 python -m pytest tests -q -p no:cacheprovider
 
 ## 9. MVP 计划（2026-10-11 提案，含代码清理；argus 唯一）
 
+**本节已冻结。** 计划从此在 argus 的 `.planning/`（PROJECT.md / ROADMAP.md / STATE.md，GSD 格式）维护；用户 2026-10-11 追加：合规判定含 action 进范围（Phase 6）、先清理再做清楚 pipeline 再修（Phase 3 → 4 → 5）、所有修复必须进 pipeline、删 FAL、组件分离可换后端、客户 GPU 接缝原则写在 argus `CLAUDE.md`。
+
 顺序：W0 统一 → W1 MVP-1 打 tag（先冻结一个已知好的版本）→ W2 清理（在 main 上，回归门把关）→ W3 MVP-2（围栏下沿链，在清理后的 main 上重做 877 的内容）。W4 判定层研究并行，不进 MVP。
 
 | 工作流 | 内容 | 验收 | 状态 |
