@@ -86,8 +86,8 @@ PANOPTES_FAKE_MODEL=1 HF_HUB_OFFLINE=1 EHS_LIVE_BENCHMARK=0 python -m pytest tes
 PANOPTES_FAKE_MODEL=1 python -m pytest tests -q -p no:cacheprovider
 ```
 
-## 8. 待用户决定（建议）
+## 8. 决定与待办
 
-1. 宣布 argus 为唯一源头；ehs-spatial `main` 冻结为归档；判定工作只在 panoptes-verdict-lab 继续。
+1. **已定（用户，2026-10-11）：argus 是唯一源头。** ehs-spatial 冻结（README 横幅 + CLAUDE.md），只改文档；判定研究只在 panoptes-verdict-lab 继续，是否并入 argus 的 `research/` 见下一次 MVP 范围讨论。
 2. 自动部件继续之前先撤 S7 的 Gemini/FAL 硬前置（§2）。
 3. 判定层下一步仍是 2026-10-08 定的顺序：L2 区域谓词 → 凭证到位跑 L5 三行 → html 面板标第一轮金标。

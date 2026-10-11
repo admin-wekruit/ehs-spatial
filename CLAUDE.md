@@ -1,5 +1,9 @@
 # Rules for any agent or session working in this repository (ehs-spatial)
 
+FROZEN 2026-10-11 (user decision: argus is the single source of truth). Delivery code lives in `admin-wekruit/argus`; verdict research
+in `admin-wekruit/panoptes-verdict-lab`. In this repository only documentation may change (`docs/ARCHITECTURE.md`, this file); no code,
+no cleanup steps, no experiments. The rules below remain for reading the history.
+
 Read in this order, nothing else first: `README.md` → `docs/ARCHITECTURE.md` (cross-repo map and measured status; which repo is the delivery) → `docs/STATE.md` (what the system is today) → `HANDOFF.md` (how to run it) →
 `research/module-swap-2026-10-07/REPRODUCE-PROMPT.md` (how to reproduce the published numbers). When documents disagree, `docs/STATE.md`
 and `HANDOFF.md` win.

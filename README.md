@@ -1,3 +1,7 @@
+> **Frozen (2026-10-11).** Delivery source of truth is `https://github.com/admin-wekruit/argus` (package `argus`, `panoptes run`).
+> Verdict research continues in `https://github.com/admin-wekruit/panoptes-verdict-lab`. This repository is history: do not develop,
+> clean or run experiments here. Map and measured status: `docs/ARCHITECTURE.md`.
+
 # ehs-spatial（Panoptes）
 
 工位照片 → 3D 重建（对象、盒、尺寸、离地高、不确定度）→ 测量报告。企业版交接 1.0.0-rc1（2026-10-07）：一个仓库、客户自己的 GPU 与存储。
