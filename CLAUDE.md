@@ -1,6 +1,6 @@
 # Rules for any agent or session working in this repository (ehs-spatial)
 
-Read in this order, nothing else first: `README.md` → `docs/STATE.md` (what the system is today) → `HANDOFF.md` (how to run it) →
+Read in this order, nothing else first: `README.md` → `docs/ARCHITECTURE.md` (cross-repo map and measured status; which repo is the delivery) → `docs/STATE.md` (what the system is today) → `HANDOFF.md` (how to run it) →
 `research/module-swap-2026-10-07/REPRODUCE-PROMPT.md` (how to reproduce the published numbers). When documents disagree, `docs/STATE.md`
 and `HANDOFF.md` win.
 
@@ -38,5 +38,7 @@ out of the delivery path. Algorithms and parameters still never change during th
 measurement layers of the module-swap pipeline, 090 `a9a6e0a0…` and 030 `fafdeb6b…` (MVS + MoGe-3 fill + SAM 3D + assembly v2; the
 numeric / geometry fields identical, text fields may move to message codes). The originals `4b58dbd2… / cd84d3fb… / 25686138…`
 (Pi3X + RecGen) stay frozen but are not the target.
+
+Before ending a session that changed any repository's state, re-measure and overwrite the status table in `docs/ARCHITECTURE.md` §5 (date, command, result); never update it from memory.
 
 Commit messages end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` when a Claude session authors the commit.

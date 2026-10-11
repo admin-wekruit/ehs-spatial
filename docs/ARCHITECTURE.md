@@ -1,87 +1,83 @@
-# Panoptes 架构（企业版 1.0.0-rc1）
+# Panoptes 架构地图与状态（跨仓库）
 
-四层，每层一个替换点，全部由仓库根的一份 `.env`（模板 `env.template`）决定。算法代码不认机器、不认 Modal、不认存储实现。
+更新规则：这是活文档。任何 session 改了任何一个仓库的状态，结束前**重新测量**并覆盖 §5 的状态表（日期 + 命令 + 结果），不要凭记忆改。§7 列出每一行怎么测。跨 session 的副本在 Claude 记忆 `panoptes-architecture-map`。
 
+最后测量：2026-10-11（只读、离线、`PANOPTES_FAKE_MODEL=1`，没有 GPU / LLM / 数据库）。
+
+## 1. 仓库与角色（远端都在 GitHub `admin-wekruit`）
+
+| 仓库 / 本地路径 | 分支 @ HEAD | 角色 |
+|---|---|---|
+| ehs-spatial — `/Users/adam/Desktop/Tesla/panoptes-platform`（worktree） | `main` = `verdict-lab` @ f881ddc；`archive/research-2026-10` @ 2fd7e0a；`wip/viewer-i18n-2026-10-08` @ 3c9b1fc（不要合并） | **清理前**的 Modal 源码 + 第一版判定实验台 `ehs_spatial/verdict`（clingo@2，95 个测试）。清理步骤 1/2/3/5 已做，4/6/8/9/10/11 没做。交付角色已被 argus 取代。 |
+| argus — `/Users/adam/Desktop/panoptes-public/phase5-delivery` | `codex/phase5-delivery` @ 87796eb（已推，工作树干净） | **清理后的交付**（Codex session 做的）：包 `argus/{pipeline,checks,platform,providers}` + `web/ tests/ scripts/ docs/`；`panoptes run --cell 030|090`；locales en/zh/nl 各 1783 键。独立复核：第一轮 @ 2d8a419（可作 Modal 源码交付），第二轮冻结 @ dd80ce5（**没做完**，子代理因额度 429 中止）。dd80ce5 之后的 39fa940 → 922c8ce → 87796eb（边缘一致 + 自动部件）**未经复核**，用户 2026-10-10 暂停。 |
+| panoptes-verdict-lab — `/Users/adam/Desktop/panoptes-public/phase4-verdict-lab` | `codex/verdict-lab` @ c26d07a | **当前**判定研究：包 `verdict_lab`，命令 `panoptes-verdict`，契约 verdict/2；插件 measurement-layer@3 / scene-json@2 / relations@5 / handwritten@5 / function-library@3 / code-synthesis@3 / redundant-translation@3 / clingo@5 / python@6 / html@1。取代 `ehs_spatial/verdict`（五处双引擎分歧在这里修了）。 |
+| phase5-portability | `codex/phase5-portability` @ 4c7b8e5 | 保留源码 == argus 跟踪文件（复核时 0 差异）。只作历史。 |
+| phase5-inputs | — | 冻结输入镜像（原图、mask、几何、尺度）。只读，不得覆盖。 |
+| phase5-research-reference | — | 清理前源码，含旧的照片→SAM 链（`ehs_spatial/pipeline.py::_segment_unit` → `providers/sam3.py::SAM3Adapter.segment` → `sam_subscribe`，`SAM3_BACKEND=fal|modal|http` → `modal_apps/sam3_app.py::Sam3.segment`）。没有接进 argus。 |
+| phase5-artifacts | — | 复核证据；`automatic-parts-2026-10-10/HANDOFF-LEADER-PIPELINE-2026-10-10.md`（流水线交接，已答复）；`cloud-review-2026-10-09/` 私人站打包脚本。 |
+
+站点：原报告应用 `https://admin-wekruit.github.io/panoptes-workcell-report/workcell-photo-direct/report/app.html`（schema-1 层；`4b58dbd2… / cd84d3fb…` 是 Pi3X+RecGen 原版，不是目标；推荐 MVS 层 = 090 `a9a6e0a0…` / 030 `fafdeb6b…`）；私人比较站 `https://panoptes-verdict-review-20261009.windy-crab-9030.chatgpt.site/workspace`（只展示保存结果：12 runs / 236 verdicts / 0 个 validated box）。
+
+## 2. 交付链路（argus `argus/pipeline/cli.py` 的 `ITEMS`；离线 `--dry-run` 已验证 S2a→S8 全部打印）
+
+S2a `providers.geometry_mvs.run`（DA3-BASE + RoMa + MoGe-3，Modal GPU）→ S2b BA + 两视角三角化 → S2c evaluator analyse/export → S2d MoGe-3 mask 内 fill + 字段门（MAE ≤ 1.56 cm、max ≤ 3 cm）→ S4a SAM 3D Objects（Modal，`completion.py`）→ S4b assemble + `select_sam3d` → S4c `swap_generation` + `pin_run` → S5 `assemble_scene`（9-DOF，地面接触 v2）→ S6 `build_capture_report` → S7 `platform.publish_capture` → S8 `serve_export` / `run_stages` / `build_swap_layer`（schema-2 测量层；只序列化 S7 的 revision，不重算）。
+
+要点：
+- 照片 → 整物体 2D mask **不是**链路里的阶段：链路从冻结的 `PANOPTES_RUNS/<run>/evidence/objects.json` 起（030 = 2026-10-04 研究 run 的 SAM3，backend 未记录；090 = SAM2.1 本地 MPS 提示 19 条 + 6 条旧 canonical mask）。`panoptes run` 内部唯一的 SAM 是 SAM 3D Objects。
+- 87796eb 起 S7 没有 provider manifest 就拒绝运行：钉死 Gemini discovery + FAL `sam-3-1/image-rle` + Gemini model review（`publish_capture.py:53-56`，`reconstruction.py:2627-2646`）。不是用户需求；2026-10-10 裁定：撤硬前置，分割走 `SAM3_BACKEND` 路由（自托管 Modal 为默认），discovery 不用 LLM。
+- `MEASUREMENT_ROLES` 的 coverage=`visible_interval`，而 `geometry_engine.py:196` 要求 `full_target` → 当前代码下自动围栏 / 光幕量值永远 `value=None, flags=['untrusted']`。
+- 手工 `partMasks` 已从 `cells/*.json` 删掉，但 `lower_edge.py` / `box_faces.py` / `shape_core.py` / `geometry_engine.py` 的代码路径仍接受 `opts.partMasks`。
+- Modal 接缝 = `argus/` 下 9 个 `import modal` 文件（completion、geometry_clean_ab、field_evaluator、sam3d_modal、moge3_modal、publication_modal、recgen_transport、reconstruction、executor）。客户只换这些。
+
+## 3. 判定层：在流水线之外，是设计
+
+报告只有测量、盒子、事实，**没有机器合规判定**（两个仓库的 STATE.md 都这么写）。流水线内的残留：`argus/pipeline/policy.py`（PolicySpec → 几何谓词，误差带内弃权），只被 `platform/policy_engine.py` 调用。判定实验台单独消费 schema-2 层：L1 scene → L2 relations → L3 monitor → L4 clause graph → L5 rule pack → L6 clingo/python 五态（护带 k=2）→ L7 报告。
+
+真实工位现状：`zones=[]`、`coverage=null`、`declared_inputs={}` → 基线 030 = 9/1/1/6/1，090 = 10/2/2/7/1（PASS/FAIL/NEEDS_MEASUREMENT/NEEDS_INPUT/CANNOT_DETERMINE），金标是**试跑输出**（provisional）；function-library 编译 9 条、绑定 0 条（缺 `perimeter_of` / `covers_opening` 区域谓词）→ 全部 NEEDS_INPUT；至今 0 次真实 LLM 调用（Mac 上没有 Claude 凭证）。计划阶段（`docs/research/verdict-layer-plan-2026-10-08.md`）：A 完成，B 一半，C 代码在 / 没真跑，D、E 未开始。
+
+## 4. 文件管理（客户审查的 11 步）
+
+在 argus 里**已完成**：一个包布局、研究出交付路径、数据出库（`data-manifest.json`，无 >10 MB 文件）、三语目录、门全过（见 §5）。在 ehs-spatial 里**没做**（4/6/8/9/10/11），也不必再做：交付角色已经在 argus。
+
+## 5. 状态表（2026-10-11 测量）
+
+| 项 | 结果 | 结论 |
+|---|---|---|
+| ehs-spatial `tests/verdict` | 95 passed | 老实验台仍绿 |
+| ehs-spatial 全套（基线 23 个已知失败） | 23 failed / 1608 passed / 235 skipped（632 s） | = 基线，无回归 |
+| ehs-spatial 门 | CJK 代码 0；`/Users/`、`/private/tmp` 的 .py 54（交付路径 48）；>10 MB 1；Makefile 1；env 模板 1；deploy 目录 2（`deploy/`、`docker/`） | 未清理 |
+| argus 门 @ 87796eb | CJK 代码 0；机器路径 0；>10 MB 0；Makefile 1；`env.template` 1；`CLAUDE.md`（`AGENTS.md` 软链接）；locales 1783/1783/1783 | 全过 |
+| argus 测试 @ 87796eb（干净 venv，无 DB） | 688 passed / 194 skipped（82 缺 `PANOPTES_TEST_DATABASE_URL`、15 缺 Mongo、6 Blender、2 S3、1 torch） | 记录的 831/51 需要真实 PostgreSQL + Mongo |
+| argus `panoptes run --cell 030 --dry-run` | S2a→S8 全部打印，S7 = `argus.platform.publish_capture` | 链路结构完整；S7 真跑被 provider manifest 挡住 |
+| panoptes-verdict-lab 测试 @ c26d07a | 211 passed / 1 skipped | 绿 |
+| 自动部件真实 030/090 结果 | `phase5-artifacts/automatic-parts-2026-10-10/{030,090}/results.json` 不存在 | 未执行 |
+
+## 6. MVP 结论（2026-10-11）
+
+- **测量 MVP**：以 Modal 源码交付，**可以**，版本 = dd80ce5（复核过的；当时 747/51），带已知保留项：严格 schema-2 查看器不能直接替换 schema-1 的原报告站；镜像缺 S8 中间产物。87796eb **不能**交付：S7 被付费 provider 挡住、自动量值全部 untrusted、030/090 真实自动运行从未执行。
+- **判定层**：不是 MVP，不在产品里；在有区域 / coverage / 声明输入和真实金标之前只是研究。
+- **文件管理**：argus 已完成；ehs-spatial 没做也不必做。
+
+## 7. 怎么复测（每行一条命令，离线）
+
+```bash
+# ehs-spatial（在 worktree 根）
+PANOPTES_FAKE_MODEL=1 PANOPTES_WORKCELL=$PWD .venv/bin/python -m pytest tests/verdict -q -p no:cacheprovider
+PANOPTES_FAKE_MODEL=1 PANOPTES_WORKCELL=$PWD .venv/bin/python -m pytest tests -q -p no:cacheprovider
+# 门（任一仓库根）
+git ls-files | grep -E '\.(py|ts|tsx|js|mjs|sh|ya?ml|json)$' | grep -v -E '^(docs/|research/|web/src/locales/|data/)' | xargs grep -l -P '[\x{4e00}-\x{9fff}\x{3000}-\x{303f}\x{ff00}-\x{ffef}]' | wc -l
+git ls-files '*.py' | xargs grep -l -E '/Users/|/private/tmp' | wc -l
+git ls-files -z | xargs -0 stat -f '%z %N' | awk '$1>10485760'
+# argus（临时克隆，不在交付目录里跑）
+git clone /Users/adam/Desktop/panoptes-public/phase5-delivery /private/tmp/status-<date>/argus
+PANOPTES_DATA_ROOT=/private/tmp/status-<date>/data PANOPTES_FAKE_MODEL=1 HF_HUB_OFFLINE=1 python -m argus.pipeline.cli run --cell 030 --dry-run
+PANOPTES_FAKE_MODEL=1 HF_HUB_OFFLINE=1 EHS_LIVE_BENCHMARK=0 python -m pytest tests -q -rs -p no:cacheprovider
+# panoptes-verdict-lab（临时克隆）
+PANOPTES_FAKE_MODEL=1 python -m pytest tests -q -p no:cacheprovider
 ```
- .env（env.template）
-  │
-  ├─ 模型服务层  GPU 机 ×2：每卡一个 compose 栈            deploy/compose.gpu-a.yml  deploy/compose.gpu-b.yml  serving/registry.yaml
-  │     卡 A  sam3d :8805 (serving/sam3d_service.py)   sam3 :8801 (serving/sam3_service.py)
-  │     卡 B  geometry-mvs :8804 (serving/geometry_mvs_service.py)   moge :8803   mapanything :8802
-  │     合同  v1 = /healthz /v1/info /v1/<model> /v1/<model>/jobs /v1/jobs/{id}（docs/BACKENDS-v1.md）；v0 = 一次 POST（docs/BACKENDS.md）
-  │     鉴权  X-API-Key = PANOPTES_SERVICE_API_KEY；输入内容寻址 input_sha256；长任务异步
-  │                       ▲  jump VM 10.21.72.251：socat 单元 或 nginx+TLS，一端口/一前缀对一个服务      deploy/jumpbox/
-  ├─ 流程层      panoptes CLI（CPU，任意机器）                 ehs_spatial/cli.py   = research/module-swap-2026-10-07/run_all.sh 的 Python 化
-  │     providers/{sam3d,geometry_mvs,sam3,map_anything,moge}.py  ← *_BACKEND = http | local | modal（| fal | replicate）
-  │     providers/service_client.py：*_HTTP_URLS 多卡（按 /healthz queue_depth 选卡）、超时、重试、ledger
-  │     每步幂等，写 ledger.json（input_sha256、model_info、耗时、所在卡）
-  ├─ 存储层      ehs-spatial ehs_spatial/platform/            Repository: PANOPTES_DATABASE_URL = postgresql:// | mongodb://
-  │                                                           BlobStore:  PANOPTES_BLOB_ROOT   = /目录 | s3://bucket/prefix
-  │     工件布局 <root>/{runs/<cell>/<run_id>, publications/<id>, layers/<id>.json, weights/<model>/<rev>}   scripts/panoptes_artifacts.py push/pull
-  └─ 发布层      catalog/<id> → prepare_publication_site.py → 发布服务 + nginx（查看器 + 测量层）或 S3 静态站      deploy/publications/
-                 PANOPTES_PUBLIC_BASE_URL/app.html#/reports/<id>
-```
 
-## 替换点
+## 8. 待用户决定（建议）
 
-| 层 | 换什么 | 怎么换（只动 `.env`） | 代码在哪 |
-|---|---|---|---|
-| 模型服务 | 模型跑在哪张卡、哪台机、哪条代理 | `SAM3D_HTTP_URLS` / `GEOMETRY_MVS_HTTP_URLS`（逗号多卡）、`SAM3_HTTP_URL` / `GEOMETRY_HTTP_URL` / `MOGE_HTTP_URL`；jump 的转发表 `deploy/README.md` | `serving/*_service.py`，镜像 `ehs-spatial/docker/*.Dockerfile`，`serving/registry.yaml` |
-| 模型服务 | 新模型 | 一个 FastAPI 服务（复制 `serving/sam3d_service.py` 的骨架，函数体 = 对应 Modal 应用）+ 一个 provider + `registry.yaml` 一行 + compose 一个 service | `serving/`、`ehs_spatial/providers/` |
-| 流程 | 模型在服务 / 本进程 / Modal | `SAM3D_BACKEND`、`GEOMETRY_MVS_BACKEND` = `http` / `local`（`ehs-spatial/scripts/onprem/run_stage.py` 的 stub 在本进程跑同一函数体）/ `modal` | `ehs_spatial/providers/{sam3d,geometry_mvs}.py`，`providers/service_client.py` |
-| 流程 | 从某步重跑 | `panoptes run --cell 090 --from S4`；每步看自己的产物存在就跳过，`input_sha256` 命中服务端缓存直接拿结果 | `ehs_spatial/cli.py` |
-| 存储 | Postgres ↔ Mongo | `PANOPTES_DATABASE_URL` 的 scheme；`PANOPTES_MONGO_PREFIX` 集合前缀 | `ehs-spatial/ehs_spatial/platform/{config,repository}.py`（`Repository` 32 方法、`PolicyRepository` 12 方法同一 Protocol） |
-| 存储 | 目录 ↔ S3 兼容 | `PANOPTES_BLOB_ROOT` 的 scheme；`AWS_ENDPOINT_URL`、`AWS_ACCESS_KEY_ID/SECRET` | `ehs-spatial/ehs_spatial/platform/storage.py`（`BlobStore` 7 方法：`LocalBlobStore` / `S3BlobStore`） |
-| 发布 | 报告站在哪 | `PANOPTES_PUBLIC_BASE_URL`、`PANOPTES_PUBLICATION_{CATALOG,HTTP}`、`PANOPTES_WEB_ROOT`、`PANOPTES_PAGES` | `deploy/publications/`，`ehs-spatial/containers/onprem/serve_publications.py` |
-| 全部 | 新站点 | 复制 `.env`，改 jump 地址和三组凭证 | — |
-
-## 一次 SAM 3D 调用（S4a，`SAM3D_BACKEND=http`）
-
-```
- panoptes run --cell 090                     流程机（CPU）
-   │ S4a：每张有掩码的照片一个候选
-   ▼
- providers/sam3d.py::generate(rgb, mask, pointmap, seed=42)
-   │ 组请求体 {image_b64, mask_b64, pointmap_npz_b64, seed}，input_sha256 = sha256(规范化输入字节)
-   ▼
- providers/service_client.py
-   │ 1. 对 SAM3D_HTTP_URLS 的每个根 GET <root>/healthz（X-API-Key），选 queue_depth 最小、ok:true 的根
-   │ 2. POST <root>/v1/sam3d/jobs → 202 {job_id, input_sha256, cached}        （cached:true = 服务端缓存命中，直接到 5）
-   │ 3. GET  <root>/v1/jobs/{job_id} 轮询，退避；status queued|running|done|error
-   │    连接错误 / 429 busy / 503 → 重试 PANOPTES_SERVICE_RETRIES 次；model_error 不重试；总时限 PANOPTES_SERVICE_TIMEOUT_S
-   ▼
- jump VM 10.21.72.251
-   │ socat :8085 → 卡 A :8805（或 nginx /sam3d/ → gpu-a:8805），X-API-Key 原样透传
-   ▼
- serving/sam3d_service.py（容器：ehs-spatial/docker/sam3d.Dockerfile；权重卷只读，启动 sha256 校验，HF_HUB_OFFLINE=1）
-   │ 校验 key（401）→ 队列深度 ≥ PANOPTES_SERVICE_MAX_QUEUE 则 429 → 查 input_sha256 缓存
-   │ 未命中：modal_apps/sam3d_research.SAM3DObjects.run(rgb, mask, pointmap, seed) 原函数体，cuDNN deterministic
-   │ 结果：mesh_npz（vertices/faces/colors/object_to_camera_p3d）
-   │   小 → 响应里 result_b64；设了 PANOPTES_RESULT_BUCKET → 上传 s3://…/<input_sha256>.tar.gz，响应 result_uri
-   │ 每个响应带 model_info = /v1/info（model_id、model_revision、weights_sha256、code_sha、seed_policy）+ gpu + seconds
-   │ 日志一行 JSON {job_id, input_sha256, seconds, gpu, status}（无载荷、无 key）
-   ▼
- 流程机
-   │ 4. result_uri → 用 AWS_* 凭证从桶拉；result_b64 → 直接解
-   │ 5. 写 gen/<variant>/<object>.npz（和研究 A/B 完全相同的落盘格式，后面的候选组装 / 择优 / 组装 v2 不知道它来自哪）
-   │ 6. ledger.json 追加 {step:"S4a", object, input_sha256, root, job_id, cached, seconds, gpu, model_info}
-   ▼
- S7 平台导入：Repository.create_job / model_calls 记一行（postgres 或 mongo），工件进 BlobStore（目录或 s3://）；
- 报告的 provenance 面板显示 model_info —— 每个数字都能追到权重 sha256 和代码 sha。
-```
-
-`SAM3D_BACKEND=local` 时 2–4 步变成本进程调用 `run_stage.py` 的 stub（同一函数体，本机 GPU）；`modal` 时变成 `modal.Cls.from_name(...)`。
-ledger 的字段一样。
-
-## future-proof 守则（计划 §3 + 合同 v1 规则）
-
-1. **版本在路径**：`/v1/`；破坏性改动开 `/v2/` 并行，`/v1/` 至少保留一个版本周期。v0 的一次 POST 路径（`/sam3`、`/geometry`、`/moge`）照旧。
-2. **每个响应可溯源**：`model_id / model_revision / weights_sha256 / code_sha` 随响应返回，流程写进 `ledger.json` 和报告 provenance。
-3. **输入内容寻址，输出可缓存可重放**：种子、确定性标志是输入的一部分，进 `input_sha256`；同一输入第二次调用不算第二次。
-4. **只有一个配置面**：`.env`（`env.template` 每个键一行注释 + 默认）。代码里没有机器路径、没有 Modal 专有调用、没有"手工在盒子上做的事"；
-   `scripts/check_env.py` 对未登记的键报警，CI 跑 `check_env.py env.template`。
-5. **服务无状态、不联网**：只读权重卷、不存 runs、不碰业务数据；日志无载荷无密钥。
-6. **契约测试一套，多后端都跑**：`tests/contract/` 对 fake backend（CI）和真服务（`PANOPTES_CONTRACT_URL`）同一组请求；存储层对
-   Postgres + 目录 和 Mongo + S3 兼容同一组契约测试。
-7. **流程只认 provider**：没有任何 stage `import modal`；换模型位置 = 改 `*_BACKEND`，换模型 = 加 provider，流程不动。
-8. **不改算法来"对数字"**：验收用容忍范围（`research/module-swap-2026-10-07/REPRODUCE-PROMPT.md` §5），对不上记差异。
+1. 宣布 argus 为唯一源头；ehs-spatial `main` 冻结为归档；判定工作只在 panoptes-verdict-lab 继续。
+2. 自动部件继续之前先撤 S7 的 Gemini/FAL 硬前置（§2）。
+3. 判定层下一步仍是 2026-10-08 定的顺序：L2 区域谓词 → 凭证到位跑 L5 三行 → html 面板标第一轮金标。
